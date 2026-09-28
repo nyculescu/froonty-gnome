@@ -47,11 +47,14 @@ export class Island {
      * @param {ClockService} clock
      * @param {PanelClock} panelClock the concealed top bar clock the
      *   collapsed pill must cover
+     * @param {object} actions
+     * @param {Function} actions.openSettings opens Froonty's settings window
      */
-    constructor(settings, clock, panelClock) {
+    constructor(settings, clock, panelClock, {openSettings}) {
         this._settings = settings;
         this._clock = clock;
         this._panelClock = panelClock;
+        this._openSettingsAction = openSettings;
         this._expanded = false;
         this._themeContext = St.ThemeContext.get_for_stage(global.stage);
 
@@ -144,6 +147,13 @@ export class Island {
             this._setExpanded(false);
     }
 
+    // Collapsing first releases the modal grab, so the settings window can
+    // take keyboard focus when it appears.
+    _openSettings() {
+        this.collapse();
+        this._openSettingsAction();
+    }
+
     _buildActors() {
         this._strip = new St.Widget({
             name: 'froontyStrip',
@@ -169,7 +179,9 @@ export class Island {
         this._pill.set_child(content);
 
         this._collapsedView = new CollapsedView();
-        this._expandedView = new ExpandedView();
+        this._expandedView = new ExpandedView({
+            openSettings: () => this._openSettings(),
+        });
         content.add_child(this._collapsedView.actor);
         content.add_child(this._expandedView.actor);
         this._showViewImmediately();
@@ -194,6 +206,13 @@ export class Island {
 
     _connectSignals() {
         this._pill.connect('clicked', () => this.toggle());
+        // Tab/arrow focus navigation is normally driven from the stage, which
+        // the expanded island's modal grab keeps key events away from, so
+        // forward them to the focus manager (as PanelMenu.Button does).
+        this._pill.connect('key-press-event', (_actor, event) =>
+            global.focus_manager.navigate_from_event(event)
+                ? Clutter.EVENT_STOP
+                : Clutter.EVENT_PROPAGATE);
 
         this._clock.connectObject('changed', () => this._updateContent(), this);
         this._panelClock.connectObject('cover-changed',
@@ -318,6 +337,12 @@ export class Island {
         this._expanded = expanded;
         if (!expanded)
             this._strip.reactive = false;
+
+        // St does not navigate focus into a widget that is itself focusable,
+        // so while expanded the pill stops being focusable and Tab reaches
+        // the controls inside it. It keeps key focus, so Enter/Space still
+        // collapse it.
+        this._pill.can_focus = !expanded;
 
         if (expanded) {
             this._pill.add_style_class_name('froonty-pill-expanded');

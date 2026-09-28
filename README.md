@@ -6,7 +6,9 @@ facilities GNOME Shell already has. It does not reimplement them.
 
 Status: **Phase 1** (foundation). The collapsed pill shows the time and,
 optionally, the date. Click it, press `Super+Alt+I` or use Ctrl+Alt+Tab to
-expand it; press Escape or click outside to collapse it.
+expand it; press Escape or click outside to collapse it. The ⚙️ button in
+the expanded island's top-right corner (or Tab, then Enter) opens the
+settings window.
 
 - No subprocesses, no network access, no polling timers.
 - GJS and native GNOME Shell APIs only.
@@ -26,7 +28,8 @@ froonty@catalin/          the extension (this directory is what gets installed)
 ├── ui/collapsedView.js
 ├── ui/expandedView.js
 ├── services/clock.js     GnomeDesktop.WallClock-based clock (start/stop)
-└── shell/dateMenu.js     adapter: the only place touching Shell internals
+├── shell/dateMenu.js     adapter: the only place touching Shell internals
+└── shell/settingsWindow.js  opens or raises the settings window
 tools/headless-test/      isolated headless GNOME Shell test harness
 docs/DESIGN.md
 ```
@@ -81,6 +84,10 @@ enables unsafe mode (for `org.gnome.Shell.Eval`) inside that throwaway
 session. Never install it in a real session.
 
 ## Settings
+
+The settings window (⚙️, or `gnome-extensions prefs froonty@catalin`) opens as
+its own window with tabs: **General** (island, shortcut, clock) and
+**Appearance** (size, animation). The keys behind it:
 
 | Key | Default | |
 |---|---|---|

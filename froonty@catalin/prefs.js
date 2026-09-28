@@ -13,22 +13,47 @@ import {
 
 const CLOCK_FORMATS = ['system', '24h', '12h'];
 
+// Tabs, in display order. The window opens on the first one.
+const GENERAL_PAGE = 'general';
+const APPEARANCE_PAGE = 'appearance';
+
 export default class FroontyPreferences extends ExtensionPreferences {
     fillPreferencesWindow(window) {
         const settings = this.getSettings();
         // Keep the settings object alive as long as the window.
         window._settings = settings;
 
-        const page = new Adw.PreferencesPage();
-        window.add(page);
-
-        page.add(this._generalGroup(settings));
-        page.add(this._clockGroup(settings));
-        page.add(this._appearanceGroup(settings));
+        // With more than one page, Adw.PreferencesWindow shows them as tabs
+        // (a view switcher in the header bar).
+        window.add(this._generalPage(settings));
+        window.add(this._appearancePage(settings));
+        window.visible_page_name = GENERAL_PAGE;
     }
 
-    _generalGroup(settings) {
-        const group = new Adw.PreferencesGroup({title: _('General')});
+    _generalPage(settings) {
+        const page = new Adw.PreferencesPage({
+            name: GENERAL_PAGE,
+            title: _('General'),
+            icon_name: 'emblem-system-symbolic',
+        });
+        page.add(this._islandGroup(settings));
+        page.add(this._clockGroup(settings));
+        return page;
+    }
+
+    _appearancePage(settings) {
+        const page = new Adw.PreferencesPage({
+            name: APPEARANCE_PAGE,
+            title: _('Appearance'),
+            icon_name: 'preferences-desktop-appearance-symbolic',
+        });
+        page.add(this._sizeGroup(settings));
+        page.add(this._animationGroup(settings));
+        return page;
+    }
+
+    _islandGroup(settings) {
+        const group = new Adw.PreferencesGroup({title: _('Island')});
         group.add(switchRow(settings, 'island-enabled', _('Show island')));
         group.add(switchRow(settings, 'hide-panel-clock', _('Hide top bar clock'),
             _('The island replaces the clock; its calendar menu keeps working')));
@@ -71,17 +96,22 @@ export default class FroontyPreferences extends ExtensionPreferences {
         return group;
     }
 
-    _appearanceGroup(settings) {
+    _sizeGroup(settings) {
         const group = new Adw.PreferencesGroup({
-            title: _('Appearance'),
-            description: _('Sizes are in logical pixels'),
+            title: _('Size'),
+            description: _('In logical pixels. While the top bar clock is hidden, the collapsed island grows to cover it.'),
         });
-        group.add(spinRow(settings, 'collapsed-width', _('Collapsed width')));
-        group.add(spinRow(settings, 'collapsed-height', _('Collapsed height')));
+        group.add(spinRow(settings, 'collapsed-width', _('Collapsed width (minimum)')));
+        group.add(spinRow(settings, 'collapsed-height', _('Collapsed height (minimum)')));
         group.add(spinRow(settings, 'expanded-width', _('Expanded width')));
         group.add(spinRow(settings, 'expanded-height', _('Expanded height')));
         group.add(spinRow(settings, 'corner-radius', _('Corner radius')));
-        group.add(spinRow(settings, 'animation-duration', _('Animation duration (ms)'), 50));
+        return group;
+    }
+
+    _animationGroup(settings) {
+        const group = new Adw.PreferencesGroup({title: _('Animation')});
+        group.add(spinRow(settings, 'animation-duration', _('Duration (ms)'), 50));
         return group;
     }
 }

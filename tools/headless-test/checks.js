@@ -351,6 +351,96 @@ async function testSettings(outDir) {
     check('island-enabled=true brings it back', strip() !== null && pill().mapped);
 }
 
+// ---------------------------------------------------------------- settings
+
+const settingsWindows = () => global.display.list_all_windows().filter(w =>
+    w.get_wm_class() === 'org.gnome.Shell.Extensions' &&
+    w.get_title() === 'Froonty');
+
+async function waitForSettingsWindow(timeoutMs = 10000) {
+    for (let waited = 0; waited < timeoutMs; waited += 100) {
+        const [window] = settingsWindows();
+        if (window)
+            return window;
+        await sleep(100);
+    }
+    return null;
+}
+
+async function closeSettingsWindows() {
+    for (const window of settingsWindows())
+        window.delete(global.get_current_time());
+    for (let waited = 0; waited < 5000 && settingsWindows().length; waited += 100)
+        await sleep(100);
+}
+
+async function testSettingsButton(outDir) {
+    const modalBefore = Main.modalCount;
+    island().expand();
+    await sleep(animationWait());
+
+    const gear = island()._expandedView.settingsButton;
+    const g = boxOf(gear);
+    const p = boxOf(pill());
+    const [gx, gy] = [(g.x1 + g.x2) / 2, (g.y1 + g.y2) / 2];
+    check('⚙️ button visible in the expanded island', gear.mapped && gear.opacity > 0);
+    check('⚙️ button sits in the top-right corner',
+        gx > p.x1 + (p.x2 - p.x1) * 0.75 && gy < p.y1 + (p.y2 - p.y1) * 0.35 &&
+        g.x2 <= p.x2 && g.y1 >= p.y1,
+        `button=[${g.x1},${g.y1} - ${g.x2},${g.y2}] pill=[${p.x1},${p.y1} - ${p.x2},${p.y2}]`);
+    await screenshotTop(outDir, 'expanded-with-settings-button');
+
+    await clickAt(gx, gy);
+    const window = await waitForSettingsWindow();
+    check('clicking ⚙️ opens the settings window', window !== null);
+    check('clicking ⚙️ collapses the island and releases the grab',
+        !island().expanded && Main.modalCount === modalBefore,
+        `expanded=${island().expanded} modalCount=${Main.modalCount}`);
+    // The window is listed when created (untitled) and focused once shown,
+    // a few hundred ms later.
+    for (let waited = 0; waited < 3000 && global.display.focus_window !== window; waited += 100)
+        await sleep(100);
+    check('settings window gets focus', window && global.display.focus_window === window,
+        `focus=${global.display.focus_window?.get_title()}`);
+    if (window) {
+        const stream = Gio.File.new_for_path(GLib.build_filenamev([outDir, 'settings-window.png']))
+            .replace(null, false, Gio.FileCreateFlags.NONE, null);
+        await new Shell.Screenshot().screenshot(false, stream);
+        stream.close(null);
+    }
+
+    // A second click must raise the open window, not fail or duplicate it.
+    // Unfocus it first so "raised" is observable.
+    Main.overview.show();
+    await sleep(animationWait());
+    Main.overview.hide();
+    await sleep(animationWait());
+    global.display.focus_default_window(global.get_current_time());
+    island().expand();
+    await sleep(animationWait());
+    await clickAt(...(() => {
+        const b = boxOf(gear);
+        return [(b.x1 + b.x2) / 2, (b.y1 + b.y2) / 2];
+    })());
+    await sleep(1000);
+    check('⚙️ again raises the same window instead of opening another',
+        settingsWindows().length === 1 && global.display.focus_window === window,
+        `windows=${settingsWindows().length} focus=${global.display.focus_window?.get_title()}`);
+    await closeSettingsWindows();
+
+    // Keyboard: Tab from the focused pill reaches ⚙️, Enter activates it.
+    island().expand();
+    await sleep(animationWait());
+    await pressKeys(Clutter.KEY_Tab);
+    check('Tab moves focus to ⚙️', global.stage.key_focus === gear,
+        `focus=${global.stage.key_focus}`);
+    await pressKeys(Clutter.KEY_Return);
+    check('Enter on ⚙️ opens the settings window', await waitForSettingsWindow() !== null);
+    await sleep(SETTLE_MS);
+    check('island collapsed after keyboard activation', !island().expanded);
+    await closeSettingsWindows();
+}
+
 // The concealed top bar clock stays clickable, so the collapsed pill must
 // cover its whole button, also when the clock is wider than collapsed-width.
 async function testCoversPanelClock(outDir) {
@@ -527,6 +617,7 @@ export async function runAll(outDir) {
         testGeometry();
         await testPointer(outDir);
         await testKeyboard();
+        await testSettingsButton(outDir);
         await testSettings(outDir);
         await testCoversPanelClock(outDir);
         await testMonitors();

@@ -190,6 +190,8 @@ Consequences:
 | `GrabHelper` (which uses `Main.pushModal`) | `ui/grabHelper.js` |
 | `EventEmitter`, `connectObject` / `disconnectObject` | `misc/signals.js`, `misc/signalTracker.js` |
 | `Shell.util_translate_time_string` with GNOME Shell's `calendar heading` msgid | `ui/dateMenu.js:175-178` |
+| `global.focus_manager.navigate_from_event` (Tab navigation under a grab, as `PanelMenu.Button` does) | `ui/panelMenu.js` |
+| `org.gnome.Shell.Extensions.OpenExtensionPrefs` (public D-Bus API of the prefs service); `global.display` `window-created`, `Meta.Window` `shown` / `get_wm_class()`; `Main.activateWindow` | `Shell/Extensions/js/extensionsService.js`, `ui/main.js:878` |
 
 ### 6.3 Private / internal (isolated in `shell/`)
 
@@ -200,6 +202,34 @@ Consequences:
 
 `statusArea.dateMenu` is a role name set by `PANEL_ITEM_IMPLEMENTATIONS`
 (`panel.js:633`). It is widely relied on, but it is not an API contract.
+
+### 6.4 Settings window (⚙️)
+
+The expanded island has a ⚙️ button in its top-right corner. It opens the
+settings window, a separate window in GNOME Shell's preferences process
+with tabs (General, Appearance). `shell/settingsWindow.js` works around
+three GNOME Shell 46 behaviors found while testing:
+
+- A second `OpenExtensionPrefs` while a window is open fails with "Already
+  showing a prefs dialog" (`extensionsService.js`), and
+  `Extension.openPreferences()` drops that promise, so the rejection shows
+  up as an unhandled rejection. Froonty raises the existing window instead,
+  makes the D-Bus call itself, and handles the error.
+- The request carries no activation token, so Mutter does not focus the new
+  window. Froonty watches `window-created`, and activates the matching
+  window once it is `shown`. The watch gives up after 10 s and is removed on
+  disable.
+- The window has no GTK application id. It is matched by WM class
+  (`org.gnome.Shell.Extensions`) and title (the extension name).
+
+Two St/Clutter rules also shaped the island:
+
+- `Clutter.BinLayout` honors a child's `x_align`/`y_align` only when the
+  child expands; otherwise it centers it.
+- St never moves focus *into* a focusable widget. The pill therefore stops
+  being focusable while expanded, so Tab reaches ⚙️. The modal grab keeps key
+  events from the stage, where Tab navigation normally happens, so the pill
+  forwards them to `global.focus_manager.navigate_from_event()`.
 
 ## 7. Compatibility risks
 
@@ -221,7 +251,7 @@ Consequences:
 | GObject signal connections | layoutManager ×2, panelBox ×1 (+1 allocation watch), ThemeContext ×1, dateMenu container ×2 + one allocation watch per ancestor (3), settings ×7, WallClock ×2, desktop interface settings ×1 | `disconnectObject()` in each owner's teardown |
 | Keybinding | 1 | `_destroyIsland()` |
 | Ctrl+Alt+Tab group | 1 | `Island.destroy()` |
-| Timers / GLib sources | **0 timers.** At most one pending `BEFORE_REDRAW` later (cover recompute), removed in `PanelClock.restore()`. WallClock's internal timerfd is removed with `run_dispose()` | `ClockService.stop()` |
+| Timers / GLib sources | **No periodic timers.** Only while a requested settings window has not appeared yet: one 10 s give-up timeout (`SettingsWindow.destroy()` removes it). At most one pending `BEFORE_REDRAW` later (cover recompute), removed in `PanelClock.restore()`. WallClock's internal timerfd is removed with `run_dispose()` | `ClockService.stop()` |
 | Subprocesses / network / D-Bus proxies | 0 | — |
 
 ## 9. Testing

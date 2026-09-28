@@ -14,6 +14,7 @@ import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 
 import {ClockService} from './services/clock.js';
 import {PanelClock} from './shell/dateMenu.js';
+import {SettingsWindow} from './shell/settingsWindow.js';
 import {Island} from './ui/island.js';
 
 const TOGGLE_SHORTCUT_KEY = 'toggle-shortcut';
@@ -22,6 +23,7 @@ export default class FroontyExtension extends Extension {
     enable() {
         this._settings = this.getSettings();
         this._panelClock = new PanelClock();
+        this._settingsWindow = new SettingsWindow(this.uuid, this.metadata.name);
         this._clock = null;
         this._island = null;
 
@@ -37,6 +39,8 @@ export default class FroontyExtension extends Extension {
         this._settings.disconnectObject(this);
         this._destroyIsland();
 
+        this._settingsWindow.destroy();
+        this._settingsWindow = null;
         this._panelClock = null;
         this._settings = null;
     }
@@ -54,7 +58,9 @@ export default class FroontyExtension extends Extension {
 
         this._clock = new ClockService(this._settings);
         this._clock.start();
-        this._island = new Island(this._settings, this._clock, this._panelClock);
+        this._island = new Island(this._settings, this._clock, this._panelClock, {
+            openSettings: () => this._settingsWindow.open(),
+        });
 
         Main.wm.addKeybinding(TOGGLE_SHORTCUT_KEY, this._settings,
             Meta.KeyBindingFlags.IGNORE_AUTOREPEAT,
