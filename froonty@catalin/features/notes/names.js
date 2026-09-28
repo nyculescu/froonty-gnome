@@ -5,9 +5,10 @@
 
 const EXTENSION = '.md';
 
-// "2026-09-28 15.40": sortable, and free of ":", which is invalid on
-// exFAT/NTFS and trips up sync tools.
-const TIMESTAMP_FORMAT = '%Y-%m-%d %H.%M';
+// "28.09.26 16.03" (dd.mm.yy hh.mm): free of ":", which is invalid on
+// exFAT/NTFS and trips up sync tools. It does not sort chronologically;
+// tabs keep creation order through meta.js instead.
+const TIMESTAMP_FORMAT = '%d.%m.%y %H.%M';
 
 // Characters that cannot or should not appear in a file name on the file
 // systems notes may be synced to (Linux, exFAT, NTFS, macOS).

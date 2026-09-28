@@ -110,6 +110,9 @@ its own window with tabs: **General** (island, shortcut, clock) and
 | `expanded-width` / `expanded-height` | 360 / 140 | Logical px |
 | `corner-radius` | 14 | Clamped to half the height by St |
 | `animation-duration` | 250 ms | GNOME's enable-animations setting still applies |
+| `notes-enabled` | `true` | Show the Notes tab |
+| `notes-folder` | `''` | Notes folder; empty means `~/.local/share/froonty/notes` |
+| `hub-last-tab`, `notes-last` | | Remembered selections (internal) |
 
 ## License and provenance
 

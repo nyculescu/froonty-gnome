@@ -115,8 +115,8 @@
 
 .froonty-note-tab {
     border-radius: 999px;
-    padding: 3px 5px 3px 11px;
-    font-size: 0.85em;
+    padding: 3px 4px 3px 9px;
+    font-size: 0.8em;
     color: rgba(255, 255, 255, 0.7);
     background-color: rgba(255, 255, 255, 0.05);
     transition-duration: 150ms;
@@ -141,7 +141,7 @@
 .froonty-note-tab-close {
     border-radius: 999px;
     padding: 2px;
-    margin-left: 4px;
+    margin-left: 2px;
     color: transparent;
 }
 
@@ -166,7 +166,6 @@
 
 .froonty-note-tab-entry,
 .froonty-note-tab-entry:focus {
-    min-width: 140px;
     padding: 0 4px;
     border: none;
     border-radius: 6px;
@@ -232,4 +231,65 @@
 .froonty-notes-error {
     color: #ff8a80;
     font-size: 0.85em;
+}
+
+.froonty-notes-tools {
+    spacing: 4px;
+}
+
+/* Note colours (features/notes/colors.js). Pastel approximations in the
+   spirit of Windows Sticky Notes; used by tab dots, swatches and the
+   editor surface. */
+
+.froonty-note-color-yellow { background-color: #fff3a8; }
+.froonty-note-color-green { background-color: #cdefc4; }
+.froonty-note-color-pink { background-color: #ffcfe3; }
+.froonty-note-color-purple { background-color: #e2d3fb; }
+.froonty-note-color-blue { background-color: #cfe4ff; }
+.froonty-note-color-gray { background-color: #e4e4e4; }
+.froonty-note-color-charcoal { background-color: #3b3b3b; }
+
+/* Light notes: dark text. Charcoal keeps the default white text. */
+.froonty-notes-scroll .froonty-notes-editor,
+.froonty-notes-scroll .froonty-notes-editor:focus,
+.froonty-notes-scroll .froonty-notes-editor:hover {
+    color: #1f1f1f;
+    caret-color: #1f1f1f;
+    selection-background-color: rgba(0, 0, 0, 0.18);
+    selected-color: #1f1f1f;
+}
+
+.froonty-notes-scroll .froonty-notes-editor StLabel.hint-text {
+    color: rgba(0, 0, 0, 0.4);
+}
+
+.froonty-notes-scroll.froonty-note-color-charcoal .froonty-notes-editor,
+.froonty-notes-scroll.froonty-note-color-charcoal .froonty-notes-editor:focus,
+.froonty-notes-scroll.froonty-note-color-charcoal .froonty-notes-editor:hover {
+    color: #ffffff;
+    caret-color: #ffffff;
+    selection-background-color: rgba(255, 255, 255, 0.25);
+    selected-color: #ffffff;
+}
+
+.froonty-notes-scroll.froonty-note-color-charcoal .froonty-notes-editor StLabel.hint-text {
+    color: rgba(255, 255, 255, 0.45);
+}
+
+.froonty-note-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 4px;
+    margin-right: 5px;
+}
+
+.froonty-color-dot {
+    width: 14px;
+    height: 14px;
+    border-radius: 7px;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+}
+
+.froonty-color-option:checked {
+    background-color: rgba(255, 255, 255, 0.18);
 }

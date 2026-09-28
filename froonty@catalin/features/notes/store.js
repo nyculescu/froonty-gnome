@@ -5,6 +5,7 @@
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 
+import * as Meta from './meta.js';
 import * as Names from './names.js';
 
 for (const method of ['make_directory_async', 'enumerate_children_async',
@@ -83,6 +84,25 @@ export class NotesStore {
                 `A note named "${to}" already exists`);
         }
         await this._file(from).set_display_name_async(Names.fileName(to), PRIORITY, null);
+    }
+
+    /** Order and colours (meta.js); defaults if missing or unreadable. */
+    async readMeta(cancellable = null) {
+        try {
+            const [bytes] = await this.folder.get_child(Meta.META_FILE)
+                .load_contents_async(cancellable);
+            return Meta.parseMeta(new TextDecoder().decode(bytes));
+        } catch (e) {
+            if (e.matches?.(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
+                throw e;
+            return Meta.emptyMeta();
+        }
+    }
+
+    async writeMeta(meta) {
+        const bytes = new GLib.Bytes(new TextEncoder().encode(Meta.serializeMeta(meta)));
+        await this.folder.get_child(Meta.META_FILE).replace_contents_bytes_async(bytes,
+            null, false, Gio.FileCreateFlags.NONE, null);
     }
 
     /** Moves a note to the Trash (recoverable), not a hard delete. */

@@ -105,7 +105,7 @@ test('service: empty folder, then create selects a timestamped note', async () =
     eq(service.notes, []);
     eq(service.selected, null);
     await service.create();
-    ok(/^\d{4}-\d\d-\d\d \d\d\.\d\d$/.test(service.selected), service.selected);
+    ok(/^\d\d\.\d\d\.\d\d \d\d\.\d\d$/.test(service.selected), service.selected);
     await service.create();
     ok(service.selected.endsWith(' (2)'), 'second note in the same minute');
     eq(service.notes.length, 2);
@@ -181,6 +181,41 @@ test('service: trash selects the neighbour and drops unsaved edits', async () =>
     eq(service.selected, 'c');
     ok(!dir.get_child('b.md').query_exists(null), 'b.md moved away');
     service.stop();
+});
+
+test('service: tabs keep creation order, not name order', async () => {
+    const dir = tempDir();
+    const store = new NotesStore(dir);
+    await store.create('28.09.26 10.00');
+    const {service} = await startService(dir);
+    // Created elsewhere later, but its name sorts first ("01." < "28.").
+    await store.create('01.10.26 09.00');
+    await sleep(1500); // let the folder monitor report it
+    eq(service.notes, ['28.09.26 10.00', '01.10.26 09.00']);
+    await service.create(); // appended, whatever its name
+    const created = service.selected;
+    service.stop();
+
+    const again = await startService(dir);
+    eq(again.service.notes.at(-1), created, 'the newest note stays last after a restart');
+    again.service.stop();
+});
+
+test('service: colour is per note, persisted, and survives rename', async () => {
+    const dir = tempDir();
+    const {service} = await startService(dir);
+    await service.create();
+    eq(service.color, 'yellow', 'default');
+    await service.setColor('green');
+    await service.setColor('not-a-colour');
+    eq(service.color, 'green');
+    await service.rename('Plan');
+    service.stop();
+
+    const again = await startService(dir);
+    eq(again.service.colorOf('Plan'), 'green');
+    eq(await readFile(dir, 'Plan.md'), '', 'the .md file stays plain text');
+    again.service.stop();
 });
 
 test('service: external edit reloads a clean note, not a dirty one', async () => {

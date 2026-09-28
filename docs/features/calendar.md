@@ -2,8 +2,9 @@
 
 Status: **design**, next after Notes. Answered 2026-09-28: all calendars
 enabled in GNOME are shown, with a per-calendar opt-out in the Calendar
-settings tab; the week start follows the locale. Still open: §6.2 (countdown
-to the next event in the collapsed island, proposed as a later step).
+settings tab (for now); the week start follows the locale; the countdown to
+the next event in the collapsed island comes later, as a separate step. No
+questions are open; waiting for `gir1.2-ecal-2.0` and the accounts.
 
 ## 1. Goal
 

@@ -15,6 +15,8 @@ import St from 'gi://St';
 
 import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 
+import {ColorPicker} from './colorPicker.js';
+import {COLOR_IDS} from './colors.js';
 import {FormatBar} from './formatBar.js';
 import {NoteTabs} from './tabs.js';
 
@@ -42,12 +44,22 @@ export class NotesView {
             onTrash: name => service.trash(name),
         });
         this._formatBar = new FormatBar(edit => this._applyEdit(edit));
+        this._colorPicker = new ColorPicker({
+            onPick: color => service.setColor(color),
+            // The swatches take the formatting bar's place while open.
+            onOpenChanged: open => (this._formatBar.actor.visible = !open),
+        });
+        this._tools = new St.BoxLayout({style_class: 'froonty-notes-tools'});
+        this._tools.add_child(this._formatBar.actor);
+        this._tools.add_child(this._colorPicker.swatches);
+        this._tools.add_child(new St.Widget({x_expand: true}));
+        this._tools.add_child(this._colorPicker.button);
         this._buildEditor();
         this._buildEmptyState();
         this._error = new St.Label({style_class: 'froonty-notes-error', visible: false});
 
         this.actor.add_child(this._tabs.actor);
-        this.actor.add_child(this._formatBar.actor);
+        this.actor.add_child(this._tools);
         this.actor.add_child(this._scroll);
         this.actor.add_child(this._empty);
         this.actor.add_child(this._error);
@@ -58,13 +70,16 @@ export class NotesView {
 
     destroy() {
         this._service.disconnect(this._changedId);
+        this._tabs.destroy();
         this.actor.destroy();
     }
 
     // Shown: typing goes straight into the note (Escape still collapses).
     setActive(active) {
-        if (active)
-            this._focusEditor();
+        if (!active)
+            return;
+        this._tabs.relayout();
+        this._focusEditor();
     }
 
     async _create() {
@@ -151,8 +166,12 @@ export class NotesView {
         const {notes, selected, text, error} = this._service;
         const hasNote = selected !== null;
 
-        this._tabs.update(notes, selected);
-        this._formatBar.actor.visible = hasNote;
+        this._tabs.update(notes, selected, name => this._service.colorOf(name));
+        this._tools.visible = hasNote;
+        if (!hasNote)
+            this._colorPicker.setOpen(false);
+        this._colorPicker.setColor(this._service.color);
+        this._setTint(this._service.color);
         this._scroll.visible = hasNote;
         this._empty.visible = !hasNote;
         this._error.text = error ?? '';
@@ -165,6 +184,13 @@ export class NotesView {
             this._entry.text = text;
             this._syncing = false;
         }
+    }
+
+    // The editor surface takes the note's colour (stylesheet.css).
+    _setTint(color) {
+        for (const id of COLOR_IDS)
+            this._scroll.remove_style_class_name(`froonty-note-color-${id}`);
+        this._scroll.add_style_class_name(`froonty-note-color-${color}`);
     }
 
     // Applies a markdown.js edit to the editor text and selection.

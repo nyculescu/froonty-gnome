@@ -15,6 +15,8 @@ import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 
 import {Emitter} from '../../core/emitter.js';
+import {isColor} from './colors.js';
+import * as Meta from './meta.js';
 import * as Names from './names.js';
 import {NotesStore} from './store.js';
 
@@ -36,6 +38,7 @@ export class NotesService extends Emitter {
         this._dataDir = dataDir;
 
         this.notes = [];
+        this._meta = Meta.emptyMeta();
         this.selected = null;
         this.text = '';
         this.error = null;
@@ -93,6 +96,27 @@ export class NotesService extends Emitter {
         this._scheduleSave();
     }
 
+    /** Colour id of a note (meta.js); yellow by default. */
+    colorOf(name) {
+        return Meta.colorOf(this._meta, name);
+    }
+
+    /** Colour id of the selected note. */
+    get color() {
+        return this.colorOf(this.selected);
+    }
+
+    /** Changes the selected note's colour. */
+    setColor(color) {
+        return this._enqueue(async () => {
+            if (this.selected === null || !isColor(color) || color === this.color)
+                return;
+            this._meta = Meta.withColor(this._meta, this.selected, color);
+            await this._saveMeta();
+            this._changed();
+        });
+    }
+
     /** Starts writing pending changes now. @returns {Promise} */
     flush() {
         this._cancelSave();
@@ -119,7 +143,9 @@ export class NotesService extends Emitter {
             const now = GLib.DateTime.new_now_local();
             const name = Names.uniqueName(Names.timestampName(now), this.notes);
             await this._store.create(name);
+            this._meta = Meta.withNote(this._meta, name);
             this._setNotes([...this.notes, name]);
+            await this._saveMeta();
             await this._load(name);
         });
     }
@@ -138,7 +164,9 @@ export class NotesService extends Emitter {
                 await this.flush();
                 await this._store.rename(old, name);
                 this.selected = name;
+                this._meta = Meta.withRename(this._meta, old, name);
                 this._setNotes(this.notes.map(n => n === old ? name : n));
+                await this._saveMeta();
                 this._remember(name);
                 this._changed();
             }
@@ -158,7 +186,9 @@ export class NotesService extends Emitter {
             await this._store.trash(name);
 
             const index = this.notes.indexOf(name);
+            this._meta = Meta.withoutNote(this._meta, name);
             this._setNotes(this.notes.filter(n => n !== name));
+            await this._saveMeta();
             if (name === this.selected) {
                 const next = this.notes[Math.min(index, this.notes.length - 1)];
                 if (next)
@@ -202,8 +232,14 @@ export class NotesService extends Emitter {
     // Re-reads the list, and the selected note unless it has unsaved edits
     // (external changes must not be reloaded under the user's cursor).
     async _refresh() {
-        const names = await this._store.list(this._cancellable);
+        let names = await this._store.list(this._cancellable);
+        this._meta = await this._store.readMeta(this._cancellable);
         this._setNotes(names);
+        names = this.notes; // display order
+        // Notes created by another program join the order where they are first
+        // seen (the end), once; the save's own folder event finds none left.
+        if (names.some(n => !this._meta.order.includes(n)))
+            await this._saveMeta();
 
         if (this.selected !== null && names.includes(this.selected)) {
             if (!this._dirty)
@@ -240,8 +276,15 @@ export class NotesService extends Emitter {
         this._changed();
     }
 
+    // Display order: creation order from the metadata (meta.js).
     _setNotes(names) {
-        this.notes = [...new Set(names)].sort(Names.compareNames);
+        this.notes = Meta.orderedNames([...new Set(names)], this._meta);
+    }
+
+    // Only on create, rename, trash and colour changes; never per keystroke.
+    async _saveMeta() {
+        this._meta = Meta.snapshot(this._meta, this.notes);
+        await this._store.writeMeta(this._meta);
     }
 
     _remember(name) {

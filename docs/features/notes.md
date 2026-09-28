@@ -5,11 +5,32 @@ Status: **implemented (v1)**. Decisions made 2026-09-28:
 - v1 includes a Markdown **formatting bar**: bold, italic, strikethrough,
   heading, bulleted, numbered and check lists, code, and link. There is no
   rendered preview yet.
-- New notes are named with a **timestamp**, `2026-09-28 15.40`. It uses `.`,
-  not `:`, which is invalid on exFAT/NTFS. A second note in the same minute
-  gets ` (2)`.
-- There is **no cap** on the number of notes; the tabs scroll. "+" stays
-  outside the scrolling row.
+- New notes are named **`dd.mm.yy hh.mm`**, e.g. `28.09.26 16.03`. It uses
+  `.`, not `:`, which is invalid on exFAT/NTFS. A second note in the same
+  minute gets ` (2)`. These names do not sort chronologically, so tabs keep
+  **creation order** instead.
+- There is **no cap** on the number of notes. **At most 5 tabs** are
+  visible, all of equal width (one fifth of the row). The row scrolls with
+  the wheel or touchpad, shows an edge fade, and keeps the selected tab in
+  view. "+" stays outside the scrolling row.
+- Each note has a **colour**, like Windows Sticky Notes: yellow (default),
+  green, pink, purple, blue, gray or charcoal. It tints the editor and the
+  tab dot, and is chosen with the round colour button.
+- **Order and colours** are kept in a hidden `.froonty.json` in the notes
+  folder, so the `.md` files stay plain Markdown. A note restored from the
+  Trash comes back yellow.
+
+**Next (on hold, agreed 2026-09-28): rendered Markdown.** The formatting
+bar only pays off if the note *shows* formatting as Sticky Notes does, with
+bold looking bold and headings larger. Proposed approach, not yet validated:
+
+- Style the editable `Clutter.Text` with Pango attributes computed from the
+  Markdown source.
+- Hide the markers (`**`, `#`, `_`) except on the line being edited, as
+  Obsidian's live preview does.
+- Files stay plain Markdown.
+- First step: a prototype confirming that `Clutter.Text` honours
+  attributes while editable.
 
 ## 1. Goal
 

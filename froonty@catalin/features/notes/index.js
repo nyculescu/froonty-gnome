@@ -14,7 +14,8 @@ export default {
     },
     icon: 'document-edit-symbolic',
     enabledKey: 'notes-enabled',
-    hubSize: {width: 560, height: 320},
+    // Wide enough for five tabs showing a full "dd.mm.yy hh.mm" name.
+    hubSize: {width: 760, height: 340},
     createService: ctx => new NotesService(ctx),
     createView: (ctx, service) => new NotesView(ctx, service),
 };

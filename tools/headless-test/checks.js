@@ -129,7 +129,7 @@ function pillCenter() {
 
 async function screenshotTop(outDir, name) {
     const monitor = Main.layoutManager.primaryMonitor;
-    const width = 640, height = 240;
+    const width = 840, height = 260;
     const x = monitor.x + Math.round((monitor.width - width) / 2);
     const path = GLib.build_filenamev([outDir, `${name}.png`]);
     const stream = Gio.File.new_for_path(path)
@@ -475,7 +475,8 @@ function noteFiles() {
     const enumerator = notesFolder().enumerate_children('standard::name', 0, null);
     for (let info; (info = enumerator.next_file(null));)
         names.push(info.get_name());
-    return names.sort();
+    // Notes only: .froonty.json (order and colours) sits next to them.
+    return names.filter(n => n.endsWith('.md')).sort();
 }
 
 function readNote(file) {
@@ -492,8 +493,8 @@ async function testNotes(outDir) {
 
     const view = hub()._entries.get('notes')?.view;
     const [w, h] = pill().get_transformed_size();
-    check('notes: tab opens and resizes the island to 560x320',
-        view && w === 560 * scale() && h === 320 * scale(), `${w}x${h}`);
+    check('notes: tab opens and resizes the island to 760x340',
+        view && w === 760 * scale() && h === 340 * scale(), `${w}x${h}`);
     check('notes: empty folder shows the empty state',
         view._empty.visible && !view._scroll.visible);
     await screenshotTop(outDir, 'notes-empty');
@@ -502,7 +503,7 @@ async function testNotes(outDir) {
     await sleep(2 * SETTLE_MS);
     const files = noteFiles();
     check('notes: "New note" creates a timestamped .md file',
-        files.length === 1 && /^\d{4}-\d\d-\d\d \d\d\.\d\d\.md$/.test(files[0]), files.join(','));
+        files.length === 1 && /^\d\d\.\d\d\.\d\d \d\d\.\d\d\.md$/.test(files[0]), files.join(","));
 
     await clickActor(view._entry);
     await typeText('hello world');
@@ -567,7 +568,8 @@ async function testNotes(outDir) {
         view._entry.text === 'edited elsewhere', view._entry.text);
 
     // × twice moves the selected note to the (isolated) Trash.
-    const close = view._tabs._box.get_child_at_index(0).child.get_child_at_index(1);
+    // Tab content: [colour dot, name, ×].
+    const close = view._tabs._box.get_child_at_index(0).child.get_child_at_index(2);
     await clickActor(close);
     await clickActor(close);
     await sleep(2 * SETTLE_MS);
@@ -582,6 +584,76 @@ async function testNotes(outDir) {
         !hub()._entries.has('notes') && service._monitor === null &&
         cw === settings().get_int('expanded-width') * scale(), `width=${cw}`);
     settings().reset('notes-enabled');
+    island().collapse();
+    await sleep(animationWait());
+}
+
+async function testNotesTabsAndColors(outDir) {
+    const hub = () => island()._hub;
+    island().expand();
+    await sleep(animationWait());
+    await clickActor(tabButton('notes'));
+    await sleep(animationWait());
+    const view = hub()._entries.get('notes').view;
+    const service = hub()._entries.get('notes').service;
+
+    // ---- colour
+    check('colour: a new note is yellow',
+        service.color === 'yellow' && view._scroll.has_style_class_name('froonty-note-color-yellow'));
+    await clickActor(view._colorPicker.button);
+    await sleep(SETTLE_MS);
+    check('colour: the colour button swaps the formatting bar for swatches',
+        view._colorPicker.swatches.visible && !view._formatBar.actor.visible);
+    await screenshotTop(outDir, 'notes-color-swatches');
+    await clickActor(view._colorPicker.swatches.get_child_at_index(1)); // green
+    await sleep(2 * SETTLE_MS);
+    const [, metaBytes] = notesFolder().get_child('.froonty.json').load_contents(null);
+    const meta = JSON.parse(new TextDecoder().decode(metaBytes));
+    check('colour: picking green tints the editor and closes the swatches',
+        view._scroll.has_style_class_name('froonty-note-color-green') &&
+        !view._scroll.has_style_class_name('froonty-note-color-yellow') &&
+        !view._colorPicker.swatches.visible && view._formatBar.actor.visible);
+    check('colour: saved in .froonty.json, not in the .md file',
+        meta.colors[service.selected] === 'green' &&
+        !readNote(`${service.selected}.md`).includes('green'), JSON.stringify(meta));
+    const selectedTab = view._tabs._box.get_children().find(t => t.checked);
+    check('colour: the tab dot shows the colour',
+        selectedTab.child.get_child_at_index(0).has_style_class_name('froonty-note-color-green'));
+    await screenshotTop(outDir, 'notes-green');
+
+    // ---- tab strip: 8 notes, 5 visible, equal widths, scrollable
+    while (service.notes.length < 8)
+        // eslint-disable-next-line no-await-in-loop
+        await service.create();
+    await sleep(3 * SETTLE_MS);
+    const tabs = view._tabs._box.get_children();
+    const scroll = view._tabs._scroll;
+    const widths = tabs.map(t => t.get_transformed_size()[0]);
+    const [scrollW] = scroll.get_transformed_size();
+    const spacing = view._tabs._box.get_theme_node().get_length('spacing');
+    const slot = Math.floor((scrollW - spacing * 4) / 5);
+    check('tabs: 8 notes give 8 tabs of equal width, 5 per row',
+        tabs.length === 8 && widths.every(w => Math.abs(w - slot) <= 1),
+        `widths=${widths.join(',')} slot=${slot} row=${scrollW}`);
+
+    const adjustment = scroll.hadjustment;
+    const last = boxOf(tabs.at(-1));
+    const row = boxOf(scroll);
+    check('tabs: the selected (newest) tab is scrolled into view',
+        tabs.at(-1).checked && last.x1 >= row.x1 - 1 && last.x2 <= row.x2 + 1,
+        `tab=[${last.x1},${last.x2}] row=[${row.x1},${row.x2}] value=${adjustment.value}`);
+
+    // Wheel over the strip scrolls it horizontally.
+    const before = adjustment.value;
+    const [cx, cy] = [(row.x1 + row.x2) / 2, (row.y1 + row.y2) / 2];
+    pointer.notify_absolute_motion(now(), cx, cy);
+    await sleep(50);
+    pointer.notify_discrete_scroll(now(), Clutter.ScrollDirection.UP, Clutter.ScrollSource.WHEEL);
+    await sleep(SETTLE_MS);
+    check('tabs: the mouse wheel scrolls the tab row',
+        adjustment.value < before, `${before} -> ${adjustment.value}`);
+    await screenshotTop(outDir, 'notes-many-tabs');
+
     island().collapse();
     await sleep(animationWait());
 }
@@ -856,6 +928,7 @@ export async function runAll(outDir) {
         await testSettingsButton(outDir);
         await testHub(outDir);
         await testNotes(outDir);
+        await testNotesTabsAndColors(outDir);
         await testSettings(outDir);
         await testCoversPanelClock(outDir);
         await testMonitors();

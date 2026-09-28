@@ -9,9 +9,9 @@ import * as Md from '../../froonty@catalin/features/notes/markdown.js';
 
 // ---- names
 
-test('timestamp name has no ":" and sorts chronologically', () => {
+test('timestamp name is dd.mm.yy hh.mm, without ":"', () => {
     const dt = GLib.DateTime.new_local(2026, 9, 8, 7, 5, 0);
-    eq(Names.timestampName(dt), '2026-09-08 07.05');
+    eq(Names.timestampName(dt), '08.09.26 07.05');
 });
 
 test('uniqueName appends (2), (3), ignoring case', () => {
