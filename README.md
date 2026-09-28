@@ -24,14 +24,19 @@ froonty@catalin/          the extension (this directory is what gets installed)
 ├── prefs.js              libadwaita preferences
 ├── stylesheet.css
 ├── schemas/              GSettings schema
-├── ui/island.js          actors, positioning, expand/collapse, grab
-├── ui/collapsedView.js
-├── ui/expandedView.js
+├── ui/island.js          the pill: actors, expand/collapse, grab
+├── ui/geometry.js        pill sizes and position (covers the top bar clock)
+├── ui/collapsedView.js   collapsed content (time, optional date)
+├── ui/hub.js             expanded content: icon tab row, feature host, ⚙️
+├── features/registry.js  every hub feature, in tab order
+├── features/clock/       the Clock tab (first feature)
 ├── services/clock.js     GnomeDesktop.WallClock-based clock (start/stop)
 ├── shell/dateMenu.js     adapter: the only place touching Shell internals
 └── shell/settingsWindow.js  opens or raises the settings window
 tools/headless-test/      isolated headless GNOME Shell test harness
-docs/DESIGN.md
+docs/DESIGN.md            GNOME 46 API analysis, private APIs, risks
+docs/FEATURES.md          how features are built (rules and process)
+docs/features/            one design note per feature
 ```
 
 ## Develop

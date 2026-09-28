@@ -311,7 +311,7 @@ async function testSettings(outDir) {
     await sleep(SETTLE_MS);
     check('collapsed-width applies live',
         pill().get_transformed_size()[0] ===
-        Math.max(220 * scale(), island()._coverSize().width));
+        Math.max(220 * scale(), island()._geometry._coverSize().width));
     s.reset('collapsed-width');
 
     s.set_boolean('show-date', true);
@@ -351,6 +351,101 @@ async function testSettings(outDir) {
     check('island-enabled=true brings it back', strip() !== null && pill().mapped);
 }
 
+// ---------------------------------------------------------------- hub
+
+// A fake feature that records its lifecycle, used to test the hub host
+// before real multi-tab features exist. It is added to the extension's
+// own registry module (same URL, so the same module instance).
+function makeFakeFeature(log) {
+    return {
+        id: 'test-fake',
+        title: 'Fake',
+        icon: 'dialog-information-symbolic',
+        enabledKey: null,
+        hubSize: {width: 420, height: 220},
+        createService: () => ({
+            start: () => log.push('start'),
+            stop: () => log.push('stop'),
+            setActive: active => log.push(active ? 'active' : 'inactive'),
+        }),
+        createView: () => {
+            log.push('view');
+            const actor = new St.Label({text: 'fake feature'});
+            return {actor, destroy: () => {
+                log.push('destroy');
+                actor.destroy();
+            }};
+        },
+    };
+}
+
+const tabButton = id => island()._hub._entries.get(id)?.button;
+
+async function clickActor(actor) {
+    const b = boxOf(actor);
+    await clickAt((b.x1 + b.x2) / 2, (b.y1 + b.y2) / 2);
+}
+
+async function testHub(outDir) {
+    const hub = island()._hub;
+    check('hub: single feature hides the tab row', !hub._tabBar.visible);
+    check('hub: clock is the active tab', hub.activeFeature?.id === 'clock');
+
+    const {FEATURES} = await import(`file://${extension().path}/features/registry.js`);
+    const log = [];
+    FEATURES.push(makeFakeFeature(log));
+    try {
+        await setExtensionEnabled(false);
+        await setExtensionEnabled(true);
+        check('hub: two features show the tab row',
+            island()._hub._tabBar.visible && island()._hub._tabBar.get_n_children() === 2);
+        check('hub: a feature is not created before its tab is selected',
+            log.length === 0, log.join(','));
+
+        island().expand();
+        await sleep(animationWait());
+        await clickActor(tabButton('test-fake'));
+        await sleep(animationWait());
+        const [w, h] = pill().get_transformed_size();
+        check('hub: selecting a tab creates, starts and activates it',
+            log.join(',') === 'start,view,active', log.join(','));
+        check('hub: island resizes to the feature\'s hubSize',
+            w === 420 * scale() && h === 220 * scale(), `${w}x${h}`);
+        check('hub: selected tab is remembered',
+            settings().get_string('hub-last-tab') === 'test-fake');
+        await screenshotTop(outDir, 'hub-two-tabs');
+
+        island().collapse();
+        await sleep(animationWait());
+        island().expand();
+        await sleep(animationWait());
+        check('hub: collapse/expand deactivates and reactivates the service',
+            log.join(',') === 'start,view,active,inactive,active', log.join(','));
+
+        await clickActor(tabButton('clock'));
+        await sleep(animationWait());
+        const [cw] = pill().get_transformed_size();
+        check('hub: switching away deactivates the service and resizes back',
+            log.at(-1) === 'inactive' && cw === settings().get_int('expanded-width') * scale(),
+            `${log.join(',')} width=${cw}`);
+
+        await clickActor(tabButton('test-fake'));
+        await sleep(animationWait());
+        island().collapse();
+        await sleep(animationWait());
+        log.length = 0;
+        await setExtensionEnabled(false);
+        check('hub: disable destroys the view and stops the service',
+            log.includes('destroy') && log.includes('stop'), log.join(','));
+    } finally {
+        FEATURES.splice(FEATURES.findIndex(f => f.id === 'test-fake'), 1);
+        await setExtensionEnabled(false);
+        await setExtensionEnabled(true);
+    }
+    check('hub: a remembered tab that no longer exists falls back to the first',
+        island()._hub.activeFeature?.id === 'clock' && !island()._hub._tabBar.visible);
+}
+
 // ---------------------------------------------------------------- settings
 
 const settingsWindows = () => global.display.list_all_windows().filter(w =>
@@ -379,7 +474,7 @@ async function testSettingsButton(outDir) {
     island().expand();
     await sleep(animationWait());
 
-    const gear = island()._expandedView.settingsButton;
+    const gear = island()._hub.settingsButton;
     const g = boxOf(gear);
     const p = boxOf(pill());
     const [gx, gy] = [(g.x1 + g.x2) / 2, (g.y1 + g.y2) / 2];
@@ -618,6 +713,7 @@ export async function runAll(outDir) {
         await testPointer(outDir);
         await testKeyboard();
         await testSettingsButton(outDir);
+        await testHub(outDir);
         await testSettings(outDir);
         await testCoversPanelClock(outDir);
         await testMonitors();

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // The island: a pill at the top center of the primary monitor that expands
-// into a small hub on click, keyboard shortcut or Ctrl+Alt+Tab.
+// into the hub on click, keyboard shortcut or Ctrl+Alt+Tab.
 //
 // Actor tree:
 //
@@ -9,7 +9,7 @@
 //    │      modal grab. Does not take input, so the top bar below it keeps
 //    │      working.
 //    └ pill St.Button: background, click and Enter/Space activation.
-//       └ content  BinLayout stacking the collapsed and expanded views.
+//       └ content  BinLayout stacking the collapsed view and the hub.
 
 import Atk from 'gi://Atk';
 import Clutter from 'gi://Clutter';
@@ -20,18 +20,15 @@ import * as GrabHelper from 'resource:///org/gnome/shell/ui/grabHelper.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 
+import {FEATURES} from '../features/registry.js';
+import {crossfade, showOnly} from './animations.js';
 import {CollapsedView} from './collapsedView.js';
-import {ExpandedView} from './expandedView.js';
+import {IslandGeometry} from './geometry.js';
+import {Hub} from './hub.js';
 
 const EXPAND_MODE = Clutter.AnimationMode.EASE_OUT_BACK;
 const COLLAPSE_MODE = Clutter.AnimationMode.EASE_OUT_QUAD;
-const FADE_MODE = Clutter.AnimationMode.EASE_OUT_QUAD;
-
-// Content cross-fade, as fractions of the resize duration: the outgoing view
-// fades out during the first half, the incoming one fades in during the
-// second half, when the pill is already close to its final size.
-const FADE_OUT_FRACTION = 0.5;
-const FADE_IN_DELAY_FRACTION = 0.5;
+const RESIZE_MODE = Clutter.AnimationMode.EASE_OUT_QUAD;
 
 const GEOMETRY_KEYS = [
     'collapsed-width',
@@ -57,6 +54,7 @@ export class Island {
         this._openSettingsAction = openSettings;
         this._expanded = false;
         this._themeContext = St.ThemeContext.get_for_stage(global.stage);
+        this._geometry = new IslandGeometry(settings, panelClock, this._themeContext);
 
         this._buildActors();
         this._addToChrome();
@@ -93,6 +91,11 @@ export class Island {
         this._themeContext.disconnectObject(this);
 
         Main.ctrlAltTabManager.removeGroup(this._pill);
+
+        // The hub stops feature services and destroys their views.
+        this._hub.disconnectObject(this);
+        this._hub.destroy();
+        this._hub = null;
 
         // Destroying the strip also destroys the pill; LayoutManager
         // untracks both chrome actors from their 'destroy' signals.
@@ -179,11 +182,11 @@ export class Island {
         this._pill.set_child(content);
 
         this._collapsedView = new CollapsedView();
-        this._expandedView = new ExpandedView({
+        this._hub = new Hub({settings: this._settings, clock: this._clock}, FEATURES, {
             openSettings: () => this._openSettings(),
         });
         content.add_child(this._collapsedView.actor);
-        content.add_child(this._expandedView.actor);
+        content.add_child(this._hub.actor);
         this._showViewImmediately();
     }
 
@@ -217,6 +220,7 @@ export class Island {
         this._clock.connectObject('changed', () => this._updateContent(), this);
         this._panelClock.connectObject('cover-changed',
             () => this._onCoverChanged(), this);
+        this._hub.connectObject('size-changed', () => this._onHubSizeChanged(), this);
 
         for (const key of GEOMETRY_KEYS) {
             this._settings.connectObject(`changed::${key}`,
@@ -236,10 +240,14 @@ export class Island {
     }
 
     _updateContent() {
-        const snapshot = this._clock.snapshot();
-        this._collapsedView.update(snapshot);
-        this._expandedView.update(snapshot);
+        this._collapsedView.update(this._clock.snapshot());
         this._pill.accessible_name = this._collapsedView.accessibleText;
+    }
+
+    _targetSize(expanded) {
+        return expanded
+            ? this._geometry.expandedSize(this._hub.activeFeature)
+            : this._geometry.collapsedSize();
     }
 
     // Places the strip on the primary monitor and snaps the pill to the
@@ -249,7 +257,7 @@ export class Island {
         if (!monitor)
             return;
 
-        this._strip.set_position(monitor.x, monitor.y + this._topOffset());
+        this._strip.set_position(monitor.x, monitor.y + this._geometry.topOffset(monitor));
         this._strip.width = monitor.width;
 
         const radius = this._settings.get_int('corner-radius');
@@ -264,59 +272,6 @@ export class Island {
         this._showViewImmediately();
     }
 
-    // Offset of the strip (the pill's top edge) from the monitor top. The
-    // collapsed pill is vertically centered on the concealed clock button,
-    // or on the top bar when the clock is visible; the expanded island grows
-    // downward from the same top edge.
-    _topOffset() {
-        const bounds = this._panelClock.coverBounds;
-        const monitor = Main.layoutManager.primaryMonitor;
-        const centerY = bounds
-            ? (bounds.y1 + bounds.y2) / 2 - monitor.y
-            : Main.layoutManager.panelBox.height / 2;
-        const {height} = this._targetSize(false);
-        return Math.max(0, Math.floor(centerY - height / 2));
-    }
-
-    // Settings are in logical pixels; actor sizes are in stage pixels.
-    // (On Wayland the scale factor is 1 and stage pixels are logical.)
-    //
-    // The concealed top bar clock is transparent but still clickable, so the
-    // collapsed pill always covers it completely: collapsed-width and
-    // collapsed-height are minimums.
-    _targetSize(expanded) {
-        const prefix = expanded ? 'expanded' : 'collapsed';
-        const scale = this._themeContext.scale_factor;
-        let width = this._settings.get_int(`${prefix}-width`) * scale;
-        let height = this._settings.get_int(`${prefix}-height`) * scale;
-        if (!expanded) {
-            const cover = this._coverSize();
-            width = Math.max(width, cover.width);
-            height = Math.max(height, cover.height);
-        }
-        return {width, height};
-    }
-
-    // The pill is centered on the monitor, but the panel centers the clock
-    // with its own rounding and shifts it when the left box is crowded. So
-    // the pill must reach the clock's farther edge on both sides of the
-    // monitor center. Vertically the pill is centered on the clock itself.
-    _coverSize() {
-        const bounds = this._panelClock.coverBounds;
-        const monitor = Main.layoutManager.primaryMonitor;
-        if (!bounds || !monitor)
-            return {width: 0, height: 0};
-
-        const centerX = monitor.x + monitor.width / 2;
-        let width = Math.ceil(2 * Math.max(centerX - bounds.x1, bounds.x2 - centerX));
-        // Same parity as the monitor width keeps the centered pill on whole
-        // pixels, so rounding cannot expose a 1px sliver of the clock.
-        if ((monitor.width - width) % 2 !== 0)
-            width += 1;
-
-        return {width, height: Math.ceil(bounds.y2 - bounds.y1)};
-    }
-
     // The clock button's size and position change with its content (e.g.
     // the unread-notifications dot appearing) and with the panel layout.
     // Only the collapsed geometry depends on it. A running animation is
@@ -328,6 +283,20 @@ export class Island {
             return;
 
         this._syncGeometry();
+    }
+
+    // Switching tabs resizes the expanded island to the new feature's size.
+    _onHubSizeChanged() {
+        if (!this._expanded)
+            return;
+
+        const {width, height} = this._targetSize(true);
+        this._pill.ease({
+            width,
+            height,
+            duration: this._settings.get_int('animation-duration'),
+            mode: RESIZE_MODE,
+        });
     }
 
     _setExpanded(expanded) {
@@ -352,6 +321,7 @@ export class Island {
             this._pill.remove_accessible_state(Atk.StateType.EXPANDED);
         }
 
+        this._hub.setShown(expanded);
         this._animate();
     }
 
@@ -371,41 +341,17 @@ export class Island {
             },
         });
 
-        const [incoming, outgoing] = this._views();
-
-        outgoing.remove_all_transitions();
-        outgoing.ease({
-            opacity: 0,
-            duration: duration * FADE_OUT_FRACTION,
-            mode: FADE_MODE,
-            onComplete: () => outgoing.hide(),
-        });
-
-        incoming.remove_all_transitions();
-        incoming.show();
-        incoming.ease({
-            opacity: 255,
-            delay: duration * FADE_IN_DELAY_FRACTION,
-            duration: duration * (1 - FADE_IN_DELAY_FRACTION),
-            mode: FADE_MODE,
-        });
+        crossfade(...this._views(), duration);
     }
 
     _showViewImmediately() {
-        const [visible, hidden] = this._views();
-        for (const actor of [visible, hidden])
-            actor.remove_all_transitions();
-
-        visible.opacity = 255;
-        visible.show();
-        hidden.opacity = 0;
-        hidden.hide();
+        showOnly(...this._views());
     }
 
     /** @returns {Clutter.Actor[]} [view for current state, other view] */
     _views() {
         const collapsed = this._collapsedView.actor;
-        const expanded = this._expandedView.actor;
-        return this._expanded ? [expanded, collapsed] : [collapsed, expanded];
+        const hub = this._hub.actor;
+        return this._expanded ? [hub, collapsed] : [collapsed, hub];
     }
 }

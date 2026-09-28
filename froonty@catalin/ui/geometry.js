@@ -1,0 +1,77 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Island geometry: sizes in stage pixels and the offset from the monitor
+// top. Pure calculations over settings, the concealed panel clock and the
+// monitor; no actors are touched here.
+//
+// Settings and feature sizes are in logical pixels; actor sizes are in stage
+// pixels. (On Wayland the scale factor is 1 and stage pixels are logical.)
+
+import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+
+export class IslandGeometry {
+    /**
+     * @param {Gio.Settings} settings
+     * @param {PanelClock} panelClock
+     * @param {St.ThemeContext} themeContext
+     */
+    constructor(settings, panelClock, themeContext) {
+        this._settings = settings;
+        this._panelClock = panelClock;
+        this._themeContext = themeContext;
+    }
+
+    // The concealed top bar clock is transparent but still clickable, so the
+    // collapsed pill always covers it completely: collapsed-width and
+    // collapsed-height are minimums.
+    collapsedSize() {
+        const scale = this._themeContext.scale_factor;
+        const cover = this._coverSize();
+        return {
+            width: Math.max(this._settings.get_int('collapsed-width') * scale, cover.width),
+            height: Math.max(this._settings.get_int('collapsed-height') * scale, cover.height),
+        };
+    }
+
+    /** @param {?object} feature active hub feature; its hubSize wins */
+    expandedSize(feature) {
+        const scale = this._themeContext.scale_factor;
+        const size = feature?.hubSize;
+        return {
+            width: (size?.width ?? this._settings.get_int('expanded-width')) * scale,
+            height: (size?.height ?? this._settings.get_int('expanded-height')) * scale,
+        };
+    }
+
+    // Offset of the pill's top edge from the monitor top. The collapsed pill
+    // is vertically centered on the concealed clock button, or on the top
+    // bar when the clock is visible; the expanded island grows downward from
+    // the same top edge.
+    topOffset(monitor) {
+        const bounds = this._panelClock.coverBounds;
+        const centerY = bounds
+            ? (bounds.y1 + bounds.y2) / 2 - monitor.y
+            : Main.layoutManager.panelBox.height / 2;
+        const {height} = this.collapsedSize();
+        return Math.max(0, Math.floor(centerY - height / 2));
+    }
+
+    // The pill is centered on the monitor, but the panel centers the clock
+    // with its own rounding and shifts it when the left box is crowded. So
+    // the pill must reach the clock's farther edge on both sides of the
+    // monitor center. Vertically the pill is centered on the clock itself.
+    _coverSize() {
+        const bounds = this._panelClock.coverBounds;
+        const monitor = Main.layoutManager.primaryMonitor;
+        if (!bounds || !monitor)
+            return {width: 0, height: 0};
+
+        const centerX = monitor.x + monitor.width / 2;
+        let width = Math.ceil(2 * Math.max(centerX - bounds.x1, bounds.x2 - centerX));
+        // Same parity as the monitor width keeps the centered pill on whole
+        // pixels, so rounding cannot expose a 1px sliver of the clock.
+        if ((monitor.width - width) % 2 !== 0)
+            width += 1;
+
+        return {width, height: Math.ceil(bounds.y2 - bounds.y1)};
+    }
+}

@@ -19,6 +19,13 @@
       <summary>Keyboard shortcut to expand or collapse the island</summary>
     </key>
 
+    <!-- Hub -->
+    <key name="hub-last-tab" type="s">
+      <default>'clock'</default>
+      <summary>Hub tab selected last</summary>
+      <description>The feature id shown when the island expands (see features/registry.js).</description>
+    </key>
+
     <!-- Clock -->
     <key name="show-date" type="b">
       <default>false</default>
