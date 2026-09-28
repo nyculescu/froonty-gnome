@@ -493,8 +493,8 @@ async function testNotes(outDir) {
 
     const view = hub()._entries.get('notes')?.view;
     const [w, h] = pill().get_transformed_size();
-    check('notes: tab opens and resizes the island to 760x340',
-        view && w === 760 * scale() && h === 340 * scale(), `${w}x${h}`);
+    check('notes: tab opens and resizes the island to 570x255',
+        view && w === 570 * scale() && h === 255 * scale(), `${w}x${h}`);
     check('notes: empty folder shows the empty state',
         view._empty.visible && !view._scroll.visible);
     await screenshotTop(outDir, 'notes-empty');
@@ -621,7 +621,7 @@ async function testNotesTabsAndColors(outDir) {
         selectedTab.child.get_child_at_index(0).has_style_class_name('froonty-note-color-green'));
     await screenshotTop(outDir, 'notes-green');
 
-    // ---- tab strip: 8 notes, 5 visible, equal widths, scrollable
+    // ---- tab strip: 8 notes, as many visible as fit a full name (2..5)
     while (service.notes.length < 8)
         // eslint-disable-next-line no-await-in-loop
         await service.create();
@@ -631,10 +631,14 @@ async function testNotesTabsAndColors(outDir) {
     const widths = tabs.map(t => t.get_transformed_size()[0]);
     const [scrollW] = scroll.get_transformed_size();
     const spacing = view._tabs._box.get_theme_node().get_length('spacing');
-    const slot = Math.floor((scrollW - spacing * 4) / 5);
-    check('tabs: 8 notes give 8 tabs of equal width, 5 per row',
-        tabs.length === 8 && widths.every(w => Math.abs(w - slot) <= 1),
-        `widths=${widths.join(',')} slot=${slot} row=${scrollW}`);
+    const visible = view._tabs._visible;
+    const slot = Math.floor((scrollW - spacing * (visible - 1)) / visible);
+    const ellipsized = tabs.filter(t =>
+        t.child.get_child_at_index(1).clutter_text.get_layout().is_ellipsized());
+    check('tabs: 8 notes give 8 equal tabs, 2..5 visible, no name cut off',
+        tabs.length === 8 && visible >= 2 && visible <= 5 &&
+        widths.every(w => Math.abs(w - slot) <= 1) && ellipsized.length === 0,
+        `visible=${visible} widths=${widths.join(',')} slot=${slot} row=${scrollW} cut=${ellipsized.length}`);
 
     const adjustment = scroll.hadjustment;
     const last = boxOf(tabs.at(-1));
@@ -653,6 +657,50 @@ async function testNotesTabsAndColors(outDir) {
     check('tabs: the mouse wheel scrolls the tab row',
         adjustment.value < before, `${before} -> ${adjustment.value}`);
     await screenshotTop(outDir, 'notes-many-tabs');
+
+    // Middle-click an unselected tab: that note goes to the Trash at once.
+    const inRow = t => {
+        const b = boxOf(t);
+        const r = boxOf(view._tabs._scroll);
+        return b.x1 >= r.x1 - 1 && b.x2 <= r.x2 + 1;
+    };
+    const victim = view._tabs._box.get_children().find(t => !t.checked && inRow(t));
+    const victimName = victim.accessible_name;
+    const selectedBefore = service.selected;
+    const vb = boxOf(victim);
+    pointer.notify_absolute_motion(now(), (vb.x1 + vb.x2) / 2, (vb.y1 + vb.y2) / 2);
+    await sleep(50);
+    pointer.notify_button(now(), Clutter.BUTTON_MIDDLE, Clutter.ButtonState.PRESSED);
+    await sleep(30);
+    pointer.notify_button(now(), Clutter.BUTTON_MIDDLE, Clutter.ButtonState.RELEASED);
+    await sleep(2 * SETTLE_MS);
+    check('tabs: middle-click trashes that note and keeps the selection',
+        !noteFiles().includes(`${victimName}.md`) && service.notes.length === 7 &&
+        service.selected === selectedBefore,
+        `${victimName} files=${noteFiles().length} selected=${service.selected}`);
+
+    // Long titles are cut and shown whole in a bubble while hovered.
+    const hoverTab = async tab => {
+        const b = boxOf(tab);
+        pointer.notify_absolute_motion(now(), (b.x1 + b.x2) / 2, (b.y1 + b.y2) / 2);
+        await sleep(SETTLE_MS);
+    };
+    const tooltip = view._tabs.tooltip;
+    await hoverTab(view._tabs._box.get_children().find(t => t.checked));
+    check('tabs: a 14-character name is not cut and shows no bubble', !tooltip.visible);
+    await service.rename('Weekly planning and shopping list');
+    await sleep(2 * SETTLE_MS);
+    const longTab = view._tabs._box.get_children().find(t => t.checked);
+    const longLabel = longTab.child.get_child_at_index(1);
+    await hoverTab(longTab);
+    check('tabs: a long name is cut and shown whole in a bubble on hover',
+        longLabel.clutter_text.get_layout().is_ellipsized() && tooltip.visible &&
+        tooltip.text === 'Weekly planning and shopping list', `visible=${tooltip.visible}`);
+    await screenshotTop(outDir, 'notes-tooltip');
+    const e = boxOf(view._scroll);
+    pointer.notify_absolute_motion(now(), (e.x1 + e.x2) / 2, (e.y1 + e.y2) / 2);
+    await sleep(SETTLE_MS);
+    check('tabs: the bubble hides when the pointer leaves', !tooltip.visible);
 
     island().collapse();
     await sleep(animationWait());

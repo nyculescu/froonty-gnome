@@ -293,3 +293,19 @@
 .froonty-color-option:checked {
     background-color: rgba(255, 255, 255, 0.18);
 }
+
+/* Tab titles: room for about 14 characters (a full "dd.mm.yy hh.mm");
+   longer titles are cut with "…" and shown whole in the bubble below. */
+.froonty-note-tab-label {
+    max-width: 7.6em;
+}
+
+.froonty-note-tooltip {
+    margin-top: 4px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 0.8em;
+    color: #1f1f1f;
+    background-color: #fff3a8;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
+}

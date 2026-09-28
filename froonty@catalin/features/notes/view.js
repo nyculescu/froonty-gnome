@@ -24,12 +24,22 @@ export class NotesView {
     constructor(_ctx, service) {
         this._service = service;
 
-        this.actor = new St.BoxLayout({
+        // Content, plus an overlay layer (fixed positions, click-through) for
+        // the tab name bubble.
+        this._content = new St.BoxLayout({
             style_class: 'froonty-notes',
             vertical: true,
             x_expand: true,
             y_expand: true,
         });
+        const overlay = new St.Widget({x_expand: true, y_expand: true});
+        this.actor = new St.Widget({
+            layout_manager: new Clutter.BinLayout(),
+            x_expand: true,
+            y_expand: true,
+        });
+        this.actor.add_child(this._content);
+        this.actor.add_child(overlay);
 
         this._tabs = new NoteTabs({
             onSelect: async name => {
@@ -58,11 +68,12 @@ export class NotesView {
         this._buildEmptyState();
         this._error = new St.Label({style_class: 'froonty-notes-error', visible: false});
 
-        this.actor.add_child(this._tabs.actor);
-        this.actor.add_child(this._tools);
-        this.actor.add_child(this._scroll);
-        this.actor.add_child(this._empty);
-        this.actor.add_child(this._error);
+        this._content.add_child(this._tabs.actor);
+        this._content.add_child(this._tools);
+        this._content.add_child(this._scroll);
+        this._content.add_child(this._empty);
+        this._content.add_child(this._error);
+        overlay.add_child(this._tabs.tooltip);
 
         this._changedId = service.connect('changed', () => this._sync());
         this._sync();

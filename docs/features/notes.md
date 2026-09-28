@@ -9,10 +9,15 @@ Status: **implemented (v1)**. Decisions made 2026-09-28:
   `.`, not `:`, which is invalid on exFAT/NTFS. A second note in the same
   minute gets ` (2)`. These names do not sort chronologically, so tabs keep
   **creation order** instead.
-- There is **no cap** on the number of notes. **At most 5 tabs** are
-  visible, all of equal width (one fifth of the row). The row scrolls with
-  the wheel or touchpad, shows an edge fade, and keeps the selected tab in
-  view. "+" stays outside the scrolling row.
+- There is **no cap** on the number of notes. Tabs are sized for **about
+  14 characters** (a full `dd.mm.yy hh.mm`). Longer titles are cut with "…"
+  and shown whole in a small note-style bubble while hovered.
+- As many equal-width tabs as fit are visible: **at most 5**, at least 2.
+  In the compact 570×255 island that is 3. The row scrolls with the wheel or
+  touchpad, shows an edge fade, and keeps the selected tab in view. "+"
+  stays outside the scrolling row.
+- **Middle-click** on a tab moves that note to the Trash at once, like
+  closing a browser tab (it can be restored from the Trash).
 - Each note has a **colour**, like Windows Sticky Notes: yellow (default),
   green, pink, purple, blue, gray or charcoal. It tints the editor and the
   tab dot, and is chosen with the round colour button.
