@@ -8,7 +8,10 @@ INSTALL_DIR := $(HOME)/.local/share/gnome-shell/extensions/$(UUID)
 GLIB_COMPILE_SCHEMAS ?= /usr/bin/glib-compile-schemas
 GNOME_EXTENSIONS ?= /usr/bin/gnome-extensions
 
-.PHONY: schemas install uninstall pack test log clean
+# Every source folder of the extension (schemas are packed separately).
+SOURCE_DIRS := $(filter-out schemas,$(notdir $(patsubst %/,%,$(wildcard $(SRC)/*/))))
+
+.PHONY: schemas install uninstall pack unit test log clean
 
 schemas: $(SRC)/schemas/gschemas.compiled
 
@@ -28,8 +31,12 @@ uninstall:
 # gnome-extensions 46 segfaults if --out-dir does not exist yet.
 pack: schemas
 	mkdir -p dist
-	$(GNOME_EXTENSIONS) pack --force --extra-source=ui --extra-source=services \
-		--extra-source=shell --out-dir=$(CURDIR)/dist $(SRC)
+	$(GNOME_EXTENSIONS) pack --force $(addprefix --extra-source=,$(SOURCE_DIRS)) \
+		--out-dir=$(CURDIR)/dist $(SRC)
+
+# Plain-gjs unit tests (isolated TMPDIR/XDG_DATA_HOME).
+unit:
+	tools/unit/run.sh
 
 # Isolated headless GNOME Shell 46 run; does not touch the real session.
 test:
