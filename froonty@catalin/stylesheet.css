@@ -102,3 +102,134 @@
 .froonty-clock-date {
     color: rgba(255, 255, 255, 0.8);
 }
+
+/* Notes feature */
+
+.froonty-notes {
+    spacing: 6px;
+}
+
+.froonty-note-tabs {
+    spacing: 4px;
+}
+
+.froonty-note-tab {
+    border-radius: 999px;
+    padding: 3px 5px 3px 11px;
+    font-size: 0.85em;
+    color: rgba(255, 255, 255, 0.7);
+    background-color: rgba(255, 255, 255, 0.05);
+    transition-duration: 150ms;
+}
+
+.froonty-note-tab:hover {
+    color: #ffffff;
+    background-color: rgba(255, 255, 255, 0.09);
+}
+
+.froonty-note-tab:checked {
+    color: #ffffff;
+    background-color: rgba(255, 255, 255, 0.14);
+}
+
+.froonty-note-tab:focus {
+    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.45);
+}
+
+/* The × keeps its space (no width jump) but is only visible on hover and
+   on the selected tab. */
+.froonty-note-tab-close {
+    border-radius: 999px;
+    padding: 2px;
+    margin-left: 4px;
+    color: transparent;
+}
+
+.froonty-note-tab-close StIcon {
+    icon-size: 12px;
+}
+
+.froonty-note-tab:hover .froonty-note-tab-close,
+.froonty-note-tab:checked .froonty-note-tab-close {
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.froonty-note-tab .froonty-note-tab-close:hover {
+    color: #ffffff;
+    background-color: rgba(255, 255, 255, 0.15);
+}
+
+.froonty-note-tab .froonty-note-tab-close.froonty-armed {
+    color: #ffffff;
+    background-color: #e0454c;
+}
+
+.froonty-note-tab-entry,
+.froonty-note-tab-entry:focus {
+    min-width: 140px;
+    padding: 0 4px;
+    border: none;
+    border-radius: 6px;
+    box-shadow: none;
+    color: #ffffff;
+    background-color: rgba(255, 255, 255, 0.12);
+}
+
+.froonty-format-bar {
+    spacing: 1px;
+}
+
+.froonty-format-button {
+    padding: 3px 7px;
+}
+
+.froonty-format-button StIcon {
+    icon-size: 14px;
+}
+
+.froonty-format-button StLabel {
+    font-size: 0.85em;
+    font-weight: bold;
+}
+
+.froonty-notes-scroll {
+    border-radius: 12px;
+    background-color: rgba(255, 255, 255, 0.065);
+}
+
+/* Overrides the theme's StEntry look, including its :focus/:hover rules,
+   which are more specific than a plain class selector. */
+.froonty-notes-editor,
+.froonty-notes-editor:focus,
+.froonty-notes-editor:hover {
+    padding: 8px 10px;
+    border: none;
+    border-radius: 12px;
+    box-shadow: none;
+    background-color: transparent;
+    color: #ffffff;
+    caret-color: #ffffff;
+    selection-background-color: rgba(120, 170, 255, 0.45);
+    selected-color: #ffffff;
+}
+
+.froonty-notes-empty {
+    color: rgba(255, 255, 255, 0.5);
+}
+
+.froonty-notes-new {
+    margin-top: 8px;
+    border-radius: 999px;
+    padding: 4px 14px;
+    background-color: rgba(255, 255, 255, 0.12);
+}
+
+.froonty-notes-new:hover,
+.froonty-notes-new:focus {
+    background-color: rgba(255, 255, 255, 0.2);
+}
+
+.froonty-notes-error {
+    color: #ff8a80;
+    font-size: 0.85em;
+}

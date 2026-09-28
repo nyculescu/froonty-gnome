@@ -4,7 +4,9 @@
 // separate GTK process and cannot load these Shell-side modules).
 
 import clock from './clock/index.js';
+import notes from './notes/index.js';
 
 export const FEATURES = [
     clock,
+    notes,
 ];

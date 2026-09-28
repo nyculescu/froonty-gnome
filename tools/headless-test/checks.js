@@ -279,7 +279,9 @@ async function testPointer(outDir) {
     await sleep(animationWait());
     await clickAt(...pillCenter());
     await sleep(animationWait());
-    check('second click on pill collapses', !island().expanded);
+    check('a click inside the expanded hub does not collapse it', island().expanded);
+    island().collapse();
+    await sleep(animationWait());
 }
 
 async function testKeyboard() {
@@ -388,7 +390,13 @@ async function clickActor(actor) {
 
 async function testHub(outDir) {
     const hub = island()._hub;
-    check('hub: single feature hides the tab row', !hub._tabBar.visible);
+    settings().set_boolean('notes-enabled', false);
+    await sleep(SETTLE_MS);
+    check('hub: a single feature hides the tab row', !hub._tabBar.visible);
+    settings().reset('notes-enabled');
+    await sleep(SETTLE_MS);
+    check('hub: enabling a feature adds its tab',
+        hub._tabBar.visible && hub._tabBar.get_n_children() === 2);
     check('hub: clock is the active tab', hub.activeFeature?.id === 'clock');
 
     const {FEATURES} = await import(`file://${extension().path}/features/registry.js`);
@@ -397,8 +405,8 @@ async function testHub(outDir) {
     try {
         await setExtensionEnabled(false);
         await setExtensionEnabled(true);
-        check('hub: two features show the tab row',
-            island()._hub._tabBar.visible && island()._hub._tabBar.get_n_children() === 2);
+        check('hub: a registered feature adds a tab',
+            island()._hub._tabBar.get_n_children() === 3);
         check('hub: a feature is not created before its tab is selected',
             log.length === 0, log.join(','));
 
@@ -443,7 +451,139 @@ async function testHub(outDir) {
         await setExtensionEnabled(true);
     }
     check('hub: a remembered tab that no longer exists falls back to the first',
-        island()._hub.activeFeature?.id === 'clock' && !island()._hub._tabBar.visible);
+        island()._hub.activeFeature?.id === 'clock');
+}
+
+// ---------------------------------------------------------------- notes
+
+async function typeText(text) {
+    for (const ch of text) {
+        const keyval = Clutter.unicode_to_keysym(ch.codePointAt(0));
+        keyboard.notify_keyval(now(), keyval, Clutter.KeyState.PRESSED);
+        keyboard.notify_keyval(now(), keyval, Clutter.KeyState.RELEASED);
+        // eslint-disable-next-line no-await-in-loop
+        await sleep(15);
+    }
+    await sleep(SETTLE_MS);
+}
+
+const notesFolder = () => Gio.File.new_for_path(GLib.build_filenamev(
+    [GLib.get_user_data_dir(), 'froonty', 'notes']));
+
+function noteFiles() {
+    const names = [];
+    const enumerator = notesFolder().enumerate_children('standard::name', 0, null);
+    for (let info; (info = enumerator.next_file(null));)
+        names.push(info.get_name());
+    return names.sort();
+}
+
+function readNote(file) {
+    const [, bytes] = notesFolder().get_child(file).load_contents(null);
+    return new TextDecoder().decode(bytes);
+}
+
+async function testNotes(outDir) {
+    const hub = () => island()._hub;
+    island().expand();
+    await sleep(animationWait());
+    await clickActor(tabButton('notes'));
+    await sleep(animationWait());
+
+    const view = hub()._entries.get('notes')?.view;
+    const [w, h] = pill().get_transformed_size();
+    check('notes: tab opens and resizes the island to 560x320',
+        view && w === 560 * scale() && h === 320 * scale(), `${w}x${h}`);
+    check('notes: empty folder shows the empty state',
+        view._empty.visible && !view._scroll.visible);
+    await screenshotTop(outDir, 'notes-empty');
+
+    await clickActor(view._empty.get_child_at_index(1));
+    await sleep(2 * SETTLE_MS);
+    const files = noteFiles();
+    check('notes: "New note" creates a timestamped .md file',
+        files.length === 1 && /^\d{4}-\d\d-\d\d \d\d\.\d\d\.md$/.test(files[0]), files.join(','));
+
+    await clickActor(view._entry);
+    await typeText('hello world');
+    check('notes: typing reaches the editor', view._entry.text === 'hello world', view._entry.text);
+    check('notes: nothing is written before the autosave delay', readNote(files[0]) === '');
+    await sleep(1200);
+    check('notes: autosave writes the file', readNote(files[0]) === 'hello world',
+        JSON.stringify(readNote(files[0])));
+
+    view._entry.clutter_text.set_selection(6, 11);
+    await clickActor(view._formatBar.actor.get_child_at_index(0)); // Bold
+    check('notes: Bold wraps the selection', view._entry.text === 'hello **world**',
+        view._entry.text);
+    await pressKeys(Clutter.KEY_End); // the bold word stays selected by design
+    await typeText('!');
+    island().collapse();
+    await sleep(SETTLE_MS);
+    check('notes: collapsing saves immediately',
+        readNote(files[0]) === 'hello **world**!', JSON.stringify(readNote(files[0])));
+
+    island().expand();
+    await sleep(animationWait());
+    check('notes: reopens on the Notes tab with the same note',
+        hub().activeFeature?.id === 'notes' && view._entry.text === 'hello **world**!');
+    check('notes: the editor has the key focus when shown',
+        global.stage.key_focus === view._entry.clutter_text, ``);
+    await clickActor(view._tabs.addButton);
+    await sleep(2 * SETTLE_MS);
+    check('notes: "+" adds a second note and selects it',
+        noteFiles().length === 2 && view._entry.text === '' &&
+        view._tabs._box.get_n_children() === 2);
+    await typeText('second');
+    await screenshotTop(outDir, 'notes-two');
+
+    // Rename the selected (second) note: double-click its tab, type, Enter.
+    const secondTab = view._tabs._box.get_child_at_index(1);
+    const b = boxOf(secondTab);
+    const [tx, ty] = [(b.x1 + b.x2) / 2 - 10, (b.y1 + b.y2) / 2];
+    pointer.notify_absolute_motion(now(), tx, ty);
+    await sleep(50);
+    for (let i = 0; i < 2; i++) {
+        pointer.notify_button(now(), Clutter.BUTTON_PRIMARY, Clutter.ButtonState.PRESSED);
+        pointer.notify_button(now(), Clutter.BUTTON_PRIMARY, Clutter.ButtonState.RELEASED);
+        // eslint-disable-next-line no-await-in-loop
+        await sleep(40);
+    }
+    await sleep(SETTLE_MS);
+    await typeText('plan');
+    await pressKeys(Clutter.KEY_Return);
+    await sleep(2 * SETTLE_MS);
+    check('notes: double-click rename renames the file and keeps the text',
+        noteFiles().includes('plan.md') && readNote('plan.md') === 'second',
+        noteFiles().join(','));
+
+    // An external edit of the clean first note shows up (inotify).
+    const service = hub()._entries.get('notes').service;
+    await service.select(service.notes.find(n => n !== 'plan'));
+    await sleep(SETTLE_MS);
+    notesFolder().get_child(files[0]).replace_contents('edited elsewhere', null, false, 0, null);
+    await sleep(1500);
+    check('notes: an external edit reloads the open note',
+        view._entry.text === 'edited elsewhere', view._entry.text);
+
+    // × twice moves the selected note to the (isolated) Trash.
+    const close = view._tabs._box.get_child_at_index(0).child.get_child_at_index(1);
+    await clickActor(close);
+    await clickActor(close);
+    await sleep(2 * SETTLE_MS);
+    check('notes: × twice moves the note to the Trash and selects the other',
+        noteFiles().join(',') === 'plan.md' && service.selected === 'plan',
+        `${noteFiles().join(',')} selected=${service.selected}`);
+
+    settings().set_boolean('notes-enabled', false);
+    await sleep(animationWait());
+    const [cw] = pill().get_transformed_size();
+    check('notes: disabling removes the tab, stops the service, resizes back',
+        !hub()._entries.has('notes') && service._monitor === null &&
+        cw === settings().get_int('expanded-width') * scale(), `width=${cw}`);
+    settings().reset('notes-enabled');
+    island().collapse();
+    await sleep(animationWait());
 }
 
 // ---------------------------------------------------------------- settings
@@ -526,8 +666,9 @@ async function testSettingsButton(outDir) {
     // Keyboard: Tab from the focused pill reaches ⚙️, Enter activates it.
     island().expand();
     await sleep(animationWait());
-    await pressKeys(Clutter.KEY_Tab);
-    check('Tab moves focus to ⚙️', global.stage.key_focus === gear,
+    for (let i = 0; i < 6 && global.stage.key_focus !== gear; i++)
+        await pressKeys(Clutter.KEY_Tab);
+    check('Tab reaches ⚙️', global.stage.key_focus === gear,
         `focus=${global.stage.key_focus}`);
     await pressKeys(Clutter.KEY_Return);
     check('Enter on ⚙️ opens the settings window', await waitForSettingsWindow() !== null);
@@ -714,6 +855,7 @@ export async function runAll(outDir) {
         await testKeyboard();
         await testSettingsButton(outDir);
         await testHub(outDir);
+        await testNotes(outDir);
         await testSettings(outDir);
         await testCoversPanelClock(outDir);
         await testMonitors();

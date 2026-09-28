@@ -30,10 +30,13 @@ froonty@catalin/          the extension (this directory is what gets installed)
 ├── ui/hub.js             expanded content: icon tab row, feature host, ⚙️
 ├── features/registry.js  every hub feature, in tab order
 ├── features/clock/       the Clock tab (first feature)
+├── features/notes/       the Notes tab (Markdown files, autosave)
+├── core/emitter.js       signal base for feature services (Shell-free)
 ├── services/clock.js     GnomeDesktop.WallClock-based clock (start/stop)
 ├── shell/dateMenu.js     adapter: the only place touching Shell internals
 └── shell/settingsWindow.js  opens or raises the settings window
 tools/headless-test/      isolated headless GNOME Shell test harness
+tools/unit/              plain-gjs unit tests for feature logic
 docs/DESIGN.md            GNOME 46 API analysis, private APIs, risks
 docs/FEATURES.md          how features are built (rules and process)
 docs/features/            one design note per feature
@@ -66,6 +69,8 @@ dbus-run-session -- gnome-shell --nested --wayland
 
 ## Test
 
+```sh
+make unit                          # fast: pure logic and file I/O, no Shell
 ```sh
 make test                          # or: tools/headless-test/run.sh --keep
 FROONTY_TEST_MODE=ubuntu make test # with Ubuntu's session mode

@@ -1,7 +1,9 @@
 # Feature: Calendar
 
-Status: **design**. The decisions below are agreed; the open questions in §6
-are still open.
+Status: **design**, next after Notes. Answered 2026-09-28: all calendars
+enabled in GNOME are shown, with a per-calendar opt-out in the Calendar
+settings tab; the week start follows the locale. Still open: §6.2 (countdown
+to the next event in the collapsed island, proposed as a later step).
 
 ## 1. Goal
 

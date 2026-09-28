@@ -1,7 +1,15 @@
 # Feature: Notes
 
-Status: **design**. The decisions below are agreed; the open questions in §5
-are still open.
+Status: **implemented (v1)**. Decisions made 2026-09-28:
+
+- v1 includes a Markdown **formatting bar**: bold, italic, strikethrough,
+  heading, bulleted, numbered and check lists, code, and link. There is no
+  rendered preview yet.
+- New notes are named with a **timestamp**, `2026-09-28 15.40`. It uses `.`,
+  not `:`, which is invalid on exFAT/NTFS. A second note in the same minute
+  gets ` (2)`.
+- There is **no cap** on the number of notes; the tabs scroll. "+" stays
+  outside the scrolling row.
 
 ## 1. Goal
 
@@ -28,15 +36,19 @@ Several notes are shown as capsule tabs, and edits save by themselves.
 ```
 features/notes/
 ├── index.js      descriptor
-├── store.js      Gio async file I/O: list, read, write (atomic replace),
-│                 rename, trash; folder monitor; no St
-├── service.js    notes list + selected note; debounced autosave; emits 'changed'
-├── view.js       St: capsule tabs (+ to add), editor, empty state
-└── prefs.js      Notes tab: enable, folder
+├── names.js      pure: note name ↔ file name, timestamps, uniqueness
+├── markdown.js   pure: formatting-bar edits on text + selection
+├── store.js      Gio async file I/O: list, read, atomic write, create,
+│                 rename (never overwrites), trash; folder monitor
+├── service.js    notes list + selection; queued operations; autosave
+├── tabs.js       St: capsule tabs, inline rename, two-step ×
+├── formatBar.js  St: formatting buttons
+├── view.js       St: composes tabs, bar, editor, empty state
+└── prefs.js      Notes settings tab: enable, folder
 ```
 
-`store.js` and the debounce logic get unit tests (plain `gjs`, temporary
-folder).
+`names.js`, `markdown.js`, `store.js` and `service.js` have unit tests
+(`tools/unit/`, plain `gjs`, isolated temporary folders).
 
 ## 4. Behaviour
 
@@ -61,12 +73,17 @@ folder).
   - editor surface radius 12, white 6.5%
   - placeholder "Type anything. It saves by itself."
 
-## 5. Open questions
+## 5. Implementation notes
 
-1. **Markdown:** v1 is plain text with no formatting bar and no rendered
-   preview. A preview needs Markdown-to-Pango conversion, which would be a
-   separate step. Is that OK?
-2. **New note naming:** use "Note 1", "Note 2", …, or a timestamp such as
-   "2026-09-28 15:40"?
-3. **Limits:** vorssaint caps at 12 notes. Should Froonty have no cap, with
-   tabs that scroll?
+- `service.js` runs every folder operation through **one queue**. The folder
+  monitor also fires for Froonty's own writes; without the queue, its
+  refresh raced the operation that caused it. Unit tests caught this.
+- Clicking inside the expanded hub no longer collapses the island. The pill
+  is an St.Button, and a press that bubbled up to it cleared the editor's
+  key focus.
+- The editor takes the key focus when the tab is shown, when a note is
+  created, and when a tab is picked (`view.setActive`).
+- Unit tests run through `tools/unit/run.sh`, with a private `TMPDIR` and
+  `XDG_DATA_HOME`. Trashed test notes once reached the real
+  `~/.local/share/Trash`; the runner now prevents that, and the file tests
+  refuse to run outside it.

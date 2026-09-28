@@ -13,6 +13,8 @@
 
 import Atk from 'gi://Atk';
 import Clutter from 'gi://Clutter';
+import Gio from 'gi://Gio';
+import GLib from 'gi://GLib';
 import Shell from 'gi://Shell';
 import St from 'gi://St';
 
@@ -182,7 +184,14 @@ export class Island {
         this._pill.set_child(content);
 
         this._collapsedView = new CollapsedView();
-        this._hub = new Hub({settings: this._settings, clock: this._clock}, FEATURES, {
+        // Feature context (docs/FEATURES.md): the only shared things features see.
+        const ctx = {
+            settings: this._settings,
+            clock: this._clock,
+            dataDir: Gio.File.new_for_path(
+                GLib.build_filenamev([GLib.get_user_data_dir(), 'froonty'])),
+        };
+        this._hub = new Hub(ctx, FEATURES, {
             openSettings: () => this._openSettings(),
         });
         content.add_child(this._collapsedView.actor);

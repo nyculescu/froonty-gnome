@@ -10,8 +10,9 @@
 //
 // A feature's view (and its service, if any) is created the first time its
 // tab is selected, and destroyed when the feature is disabled or the hub is
-// destroyed. Services are told when their view is shown or hidden, so they
-// can pause work nobody sees.
+// destroyed. Services and views are told (setActive) when the feature is
+// shown or hidden: services can pause work nobody sees, views can take the
+// key focus.
 
 import Clutter from 'gi://Clutter';
 import St from 'gi://St';
@@ -60,7 +61,7 @@ export class Hub extends EventEmitter {
     /** Tell the active feature whether the hub is visible. */
     setShown(shown) {
         this._shown = shown;
-        this._entries.get(this._activeId)?.service?.setActive?.(shown);
+        this._setEntryActive(this._entries.get(this._activeId), shown);
     }
 
     select(id) {
@@ -72,18 +73,25 @@ export class Hub extends EventEmitter {
         if (previous) {
             previous.button.checked = false;
             previous.view.actor.hide();
-            previous.service?.setActive?.(false);
+            this._setEntryActive(previous, false);
         }
 
         this._activeId = id;
         entry.button.checked = true;
         this._ensureView(entry);
         entry.view.actor.show();
-        entry.service?.setActive?.(this._shown);
+        this._setEntryActive(entry, this._shown);
         // Only on change: select() also runs on every enable (screen unlock).
         if (this._settings.get_string(LAST_TAB_KEY) !== id)
             this._settings.set_string(LAST_TAB_KEY, id);
         this.emit('size-changed');
+    }
+
+    // Tells the feature (service and view, both optional) whether it is
+    // on screen: services can pause work, views can take the key focus.
+    _setEntryActive(entry, active) {
+        entry?.service?.setActive?.(active);
+        entry?.view?.setActive?.(active);
     }
 
     _buildActors(openSettings) {
@@ -92,7 +100,14 @@ export class Hub extends EventEmitter {
             vertical: true,
             x_expand: true,
             y_expand: true,
+            // Catches clicks on empty parts of the hub so they do not bubble
+            // up to the pill (an St.Button that toggles the island, and
+            // whose press clears the key focus of editors inside it).
+            // Clicking inside the expanded hub never collapses it.
+            reactive: true,
         });
+        for (const signal of ['button-press-event', 'button-release-event', 'touch-event'])
+            this.actor.connect(signal, () => Clutter.EVENT_STOP);
 
         const header = new St.BoxLayout({style_class: 'froonty-hub-header'});
         this._tabBar = new St.BoxLayout({style_class: 'froonty-tab-bar'});

@@ -1,0 +1,199 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Notes tab:
+//
+//   [2026-09-28 15.40 ×] [Plan] [+]          capsule tabs
+//   [B][I][S][H][•][1.][☑][</>][🔗]          formatting bar
+//   ┌──────────────────────────────────┐
+//   │ editor                           │     multi-line, scrolls
+//   └──────────────────────────────────┘
+//
+// Renders NotesService state; typing goes to service.setText().
+
+import Clutter from 'gi://Clutter';
+import Pango from 'gi://Pango';
+import St from 'gi://St';
+
+import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
+
+import {FormatBar} from './formatBar.js';
+import {NoteTabs} from './tabs.js';
+
+export class NotesView {
+    constructor(_ctx, service) {
+        this._service = service;
+
+        this.actor = new St.BoxLayout({
+            style_class: 'froonty-notes',
+            vertical: true,
+            x_expand: true,
+            y_expand: true,
+        });
+
+        this._tabs = new NoteTabs({
+            onSelect: async name => {
+                await service.select(name);
+                this._focusEditor();
+            },
+            onCreate: () => this._create(),
+            onRename: async name => {
+                await service.rename(name);
+                this._sync(); // also restores the tab if the name was refused
+            },
+            onTrash: name => service.trash(name),
+        });
+        this._formatBar = new FormatBar(edit => this._applyEdit(edit));
+        this._buildEditor();
+        this._buildEmptyState();
+        this._error = new St.Label({style_class: 'froonty-notes-error', visible: false});
+
+        this.actor.add_child(this._tabs.actor);
+        this.actor.add_child(this._formatBar.actor);
+        this.actor.add_child(this._scroll);
+        this.actor.add_child(this._empty);
+        this.actor.add_child(this._error);
+
+        this._changedId = service.connect('changed', () => this._sync());
+        this._sync();
+    }
+
+    destroy() {
+        this._service.disconnect(this._changedId);
+        this.actor.destroy();
+    }
+
+    // Shown: typing goes straight into the note (Escape still collapses).
+    setActive(active) {
+        if (active)
+            this._focusEditor();
+    }
+
+    async _create() {
+        await this._service.create();
+        this._focusEditor();
+    }
+
+    _focusEditor() {
+        if (this._service.selected !== null && this._scroll.visible)
+            this._entry.clutter_text.grab_key_focus();
+    }
+
+    _buildEditor() {
+        // Natural height at the top: St.Entry centers its text vertically,
+        // which would float a short note in the middle of a tall editor.
+        this._entry = new St.Entry({
+            style_class: 'froonty-notes-editor',
+            hint_text: _('Type anything. It saves by itself.'),
+            can_focus: true,
+            x_expand: true,
+            y_align: Clutter.ActorAlign.START,
+        });
+        const text = this._entry.clutter_text;
+        text.single_line_mode = false;
+        text.activatable = false;
+        text.line_wrap = true;
+        text.line_wrap_mode = Pango.WrapMode.WORD_CHAR;
+        text.connect('text-changed', () => {
+            if (!this._syncing)
+                this._service.setText(text.text);
+        });
+        text.connect('cursor-changed', () => this._keepCursorVisible());
+
+        // St.Entry is not scrollable itself; a BoxLayout is. A click on the
+        // box below the text (or on the entry's padding) focuses the editor
+        // with the cursor at the end, like a text area.
+        const box = new St.BoxLayout({
+            vertical: true,
+            x_expand: true,
+            y_expand: true,
+            reactive: true,
+        });
+        box.add_child(this._entry);
+        box.connect('button-press-event', () => {
+            text.grab_key_focus();
+            text.set_cursor_position(-1);
+            text.set_selection_bound(-1);
+            return Clutter.EVENT_STOP;
+        });
+        this._scroll = new St.ScrollView({
+            style_class: 'froonty-notes-scroll',
+            hscrollbar_policy: St.PolicyType.NEVER,
+            vscrollbar_policy: St.PolicyType.AUTOMATIC,
+            overlay_scrollbars: true,
+            x_expand: true,
+            y_expand: true,
+            child: box,
+        });
+    }
+
+    _buildEmptyState() {
+        const button = new St.Button({
+            style_class: 'froonty-notes-new',
+            label: _('New note'),
+            can_focus: true,
+        });
+        button.connect('clicked', () => this._create());
+        this._empty = new St.BoxLayout({
+            vertical: true,
+            x_expand: true,
+            y_expand: true,
+            x_align: Clutter.ActorAlign.CENTER,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        this._empty.add_child(new St.Label({
+            style_class: 'froonty-notes-empty',
+            text: _('No notes yet'),
+            x_align: Clutter.ActorAlign.CENTER,
+        }));
+        this._empty.add_child(button);
+    }
+
+    _sync() {
+        const {notes, selected, text, error} = this._service;
+        const hasNote = selected !== null;
+
+        this._tabs.update(notes, selected);
+        this._formatBar.actor.visible = hasNote;
+        this._scroll.visible = hasNote;
+        this._empty.visible = !hasNote;
+        this._error.text = error ?? '';
+        this._error.visible = Boolean(error);
+
+        // Only replace the text when the service loaded something else;
+        // never while it matches what the user is typing.
+        if (this._entry.text !== text) {
+            this._syncing = true;
+            this._entry.text = text;
+            this._syncing = false;
+        }
+    }
+
+    // Applies a markdown.js edit to the editor text and selection.
+    _applyEdit(edit) {
+        const text = this._entry.clutter_text;
+        const cursor = text.cursor_position;
+        const bound = text.selection_bound;
+        // -1 means "end of text" for both.
+        const length = [...text.text].length;
+        const position = p => (p < 0 ? length : p);
+
+        const result = edit({text: text.text, start: position(bound), end: position(cursor)});
+        text.text = result.text;
+        text.set_selection(result.start, result.end);
+        this._entry.grab_key_focus();
+    }
+
+    _keepCursorVisible() {
+        const text = this._entry.clutter_text;
+        const [ok, , y, lineHeight] = text.position_to_coords(text.cursor_position);
+        if (!ok)
+            return;
+
+        const adjustment = this._scroll.vadjustment;
+        const top = adjustment.value;
+        const bottom = top + adjustment.page_size;
+        if (y < top)
+            adjustment.value = y;
+        else if (y + lineHeight > bottom)
+            adjustment.value = y + lineHeight - adjustment.page_size;
+    }
+}

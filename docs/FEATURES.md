@@ -22,7 +22,9 @@ froonty@catalin/features/<id>/
 
 - **Service** (`service.js`) owns data, I/O and GNOME/D-Bus access. It knows
   nothing about St, so it can be unit-tested with plain `gjs`, without a
-  Shell. It is an `EventEmitter` that emits `'changed'`. Its lifecycle is
+  Shell. It extends `core/emitter.js` (not the Shell's `EventEmitter`, which only
+  loads inside the Shell) and emits `'changed'`. Views keep the handler ids and
+  disconnect them in `destroy()`. Its lifecycle is
   `start()` / `stop()`, and `stop()` must release everything `start()`
   created.
 - **View** (`view.js`) only renders what the service exposes and turns user
@@ -72,7 +74,8 @@ The expanded island becomes a small host with no feature logic of its own:
 - A **service starts lazily**, the first time its view is shown, and stops
   when the feature is disabled or the island is torn down. A service may
   pause work while its view is hidden (`service.setActive(bool)`), e.g. to
-  stop listening for live updates it does not need.
+  stop listening for live updates it does not need. Views get the same call
+  (`view.setActive(bool)`), e.g. to take the key focus when shown.
 
 ## 3. Rules
 
@@ -94,8 +97,9 @@ The expanded island becomes a small host with no feature logic of its own:
    goal, data sources, GNOME facilities reused, any private APIs, resource
    use and open questions. The user answers the open questions *before*
    code is written.
-2. **Service first**, with unit tests (`tools/unit/<id>.test.js`, plain
-   `gjs -m`, no Shell): logic, parsing, date math.
+2. **Service first**, with unit tests (`tools/unit/<id>*.test.js`, plain
+   `gjs -m`, no Shell, run by `make unit` with a private `TMPDIR` and
+   `XDG_DATA_HOME`): logic, parsing, date math, file I/O.
 3. **View**, then the **prefs tab**.
 4. **Headless Shell checks** in `tools/headless-test/`: (the hub itself is
    tested with a fake feature added to the registry at runtime; see

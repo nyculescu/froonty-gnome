@@ -26,6 +26,21 @@
       <description>The feature id shown when the island expands (see features/registry.js).</description>
     </key>
 
+    <!-- Notes feature (docs/features/notes.md) -->
+    <key name="notes-enabled" type="b">
+      <default>true</default>
+      <summary>Show the Notes tab</summary>
+    </key>
+    <key name="notes-folder" type="s">
+      <default>''</default>
+      <summary>Notes folder</summary>
+      <description>Folder holding one Markdown file per note. Empty: ~/.local/share/froonty/notes.</description>
+    </key>
+    <key name="notes-last" type="s">
+      <default>''</default>
+      <summary>Note selected last</summary>
+    </key>
+
     <!-- Clock -->
     <key name="show-date" type="b">
       <default>false</default>

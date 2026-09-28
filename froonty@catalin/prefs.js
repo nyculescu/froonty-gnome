@@ -11,6 +11,10 @@ import {
     gettext as _,
 } from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
+// Feature settings tabs, after the general ones. (Imported here, not via
+// features/registry.js: that loads Shell-side modules this process cannot.)
+import {notesPage} from './features/notes/prefs.js';
+
 const CLOCK_FORMATS = ['system', '24h', '12h'];
 
 // Tabs, in display order. The window opens on the first one.
@@ -27,6 +31,7 @@ export default class FroontyPreferences extends ExtensionPreferences {
         // (a view switcher in the header bar).
         window.add(this._generalPage(settings));
         window.add(this._appearancePage(settings));
+        window.add(notesPage(settings));
         window.visible_page_name = GENERAL_PAGE;
     }
 
