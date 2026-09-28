@@ -1,0 +1,61 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+/* Froonty. border-radius and sizes are set from code (see ui/island.js). */
+
+.froonty-pill {
+    background-color: #000000;
+    color: #ffffff;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+    padding: 0 12px;
+    transition-duration: 150ms;
+}
+
+.froonty-pill:hover {
+    background-color: #161616;
+}
+
+.froonty-pill:focus {
+    border-color: rgba(255, 255, 255, 0.45);
+}
+
+.froonty-pill.froonty-pill-expanded {
+    background-color: #000000;
+    padding: 12px 16px;
+}
+
+/* Collapsed */
+
+.froonty-collapsed {
+    spacing: 8px;
+}
+
+.froonty-collapsed-time {
+    font-weight: bold;
+    font-feature-settings: "tnum";
+}
+
+.froonty-collapsed-date {
+    color: rgba(255, 255, 255, 0.7);
+    font-weight: bold;
+}
+
+/* Expanded */
+
+.froonty-expanded {
+    spacing: 2px;
+}
+
+.froonty-expanded-weekday {
+    color: rgba(255, 255, 255, 0.6);
+    font-weight: bold;
+}
+
+.froonty-expanded-time {
+    font-size: 2.4em;
+    font-weight: 300;
+    font-feature-settings: "tnum";
+}
+
+.froonty-expanded-date {
+    color: rgba(255, 255, 255, 0.8);
+}

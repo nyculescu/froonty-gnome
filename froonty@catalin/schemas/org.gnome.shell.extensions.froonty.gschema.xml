@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist gettext-domain="froonty">
+  <schema id="org.gnome.shell.extensions.froonty"
+          path="/org/gnome/shell/extensions/froonty/">
+
+    <!-- General -->
+    <key name="island-enabled" type="b">
+      <default>true</default>
+      <summary>Show the island</summary>
+      <description>When false, the island and all its services are torn down while the extension stays enabled.</description>
+    </key>
+    <key name="hide-panel-clock" type="b">
+      <default>true</default>
+      <summary>Hide the top bar clock</summary>
+      <description>Makes GNOME's top bar clock transparent so the island replaces it visually. The clock stays in place so its calendar menu keeps working.</description>
+    </key>
+    <key name="toggle-shortcut" type="as">
+      <default><![CDATA[['<Super><Alt>i']]]></default>
+      <summary>Keyboard shortcut to expand or collapse the island</summary>
+    </key>
+
+    <!-- Clock -->
+    <key name="show-date" type="b">
+      <default>false</default>
+      <summary>Show the date in the collapsed island</summary>
+    </key>
+    <key name="clock-format" type="s">
+      <choices>
+        <choice value="system"/>
+        <choice value="24h"/>
+        <choice value="12h"/>
+      </choices>
+      <default>'system'</default>
+      <summary>Clock format</summary>
+      <description>"system" follows org.gnome.desktop.interface clock-format.</description>
+    </key>
+
+    <!-- Geometry, in logical pixels -->
+    <key name="collapsed-width" type="i">
+      <range min="80" max="480"/>
+      <default>160</default>
+      <summary>Collapsed island width</summary>
+      <description>Minimum. While the top bar clock is hidden, the pill grows to cover its button completely.</description>
+    </key>
+    <key name="collapsed-height" type="i">
+      <range min="20" max="64"/>
+      <default>28</default>
+      <summary>Collapsed island height</summary>
+      <description>Minimum. While the top bar clock is hidden, the pill grows to cover its button completely.</description>
+    </key>
+    <key name="expanded-width" type="i">
+      <range min="200" max="960"/>
+      <default>360</default>
+      <summary>Expanded island width</summary>
+    </key>
+    <key name="expanded-height" type="i">
+      <range min="80" max="720"/>
+      <default>140</default>
+      <summary>Expanded island height</summary>
+    </key>
+    <key name="corner-radius" type="i">
+      <range min="0" max="64"/>
+      <default>14</default>
+      <summary>Corner radius</summary>
+      <description>Clamped to half the current island height.</description>
+    </key>
+
+    <!-- Animation -->
+    <key name="animation-duration" type="i">
+      <range min="0" max="2000"/>
+      <default>250</default>
+      <summary>Expand/collapse animation duration in milliseconds</summary>
+      <description>GNOME's global "enable-animations" and slow-down settings still apply.</description>
+    </key>
+  </schema>
+</schemalist>

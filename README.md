@@ -1,0 +1,108 @@
+# Froonty
+
+A small Dynamic-Island-style pill at the top center of the screen for
+**GNOME Shell 46** (Ubuntu 24.04). The island is a compact entry point to
+facilities GNOME Shell already has. It does not reimplement them.
+
+Status: **Phase 1** (foundation). The collapsed pill shows the time and,
+optionally, the date. Click it, press `Super+Alt+I` or use Ctrl+Alt+Tab to
+expand it; press Escape or click outside to collapse it.
+
+- No subprocesses, no network access, no polling timers.
+- GJS and native GNOME Shell APIs only.
+
+See [docs/DESIGN.md](docs/DESIGN.md) for the GNOME 46 API analysis, the list
+of private APIs used, compatibility risks and the NexNotch review.
+
+## Layout
+
+```
+froonty@catalin/          the extension (this directory is what gets installed)
+├── extension.js          lifecycle: enable/disable, settings, keybinding
+├── prefs.js              libadwaita preferences
+├── stylesheet.css
+├── schemas/              GSettings schema
+├── ui/island.js          actors, positioning, expand/collapse, grab
+├── ui/collapsedView.js
+├── ui/expandedView.js
+├── services/clock.js     GnomeDesktop.WallClock-based clock (start/stop)
+└── shell/dateMenu.js     adapter: the only place touching Shell internals
+tools/headless-test/      isolated headless GNOME Shell test harness
+docs/DESIGN.md
+```
+
+## Develop
+
+```sh
+make install    # compiles schemas, symlinks into ~/.local/share/gnome-shell/extensions
+```
+
+GNOME Shell 46 only discovers new extensions at startup:
+
+- **Wayland:** log out and back in.
+- **X11:** press Alt+F2, type `r`, press Enter.
+
+Then run:
+
+```sh
+gnome-extensions enable froonty@catalin
+gnome-extensions prefs froonty@catalin
+make log        # follow GNOME Shell's journal
+```
+
+To test without touching your session, run a nested Wayland shell:
+
+```sh
+dbus-run-session -- gnome-shell --nested --wayland
+```
+
+## Test
+
+```sh
+make test                          # or: tools/headless-test/run.sh --keep
+FROONTY_TEST_MODE=ubuntu make test # with Ubuntu's session mode
+```
+
+The test starts an isolated headless GNOME Shell 46 with:
+
+- its own session bus
+- an empty private system bus
+- private XDG dirs
+- keyfile GSettings
+- two virtual monitors
+
+It then drives real pointer and keyboard input, switches the primary monitor
+through Mutter's D-Bus API, and runs 25 enable/disable cycles with a
+before/after leak footprint. It also opens the preferences window. Your real
+session, dconf and extensions directory are never touched.
+
+`tools/headless-test/unsafe-mode@froonty-test` is a **test-only** helper that
+enables unsafe mode (for `org.gnome.Shell.Eval`) inside that throwaway
+session. Never install it in a real session.
+
+## Settings
+
+| Key | Default | |
+|---|---|---|
+| `island-enabled` | `true` | Tears down the island without disabling the extension |
+| `hide-panel-clock` | `true` | Makes the top bar clock transparent; its menu keeps working |
+| `toggle-shortcut` | `['<Super><Alt>i']` | |
+| `show-date` | `false` | |
+| `clock-format` | `system` | `system`, `24h` or `12h` |
+| `collapsed-width` / `collapsed-height` | 160 / 28 | Logical px. Both are minimums: while the top bar clock is hidden, the pill grows to cover its button completely (full top bar height, full clock width) |
+| `expanded-width` / `expanded-height` | 360 / 140 | Logical px |
+| `corner-radius` | 14 | Clamped to half the height by St |
+| `animation-duration` | 250 ms | GNOME's enable-animations setting still applies |
+
+## License and provenance
+
+Froonty is an independent implementation. NexNotch
+(<https://github.com/NexVar/NexNotch>, GPL-3.0-or-later) was used only as a
+behavioral and visual reference; **no NexNotch code was copied or adapted**.
+Details are in [docs/DESIGN.md §3](docs/DESIGN.md#3-nexnotch-review).
+
+Copyright (C) 2026 Catalin Niculescu.
+
+Froonty is free software, licensed under the **GNU General Public License
+v3.0 or later** (`GPL-3.0-or-later`); see [LICENSE](LICENSE). Each source file
+carries an SPDX license identifier.
