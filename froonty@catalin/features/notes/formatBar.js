@@ -37,5 +37,16 @@ export class FormatBar {
             button.connect('clicked', () => onEdit(action.edit));
             this.actor.add_child(button);
         }
+
+        // A view option, not an edit: checked = long lines wrap. The view
+        // binds it to the notes-wrap setting.
+        this.wrapButton = new St.Button({
+            style_class: 'froonty-icon-button froonty-format-button froonty-toggle',
+            accessible_name: _('Wrap lines'),
+            can_focus: true,
+            toggle_mode: true,
+            child: new St.Icon({icon_name: 'view-wrapped-symbolic'}),
+        });
+        this.actor.add_child(this.wrapButton);
     }
 }

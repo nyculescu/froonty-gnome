@@ -191,7 +191,7 @@ export class Island {
         this._pill.set_child(content);
 
         this._collapsedView = new CollapsedView();
-        // Feature context (docs/FEATURES.md): the only shared things features see.
+        // Feature context (docs/local/ideas.md): the only shared things features see.
         const ctx = {
             settings: this._settings,
             clock: this._clock,

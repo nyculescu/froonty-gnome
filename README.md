@@ -41,7 +41,7 @@ froonty@catalin/          the extension (this directory is what gets installed)
 tools/headless-test/      isolated headless GNOME Shell test harness
 tools/unit/              plain-gjs unit tests for feature logic
 docs/DESIGN.md            GNOME 46 API analysis, private APIs, risks
-docs/FEATURES.md          how features are built (rules and process)
+docs/local/ideas.md       features list, ongoing work, ideas, build rules (local, not in git)
 docs/features/            one design note per feature
 ```
 
@@ -116,6 +116,7 @@ its own window with tabs: **General** (island, shortcut, clock) and
 | `animation-duration` | 250 ms | GNOME's enable-animations setting still applies |
 | `notes-enabled` | `true` | Show the Notes tab |
 | `notes-folder` | `''` | Notes folder; empty means `~/.local/share/froonty/notes` |
+| `notes-wrap` | `true` | Wrap long lines in notes; off scrolls horizontally |
 | `hub-last-tab`, `notes-last` | | Remembered selections (internal) |
 
 ## License and provenance

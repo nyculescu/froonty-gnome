@@ -10,6 +10,7 @@
 // Renders NotesService state; typing goes to service.setText().
 
 import Clutter from 'gi://Clutter';
+import Gio from 'gi://Gio';
 import Pango from 'gi://Pango';
 import St from 'gi://St';
 
@@ -21,14 +22,23 @@ import {FormatBar} from './formatBar.js';
 import {NoteTabs} from './tabs.js';
 
 export class NotesView {
-    constructor(_ctx, service) {
+    constructor(ctx, service) {
         this._service = service;
+        this._settings = ctx.settings;
 
         // Content, plus an overlay layer (fixed positions, click-through) for
         // the tab name bubble.
-        this._content = new St.BoxLayout({
+        //
+        // Content is a grid: header (tabs, tools) in row 0, editor in row 1.
+        // The editor is added first so it is drawn *below* the header. A long
+        // scrolled note is one tall actor reaching up behind the header, and
+        // Clutter only re-checks what is under the pointer once it leaves the
+        // hit actor's area minus actors drawn above it; drawn above the
+        // header, the editor kept receiving clicks meant for tabs and tools.
+        const grid = new Clutter.GridLayout({orientation: Clutter.Orientation.VERTICAL});
+        this._content = new St.Widget({
             style_class: 'froonty-notes',
-            vertical: true,
+            layout_manager: grid,
             x_expand: true,
             y_expand: true,
         });
@@ -68,18 +78,35 @@ export class NotesView {
         this._buildEmptyState();
         this._error = new St.Label({style_class: 'froonty-notes-error', visible: false});
 
-        this._content.add_child(this._tabs.actor);
-        this._content.add_child(this._tools);
-        this._content.add_child(this._scroll);
-        this._content.add_child(this._empty);
-        this._content.add_child(this._error);
+        const editorArea = new St.BoxLayout({
+            style_class: 'froonty-notes-editor-area',
+            vertical: true,
+            x_expand: true,
+            y_expand: true,
+        });
+        editorArea.add_child(this._scroll);
+        editorArea.add_child(this._empty);
+        editorArea.add_child(this._error);
+        const header = new St.BoxLayout({style_class: 'froonty-notes-header', vertical: true});
+        header.add_child(this._tabs.actor);
+        header.add_child(this._tools);
+        grid.attach(editorArea, 0, 1, 1, 1); // first: drawn below the header
+        grid.attach(header, 0, 0, 1, 1);
         overlay.add_child(this._tabs.tooltip);
+
+        // Wrap toggle (formatting bar) ↔ notes-wrap setting ↔ editor.
+        this._settings.bind('notes-wrap', this._formatBar.wrapButton, 'checked',
+            Gio.SettingsBindFlags.DEFAULT);
+        this._wrapId = this._settings.connect('changed::notes-wrap', () => this._applyWrap());
+        this._applyWrap();
 
         this._changedId = service.connect('changed', () => this._sync());
         this._sync();
     }
 
     destroy() {
+        this._settings.disconnect(this._wrapId);
+        Gio.Settings.unbind(this._formatBar.wrapButton, 'checked');
         this._service.disconnect(this._changedId);
         this.actor.destroy();
     }
@@ -117,6 +144,8 @@ export class NotesView {
         text.line_wrap = true;
         text.line_wrap_mode = Pango.WrapMode.WORD_CHAR;
         text.connect('text-changed', () => {
+            if (!this._settings.get_boolean('notes-wrap'))
+                this._syncNoWrapWidth();
             if (!this._syncing)
                 this._service.setText(text.text);
         });
@@ -217,11 +246,40 @@ export class NotesView {
         this._entry.grab_key_focus();
     }
 
+    // Wrapped: long lines wrap. Unwrapped: they stay on one line and the
+    // note scrolls horizontally.
+    _applyWrap() {
+        const wrap = this._settings.get_boolean('notes-wrap');
+        this._entry.clutter_text.line_wrap = wrap;
+        this._scroll.hscrollbar_policy = wrap ? St.PolicyType.NEVER : St.PolicyType.AUTOMATIC;
+        this._syncNoWrapWidth();
+        this._keepCursorVisible();
+    }
+
+    // A scrolled view sizes its content by its minimum width, and
+    // Clutter.Text reports ~1px even when it does not wrap, so unwrapped
+    // lines would still be squeezed into the viewport. Pin the minimum to
+    // the natural width while unwrapped (after each text change).
+    _syncNoWrapWidth() {
+        this._entry.min_width_set = false;
+        if (!this._settings.get_boolean('notes-wrap'))
+            this._entry.min_width = this._entry.get_preferred_width(-1)[1];
+    }
+
     _keepCursorVisible() {
         const text = this._entry.clutter_text;
-        const [ok, , y, lineHeight] = text.position_to_coords(text.cursor_position);
+        const [ok, x, y, lineHeight] = text.position_to_coords(text.cursor_position);
         if (!ok)
             return;
+
+        // Horizontally too, when lines do not wrap (a small margin keeps the
+        // caret off the very edge).
+        const h = this._scroll.hadjustment;
+        const margin = lineHeight;
+        if (x < h.value)
+            h.value = Math.max(0, x - margin);
+        else if (x + margin > h.value + h.page_size)
+            h.value = x + margin - h.page_size;
 
         const adjustment = this._scroll.vadjustment;
         const top = adjustment.value;

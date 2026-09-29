@@ -105,8 +105,12 @@
 
 /* Notes feature */
 
-.froonty-notes {
+.froonty-notes-header {
     spacing: 6px;
+}
+
+.froonty-notes-editor-area {
+    margin-top: 6px;
 }
 
 .froonty-note-tabs {

@@ -9,6 +9,7 @@ import Clutter from 'gi://Clutter';
 import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
 import Gio from 'gi://Gio';
+import GdkPixbuf from 'gi://GdkPixbuf';
 import Shell from 'gi://Shell';
 import St from 'gi://St';
 
@@ -457,6 +458,30 @@ async function testHub(outDir) {
 
 // ---------------------------------------------------------------- notes
 
+// Pixel check: the fraction of dark (text) pixels in the editor on its light
+// note colour. Catches text that is scrolled or clipped out of sight, which
+// adjustment values alone do not.
+async function editorInk(outDir, view, name) {
+    const b = boxOf(view._scroll);
+    const path = GLib.build_filenamev([outDir, `${name}.png`]);
+    const stream = Gio.File.new_for_path(path).replace(null, false, Gio.FileCreateFlags.NONE, null);
+    await new Shell.Screenshot().screenshot_area(Math.round(b.x1) + 8, Math.round(b.y1) + 8,
+        Math.round(b.x2 - b.x1) - 16, Math.round(b.y2 - b.y1) - 16, stream);
+    stream.close(null);
+    const pixbuf = GdkPixbuf.Pixbuf.new_from_file(path);
+    const pixels = pixbuf.get_pixels();
+    const [n, stride] = [pixbuf.get_n_channels(), pixbuf.get_rowstride()];
+    let dark = 0;
+    for (let y = 0; y < pixbuf.get_height(); y++) {
+        for (let x = 0; x < pixbuf.get_width(); x++) {
+            const i = y * stride + x * n;
+            if (pixels[i] + pixels[i + 1] + pixels[i + 2] < 3 * 110)
+                dark++;
+        }
+    }
+    return dark / (pixbuf.get_width() * pixbuf.get_height());
+}
+
 async function typeText(text) {
     for (const ch of text) {
         const keyval = Clutter.unicode_to_keysym(ch.codePointAt(0));
@@ -738,6 +763,9 @@ async function testNotesTabsAndColors(outDir) {
         vadj.upper > vadj.page_size && cursorY + lineH <= vadj.value + vadj.page_size + 20,
         `upper=${vadj.upper} page=${vadj.page_size} value=${vadj.value} cursorY=${cursorY}`);
     await screenshotTop(outDir, 'notes-long-bottom');
+    const inkBottom = await editorInk(outDir, view, 'ink-long-bottom');
+    check('editor: text is visible when scrolled to the bottom', inkBottom > 0.01,
+        `ink=${inkBottom.toFixed(4)}`);
     const eb = boxOf(view._scroll);
     pointer.notify_absolute_motion(now(), (eb.x1 + eb.x2) / 2, (eb.y1 + eb.y2) / 2);
     await sleep(50);
@@ -749,6 +777,39 @@ async function testNotesTabsAndColors(outDir) {
     }
     check('editor: the mouse wheel scrolls the note', vadj.value < bottom,
         `${bottom} -> ${vadj.value}`);
+    const inkWheel = await editorInk(outDir, view, 'ink-after-wheel');
+    check('editor: text is visible after wheel scrolling', inkWheel > 0.01,
+        `ink=${inkWheel.toFixed(4)}`);
+
+    // ---- wrap toggle: off = one line per line, horizontal scrolling
+    const wrapButton = view._formatBar.wrapButton;
+    const hadj = view._scroll.hadjustment;
+    check('wrap: on by default, button checked',
+        wrapButton.checked && view._entry.clutter_text.line_wrap);
+    await clickActor(wrapButton);
+    await sleep(SETTLE_MS);
+    view._entry.text = `short\n${'a long line without breaks '.repeat(12)}END`;
+    view._entry.clutter_text.grab_key_focus();
+    view._entry.clutter_text.set_cursor_position(-1);
+    await typeText('!');
+    const [, cursorX] = view._entry.clutter_text.position_to_coords(
+        view._entry.clutter_text.cursor_position);
+    check('wrap: off stops wrapping, is saved, and scrolls horizontally to the cursor',
+        !wrapButton.checked && !settings().get_boolean('notes-wrap') &&
+        !view._entry.clutter_text.line_wrap && hadj.upper > hadj.page_size &&
+        hadj.value > 0 && cursorX <= hadj.value + hadj.page_size,
+        `checked=${wrapButton.checked} setting=${settings().get_boolean('notes-wrap')} ` +
+        `checked=${wrapButton.checked} setting=${settings().get_boolean('notes-wrap')} ` +
+        `upper=${hadj.upper} page=${hadj.page_size} value=${hadj.value} cursorX=${cursorX}`);
+    await screenshotTop(outDir, 'notes-nowrap');
+    const inkNoWrap = await editorInk(outDir, view, 'ink-nowrap');
+    check('wrap: text is visible while scrolled sideways', inkNoWrap > 0.005,
+        `ink=${inkNoWrap.toFixed(4)}`);
+    await clickActor(wrapButton);
+    await sleep(SETTLE_MS);
+    check('wrap: on again wraps and drops the horizontal scroll',
+        wrapButton.checked && view._entry.clutter_text.line_wrap &&
+        hadj.upper <= hadj.page_size + 1, `upper=${hadj.upper} page=${hadj.page_size}`);
 
     island().collapse();
     await sleep(animationWait());
@@ -1060,8 +1121,9 @@ async function testLauncher() {
     s.set_boolean('island-enabled', false);
     await sleep(SETTLE_MS);
     const launcher = Main.panel.statusArea['froonty-launcher'];
-    check('launcher: "Show island" off puts an icon in the top bar',
-        strip() === null && launcher?.mapped);
+    check('launcher: "Show island" off puts a puzzle-piece icon in the top bar',
+        strip() === null && launcher?.mapped &&
+        launcher.get_first_child()?.icon_name === 'application-x-addon-symbolic');
 
     await clickActor(launcher);
     check('launcher: clicking the icon opens the settings window',

@@ -5,7 +5,7 @@ import Clutter from 'gi://Clutter';
 import St from 'gi://St';
 
 export class ClockView {
-    /** @param {object} ctx feature context (see docs/FEATURES.md) */
+    /** @param {object} ctx feature context (see docs/local/ideas.md) */
     constructor(ctx) {
         this._clock = ctx.clock;
 

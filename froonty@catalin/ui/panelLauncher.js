@@ -16,8 +16,9 @@ export class PanelLauncher {
     constructor(onActivate) {
         // No menu: a plain button in the top bar's right box.
         this._button = new PanelMenu.Button(0.5, _('Froonty settings'), true);
+        // Puzzle piece: the usual symbol for an extension (user request).
         this._button.add_child(new St.Icon({
-            icon_name: 'preferences-system-time-symbolic',
+            icon_name: 'application-x-addon-symbolic',
             style_class: 'system-status-icon',
         }));
         this._button.connect('button-release-event', () => {

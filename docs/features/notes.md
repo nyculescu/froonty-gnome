@@ -18,6 +18,10 @@ Status: **implemented (v1)**. Decisions made 2026-09-28:
 - The Notes island is **428×319**.
 - **Middle-click** on a tab moves that note to the Trash at once, like
   closing a browser tab (it can be restored from the Trash).
+- A **Wrap lines** toggle at the end of the formatting bar (one setting for
+  all notes, `notes-wrap`, on by default). When it is off, lines stay on one
+  line and the note scrolls horizontally; the view follows the cursor both
+  ways.
 - Each note has a **colour**, like Windows Sticky Notes: yellow (default),
   green, pink, purple, blue, gray or charcoal. It tints the editor and the
   tab dot, and is chosen with the round colour button.
@@ -114,6 +118,16 @@ features/notes/
   minimum height, so that rule stopped scrolling; `min-height: auto` on the
   editor fixes it. Only the Ubuntu-mode tests saw this, so `make test` now
   runs both modes.
+- Unwrapped, `Clutter.Text` still reports a ~1px minimum width, and a
+  scrolled view sizes content by its minimum. So the editor's minimum width
+  is pinned to its natural width while wrapping is off.
+- After scrolling a long note, clicks on the tabs and toolbar went to the
+  editor. The note is one tall actor reaching up behind the header, and
+  Clutter only re-checks the actor under the pointer outside that actor's
+  area minus actors drawn above it. The editor is now drawn *below* the
+  header: a grid places it in row 1 but adds it first. Clipping did not
+  help, and clipping the scrolled content blanked it. The headless suite
+  now also checks pixels, so that the text is really visible when scrolled.
 - Unit tests run through `tools/unit/run.sh`, with a private `TMPDIR` and
   `XDG_DATA_HOME`. Trashed test notes once reached the real
   `~/.local/share/Trash`; the runner now prevents that, and the file tests

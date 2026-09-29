@@ -42,6 +42,11 @@
       <summary>Notes folder</summary>
       <description>Folder holding one Markdown file per note. Empty: ~/.local/share/froonty/notes.</description>
     </key>
+    <key name="notes-wrap" type="b">
+      <default>true</default>
+      <summary>Wrap long lines in notes</summary>
+      <description>Off: lines stay on one line and the note scrolls horizontally.</description>
+    </key>
     <key name="notes-last" type="s">
       <default>''</default>
       <summary>Note selected last</summary>

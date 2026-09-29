@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // The hub: content of the expanded island. It hosts features (see
-// docs/FEATURES.md) and contains no feature logic of its own:
+// docs/local/ideas.md) and contains no feature logic of its own:
 //
 //   ┌──────────────────────────────────────────┐
 //   │ [tab] [tab] [tab]                     ⚙️ │  header: icon tab row

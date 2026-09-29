@@ -118,6 +118,11 @@ sleep 0.3
 
 "$DBUS_RUN_SESSION" -- "$0" --inner "$WORK" >"$WORK/eval.out" 2>&1 || true
 
+# Non-zero exit when a check fails, no results come back (e.g. the checks
+# module did not load), or the Shell logged Froonty errors, so `make test`
+# cannot report success by accident.
+status=0
+
 echo "== results"
 if [[ -f "$WORK/results.json" ]]; then
     /usr/bin/gjs -c "
@@ -127,10 +132,13 @@ if [[ -f "$WORK/results.json" ]]; then
             print((r.ok ? 'PASS ' : 'FAIL ') + r.name + (r.detail && (!r.ok || r.detail.startsWith('note:')) ? '\n     ' + r.detail : ''));
         const failed = results.filter(r => !r.ok).length;
         print('\n' + (results.length - failed) + '/' + results.length + ' passed');
-    "
+        if (failed)
+            imports.system.exit(1);
+    " || status=1
 else
     echo "no results; eval output:"
     tail -n 20 "$WORK/eval.out"
+    status=1
 fi
 
 echo
@@ -145,7 +153,8 @@ echo "== shell log lines mentioning froonty, JS errors or criticals"
 # during GC sweeping (e.g. DING's windows being unmanaged); not Froonty's.
 sed '/Shutting down GNOME Shell/q' "$WORK/shell.log" |
     grep -n -i -E "froonty|JS ERROR|JS WARNING|Gjs-CRITICAL|already disposed|TypeError|ReferenceError" |
-    grep -v -i -E "unsafe-mode@froonty-test|Using Wayland display name" || echo "(none)"
+    grep -v -i -E "unsafe-mode@froonty-test|Using Wayland display name" && status=1 || echo "(none)"
 
 echo
 echo "screenshots and logs: $WORK$([[ -z "$KEEP" ]] && echo ' (deleted on exit; pass --keep to keep)')"
+exit $status
