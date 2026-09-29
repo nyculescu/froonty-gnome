@@ -62,6 +62,41 @@ test('wrap: reversed selection and emoji positions', () => {
     eq(Md.toggleWrap(s('😀 ok', 4, 2), '_'), s('😀 _ok_', 3, 5));
 });
 
+test('wrap: a bare cursor inside a formatted span unwraps it', () => {
+    // "say **hi** now", cursor between h and i.
+    eq(Md.toggleWrap(s('say **hi** now', 7), '**'), s('say hi now', 5));
+    // Twice at the same spot is a no-op: insert, then remove.
+    eq(Md.toggleWrap(Md.toggleWrap(s('ab', 1), '_'), '_'), s('ab', 1));
+});
+
+test('isWrapped: cursor or selection inside a marker pair', () => {
+    const line = 'say **hi** now';
+    eq(Md.isWrapped(s(line, 7), '**'), true, 'cursor inside');
+    eq(Md.isWrapped(s(line, 6), '**'), true, 'cursor right after the opening marker');
+    eq(Md.isWrapped(s(line, 8), '**'), true, 'cursor right before the closing marker');
+    eq(Md.isWrapped(s(line, 4), '**'), false, 'cursor before the opening marker');
+    eq(Md.isWrapped(s(line, 10), '**'), false, 'cursor after the closing marker');
+    eq(Md.isWrapped(s(line, 4, 10), '**'), true, 'markers selected too');
+    eq(Md.isWrapped(s(line, 7), '_'), false, 'another marker');
+});
+
+test('isWrapped: markers pair left to right, within one line', () => {
+    // The gap between two bold words is not bold.
+    eq(Md.isWrapped(s('**a** b **c**', 6), '**'), false);
+    eq(Md.isWrapped(s('**a** b **c**', 10), '**'), true);
+    // A pair on another line does not count.
+    eq(Md.isWrapped(s('**a\nb**', 4), '**'), false);
+});
+
+test('hasLinePrefix / isNumbered: every touched line', () => {
+    eq(Md.hasLinePrefix(s('# a\nb', 1), '# '), true);
+    eq(Md.hasLinePrefix(s('# a\nb', 0, 5), '# '), false);
+    eq(Md.hasLinePrefix(s('- a\n- b', 0, 7), '- '), true);
+    eq(Md.hasLinePrefix(s('- a\n- b\nc', 0, 8), '- '), true, 'ends at the start of "c"');
+    eq(Md.isNumbered(s('1. a\n2. b', 6)), true);
+    eq(Md.isNumbered(s('1. a\nb', 0, 6)), false);
+});
+
 test('line prefix: toggles on every touched line', () => {
     eq(Md.toggleLinePrefix(s('a\nb\nc', 0, 3), '- '), s('- a\n- b\nc', 0, 7));
     eq(Md.toggleLinePrefix(s('- a\n- b\nc', 0, 7), '- '), s('a\nb\nc', 0, 3));

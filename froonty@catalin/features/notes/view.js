@@ -1,13 +1,17 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Notes tab:
 //
-//   [2026-09-28 15.40 ×] [Plan] [+]          capsule tabs
-//   [B][I][S][H][•][1.][☑][</>][🔗]          formatting bar
+//   [2026-09-28 15.40 ×] [Plan] [+] [⤴]      capsule tabs, fold button
+//   [B][I][S][H][•][1.][☑][</>][🔗][↩]  (●)  tools row: formatting bar,
+//                                             wrap, note colour
 //   ┌──────────────────────────────────┐
 //   │ editor                           │     multi-line, scrolls
 //   └──────────────────────────────────┘
 //
 // Renders NotesService state; typing goes to service.setText().
+// ⤴ folds the tools row away for a taller editor; ⤵ brings it back
+// (notes-show-tools). The formatting toggles light up for the formatting
+// at the cursor.
 
 import Clutter from 'gi://Clutter';
 import Gio from 'gi://Gio';
@@ -20,6 +24,15 @@ import {ColorPicker} from './colorPicker.js';
 import {COLOR_IDS} from './colors.js';
 import {FormatBar} from './formatBar.js';
 import {NoteTabs} from './tabs.js';
+
+// ⤴ / ⤵ as bundled symbolic icons: the Unicode arrows need a fallback font
+// whose tall line height made the tab row 11 px taller, and may be missing.
+const foldIcon = name => new Gio.FileIcon({
+    file: Gio.File.new_for_uri(import.meta.url).get_parent()
+        .get_child('icons').get_child(`froonty-fold-${name}-symbolic.svg`),
+});
+const FOLD_UP = foldIcon('up');
+const FOLD_DOWN = foldIcon('down');
 
 export class NotesView {
     constructor(ctx, service) {
@@ -63,6 +76,15 @@ export class NotesView {
             },
             onTrash: name => service.trash(name),
         });
+        // After "+": folds the tools row away (icon set in _sync).
+        this._toolsButton = new St.Button({
+            style_class: 'froonty-icon-button',
+            can_focus: true,
+            toggle_mode: true,
+            child: new St.Icon({gicon: FOLD_UP}),
+        });
+        this._toolsButton.connect('clicked', () => this._focusEditor());
+        this._tabs.actor.add_child(this._toolsButton);
         this._formatBar = new FormatBar(edit => this._applyEdit(edit));
         this._colorPicker = new ColorPicker({
             onPick: color => service.setColor(color),
@@ -99,6 +121,10 @@ export class NotesView {
             Gio.SettingsBindFlags.DEFAULT);
         this._wrapId = this._settings.connect('changed::notes-wrap', () => this._applyWrap());
         this._applyWrap();
+        // Fold button ↔ notes-show-tools setting ↔ tools row.
+        this._settings.bind('notes-show-tools', this._toolsButton, 'checked',
+            Gio.SettingsBindFlags.DEFAULT);
+        this._toolsId = this._settings.connect('changed::notes-show-tools', () => this._sync());
 
         this._changedId = service.connect('changed', () => this._sync());
         this._sync();
@@ -106,7 +132,9 @@ export class NotesView {
 
     destroy() {
         this._settings.disconnect(this._wrapId);
+        this._settings.disconnect(this._toolsId);
         Gio.Settings.unbind(this._formatBar.wrapButton, 'checked');
+        Gio.Settings.unbind(this._toolsButton, 'checked');
         this._service.disconnect(this._changedId);
         this.actor.destroy();
     }
@@ -148,8 +176,12 @@ export class NotesView {
                 this._syncNoWrapWidth();
             if (!this._syncing)
                 this._service.setText(text.text);
+            this._syncFormatState();
         });
         text.connect('cursor-changed', () => this._keepCursorVisible());
+        // Immediate, unlike cursor-changed (emitted at the next relayout).
+        text.connect('notify::cursor-position', () => this._syncFormatState());
+        text.connect('notify::selection-bound', () => this._syncFormatState());
 
         // St.Entry is not scrollable itself; a BoxLayout is. A click on the
         // box below the text (or on the entry's padding) focuses the editor
@@ -205,9 +237,14 @@ export class NotesView {
         const hasNote = selected !== null;
 
         this._tabs.update(notes, selected, name => this._service.colorOf(name));
-        this._tools.visible = hasNote;
-        if (!hasNote)
+        const showTools = this._settings.get_boolean('notes-show-tools');
+        this._tools.visible = hasNote && showTools;
+        if (!this._tools.visible)
             this._colorPicker.setOpen(false);
+        this._toolsButton.visible = hasNote;
+        this._toolsButton.child.gicon = showTools ? FOLD_UP : FOLD_DOWN;
+        this._toolsButton.accessible_name = showTools
+            ? _('Hide formatting tools') : _('Show formatting tools');
         this._colorPicker.setColor(this._service.color);
         this._setTint(this._service.color);
         this._scroll.visible = hasNote;
@@ -222,6 +259,7 @@ export class NotesView {
             this._entry.text = text;
             this._syncing = false;
         }
+        this._syncFormatState();
     }
 
     // The editor surface takes the note's colour (stylesheet.css).
@@ -231,19 +269,33 @@ export class NotesView {
         this._scroll.add_style_class_name(`froonty-note-color-${color}`);
     }
 
-    // Applies a markdown.js edit to the editor text and selection.
-    _applyEdit(edit) {
+    // The editor text and selection, as markdown.js takes them.
+    _editorState() {
         const text = this._entry.clutter_text;
-        const cursor = text.cursor_position;
-        const bound = text.selection_bound;
         // -1 means "end of text" for both.
         const length = [...text.text].length;
         const position = p => (p < 0 ? length : p);
+        return {
+            text: text.text,
+            start: position(text.selection_bound),
+            end: position(text.cursor_position),
+        };
+    }
 
-        const result = edit({text: text.text, start: position(bound), end: position(cursor)});
+    // Applies a markdown.js edit to the editor text and selection.
+    _applyEdit(edit) {
+        const result = edit(this._editorState());
+        const text = this._entry.clutter_text;
         text.text = result.text;
         text.set_selection(result.start, result.end);
         this._entry.grab_key_focus();
+    }
+
+    // Lights the formatting toggles for the cursor. Skipped while the row
+    // is hidden; _sync() calls it again when the row comes back.
+    _syncFormatState() {
+        if (this._tools.visible)
+            this._formatBar.update(this._editorState());
     }
 
     // Wrapped: long lines wrap. Unwrapped: they stay on one line and the
@@ -268,9 +320,14 @@ export class NotesView {
 
     _keepCursorVisible() {
         const text = this._entry.clutter_text;
-        const [ok, x, y, lineHeight] = text.position_to_coords(text.cursor_position);
+        let [ok, x, y, lineHeight] = text.position_to_coords(text.cursor_position);
         if (!ok)
             return;
+        // Those coordinates are relative to the text, which sits inside the
+        // entry's padding; the adjustments scroll the box holding the entry.
+        // Ignoring the offset left the last line under the bottom edge.
+        x += this._entry.x + text.x;
+        y += this._entry.y + text.y;
 
         // Horizontally too, when lines do not wrap (a small margin keeps the
         // caret off the very edge).
@@ -281,12 +338,14 @@ export class NotesView {
         else if (x + margin > h.value + h.page_size)
             h.value = x + margin - h.page_size;
 
-        const adjustment = this._scroll.vadjustment;
-        const top = adjustment.value;
-        const bottom = top + adjustment.page_size;
-        if (y < top)
-            adjustment.value = y;
-        else if (y + lineHeight > bottom)
-            adjustment.value = y + lineHeight - adjustment.page_size;
+        // Vertically, keep the cursor line a gap away from the rounded top and
+        // bottom edges. The gap is the entry's bottom padding (stylesheet),
+        // so the last line can always scroll that far up.
+        const gap = this._entry.peek_theme_node()?.get_padding(St.Side.BOTTOM) ?? 0;
+        const v = this._scroll.vadjustment;
+        if (y - gap < v.value)
+            v.value = Math.max(0, y - gap);
+        else if (y + lineHeight + gap > v.value + v.page_size)
+            v.value = y + lineHeight + gap - v.page_size;
     }
 }

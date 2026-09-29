@@ -235,7 +235,10 @@
        theme sets "StEntry { min-height: 22px }", which replaces the entry's
        minimum (the full text height), so long notes could not scroll. */
     min-height: auto;
-    padding: 8px 10px;
+    /* The bottom padding is also the gap view.js keeps between the cursor
+       line and the top or bottom edge while scrolling: it lets the last
+       line rise clear of the 12px rounded corners. */
+    padding: 8px 10px 16px;
     border: none;
     border-radius: 12px;
     box-shadow: none;
@@ -269,6 +272,20 @@
 
 .froonty-notes-tools {
     spacing: 4px;
+}
+
+/* Toggles in the formatting row (bold, heading, wrap…). On: filled with
+   Adwaita's accent blue, so it cannot be mistaken for the grey hover.
+   Off: the plain dim icon. After the icon-button rules on purpose: same
+   specificity, so the later rule wins. */
+.froonty-toggle:checked {
+    color: #ffffff;
+    background-color: rgba(53, 132, 228, 0.75);
+}
+
+.froonty-toggle:checked:hover,
+.froonty-toggle:checked:focus {
+    background-color: rgba(53, 132, 228, 0.95);
 }
 
 /* Note colours (features/notes/colors.js). Pastel approximations in the

@@ -28,6 +28,17 @@ Status: **implemented (v1)**. Decisions made 2026-09-28:
 - **Order and colours** are kept in a hidden `.froonty.json` in the notes
   folder, so the `.md` files stay plain Markdown. A note restored from the
   Trash comes back yellow.
+- A **fold button** after "+" hides the whole tools row (formatting bar,
+  wrap, colour) to give the note more height. It shows ⤴ while the row is
+  open and ⤵ while it is folded, and is remembered (`notes-show-tools`, on
+  by default). The arrows are bundled symbolic icons (`icons/`): the
+  Unicode ⤴ ⤵ need a fallback font whose line height made the tab row
+  11 px taller.
+- **Formatting toggles show their state** at the cursor or selection:
+  lit in accent blue = on (a click removes it), plain = off (a click adds
+  it). Link is an action, not a toggle. Wrap uses the same look. A bare
+  cursor inside `**hi**` counts as bold, and Bold then unwraps the span
+  instead of inserting `****`. Markers pair left to right within one line.
 
 **Next (on hold, agreed 2026-09-28): rendered Markdown.** The formatting
 bar only pays off if the note *shows* formatting as Sticky Notes does, with
@@ -67,13 +78,16 @@ Several notes are shown as capsule tabs, and edits save by themselves.
 features/notes/
 ├── index.js      descriptor
 ├── names.js      pure: note name ↔ file name, timestamps, uniqueness
-├── markdown.js   pure: formatting-bar edits on text + selection
+├── markdown.js   pure: formatting-bar edits on text + selection, and
+│                 which formatting applies there (toggle state)
 ├── store.js      Gio async file I/O: list, read, atomic write, create,
 │                 rename (never overwrites), trash; folder monitor
 ├── service.js    notes list + selection; queued operations; autosave
 ├── tabs.js       St: capsule tabs, inline rename, two-step ×
-├── formatBar.js  St: formatting buttons
-├── view.js       St: composes tabs, bar, editor, empty state
+├── formatBar.js  St: formatting buttons; lights the active toggles
+├── view.js       St: composes tabs, fold button, tools row, editor,
+│                 empty state
+├── icons/        ⤴ / ⤵ fold icons (symbolic SVG)
 └── prefs.js      Notes settings tab: enable, folder
 ```
 
@@ -111,6 +125,12 @@ features/notes/
 - Clicking inside the expanded hub no longer collapses the island. The pill
   is an St.Button, and a press that bubbled up to it cleared the editor's
   key focus.
+- **Scrolling keeps a gap around the cursor line.** While typing or moving
+  the cursor, its line stays a gap away from the editor's rounded top and
+  bottom edges, and the note has the same extra space below its last line.
+  The gap is the editor's bottom padding in `stylesheet.css` (16 px).
+  Before this, the cursor position was taken relative to the text instead
+  of the scrolled box, so the last line ended up 8 px under the edge.
 - The editor takes the key focus when the tab is shown, when a note is
   created, and when a tab is picked (`view.setActive`).
 - Long notes scroll inside the editor. Ubuntu's Yaru theme sets

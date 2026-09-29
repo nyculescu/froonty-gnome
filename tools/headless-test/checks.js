@@ -467,10 +467,15 @@ async function testHub(outDir) {
 // adjustment values alone do not.
 async function editorInk(outDir, view, name) {
     const b = boxOf(view._scroll);
+    return inkIn(outDir, name, b.x1 + 8, b.y1 + 8, b.x2 - b.x1 - 16, b.y2 - b.y1 - 16);
+}
+
+// The same measure for any stage rectangle.
+async function inkIn(outDir, name, x, y, width, height) {
     const path = GLib.build_filenamev([outDir, `${name}.png`]);
     const stream = Gio.File.new_for_path(path).replace(null, false, Gio.FileCreateFlags.NONE, null);
-    await new Shell.Screenshot().screenshot_area(Math.round(b.x1) + 8, Math.round(b.y1) + 8,
-        Math.round(b.x2 - b.x1) - 16, Math.round(b.y2 - b.y1) - 16, stream);
+    await new Shell.Screenshot().screenshot_area(Math.round(x), Math.round(y),
+        Math.round(width), Math.round(height), stream);
     stream.close(null);
     const pixbuf = GdkPixbuf.Pixbuf.new_from_file(path);
     const pixels = pixbuf.get_pixels();
@@ -761,12 +766,25 @@ async function testNotesTabsAndColors(outDir) {
     view._entry.clutter_text.set_cursor_position(-1);
     await typeText('!');
     const vadj = view._scroll.vadjustment;
-    const [, , cursorY, lineH] = view._entry.clutter_text.position_to_coords(
-        view._entry.clutter_text.cursor_position);
-    check('editor: a long note is scrollable and typing keeps the cursor in view',
-        vadj.upper > vadj.page_size && cursorY + lineH <= vadj.value + vadj.page_size + 20,
-        `upper=${vadj.upper} page=${vadj.page_size} value=${vadj.value} cursorY=${cursorY}`);
+    const editorText = view._entry.clutter_text;
+    const [, , cursorY, lineH] = editorText.position_to_coords(editorText.cursor_position);
+    // In the scrolled box's coordinates: the text sits inside the entry's padding.
+    const lineBottom = view._entry.y + editorText.y + cursorY + lineH;
+    const gap = view._entry.get_theme_node().get_padding(St.Side.BOTTOM);
+    check('editor: typing on the last line keeps it a gap above the bottom edge',
+        vadj.upper > vadj.page_size && gap >= 12 * scale() &&
+        lineBottom + gap <= vadj.value + vadj.page_size + 1,
+        `upper=${vadj.upper} page=${vadj.page_size} value=${vadj.value} ` +
+        `lineBottom=${lineBottom} gap=${gap}`);
     await screenshotTop(outDir, 'notes-long-bottom');
+    // Pixels: no text in the rounded bottom band (the right edge holds the
+    // overlay scrollbar, which is dark too).
+    const sb = boxOf(view._scroll);
+    const corner = 12 * scale();
+    const bandInk = await inkIn(outDir, 'ink-bottom-band', sb.x1 + corner, sb.y2 - corner,
+        sb.x2 - sb.x1 - 2 * corner - 12 * scale(), corner);
+    check('editor: no text overlaps the rounded bottom corners', bandInk === 0,
+        `ink=${bandInk.toFixed(4)}`);
     const inkBottom = await editorInk(outDir, view, 'ink-long-bottom');
     check('editor: text is visible when scrolled to the bottom', inkBottom > 0.01,
         `ink=${inkBottom.toFixed(4)}`);
@@ -815,8 +833,73 @@ async function testNotesTabsAndColors(outDir) {
         wrapButton.checked && view._entry.clutter_text.line_wrap &&
         hadj.upper <= hadj.page_size + 1, `upper=${hadj.upper} page=${hadj.page_size}`);
 
+    await testFormatState(outDir, view);
+    await testToolsFold(outDir, view);
+
     island().collapse();
     await sleep(animationWait());
+}
+
+// Formatting toggles light up for the formatting at the cursor.
+async function testFormatState(outDir, view) {
+    const text = view._entry.clutter_text;
+    const bar = view._formatBar.actor;
+    // Bar order: B I S H • 1. ☑ </> 🔗 wrap. Wrap is on here.
+    const lit = () => bar.get_children().flatMap((b, i) => (b.checked ? [i] : [])).join(',');
+    const at = async pos => {
+        text.set_selection(pos, pos);
+        await sleep(SETTLE_MS);
+    };
+    view._entry.text = '# Title\nsay **hi** now';
+    text.grab_key_focus();
+
+    await at(3); // in "Title"
+    check('format state: cursor on a heading lights H only', lit() === '3,9', lit());
+    await at(15); // between "h" and "i" of **hi**
+    check('format state: cursor inside **hi** lights Bold only', lit() === '0,9', lit());
+    await screenshotTop(outDir, 'notes-format-state');
+    await at(20); // in "now"
+    check('format state: plain text lights nothing', lit() === '9', lit());
+
+    await at(15);
+    await clickActor(bar.get_child_at_index(0)); // Bold, while lit
+    await sleep(SETTLE_MS);
+    check('format state: Bold while lit removes the bold and unlights',
+        view._entry.text === '# Title\nsay hi now' && lit() === '9',
+        `${JSON.stringify(view._entry.text)} lit=${lit()}`);
+}
+
+// ⤴ after "+" folds the tools row away; ⤵ brings it back.
+async function testToolsFold(outDir, view) {
+    const toggle = view._toolsButton;
+    const add = view._tabs.addButton;
+    const editorHeight = view._scroll.height;
+    // Natural heights: the row stretches its children, so allocated heights
+    // would match even if the glyph made the whole row taller.
+    const natural = actor => actor.get_preferred_height(-1)[1];
+    check('tools fold: ⤴ sits right after "+", no taller than it',
+        boxOf(toggle).x1 >= boxOf(add).x2 && natural(toggle) <= natural(add) &&
+        toggle.child.gicon.get_file().get_basename().includes('fold-up') && view._tools.visible,
+        `toggle natural height ${natural(toggle)}, "+" ${natural(add)}; ` +
+        `x ${boxOf(toggle).x1} after "+" ending ${boxOf(add).x2}`);
+
+    await clickActor(toggle);
+    await sleep(SETTLE_MS);
+    check('tools fold: ⤴ hides the row, is saved, and gives the editor the room',
+        !view._tools.visible && !settings().get_boolean('notes-show-tools') &&
+        toggle.child.gicon.get_file().get_basename().includes('fold-down') && view._scroll.height > editorHeight,
+        `visible=${view._tools.visible} editor ${editorHeight} -> ${view._scroll.height}`);
+    check('tools fold: the editor keeps the key focus',
+        global.stage.key_focus === view._entry.clutter_text);
+    await screenshotTop(outDir, 'notes-tools-folded');
+
+    await clickActor(toggle);
+    await sleep(SETTLE_MS);
+    check('tools fold: ⤵ brings the row back',
+        view._tools.visible && settings().get_boolean('notes-show-tools') &&
+        toggle.child.gicon.get_file().get_basename().includes('fold-up') && view._scroll.height === editorHeight,
+        `editor ${view._scroll.height}`);
+    settings().reset('notes-show-tools');
 }
 
 // ---------------------------------------------------------------- settings

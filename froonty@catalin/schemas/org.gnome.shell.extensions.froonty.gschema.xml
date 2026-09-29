@@ -54,6 +54,11 @@
       <summary>Wrap long lines in notes</summary>
       <description>Off: lines stay on one line and the note scrolls horizontally.</description>
     </key>
+    <key name="notes-show-tools" type="b">
+      <default>true</default>
+      <summary>Show the formatting row in notes</summary>
+      <description>Off: the row with the formatting buttons, line wrap and note colour is folded away (⤵ after "+" unfolds it), leaving more room for the note.</description>
+    </key>
     <key name="notes-last" type="s">
       <default>''</default>
       <summary>Note selected last</summary>
