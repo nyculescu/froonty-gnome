@@ -31,7 +31,7 @@ done
 
 1. Reuse GNOME Shell facilities; never duplicate a store, a daemon or a
    calendar that GNOME already has.
-2. Event-driven. No polling loop exists in Phase 1. A timer may only be
+2. Event-driven. No polling loop exists. A timer may only be
    added with a written justification and a configurable interval.
 3. No subprocesses, no network access, no background process.
 4. Every private Shell API is listed in section 6 and isolated in `shell/`.
@@ -80,7 +80,16 @@ The actor tree (`ui/island.js`) is:
 ```
 strip  St.Widget, full monitor width, reactive only while expanded
  └ pill  St.Button (click + Enter/Space + a11y), clip_to_allocation
-    └ content  BinLayout: CollapsedView | ExpandedView (cross-faded)
+    └ content  BinLayout: CollapsedView | Hub (cross-faded)
+```
+
+The hub (`ui/hub.js`) is the expanded content:
+
+```
+hub     BinLayout, reactive (stops clicks from reaching the pill)
+ ├ main     [tab column (GridLayout, TAB_COLUMNS = 1)] [header ⚙️ / content]
+ ├ panic    panic bar, centered across the island (click-through layer)
+ └ overlay  tooltips (click-through, fixed positions)
 ```
 
 - `Main.layoutManager.addChrome(strip, {affectsInputRegion: false, trackFullscreen: true})`
@@ -176,6 +185,8 @@ Consequences:
 | `GLib.DateTime`, `GLib.TimeZone` | Formatting |
 | `Gio.Settings` (own schema; `org.gnome.desktop.interface clock-format`) | Settings |
 | `Atk.StateType.EXPANDED` | Accessibility |
+| `Gvc` streams (`change_is_muted`, `notify::is-muted`), through the Shell's mixer | Panic buttons: mute microphone / sound |
+| `Gio.File` async I/O, `Gio.FileMonitor` | Notes: Markdown files, folder watching |
 | `Meta.KeyBindingFlags`, `Shell.ActionMode` | Keybinding |
 | `Adw` 1.5, `Gtk` 4 | Preferences |
 
@@ -192,6 +203,7 @@ Consequences:
 | `Shell.util_translate_time_string` with GNOME Shell's `calendar heading` msgid | `ui/dateMenu.js:175-178` |
 | `global.focus_manager.navigate_from_event` (Tab navigation under a grab, as `PanelMenu.Button` does) | `ui/panelMenu.js` |
 | `Main.panel.addToStatusArea`, `PanelMenu.Button` (top bar icon while the island is hidden) | `ui/panel.js:935`, `ui/panelMenu.js` |
+| `getMixerControl()`: the shared Gvc mixer behind Quick Settings' volume sliders (through `shell/mixer.js`) | `ui/status/volume.js:24` |
 | `org.gnome.Shell.Extensions.OpenExtensionPrefs` (public D-Bus API of the prefs service); `global.display` `window-created`, `Meta.Window` `shown` / `get_wm_class()`; `Main.activateWindow` | `Shell/Extensions/js/extensionsService.js`, `ui/main.js:878` |
 
 ### 6.3 Private / internal (isolated in `shell/`)
@@ -208,7 +220,8 @@ Consequences:
 
 The expanded island has a ⚙️ button in its top-right corner. It opens the
 settings window, a separate window in GNOME Shell's preferences process
-with tabs (General, Appearance). `shell/settingsWindow.js` works around
+with tabs (General, Appearance, Panic buttons, Notes). `shell/settingsWindow.js`
+works around
 three GNOME Shell 46 behaviors found while testing:
 
 - A second `OpenExtensionPrefs` while a window is open fails with "Already
@@ -244,13 +257,15 @@ Two St/Clutter rules also shaped the island:
 | HiDPI / fractional scaling | Wrong sizes | Scale-factor aware; **not yet verified on real HiDPI hardware** |
 | Ubuntu session mode | Ubuntu patches Shell 46 | The tests run the Ubuntu build; `FROONTY_TEST_MODE=ubuntu` runs the Ubuntu session mode |
 
-## 8. Lifecycle and resource budget (Phase 1)
+## 8. Lifecycle and resource budget
 
 | Resource | Count | Released in |
 |---|---|---|
 | Actors | 1 strip (+ children), added as chrome | `Island.destroy()` |
 | GObject signal connections | layoutManager ×2, panelBox ×1 (+1 allocation watch), ThemeContext ×1, dateMenu container ×2 + one allocation watch per ancestor (3), settings ×7, WallClock ×2, desktop interface settings ×1 | `disconnectObject()` in each owner's teardown |
-| Keybinding | 1 | `_destroyIsland()` |
+| Keybinding | 1, for the whole time the extension is enabled | `disable()` |
+| Top bar icon | 1, only while the island is hidden | `_syncIsland()` / `disable()` |
+| Mixer connections | Per panic button: 2 on the Shell's mixer + 1 on its current stream | `PanicBar.destroy()` |
 | Ctrl+Alt+Tab group | 1 | `Island.destroy()` |
 | Timers / GLib sources | **No periodic timers.** One-shot only: the hover-open delay while the pointer rests on the collapsed pill (`HoverOpen`); a 10 s give-up timeout while a requested settings window has not appeared (`SettingsWindow.destroy()`); Notes' 0.8 s autosave while there are unsaved edits (`NotesService.stop()` flushes and removes it). At most one pending `BEFORE_REDRAW` later (cover recompute), removed in `PanelClock.restore()`. WallClock's internal timerfd is removed with `run_dispose()` | `ClockService.stop()` |
 | File watching | Notes: one inotify folder monitor (`Gio.FileMonitor`), only while the Notes tab has been opened | `NotesService.stop()` |
@@ -258,48 +273,54 @@ Two St/Clutter rules also shaped the island:
 
 ## 9. Testing
 
-`make test` (`tools/headless-test/run.sh`) starts a **fully isolated headless
-GNOME Shell 46**:
+Two test layers:
 
-- private session bus
-- private *empty* system bus, so no real logind, GDM or lock signals are touched
-- private XDG dirs
-- keyfile GSettings backend
-- two virtual monitors
+- **`make unit`** runs plain-gjs unit tests for Shell-free logic: Notes names,
+  Markdown edits, metadata, file store and service, and the panic catalog.
+  Each run gets a private `TMPDIR` and `XDG_DATA_HOME`, so trashed test files
+  never reach the real Trash.
+- **`make test`** (`tools/headless-test/run.sh`) starts a **fully isolated
+  headless GNOME Shell 46**, once in the default session mode and once in
+  Ubuntu's (with the Yaru theme, Ubuntu Dock, DING, AppIndicators and Tiling
+  Assistant loaded). Layout bugs can depend on the theme, and several showed
+  only under Yaru. Isolation:
+  - private session bus
+  - private *empty* system bus, so no real logind, GDM or lock signals are
+    touched
+  - private XDG dirs and keyfile GSettings backend
+  - two virtual monitors
+  - a private PipeWire with a virtual speaker and microphone.
+    WirePlumber's ALSA, Bluetooth and camera monitors are disabled, and a
+    guard skips every mute check unless all visible audio devices are test
+    devices.
 
-It then loads `tools/headless-test/checks.js` via `org.gnome.Shell.Eval`. Eval
-is enabled by a test-only helper extension that exists only in that session.
+The checks are loaded via `org.gnome.Shell.Eval`, which a test-only helper
+extension enables inside that session. They drive real pointer and keyboard
+input through Clutter virtual devices and cover:
 
-The checks drive real input through Clutter virtual devices and cover:
+- **Island:** placement, top bar clock coverage, expand/collapse by click,
+  keyboard, shortcut and hover, the modal grab, and a real primary-monitor
+  switch.
+- **Hub:** the tab column and its tooltips; lazy feature creation and
+  activation, tested with a fake feature.
+- **Panic buttons:** real mute and unmute, following changes made elsewhere,
+  and the settings rules.
+- **Notes:**
+  - create, type, autosave, formatting, rename, Trash, colours, tabs;
+  - long-note scrolling and line wrap;
+  - pixel checks that text is really visible, not just scrolled to.
+- **Settings window:** open, raise instead of duplicating, focus.
+- **Lifecycle:** 25 enable/disable cycles, some mid-animation, with a
+  before/after "Shell footprint". It covers actors, chrome, Ctrl+Alt+Tab,
+  keybindings, the modal count, top bar entries, and handler counts on every
+  signal source (including the Shell's mixer). The checks prove these counts
+  are sensitive.
 
-- load
-- centering on the primary monitor
-- concealment of the top bar clock
-- click to expand, outside click, second click
-- keyboard: shortcut, Escape, Enter
-- the modal grab count
-- live settings
-- `island-enabled`
-- a real primary-monitor switch through `org.gnome.Mutter.DisplayConfig`
-- 25 enable/disable cycles, some while expanded mid-animation
-- a before/after "shell footprint":
-  - uiGroup children
-  - tracked chrome
-  - Ctrl+Alt+Tab items
-  - keybinding modes
-  - modal count and action mode
-  - per-signal handler counts (the checks also prove these counts are sensitive)
-- deliberately firing every signal Froonty ever connected, after disable
-- a preferences window smoke test
+`run.sh` exits non-zero on any failed check, missing results, or Froonty
+error in the Shell log. Screenshots are kept with `--keep`.
 
-Screenshots are written to the work directory (`--keep`).
-
-Both runs pass 41/41 with no JS errors in the Shell log:
-
-- the default session mode, where Froonty is the only user extension besides
-  the test helper
-- `FROONTY_TEST_MODE=ubuntu`, with Ubuntu Dock, DING, AppIndicators and Tiling
-  Assistant loaded
+Release candidate 0.2.0-rc1: **139/139** in both session modes, plus 39
+unit tests.
 
 The Ubuntu run found a **GNOME Shell 46 race** in `ui/extensionSystem.js`:
 
@@ -333,6 +354,6 @@ it makes a leak-free `disable()` matter even more.
 | 3 Notifications | `Main.messageTray` `source-added`; `Source` `notification-request-banner` (the signal GNOME's own banner logic uses); `MessageTray.bannerBlocked` (public setter); `Main.panel.toggleCalendar()` |
 | 4 MPRIS | `ui/mpris.js` `MprisPlayer`, or async `Gio.DBusProxy` with `NameOwnerChanged` |
 | 5 Battery | UPower DisplayDevice (`/org/freedesktop/UPower/devices/DisplayDevice`), as `ui/status/system.js` does; `UPowerGlib` is already loaded by the Shell |
-| 5 Volume/OSD | `ui/status/volume.js` `getMixerControl()` (shared Gvc mixer); `Main.osdWindowManager` |
+| 5 Volume/OSD | `ui/status/volume.js` `getMixerControl()` (shared Gvc mixer; already used by the panic buttons); `Main.osdWindowManager` |
 | 6 Weather | `misc/weather.js` `WeatherClient`; off by default |
 | 7 Metrics | No GNOME equivalent. Async `/proc` reads only while visible, with a configurable interval |
