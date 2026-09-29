@@ -91,6 +91,21 @@ export class ClockService extends EventEmitter {
         };
     }
 
+    /**
+     * A moment in the clock's time zone and format: "22:59", or with
+     * `weekday` "Sat 22:59".
+     *
+     * @param {number} ms since the epoch
+     * @param {object} [options]
+     * @param {boolean} [options.weekday]
+     */
+    formatTime(ms, {weekday = false} = {}) {
+        const time = GLib.DateTime.new_from_unix_utc(Math.floor(ms / 1000))
+            .to_timezone(this._timeZone());
+        const format = this._timeFormat();
+        return time.format(weekday ? `%a ${format}` : format).trim();
+    }
+
     _timeZone() {
         return this._wallClock?.timezone ?? GLib.TimeZone.new_local();
     }

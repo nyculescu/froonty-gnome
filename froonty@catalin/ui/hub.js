@@ -72,6 +72,7 @@ export class Hub extends EventEmitter {
         this._shown = shown;
         if (!shown)
             this._tooltip.hide();
+        this._panicBar.setShown(shown);
         this._setEntryActive(this._entries.get(this._activeId), shown);
     }
 
@@ -164,7 +165,12 @@ export class Hub extends EventEmitter {
         // the tabs), on the header row. Its layer is click-through; only the
         // buttons take input.
         this._tooltip = new Tooltip();
-        this._panicBar = new PanicBar(this._settings, this._tooltip);
+        this._panicBar = new PanicBar(this._settings, this._tooltip, {
+            selectTab: id => {
+                this.select(id);
+                return this._activeId === id;
+            },
+        });
         const panicLayer = new St.Widget({
             style_class: 'froonty-panic-layer',
             layout_manager: new Clutter.BinLayout(),
@@ -220,7 +226,9 @@ export class Hub extends EventEmitter {
             accessible_name: feature.title,
             can_focus: true,
             track_hover: true,
-            child: new St.Icon({icon_name: feature.icon}),
+            // An icon name, or a Gio.Icon for one the feature bundles.
+            child: new St.Icon(typeof feature.icon === 'string'
+                ? {icon_name: feature.icon} : {gicon: feature.icon}),
         });
         button.connect('clicked', () => this.select(feature.id));
         this._tooltip.attach(button, () => feature.title, 'right');

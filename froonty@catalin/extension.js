@@ -10,7 +10,7 @@ import Meta from 'gi://Meta';
 import Shell from 'gi://Shell';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
-import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
+import {Extension, gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 
 import {ClockService} from './services/clock.js';
 import {PanelClock} from './shell/dateMenu.js';
@@ -29,12 +29,19 @@ export default class FroontyExtension extends Extension {
         this._island = null;
         this._launcher = null;
 
-        // Always available: toggles the island, or opens the settings while
-        // the island is hidden ("Show island" off).
+        // "Start at login": the first enable() in a Shell process is the
+        // login (or, on X11, a Shell restart). Later ones (screen unlock,
+        // another extension being toggled) keep what the user had, so
+        // disable() deliberately leaves this field alone.
+        this._started ??= this._settings.get_boolean('start-at-login');
+
+        // Always available: starts Froonty while it waits after login,
+        // toggles the island, or opens the settings while the island is
+        // hidden ("Show island" off).
         Main.wm.addKeybinding(TOGGLE_SHORTCUT_KEY, this._settings,
             Meta.KeyBindingFlags.IGNORE_AUTOREPEAT,
             Shell.ActionMode.NORMAL | Shell.ActionMode.OVERVIEW | Shell.ActionMode.POPUP,
-            () => (this._island ? this._island.toggle() : this._settingsWindow.open()));
+            () => this._onShortcut());
 
         this._settings.connectObject(
             'changed::island-enabled', () => this._syncIsland(),
@@ -57,16 +64,32 @@ export default class FroontyExtension extends Extension {
         this._settings = null;
     }
 
-    // While the island is hidden, a top bar icon keeps Froonty reachable.
+    _onShortcut() {
+        if (!this._started)
+            this._start();
+        else if (this._island)
+            this._island.toggle();
+        else
+            this._settingsWindow.open();
+    }
+
+    _start() {
+        this._started = true;
+        this._syncIsland();
+    }
+
+    // While the island is not shown, a top bar icon keeps Froonty reachable.
     _syncIsland() {
-        if (this._settings.get_boolean('island-enabled')) {
-            this._launcher?.destroy();
-            this._launcher = null;
+        this._launcher?.destroy();
+        this._launcher = null;
+        if (this._started && this._settings.get_boolean('island-enabled')) {
             this._createIsland();
-        } else {
-            this._destroyIsland();
-            this._launcher ??= new PanelLauncher(() => this._settingsWindow.open());
+            return;
         }
+        this._destroyIsland();
+        this._launcher = this._started
+            ? new PanelLauncher(_('Froonty settings'), () => this._settingsWindow.open())
+            : new PanelLauncher(_('Start Froonty'), () => this._start());
     }
 
     _createIsland() {

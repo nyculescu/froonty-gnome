@@ -38,6 +38,9 @@ done
 5. `disable()` undoes everything `enable()` did. GNOME Shell 46 calls
    `disable()` on every screen lock (default `session-modes` is `["user"]`,
    `ui/extensionSystem.js:440`), so this path runs many times a day.
+   The one exception is the "started" state behind `start-at-login`: it is
+   kept on the extension object, which lives as long as the Shell process,
+   so a screen unlock does not undo a manual start.
 
 ## 3. NexNotch review
 
@@ -186,7 +189,8 @@ Consequences:
 | `Gio.Settings` (own schema; `org.gnome.desktop.interface clock-format`) | Settings |
 | `Atk.StateType.EXPANDED` | Accessibility |
 | `Gvc` streams (`change_is_muted`, `notify::is-muted`), through the Shell's mixer | Panic buttons: mute microphone / sound |
-| `Gio.File` async I/O, `Gio.FileMonitor` | Notes: Markdown files, folder watching |
+| `Gio.File` async I/O, `Gio.FileMonitor` | Notes: Markdown files, folder watching; Claude: Claude Code's config file |
+| `Gio.NetworkMonitor` (`network-changed`, `notify::connectivity`, `notify::network-available`) | Claude: "Unknown" while offline, from NetworkManager's own check, with no network access of Froonty's |
 | `Meta.KeyBindingFlags`, `Shell.ActionMode` | Keybinding |
 | `Adw` 1.5, `Gtk` 4 | Preferences |
 
@@ -220,7 +224,7 @@ Consequences:
 
 The expanded island has a ⚙️ button in its top-right corner. It opens the
 settings window, a separate window in GNOME Shell's preferences process
-with tabs (General, Appearance, Panic buttons, Notes). `shell/settingsWindow.js`
+with tabs (General, Appearance, Panic buttons, Notes, Claude). `shell/settingsWindow.js`
 works around
 three GNOME Shell 46 behaviors found while testing:
 
@@ -256,6 +260,7 @@ Two St/Clutter rules also shaped the island:
 | Panel hidden (e.g. by a hide-top-bar extension) | Island still sits at the top of the monitor | Acceptable; the offset falls back to 0 |
 | HiDPI / fractional scaling | Wrong sizes | Scale-factor aware; **not yet verified on real HiDPI hardware** |
 | Ubuntu session mode | Ubuntu patches Shell 46 | The tests run the Ubuntu build; `FROONTY_TEST_MODE=ubuntu` runs the Ubuntu session mode |
+| Claude Code changes its private usage cache (`cachedUsageUtilization` in `~/.claude.json`) | Claude tab shows the hint instead of rows, or loses a row | Defensive parser that leaves out what it does not know; unit tests pin the format seen in Claude Code 2.1.280 ([features/claude.md](features/claude.md)) |
 
 ## 8. Lifecycle and resource budget
 
@@ -268,15 +273,17 @@ Two St/Clutter rules also shaped the island:
 | Mixer connections | Per panic button: 2 on the Shell's mixer + 1 on its current stream | `PanicBar.destroy()` |
 | Ctrl+Alt+Tab group | 1 | `Island.destroy()` |
 | Timers / GLib sources | **No periodic timers.** One-shot only: the hover-open delay while the pointer rests on the collapsed pill (`HoverOpen`); a 10 s give-up timeout while a requested settings window has not appeared (`SettingsWindow.destroy()`); Notes' 0.8 s autosave while there are unsaved edits (`NotesService.stop()` flushes and removes it). At most one pending `BEFORE_REDRAW` later (cover recompute), removed in `PanelClock.restore()`. WallClock's internal timerfd is removed with `run_dispose()` | `ClockService.stop()` |
-| File watching | Notes: one inotify folder monitor (`Gio.FileMonitor`), only while the Notes tab has been opened | `NotesService.stop()` |
-| Subprocesses / network / D-Bus proxies | 0 | — |
+| File watching | Notes: one inotify folder monitor (`Gio.FileMonitor`), only while the Notes tab has been opened. Claude: one monitor on Claude Code's config file while the Claude tab is on screen, and one more while the island is open with the Claude session panic button | `NotesService.stop()`; `ClaudeService.setActive(false)` |
+| Network monitor | Claude: three connections on the shared `Gio.NetworkMonitor` (`network-changed`, `notify::connectivity`, `notify::network-available`) per active reader: the tab while on screen, the panic button while the island is open | `ClaudeService.setActive(false)` |
+| Subprocesses / network / D-Bus proxies | 0 of Froonty's own. The Claude tab reads GIO's process-wide `Gio.NetworkMonitor`, whose NetworkManager backend keeps GIO's own proxy for the life of the Shell | — |
 
 ## 9. Testing
 
 Two test layers:
 
 - **`make unit`** runs plain-gjs unit tests for Shell-free logic: Notes names,
-  Markdown edits, metadata, file store and service, and the panic catalog.
+  Markdown edits, metadata, file store and service, the panic catalog, and
+  the Claude usage parser and service.
   Each run gets a private `TMPDIR` and `XDG_DATA_HOME`, so trashed test files
   never reach the real Trash.
 - **`make test`** (`tools/headless-test/run.sh`) starts a **fully isolated
@@ -309,7 +316,13 @@ input through Clutter virtual devices and cover:
   - create, type, autosave, formatting, rename, Trash, colours, tabs;
   - long-note scrolling and line wrap;
   - pixel checks that text is really visible, not just scrolled to.
+- **Claude:** rows and wording from a private `CLAUDE_CONFIG_DIR`, live
+  updates while shown, "Unknown" offline, nothing watched while collapsed,
+  a fresh read on reopening.
 - **Settings window:** open, raise instead of duplicating, focus.
+- **Startup:** with `start-at-login` off, a simulated login waits behind the
+  top bar icon, a lock/unlock keeps the state, and the icon or the shortcut
+  starts Froonty.
 - **Lifecycle:** 25 enable/disable cycles, some mid-animation, with a
   before/after "Shell footprint". It covers actors, chrome, Ctrl+Alt+Tab,
   keybindings, the modal count, top bar entries, and handler counts on every
@@ -321,6 +334,9 @@ error in the Shell log. Screenshots are kept with `--keep`.
 
 Release candidate 0.2.0-rc1: **139/139** in both session modes, plus 39
 unit tests.
+
+Unreleased (start at login, Claude tab and panic button): **175/175** in
+both session modes, plus 56 unit tests.
 
 The Ubuntu run found a **GNOME Shell 46 race** in `ui/extensionSystem.js`:
 

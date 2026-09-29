@@ -13,6 +13,7 @@ import {
 
 // Feature settings tabs, after the general ones. (Imported here, not via
 // features/registry.js: that loads Shell-side modules this process cannot.)
+import {addIconPath, claudePage} from './features/claude/prefs.js';
 import {notesPage} from './features/notes/prefs.js';
 import {panicPage} from './panic/prefs.js';
 
@@ -27,6 +28,8 @@ export default class FroontyPreferences extends ExtensionPreferences {
         const settings = this.getSettings();
         // Keep the settings object alive as long as the window.
         window._settings = settings;
+        // Bundled icons (Claude's Spark: its tab and its panic button).
+        addIconPath();
 
         // With more than one page, Adw.PreferencesWindow shows them as tabs
         // (a view switcher in the header bar).
@@ -34,6 +37,7 @@ export default class FroontyPreferences extends ExtensionPreferences {
         window.add(this._appearancePage(settings));
         window.add(panicPage(settings));
         window.add(notesPage(settings));
+        window.add(claudePage(settings));
         window.visible_page_name = GENERAL_PAGE;
     }
 
@@ -43,6 +47,7 @@ export default class FroontyPreferences extends ExtensionPreferences {
             title: _('General'),
             icon_name: 'emblem-system-symbolic',
         });
+        page.add(this._startupGroup(settings));
         page.add(this._islandGroup(settings));
         page.add(this._clockGroup(settings));
         return page;
@@ -57,6 +62,13 @@ export default class FroontyPreferences extends ExtensionPreferences {
         page.add(this._sizeGroup(settings));
         page.add(this._animationGroup(settings));
         return page;
+    }
+
+    _startupGroup(settings) {
+        const group = new Adw.PreferencesGroup({title: _('Startup')});
+        group.add(switchRow(settings, 'start-at-login', _('Start at login'),
+            _('When off, Froonty waits after login until you click its icon in the top bar or press the shortcut')));
+        return group;
     }
 
     _islandGroup(settings) {

@@ -129,9 +129,9 @@ function pillCenter() {
 
 // ---------------------------------------------------------------- probes
 
-async function screenshotTop(outDir, name) {
+async function screenshotTop(outDir, name, height = 260) {
     const monitor = Main.layoutManager.primaryMonitor;
-    const width = 840, height = 260;
+    const width = 840;
     const x = monitor.x + Math.round((monitor.width - width) / 2);
     const path = GLib.build_filenamev([outDir, `${name}.png`]);
     const stream = Gio.File.new_for_path(path)
@@ -397,12 +397,18 @@ async function clickActor(actor) {
 async function testHub(outDir) {
     const hub = island()._hub;
     settings().set_boolean('notes-enabled', false);
+    settings().set_boolean('claude-enabled', false);
     await sleep(SETTLE_MS);
     check('hub: a single feature hides the tab row', !hub._tabColumn.visible);
     settings().reset('notes-enabled');
     await sleep(SETTLE_MS);
     check('hub: enabling a feature adds its tab',
         hub._tabColumn.visible && hub._tabColumn.get_n_children() === 2);
+    settings().reset('claude-enabled');
+    await sleep(SETTLE_MS);
+    check('hub: tabs follow the registry order (Clock, Notes, Claude)',
+        hub._tabColumn.get_children().map(b => b.accessible_name).join(',') === 'Clock,Notes,Claude',
+        hub._tabColumn.get_children().map(b => b.accessible_name).join(','));
     check('hub: clock is the active tab', hub.activeFeature?.id === 'clock');
 
     const {FEATURES} = await import(`file://${extension().path}/features/registry.js`);
@@ -412,7 +418,7 @@ async function testHub(outDir) {
         await setExtensionEnabled(false);
         await setExtensionEnabled(true);
         check('hub: a registered feature adds a tab',
-            island()._hub._tabColumn.get_n_children() === 3);
+            island()._hub._tabColumn.get_n_children() === 4);
         check('hub: a feature is not created before its tab is selected',
             log.length === 0, log.join(','));
 
@@ -902,6 +908,245 @@ async function testToolsFold(outDir, view) {
     settings().reset('notes-show-tools');
 }
 
+// ---------------------------------------------------------------- claude
+
+// run.sh points CLAUDE_CONFIG_DIR at a private folder; the real
+// ~/.claude.json is never read.
+const claudeFile = () => Gio.File.new_for_path(GLib.build_filenamev(
+    [GLib.getenv('CLAUDE_CONFIG_DIR'), '.claude.json']));
+const CLAUDE_ACCOUNT = 'froonty-test-account';
+
+// Shaped like the cache Claude Code 2.1.280 writes, times relative to now.
+function claudeConfig({session = 13, weekly = 33, fable = 18, account = CLAUDE_ACCOUNT} = {}) {
+    const now = Date.now();
+    const iso = ms => new Date(now + ms).toISOString();
+    const week = iso((3 * 24 + 11) * 3600000);
+    return {
+        oauthAccount: {accountUuid: CLAUDE_ACCOUNT},
+        cachedUsageUtilization: {
+            fetchedAtMs: now - 2 * 60000 - 5000,
+            accountUuid: account,
+            utilization: {
+                five_hour: {utilization: session, resets_at: iso((4 * 60 + 2) * 60000 - 15000)},
+                seven_day: {utilization: weekly, resets_at: week},
+                limits: [
+                    {kind: 'session', group: 'session', percent: session, severity: 'normal',
+                        resets_at: iso((4 * 60 + 2) * 60000 - 15000), scope: null},
+                    {kind: 'weekly_all', group: 'weekly', percent: weekly, severity: 'normal',
+                        resets_at: week, scope: null},
+                    {kind: 'weekly_scoped', group: 'weekly', percent: fable, severity: 'normal',
+                        resets_at: week, scope: {model: {id: null, display_name: 'Fable'}, surface: null}},
+                ],
+            },
+        },
+    };
+}
+
+// As Claude Code saves it: a new file renamed onto the old one.
+function writeClaudeConfig(data) {
+    const file = claudeFile();
+    const temp = file.get_parent().get_child('.claude.json.froonty-test');
+    temp.replace_contents(JSON.stringify(data), null, false, Gio.FileCreateFlags.NONE, null);
+    temp.move(file, Gio.FileCopyFlags.OVERWRITE, null, null);
+}
+
+// Just what ClaudeService uses of Gio.NetworkMonitor, so "offline" does not
+// depend on the test machine's network.
+class FakeNetwork {
+    constructor() {
+        this.network_available = true;
+        this.connectivity = Gio.NetworkConnectivity.FULL;
+        this.handlers = new Map();
+        this._next = 1;
+    }
+
+    connect(signal, handler) {
+        this.handlers.set(this._next, {signal, handler});
+        return this._next++;
+    }
+
+    disconnect(id) {
+        this.handlers.delete(id);
+    }
+
+    // Like GNetworkMonitorNM: NetworkManager's connectivity check arrives
+    // as a property notification only.
+    set(available, connectivity) {
+        this.network_available = available;
+        this.connectivity = connectivity;
+        for (const {signal, handler} of [...this.handlers.values()]) {
+            if (signal === 'notify::connectivity')
+                handler(this);
+        }
+    }
+}
+
+// [[name, percent, reset], …] as the tab shows them.
+function claudeRows(view) {
+    return view._rows.get_children().map(row => {
+        const [heading, , reset] = row.get_children();
+        return [...heading.get_children().map(l => l.text), reset.text];
+    });
+}
+
+const claudeButton = () => island()._hub._panicBar._buttons
+    .find(b => b.actor.has_style_class_name('froonty-claude-session')) ?? null;
+
+async function testClaude(outDir) {
+    const hub = () => island()._hub;
+    writeClaudeConfig(claudeConfig());
+    settings().set_strv('panic-buttons', ['mute-microphone', 'mute-sound', 'claude-session']);
+    await sleep(SETTLE_MS);
+    check('claude button: not read while the island is collapsed',
+        claudeButton()?._service.loaded === false && claudeButton()?._service._monitor === null);
+    island().expand();
+    await sleep(animationWait());
+    await clickActor(tabButton('claude'));
+    await sleep(animationWait());
+
+    const entry = hub()._entries.get('claude');
+    const {view, service} = entry;
+    check('claude: the tab opens', hub().activeFeature?.id === 'claude' && view && service);
+    const [w, h] = pill().get_transformed_size();
+    check('claude: island resizes to the tab\'s hubSize',
+        w === 380 * scale() && h === 260 * scale(), `${w}x${h}`);
+
+    // Swap in a network we control, then show the tab again.
+    const network = new FakeNetwork();
+    service.setActive(false);
+    service._network = network;
+    service.setActive(true);
+    await service._reading;
+    await sleep(SETTLE_MS);
+
+    // The panic button has a service of its own; same swap.
+    const button = claudeButton();
+    const buttonNetwork = new FakeNetwork();
+    button.setActive(false);
+    button._service._network = buttonNetwork;
+    button.setActive(true);
+    await button._service._reading;
+    await sleep(SETTLE_MS);
+    check('claude button: the session usage over the Spark, number only',
+        button._number.text === '13' && button.actor.accessible_name === 'Claude session usage: 13%',
+        `${button._number.text} / ${button.actor.accessible_name}`);
+
+    const rows = claudeRows(view);
+    const text = JSON.stringify(rows);
+    check('claude: Session, Weekly and Weekly Fable with their usage',
+        rows.map(r => `${r[0]} ${r[1]}`).join(', ') === 'Session 13%, Weekly 33%, Weekly Fable 18%', text);
+    check('claude: the session resets in hours and minutes',
+        rows[0][2] === 'Resets in 4 h 2 min', text);
+    const weekday = GLib.DateTime.new_now_local().add_hours(3 * 24 + 11).format('%a');
+    check('claude: weekly limits reset on a weekday and time',
+        rows[1][2].startsWith(`Resets ${weekday} `) && rows[2][2] === rows[1][2], text);
+    check('claude: the footer says when Claude Code checked',
+        view._footer.visible && view._footer.text === 'Updated 2 min ago', view._footer.text);
+    check('claude: no offline notice while online', !view._notice.visible);
+    await screenshotTop(outDir, 'claude-tab', 320);
+
+    writeClaudeConfig(claudeConfig({session: 21}));
+    check('claude: while shown, a new reading from Claude Code appears',
+        await waitFor(() => claudeRows(view)[0]?.[1] === '21%'), JSON.stringify(claudeRows(view)));
+    check('claude button: follows the new reading too',
+        await waitFor(() => button._number.text === '21'), button._number.text);
+    writeClaudeConfig(claudeConfig({session: 100}));
+    await waitFor(() => button._number.text === '100');
+    const numberBox = boxOf(button._number);
+    const buttonBox = boxOf(button.actor);
+    const [mic] = island()._hub._panicBar._buttons;
+    check('claude button: "100" fits inside the button, which is as big as the others',
+        numberBox.x1 >= buttonBox.x1 && numberBox.x2 <= buttonBox.x2 &&
+        numberBox.y1 >= buttonBox.y1 && numberBox.y2 <= buttonBox.y2 &&
+        button.actor.width === mic.actor.width && button.actor.height === mic.actor.height,
+        `number=[${numberBox.x1},${numberBox.y1},${numberBox.x2},${numberBox.y2}] ` +
+        `button=[${buttonBox.x1},${buttonBox.y1},${buttonBox.x2},${buttonBox.y2}] ` +
+        `mic=${mic.actor.width}x${mic.actor.height}`);
+    await screenshotTop(outDir, 'claude-panic-button-100', 120);
+    writeClaudeConfig(claudeConfig({session: 21}));
+    await waitFor(() => button._number.text === '21');
+    await screenshotTop(outDir, 'claude-panic-button', 120);
+    buttonNetwork.set(false, Gio.NetworkConnectivity.LOCAL);
+    check('claude button: offline, "?" and a name that says why',
+        button._number.text === '?' &&
+        button.actor.accessible_name === 'Claude session usage: unknown (no internet connection)',
+        `${button._number.text} / ${button.actor.accessible_name}`);
+    buttonNetwork.set(true, Gio.NetworkConnectivity.FULL);
+
+    network.set(false, Gio.NetworkConnectivity.LOCAL);
+    await sleep(SETTLE_MS);
+    const offline = claudeRows(view);
+    check('claude: offline, every value reads "Unknown"',
+        offline.length === 3 && offline.every(r => r[1] === 'Unknown' && r[2] === 'Resets: unknown'),
+        JSON.stringify(offline));
+    check('claude: offline, a line says Claude cannot be asked',
+        view._notice.visible && view._notice.text.startsWith('No internet connection') &&
+        !view._footer.visible, view._notice.text);
+    await screenshotTop(outDir, 'claude-offline', 320);
+    network.set(true, Gio.NetworkConnectivity.PORTAL);
+    await sleep(SETTLE_MS);
+    check('claude: a captive portal is not a connection to Claude', view._notice.visible);
+    network.set(true, Gio.NetworkConnectivity.FULL);
+    await sleep(SETTLE_MS);
+    check('claude: back online, the values return',
+        !view._notice.visible && claudeRows(view)[0][1] === '21%', JSON.stringify(claudeRows(view)));
+
+    // Hidden: nothing watched, nothing read. Shown again: read afresh.
+    island().collapse();
+    await sleep(animationWait());
+    check('claude: collapsed, the file and the network are not watched',
+        service._monitor === null && network.handlers.size === 0,
+        `monitor=${service._monitor} network=${network.handlers.size}`);
+    check('claude button: collapsed, it watches nothing either',
+        button._service._monitor === null && buttonNetwork.handlers.size === 0);
+    const reads = [];
+    const read = service._read;
+    service._read = function () {
+        reads.push(Date.now());
+        return read.call(this);
+    };
+    writeClaudeConfig(claudeConfig({session: 34}));
+    await sleep(500);
+    check('claude: collapsed, a change to the file is not read', reads.length === 0 &&
+        claudeRows(view)[0][1] === '21%', `${reads.length} reads`);
+    island().expand();
+    await sleep(animationWait());
+    check('claude: opening the tab again reads the latest usage',
+        await waitFor(() => claudeRows(view)[0]?.[1] === '34%') && reads.length >= 1,
+        `${reads.length} reads ${JSON.stringify(claudeRows(view))}`);
+    service._read = read;
+    check('claude button: reopening the island reads the latest usage',
+        await waitFor(() => button._number.text === '34'), button._number.text);
+
+    await clickActor(tabButton('clock'));
+    await sleep(animationWait());
+    await clickActor(button.actor);
+    await sleep(animationWait());
+    check('claude button: a click opens the Claude tab', hub().activeFeature?.id === 'claude');
+
+    writeClaudeConfig(claudeConfig({account: 'another-account'}));
+    await waitFor(() => view._empty.visible);
+    check('claude: usage cached for another account is not shown',
+        view._empty.visible && !view._scroll.visible && view._rows.get_n_children() === 0);
+    claudeFile().delete(null);
+    await waitFor(() => service.error === 'missing');
+    check('claude: without Claude Code\'s file, a hint instead of rows',
+        view._empty.visible && service.error === 'missing' && !view._footer.visible,
+        view._emptyTitle.text);
+    await screenshotTop(outDir, 'claude-empty', 320);
+
+    settings().set_boolean('claude-enabled', false);
+    await sleep(SETTLE_MS);
+    check('claude: turning the tab off removes it and stops watching',
+        !hub()._entries.has('claude') && service._monitor === null && network.handlers.size === 0 &&
+        hub().activeFeature?.id === 'clock');
+    settings().reset('claude-enabled');
+    settings().reset('panic-buttons');
+    await sleep(SETTLE_MS);
+    island().collapse();
+    await sleep(animationWait());
+}
+
 // ---------------------------------------------------------------- settings
 
 const settingsWindows = () => global.display.list_all_windows().filter(w =>
@@ -1171,7 +1416,7 @@ async function testHubLayout(outDir) {
     const tabs = hub._tabColumn.get_children();
     const boxes = tabs.map(boxOf);
     check('layout: feature tabs are stacked vertically on the left',
-        tabs.length === 2 && Math.abs(boxes[0].x1 - boxes[1].x1) < 1 &&
+        tabs.length === 3 && Math.abs(boxes[0].x1 - boxes[1].x1) < 1 &&
         boxes[1].y1 > boxes[0].y1 && boxes[0].x1 < boxOf(hub._content).x1,
         boxes.map(b => `[${b.x1},${b.y1}]`).join(' '));
     const bar = boxOf(hub._panicBar.actor);
@@ -1347,6 +1592,74 @@ async function testLauncher() {
         strip() !== null && !Main.panel.statusArea['froonty-launcher']);
 }
 
+// ---------------------------------------------------------------- startup
+
+const launcherName = () => Main.panel.statusArea['froonty-launcher']?.accessible_name ?? null;
+const clockVisible = () => Main.panel.statusArea.dateMenu.container.opacity === 255;
+
+// A login, as extension.js sees it: the first enable() in a Shell process.
+async function freshStart() {
+    await setExtensionEnabled(false);
+    extension().stateObj._started = undefined;
+    const ok = await setExtensionEnabled(true);
+    await sleep(SETTLE_MS);
+    return ok;
+}
+
+// A screen lock and unlock: GNOME Shell disables and re-enables extensions.
+async function lockUnlock() {
+    await setExtensionEnabled(false);
+    const ok = await setExtensionEnabled(true);
+    await sleep(SETTLE_MS);
+    return ok;
+}
+
+async function testStartup() {
+    const s = settings();
+    const state = () => `strip=${strip() !== null} launcher=${launcherName()} clock=${clockVisible()}`;
+
+    s.set_boolean('start-at-login', false);
+    check('startup: login with "Start at login" off', await freshStart(), stateName());
+    check('startup: Froonty then waits: no island, clock visible, a "Start Froonty" icon',
+        strip() === null && clockVisible() && launcherName() === 'Start Froonty', state());
+
+    await lockUnlock();
+    check('startup: a screen unlock keeps it waiting',
+        strip() === null && launcherName() === 'Start Froonty', state());
+
+    await clickActor(Main.panel.statusArea['froonty-launcher']);
+    await sleep(SETTLE_MS);
+    check('startup: clicking the icon starts it: island shown, icon gone, clock covered',
+        strip() !== null && launcherName() === null && !clockVisible(), state());
+
+    await lockUnlock();
+    check('startup: a screen unlock keeps it started',
+        strip() !== null && launcherName() === null, state());
+
+    await freshStart();
+    await pressKeys(Clutter.KEY_Super_L, Clutter.KEY_Alt_L, Clutter.KEY_i);
+    await sleep(SETTLE_MS);
+    check('startup: the shortcut starts a waiting Froonty (collapsed)',
+        strip() !== null && launcherName() === null && island()?.expanded === false, state());
+
+    // With the island hidden too, starting leaves the settings icon.
+    s.set_boolean('island-enabled', false);
+    await freshStart();
+    check('startup: waiting with "Show island" off shows the start icon',
+        strip() === null && launcherName() === 'Start Froonty', state());
+    await clickActor(Main.panel.statusArea['froonty-launcher']);
+    await sleep(SETTLE_MS);
+    check('startup: starting with "Show island" off leaves the settings icon',
+        strip() === null && launcherName() === 'Froonty settings', state());
+    s.reset('island-enabled');
+    await sleep(SETTLE_MS);
+
+    s.reset('start-at-login');
+    await freshStart();
+    check('startup: with "Start at login" on (default), a login shows the island at once',
+        strip() !== null && launcherName() === null && !clockVisible(), state());
+}
+
 export async function runAll(outDir) {
     results.length = 0;
     // Pointer-driven checks move the pointer over the pill; keep hover-open
@@ -1361,10 +1674,12 @@ export async function runAll(outDir) {
         await testPanic(outDir);
         await testHoverOpen();
         await testLauncher();
+        await testStartup();
         await testSettingsButton(outDir);
         await testHub(outDir);
         await testNotes(outDir);
         await testNotesTabsAndColors(outDir);
+        await testClaude(outDir);
         await testSettings(outDir);
         await testCoversPanelClock(outDir);
         await testMonitors();

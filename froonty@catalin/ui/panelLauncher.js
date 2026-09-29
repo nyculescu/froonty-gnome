@@ -1,21 +1,24 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// A small top bar icon shown only while the island is hidden ("Show island"
-// off), so Froonty stays reachable: clicking it opens Froonty's settings.
+// A small top bar icon shown only while the island is not, so Froonty stays
+// reachable: it starts Froonty when it waits after login ("Start at login"
+// off), and otherwise opens Froonty's settings ("Show island" off).
 
 import Clutter from 'gi://Clutter';
 import St from 'gi://St';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
-import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 
 const ROLE = 'froonty-launcher';
 
 export class PanelLauncher {
-    /** @param {Function} onActivate */
-    constructor(onActivate) {
+    /**
+     * @param {string} title accessible name, says what a click does
+     * @param {Function} onActivate
+     */
+    constructor(title, onActivate) {
         // No menu: a plain button in the top bar's right box.
-        this._button = new PanelMenu.Button(0.5, _('Froonty settings'), true);
+        this._button = new PanelMenu.Button(0.5, title, true);
         // Puzzle piece: the usual symbol for an extension (user request).
         this._button.add_child(new St.Icon({
             icon_name: 'application-x-addon-symbolic',

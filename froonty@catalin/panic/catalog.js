@@ -19,6 +19,13 @@ export const PANIC_BUTTONS = [
         icon: 'audio-volume-muted-symbolic',
         title: _ => _('Mute sound'),
     },
+    {
+        // Not an action: Claude's session usage at a glance; a click opens
+        // the Claude tab. The icon is bundled (features/claude/icons).
+        id: 'claude-session',
+        icon: 'froonty-claude-symbolic',
+        title: _ => _('Claude session usage'),
+    },
 ];
 
 /**

@@ -53,6 +53,20 @@ Settings' volume and microphone sliders:
   apps.
 - **No device:** without a device, the button is insensitive.
 
+Added 2026-09-29 (user request), off by default:
+
+| Id | What it shows | A click |
+|---|---|---|
+| `claude-session` | The session's usage (0–100, no "%") in Claude's orange (#d97757), as large as the button allows, over a faint grey Spark; "?" when unknown | Opens the Claude tab |
+
+It is an indicator, not an action. Its name, which is also its tooltip,
+spells the value out: "Claude session usage: 13%", or "…: unknown (no
+internet connection)". It follows the Claude tab's rules
+([claude.md](claude.md)). It reads Claude Code's cache each time the
+island opens, follows it while the island stays open, and does nothing while
+the island is collapsed. The bar tells its buttons when the hub is shown
+(`setActive`, optional on a button).
+
 ## 4. Structure
 
 ```
@@ -60,6 +74,7 @@ panic/catalog.js    pure: ids, icons, titles, MAX 5, sanitize(); shared by
                     the Shell and the settings window (unit-tested)
 panic/registry.js   Shell side: id → button factory
 panic/audioMute.js  the two mute buttons (input/output)
+panic/claudeSession.js  Claude session usage (reuses features/claude)
 panic/prefs.js      the "Panic buttons" settings tab
 ui/panicBar.js      renders the configured buttons (setting: panic-buttons)
 shell/mixer.js      adapter for the Shell's shared Gvc mixer

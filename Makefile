@@ -18,15 +18,20 @@ schemas: $(SRC)/schemas/gschemas.compiled
 $(SRC)/schemas/gschemas.compiled: $(SRC)/schemas/*.gschema.xml
 	$(GLIB_COMPILE_SCHEMAS) --strict $(SRC)/schemas
 
-# Symlinks the working tree into the user's extensions directory.
-# GNOME Shell 46 only discovers new extensions at startup: log out and in
-# (Wayland) or press Alt+F2, r (X11), then: gnome-extensions enable $(UUID)
-install: schemas
+# Copies the extension into the user's extensions directory. A copy, not a
+# symlink: GNOME Shell loads extensions once, at login, and a link into a
+# drive that is mounted later (e.g. a data partition udisks mounts on first
+# use) is broken at that moment, so the extension silently does not start.
+# GNOME Shell 46 only loads new code at startup: log out and in (Wayland) or
+# press Alt+F2, r (X11). First install: gnome-extensions enable $(UUID)
+install: schemas uninstall
 	mkdir -p $(dir $(INSTALL_DIR))
-	ln -sfn $(CURDIR)/$(SRC) $(INSTALL_DIR)
+	cp -r $(SRC) $(INSTALL_DIR)
 
+# rm never follows a symlink named without a trailing slash, so this also
+# removes the link of an older install without touching the working tree.
 uninstall:
-	rm -f $(INSTALL_DIR)
+	rm -rf $(INSTALL_DIR)
 
 # gnome-extensions 46 segfaults if --out-dir does not exist yet.
 pack: schemas

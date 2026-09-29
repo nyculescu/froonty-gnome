@@ -4,6 +4,11 @@
           path="/org/gnome/shell/extensions/froonty/">
 
     <!-- General -->
+    <key name="start-at-login" type="b">
+      <default>true</default>
+      <summary>Start at login</summary>
+      <description>When false, Froonty waits after login (and after a GNOME Shell restart) with only a top bar icon; clicking it or pressing the toggle shortcut starts it. Screen unlocks keep the current state.</description>
+    </key>
     <key name="island-enabled" type="b">
       <default>true</default>
       <summary>Show the island</summary>
@@ -62,6 +67,13 @@
     <key name="notes-last" type="s">
       <default>''</default>
       <summary>Note selected last</summary>
+    </key>
+
+    <!-- Claude feature (docs/features/claude.md) -->
+    <key name="claude-enabled" type="b">
+      <default>true</default>
+      <summary>Show the Claude tab</summary>
+      <description>Claude plan usage (session, weekly, weekly per model) and when each resets, as Claude Code last checked it. Froonty reads Claude Code's config file; it never contacts Claude itself.</description>
     </key>
 
     <!-- Clock -->

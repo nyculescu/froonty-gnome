@@ -3,10 +3,12 @@
 // one-line change here (plus its settings tab in prefs.js, which runs in a
 // separate GTK process and cannot load these Shell-side modules).
 
+import claude from './claude/index.js';
 import clock from './clock/index.js';
 import notes from './notes/index.js';
 
 export const FEATURES = [
     clock,
     notes,
+    claude,
 ];

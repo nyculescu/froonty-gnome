@@ -124,6 +124,8 @@ export XDG_CACHE_HOME=$WORK/cache
 export XDG_STATE_HOME=$WORK/state
 export XDG_RUNTIME_DIR=$WORK/runtime
 export GSETTINGS_BACKEND=keyfile
+# Claude Code's config file (the Claude tab reads it): a private one.
+export CLAUDE_CONFIG_DIR=$WORK/claude
 export WAYLAND_DISPLAY=wayland-froonty-test
 # D-Bus activated GTK apps (the prefs window) inherit this environment;
 # an X11 host session may force GDK_BACKEND=x11 and load X11-only modules.
@@ -132,6 +134,7 @@ unset DISPLAY GTK_MODULES
 mkdir -p "$XDG_DATA_HOME/gnome-shell/extensions" "$XDG_CONFIG_HOME/glib-2.0/settings" \
     "$XDG_CACHE_HOME" "$XDG_STATE_HOME"
 mkdir -m 700 "$XDG_RUNTIME_DIR"
+mkdir -p "$CLAUDE_CONFIG_DIR"
 
 ln -s "$REPO/$UUID" "$XDG_DATA_HOME/gnome-shell/extensions/$UUID"
 ln -s "$HERE/$HELPER" "$XDG_DATA_HOME/gnome-shell/extensions/$HELPER"

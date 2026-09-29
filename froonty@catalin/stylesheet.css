@@ -354,3 +354,81 @@
     background-color: #fff3a8;
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
 }
+
+/* Claude feature. Bars in Claude's clay (its Spark colour); red when a
+   limit is used up or Claude flags it. */
+.froonty-claude {
+    spacing: 4px;
+}
+.froonty-claude-rows {
+    spacing: 9px;
+    padding: 2px 4px 0;
+}
+.froonty-claude-row {
+    spacing: 3px;
+}
+.froonty-claude-name {
+    font-weight: bold;
+    font-size: 0.9em;
+}
+.froonty-claude-percent {
+    font-size: 0.9em;
+    font-feature-settings: "tnum";
+    color: rgba(255, 255, 255, 0.85);
+}
+.froonty-claude-bar {
+    height: 6px;
+    border-radius: 3px;
+    background-color: rgba(255, 255, 255, 0.12);
+    color: #d97757;
+}
+.froonty-claude-bar.froonty-claude-bar-critical {
+    color: #e0454c;
+}
+.froonty-claude-reset,
+.froonty-claude-footer {
+    font-size: 0.78em;
+    font-feature-settings: "tnum";
+    color: rgba(255, 255, 255, 0.55);
+}
+.froonty-claude-notice {
+    font-size: 0.8em;
+    color: #ffb74d;
+    padding: 0 4px;
+}
+.froonty-claude-empty {
+    spacing: 4px;
+    padding: 0 8px;
+}
+.froonty-claude-empty-title {
+    font-weight: bold;
+    text-align: center;
+}
+.froonty-claude-empty-hint {
+    font-size: 0.85em;
+    color: rgba(255, 255, 255, 0.6);
+    text-align: center;
+}
+
+/* Panic button "Claude session usage": the number as large as the button
+   allows, in Claude's orange, over a faint grey Spark (a watermark). No
+   padding; the stack takes the size the other icon buttons have
+   (16px icon + 5px/7px padding), so the bar stays even. */
+.froonty-icon-button.froonty-claude-session {
+    padding: 0;
+}
+.froonty-claude-session-stack {
+    width: 30px;
+    height: 26px;
+}
+.froonty-claude-session .froonty-claude-session-icon {
+    icon-size: 22px;
+    color: rgba(255, 255, 255, 0.28);
+}
+.froonty-claude-session-number {
+    color: #d97757;
+    font-size: 15px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    font-feature-settings: "tnum";
+}

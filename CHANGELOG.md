@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **Claude tab.** It shows your Claude plan's usage limits (Session,
+  Weekly, and a weekly row per model such as Fable) and when each resets.
+  - Froonty reads what Claude Code last cached in `~/.claude.json`. It does
+    this each time the tab opens, and follows new readings while the tab
+    stays open. It never contacts Claude and never polls.
+  - Without an internet connection every value reads "Unknown", with a
+    line saying why.
+  - The tab's icon is Claude's Spark. Settings → Claude turns the tab off.
+  - The numbers are as fresh as Claude Code's last check, which happens
+    only while it runs. The cache is Claude Code's private, undocumented
+    format (as of 2.1.280), so a future version may break the tab.
+- **Panic button "Claude session usage"** (Settings → Panic buttons).
+  It shows the session's usage (0–100), large, in Claude's orange over a
+  faint grey Spark, or "?" when unknown. A click opens the Claude tab.
+- **Start at login** (Settings → General → Startup, on by default). When
+  off, Froonty waits after login, or after a GNOME Shell restart, with only
+  a top bar icon; clicking it or pressing the shortcut starts it. A screen
+  unlock keeps the current state.
+
+### Fixed
+- `make install` copies the extension instead of linking it. With a link
+  into a drive mounted after login, GNOME Shell found a broken link at login
+  and silently skipped Froonty.
+
 ## 0.2.0-rc1 (2026-09-28)
 
 First release candidate. It targets GNOME Shell 46 on Ubuntu 24.04.
