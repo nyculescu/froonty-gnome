@@ -23,13 +23,34 @@ DBUS_RUN_SESSION=${DBUS_RUN_SESSION:-/usr/bin/dbus-run-session}
 if [[ "${1:-}" == "--inner" ]]; then
     WORK=$2
 
+    # A private PipeWire (in the private XDG_RUNTIME_DIR) with a virtual
+    # speaker and microphone and no hardware, so the panic mute buttons can
+    # be tested for real. The host's audio is not touched.
+    mkdir -p "$XDG_CONFIG_HOME/pipewire/pipewire.conf.d"
+    cat >"$XDG_CONFIG_HOME/pipewire/pipewire.conf.d/froonty-test.conf" <<'CONF'
+context.objects = [
+    { factory = adapter args = { factory.name = support.null-audio-sink
+        node.name = "froonty-test-speaker" node.description = "Test speaker"
+        media.class = Audio/Sink object.linger = true audio.position = [ FL FR ] } }
+    { factory = adapter args = { factory.name = support.null-audio-sink
+        node.name = "froonty-test-mic" node.description = "Test microphone"
+        media.class = Audio/Source object.linger = true audio.position = [ MONO ] } }
+]
+CONF
+    /usr/bin/pipewire >"$WORK/pipewire.log" 2>&1 &
+    audio_pids=$!
+    /usr/bin/wireplumber >"$WORK/wireplumber.log" 2>&1 &
+    audio_pids="$audio_pids $!"
+    /usr/bin/pipewire-pulse >"$WORK/pipewire-pulse.log" 2>&1 &
+    audio_pids="$audio_pids $!"
+
     "$GNOME_SHELL" --headless --wayland --no-x11 \
         --wayland-display "$WAYLAND_DISPLAY" \
         --mode="${FROONTY_TEST_MODE:-user}" \
         --virtual-monitor 1920x1080 --virtual-monitor 1280x800 \
         >"$WORK/shell.log" 2>&1 &
     shell_pid=$!
-    trap 'kill "$shell_pid" 2>/dev/null; wait "$shell_pid" 2>/dev/null || true' EXIT
+    trap 'kill "$shell_pid" $audio_pids 2>/dev/null; wait "$shell_pid" 2>/dev/null || true' EXIT
 
     eval_js() {
         "$GDBUS" call --session --dest org.gnome.Shell --object-path /org/gnome/Shell \

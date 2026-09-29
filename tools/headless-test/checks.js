@@ -14,6 +14,7 @@ import Shell from 'gi://Shell';
 import St from 'gi://St';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+import * as Volume from 'resource:///org/gnome/shell/ui/status/volume.js';
 import {ExtensionState} from 'resource:///org/gnome/shell/misc/extensionUtils.js';
 
 const UUID = 'froonty@catalin';
@@ -178,6 +179,9 @@ function shellFootprint() {
             panelBoxAllocation: countHandlers(Main.layoutManager.panelBox, 'notify::allocation'),
             scaleFactor: countHandlers(themeContext, 'notify::scale-factor'),
             dateMenuDestroy: countHandlers(dateMenu, 'destroy'),
+            mixerState: countHandlers(Volume.getMixerControl(), 'state-changed'),
+            mixerSink: countHandlers(Volume.getMixerControl(), 'default-sink-changed'),
+            mixerSource: countHandlers(Volume.getMixerControl(), 'default-source-changed'),
         },
     };
 }
@@ -394,11 +398,11 @@ async function testHub(outDir) {
     const hub = island()._hub;
     settings().set_boolean('notes-enabled', false);
     await sleep(SETTLE_MS);
-    check('hub: a single feature hides the tab row', !hub._tabBar.visible);
+    check('hub: a single feature hides the tab row', !hub._tabColumn.visible);
     settings().reset('notes-enabled');
     await sleep(SETTLE_MS);
     check('hub: enabling a feature adds its tab',
-        hub._tabBar.visible && hub._tabBar.get_n_children() === 2);
+        hub._tabColumn.visible && hub._tabColumn.get_n_children() === 2);
     check('hub: clock is the active tab', hub.activeFeature?.id === 'clock');
 
     const {FEATURES} = await import(`file://${extension().path}/features/registry.js`);
@@ -408,7 +412,7 @@ async function testHub(outDir) {
         await setExtensionEnabled(false);
         await setExtensionEnabled(true);
         check('hub: a registered feature adds a tab',
-            island()._hub._tabBar.get_n_children() === 3);
+            island()._hub._tabColumn.get_n_children() === 3);
         check('hub: a feature is not created before its tab is selected',
             log.length === 0, log.join(','));
 
@@ -1075,6 +1079,98 @@ async function testLifecycle() {
     await sleep(SETTLE_MS);
 }
 
+// ---------------------------------------------------------------- hub layout
+
+async function testHubLayout(outDir) {
+    island().expand();
+    await sleep(animationWait());
+    const hub = island()._hub;
+    const tabs = hub._tabColumn.get_children();
+    const boxes = tabs.map(boxOf);
+    check('layout: feature tabs are stacked vertically on the left',
+        tabs.length === 2 && Math.abs(boxes[0].x1 - boxes[1].x1) < 1 &&
+        boxes[1].y1 > boxes[0].y1 && boxes[0].x1 < boxOf(hub._content).x1,
+        boxes.map(b => `[${b.x1},${b.y1}]`).join(' '));
+    check('layout: the panic bar sits where the tabs were, left of ⚙️',
+        boxOf(hub._panicBar.actor).x2 <= boxOf(hub.settingsButton).x1 &&
+        boxOf(hub._panicBar.actor).x1 > boxes[0].x2);
+
+    await movePointerTo((boxes[1].x1 + boxes[1].x2) / 2, (boxes[1].y1 + boxes[1].y2) / 2);
+    await sleep(SETTLE_MS);
+    const tip = hub._tooltip.actor;
+    check('layout: hovering a tab shows its feature name to the right',
+        tip.visible && tip.text === 'Notes' && boxOf(tip).x1 >= boxes[1].x2 - 1,
+        `visible=${tip.visible} text=${tip.text}`);
+    await screenshotTop(outDir, 'hub-vertical-tabs');
+    await movePointerTo(...pillCenter());
+    await sleep(SETTLE_MS);
+    check('layout: the tooltip hides when the pointer leaves', !tip.visible);
+    island().collapse();
+    await sleep(animationWait());
+}
+
+// ---------------------------------------------------------------- panic buttons
+
+async function waitFor(predicate, timeoutMs = 5000) {
+    for (let waited = 0; waited < timeoutMs; waited += 100) {
+        if (predicate())
+            return true;
+        await sleep(100);
+    }
+    return predicate();
+}
+
+async function testPanic(outDir) {
+    const s = settings();
+    const mixer = Volume.getMixerControl();
+    island().expand();
+    await sleep(animationWait());
+    const bar = () => island()._hub._panicBar;
+    const [mic, sound] = bar()._buttons;
+    check('panic: default bar is [mute microphone, mute sound]',
+        bar()._buttons.length === 2 && mic.actor.accessible_name === 'Mute microphone' &&
+        sound.actor.accessible_name === 'Mute sound');
+
+    const ready = await waitFor(() => mic.actor.reactive && sound.actor.reactive);
+    check('panic: buttons become active once the sound server is ready', ready,
+        `mixer state=${mixer.get_state()} sink=${mixer.get_default_sink()?.name} ` +
+        `source=${mixer.get_default_source()?.name}`);
+    if (ready) {
+        const sink = mixer.get_default_sink();
+        const source = mixer.get_default_source();
+        await clickActor(sound.actor);
+        check('panic: "Mute sound" mutes the default output',
+            await waitFor(() => sink.is_muted) && sound.actor.checked);
+        await clickActor(mic.actor);
+        check('panic: "Mute microphone" mutes the default input',
+            await waitFor(() => source.is_muted) && mic.actor.checked);
+        await screenshotTop(outDir, 'panic-muted');
+        await clickActor(sound.actor);
+        check('panic: clicking again unmutes', await waitFor(() => !sink.is_muted) &&
+            !sound.actor.checked);
+        source.change_is_muted(false); // e.g. the mute key or Quick Settings
+        check('panic: a mute change made elsewhere updates the button',
+            await waitFor(() => !mic.actor.checked));
+    }
+
+    s.set_strv('panic-buttons', ['mute-sound']);
+    await sleep(SETTLE_MS);
+    check('panic: the bar follows the setting (one button)',
+        bar()._buttons.length === 1 && bar()._buttons[0].actor.accessible_name === 'Mute sound');
+    s.set_strv('panic-buttons', ['nope', 'mute-sound', 'mute-sound', 'mute-microphone']);
+    await sleep(SETTLE_MS);
+    check('panic: unknown ids and duplicates are ignored',
+        bar()._buttons.map(b => b.actor.accessible_name).join(',') === 'Mute sound,Mute microphone');
+    s.set_strv('panic-buttons', []);
+    await sleep(SETTLE_MS);
+    check('panic: an empty setting hides every slot', bar()._buttons.length === 0 &&
+        bar().actor.get_n_children() === 0);
+    s.reset('panic-buttons');
+    await sleep(SETTLE_MS);
+    island().collapse();
+    await sleep(animationWait());
+}
+
 // ---------------------------------------------------------------- hover open
 
 async function movePointerTo(x, y) {
@@ -1151,6 +1247,8 @@ export async function runAll(outDir) {
         testGeometry();
         await testPointer(outDir);
         await testKeyboard();
+        await testHubLayout(outDir);
+        await testPanic(outDir);
         await testHoverOpen();
         await testLauncher();
         await testSettingsButton(outDir);

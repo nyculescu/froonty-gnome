@@ -20,6 +20,8 @@ import St from 'gi://St';
 
 import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 
+import {Tooltip} from '../../core/tooltip.js';
+
 const MAX_TITLE_CHARS = 14;
 
 // By characters, not pixels: labels keep a fixed natural width, so the
@@ -57,8 +59,10 @@ export class NoteTabs {
 
         this.actor = new St.BoxLayout({style_class: 'froonty-note-tabs-row'});
         this.actor.add_child(this._scroll);
-        // The view places this in an overlay layer over its content.
-        this.tooltip = new St.Label({style_class: 'froonty-note-tooltip', visible: false});
+        // Full name of a cut-off tab while hovered. The view places the
+        // tooltip actor in an overlay layer over its content.
+        this._tooltip = new Tooltip();
+        this.tooltip = this._tooltip.actor;
 
         // Outside the scrolling row: reachable however many notes there are.
         this.addButton = new St.Button({
@@ -79,7 +83,7 @@ export class NoteTabs {
      * @param {Function} colorOf (name) → colour id
      */
     update(notes, selected, colorOf) {
-        this.tooltip.hide();
+        this._tooltip.hide();
         this._box.destroy_all_children();
         for (const name of notes)
             this._box.add_child(this._makeTab(name, name === selected, colorOf(name)));
@@ -115,23 +119,6 @@ export class NoteTabs {
         return Clutter.EVENT_STOP;
     }
 
-    // Full name of a cut-off tab, in a small bubble under it, while hovered.
-    _showFullName(tab, name) {
-        const parent = this.tooltip.get_parent();
-        if (!tab.hover || !parent || shortTitle(name) === name) {
-            this.tooltip.hide();
-            return;
-        }
-        this.tooltip.text = name;
-        const [x, y] = tab.get_transformed_position();
-        const [, height] = tab.get_transformed_size();
-        const [, px, py] = parent.transform_stage_point(x, y + height);
-        const [, width] = this.tooltip.get_preferred_width(-1);
-        this.tooltip.set_position(
-            Math.round(Math.max(0, Math.min(px, parent.width - width))), Math.round(py));
-        this.tooltip.show();
-    }
-
     _makeTab(name, selected, color) {
         const tab = new St.Button({
             style_class: 'froonty-note-tab',
@@ -158,7 +145,7 @@ export class NoteTabs {
         tab.set_child(box);
 
         tab.connect('clicked', () => this._callbacks.onSelect(name));
-        tab.connect('notify::hover', () => this._showFullName(tab, name));
+        this._tooltip.attach(tab, () => (shortTitle(name) === name ? null : name), 'below');
         tab.connect('key-focus-in', () => this._scrollTo(tab));
         if (selected)
             tab.connect('notify::allocation', () => this._scrollTo(tab));

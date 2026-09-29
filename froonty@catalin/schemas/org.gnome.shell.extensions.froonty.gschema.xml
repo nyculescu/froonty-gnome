@@ -32,6 +32,13 @@
       <description>The feature id shown when the island expands (see features/registry.js).</description>
     </key>
 
+    <!-- Panic buttons (docs/features/panic-buttons.md) -->
+    <key name="panic-buttons" type="as">
+      <default>['mute-microphone', 'mute-sound']</default>
+      <summary>Panic buttons, in bar order</summary>
+      <description>At most 5 ids from panic/catalog.js; unknown ids are ignored.</description>
+    </key>
+
     <!-- Notes feature (docs/features/notes.md) -->
     <key name="notes-enabled" type="b">
       <default>true</default>

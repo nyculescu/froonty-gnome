@@ -2,11 +2,12 @@
 // The hub: content of the expanded island. It hosts features (see
 // docs/local/ideas.md) and contains no feature logic of its own:
 //
-//   ┌──────────────────────────────────────────┐
-//   │ [tab] [tab] [tab]                     ⚙️ │  header: icon tab row
-//   ├──────────────────────────────────────────┤
-//   │           active feature's view          │  content
-//   └──────────────────────────────────────────┘
+//   ┌─────┬────────────────────────────────────┐
+//   │ tab │ [panic][panic]…                 ⚙️ │  header: panic bar (max 5)
+//   │ tab ├────────────────────────────────────┤
+//   │ …   │        active feature's view      │  content
+//   └─────┴────────────────────────────────────┘
+//     tab column: one icon per feature; its name shows in a tooltip on hover
 //
 // A feature's view (and its service, if any) is created the first time its
 // tab is selected, and destroyed when the feature is disabled or the hub is
@@ -20,7 +21,14 @@ import St from 'gi://St';
 import {EventEmitter} from 'resource:///org/gnome/shell/misc/signals.js';
 import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 
+import {Tooltip} from '../core/tooltip.js';
+import {PanicBar} from './panicBar.js';
+
 const LAST_TAB_KEY = 'hub-last-tab';
+
+// Feature tabs fill a grid column by column. One column for now; raising
+// this is the planned way to fit more features (placeholder).
+const TAB_COLUMNS = 1;
 
 /** Emits 'size-changed' when the active feature's preferred size changes. */
 export class Hub extends EventEmitter {
@@ -48,6 +56,7 @@ export class Hub extends EventEmitter {
 
     destroy() {
         this._settings.disconnectObject(this);
+        this._panicBar.destroy();
         for (const id of [...this._entries.keys()])
             this._removeEntry(id);
         this.actor.destroy();
@@ -61,6 +70,8 @@ export class Hub extends EventEmitter {
     /** Tell the active feature whether the hub is visible. */
     setShown(shown) {
         this._shown = shown;
+        if (!shown)
+            this._tooltip.hide();
         this._setEntryActive(this._entries.get(this._activeId), shown);
     }
 
@@ -95,9 +106,10 @@ export class Hub extends EventEmitter {
     }
 
     _buildActors(openSettings) {
-        this.actor = new St.BoxLayout({
-            style_class: 'froonty-hub',
-            vertical: true,
+        // Main layout plus an overlay layer (fixed positions, click-through)
+        // for the tab tooltips.
+        this.actor = new St.Widget({
+            layout_manager: new Clutter.BinLayout(),
             x_expand: true,
             y_expand: true,
             // Catches clicks on empty parts of the hub so they do not bubble
@@ -109,9 +121,23 @@ export class Hub extends EventEmitter {
         for (const signal of ['button-press-event', 'button-release-event', 'touch-event'])
             this.actor.connect(signal, () => Clutter.EVENT_STOP);
 
+        const main = new St.BoxLayout({style_class: 'froonty-hub', x_expand: true, y_expand: true});
+        this._tabGrid = new Clutter.GridLayout({orientation: Clutter.Orientation.VERTICAL});
+        this._tabColumn = new St.Widget({
+            style_class: 'froonty-tab-column',
+            layout_manager: this._tabGrid,
+        });
+        main.add_child(this._tabColumn);
+
+        const right = new St.BoxLayout({
+            style_class: 'froonty-hub-main',
+            vertical: true,
+            x_expand: true,
+            y_expand: true,
+        });
         const header = new St.BoxLayout({style_class: 'froonty-hub-header'});
-        this._tabBar = new St.BoxLayout({style_class: 'froonty-tab-bar'});
-        header.add_child(this._tabBar);
+        this._panicBar = new PanicBar(this._settings);
+        header.add_child(this._panicBar.actor);
         header.add_child(new St.Widget({x_expand: true}));
 
         this.settingsButton = new St.Button({
@@ -130,13 +156,20 @@ export class Hub extends EventEmitter {
             x_expand: true,
             y_expand: true,
         });
+        right.add_child(header);
+        right.add_child(this._content);
+        main.add_child(right);
 
-        this.actor.add_child(header);
-        this.actor.add_child(this._content);
+        const overlay = new St.Widget({x_expand: true, y_expand: true});
+        this._tooltip = new Tooltip();
+        overlay.add_child(this._tooltip.actor);
+
+        this.actor.add_child(main);
+        this.actor.add_child(overlay);
     }
 
     // Adds entries for newly enabled features, removes disabled ones, and
-    // rebuilds the tab row in registry order.
+    // rebuilds the tab column in registry order.
     _syncTabs() {
         const enabled = this._features.filter(f =>
             !f.enabledKey || this._settings.get_boolean(f.enabledKey));
@@ -146,13 +179,14 @@ export class Hub extends EventEmitter {
                 this._removeEntry(id);
         }
 
-        this._tabBar.remove_all_children();
-        for (const feature of enabled) {
+        this._tabColumn.remove_all_children();
+        const rows = Math.ceil(enabled.length / TAB_COLUMNS);
+        enabled.forEach((feature, i) => {
             const entry = this._entries.get(feature.id) ?? this._addEntry(feature);
-            this._tabBar.add_child(entry.button);
-        }
-        // A single tab is not a choice; keep the row out of the way.
-        this._tabBar.visible = enabled.length > 1;
+            this._tabGrid.attach(entry.button, Math.floor(i / rows), i % rows, 1, 1);
+        });
+        // A single tab is not a choice; keep the column out of the way.
+        this._tabColumn.visible = enabled.length > 1;
 
         if (!this._entries.has(this._activeId)) {
             this._activeId = null;
@@ -170,6 +204,7 @@ export class Hub extends EventEmitter {
             child: new St.Icon({icon_name: feature.icon}),
         });
         button.connect('clicked', () => this.select(feature.id));
+        this._tooltip.attach(button, () => feature.title, 'right');
 
         const entry = {feature, button, view: null, service: null};
         this._entries.set(feature.id, entry);

@@ -27,7 +27,11 @@ froonty@catalin/          the extension (this directory is what gets installed)
 ├── ui/island.js          the pill: actors, expand/collapse, grab
 ├── ui/geometry.js        pill sizes and position (covers the top bar clock)
 ├── ui/collapsedView.js   collapsed content (time, optional date)
-├── ui/hub.js             expanded content: icon tab row, feature host, ⚙️
+├── ui/hub.js             expanded content: vertical tab column, panic bar, ⚙️
+├── ui/panicBar.js       up to 5 panic buttons (Settings → Panic buttons)
+├── panic/               panic button catalog, factories, mute buttons, prefs
+├── shell/mixer.js       adapter: GNOME Shell's shared audio mixer
+├── core/tooltip.js      hover bubble (hub tabs, note tabs)
 ├── ui/hoverOpen.js       opens the island after hovering it (configurable)
 ├── ui/panelLauncher.js   top bar icon while the island is hidden
 ├── ui/chrome.js          registers the island as chrome + Ctrl+Alt+Tab
@@ -114,6 +118,7 @@ its own window with tabs: **General** (island, shortcut, clock) and
 | `expanded-width` / `expanded-height` | 360 / 140 | Logical px |
 | `corner-radius` | 14 | Clamped to half the height by St |
 | `animation-duration` | 250 ms | GNOME's enable-animations setting still applies |
+| `panic-buttons` | microphone, sound | Panic buttons in bar order, at most 5 |
 | `notes-enabled` | `true` | Show the Notes tab |
 | `notes-folder` | `''` | Notes folder; empty means `~/.local/share/froonty/notes` |
 | `notes-wrap` | `true` | Wrap long lines in notes; off scrolls horizontally |
