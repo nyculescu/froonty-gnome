@@ -201,6 +201,10 @@
 .froonty-notes-editor,
 .froonty-notes-editor:focus,
 .froonty-notes-editor:hover {
+    /* A scrolled view sizes its content by its minimum height. Ubuntu's Yaru
+       theme sets "StEntry { min-height: 22px }", which replaces the entry's
+       minimum (the full text height), so long notes could not scroll. */
+    min-height: auto;
     padding: 8px 10px;
     border: none;
     border-radius: 12px;
@@ -292,12 +296,6 @@
 
 .froonty-color-option:checked {
     background-color: rgba(255, 255, 255, 0.18);
-}
-
-/* Tab titles: room for about 14 characters (a full "dd.mm.yy hh.mm");
-   longer titles are cut with "…" and shown whole in the bubble below. */
-.froonty-note-tab-label {
-    max-width: 7.6em;
 }
 
 .froonty-note-tooltip {

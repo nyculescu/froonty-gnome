@@ -1,2 +1,5 @@
 froonty@catalin/schemas/gschemas.compiled
 dist/
+
+# Ignore all files in the docs/local/ directory
+docs/local/

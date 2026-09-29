@@ -81,7 +81,6 @@ export class NotesView {
 
     destroy() {
         this._service.disconnect(this._changedId);
-        this._tabs.destroy();
         this.actor.destroy();
     }
 
@@ -89,7 +88,6 @@ export class NotesView {
     setActive(active) {
         if (!active)
             return;
-        this._tabs.relayout();
         this._focusEditor();
     }
 

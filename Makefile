@@ -38,9 +38,11 @@ pack: schemas
 unit:
 	tools/unit/run.sh
 
-# Isolated headless GNOME Shell 46 run; does not touch the real session.
+# Isolated headless GNOME Shell 46 runs; do not touch the real session.
+# Both session modes: layout can depend on the theme (Ubuntu uses Yaru).
 test:
 	tools/headless-test/run.sh
+	FROONTY_TEST_MODE=ubuntu tools/headless-test/run.sh
 
 log:
 	journalctl -f -o cat /usr/bin/gnome-shell

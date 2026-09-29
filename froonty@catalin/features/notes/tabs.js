@@ -1,29 +1,35 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Capsule tabs, one per note, plus "+" to add one.
 //
-//   [● tab][● tab][● tab][● tab][● tab]›  [+]
+//   [● as][● 28.09.26 16.03][● Weekly planni…]›  [+]
 //
-//   As many tabs as fit a full name are visible (at most MAX_VISIBLE_TABS,
-//   at least MIN_VISIBLE_TABS); all have the same width and the row scrolls
-//   (wheel/touchpad; edge fade). The selected tab is always scrolled into
-//   view. ● is the note's colour. Middle-click moves a note to the Trash,
-//   like closing a browser tab.
+//   Each tab is as wide as its name. Names longer than MAX_TITLE_CHARS (a
+//   full "dd.mm.yy hh.mm" is exactly 14) are shortened to 13 characters
+//   plus "…" and shown whole in a bubble while hovered. The row scrolls (wheel or
+//   touchpad; edge fade) and keeps the selected tab in view. ● is the
+//   note's colour.
 //
-//   click       select          double-click   rename inline
-//   × (hover)   first click arms it, second click moves the note to the
-//               Trash; leaving the tab disarms it (no timer involved)
+//   click          select        double-click   rename inline
+//   middle-click   move the note to the Trash at once (like a browser tab)
+//   × (hover)      first click arms it, second click moves the note to the
+//                  Trash; leaving the tab disarms it (no timer involved)
 
 import Clutter from 'gi://Clutter';
-import GLib from 'gi://GLib';
-import Meta from 'gi://Meta';
 import Pango from 'gi://Pango';
 import St from 'gi://St';
 
 import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 
-const MAX_VISIBLE_TABS = 5;
-// Very long names are ellipsized rather than leaving only one tab visible.
-const MIN_VISIBLE_TABS = 2;
+const MAX_TITLE_CHARS = 14;
+
+// By characters, not pixels: labels keep a fixed natural width, so the
+// scrolling row never squeezes them (Pango ellipsizing would let it).
+function shortTitle(name) {
+    const chars = [...name];
+    return chars.length > MAX_TITLE_CHARS
+        ? `${chars.slice(0, MAX_TITLE_CHARS - 1).join('')}…`
+        : name;
+}
 
 export class NoteTabs {
     /**
@@ -35,10 +41,6 @@ export class NoteTabs {
      */
     constructor(callbacks) {
         this._callbacks = callbacks;
-        this._layoutLaterId = 0;
-        this._slot = 0;
-        this._spacing = 0;
-        this._visible = MAX_VISIBLE_TABS;
 
         this._box = new St.BoxLayout({style_class: 'froonty-note-tabs'});
         this._scroll = new St.ScrollView({
@@ -52,12 +54,11 @@ export class NoteTabs {
         });
         // A vertical wheel does not move a horizontal strip by itself.
         this._scroll.connect('scroll-event', (_actor, event) => this._onScroll(event));
-        this._scroll.connect('notify::width', () => this._queueLayout());
-        this._scroll.hadjustment.connect('changed', () => this._scrollToSelected());
 
         this.actor = new St.BoxLayout({style_class: 'froonty-note-tabs-row'});
-        this.tooltip = new St.Label({style_class: 'froonty-note-tooltip', visible: false});
         this.actor.add_child(this._scroll);
+        // The view places this in an overlay layer over its content.
+        this.tooltip = new St.Label({style_class: 'froonty-note-tooltip', visible: false});
 
         // Outside the scrolling row: reachable however many notes there are.
         this.addButton = new St.Button({
@@ -68,28 +69,6 @@ export class NoteTabs {
         });
         this.addButton.connect('clicked', () => this._callbacks.onCreate());
         this.actor.add_child(this.addButton);
-    }
-
-    destroy() {
-        this._cancelLayout();
-    }
-
-    // Full name of a cut-off tab, in a small bubble under it, while hovered.
-    // The view places `tooltip` in an overlay layer over its content.
-    _showFullName(tab, label) {
-        const parent = this.tooltip.get_parent();
-        if (!tab.hover || !parent || !label.clutter_text.get_layout().is_ellipsized()) {
-            this.tooltip.hide();
-            return;
-        }
-        this.tooltip.text = label.text;
-        const [x, y] = tab.get_transformed_position();
-        const [, height] = tab.get_transformed_size();
-        const [, px, py] = parent.transform_stage_point(x, y + height);
-        const [, width] = this.tooltip.get_preferred_width(-1);
-        this.tooltip.set_position(
-            Math.round(Math.max(0, Math.min(px, parent.width - width))), Math.round(py));
-        this.tooltip.show();
     }
 
     /**
@@ -104,87 +83,18 @@ export class NoteTabs {
         this._box.destroy_all_children();
         for (const name of notes)
             this._box.add_child(this._makeTab(name, name === selected, colorOf(name)));
-        this._queueLayout();
     }
 
-    // Sizes the tabs from the row width and scrolls to the selected one.
-    // Runs after layout, never in the middle of an allocation.
-    _queueLayout() {
-        if (this._layoutLaterId)
-            return;
-        const laters = global.compositor.get_laters();
-        this._layoutLaterId = laters.add(Meta.LaterType.BEFORE_REDRAW, () => {
-            this._layoutLaterId = 0;
-            this._layoutTabs();
-            return GLib.SOURCE_REMOVE;
-        });
-    }
-
-    _cancelLayout() {
-        if (this._layoutLaterId) {
-            global.compositor.get_laters().remove(this._layoutLaterId);
-            this._layoutLaterId = 0;
-        }
-    }
-
-    /** Re-sizes the tabs, e.g. when the Notes tab is shown again. */
-    relayout() {
-        this._queueLayout();
-    }
-
-    _layoutTabs() {
-        // Theme nodes (for the spacing) only exist while on stage.
-        if (!this._box.mapped)
-            return;
-        const tabs = this._box.get_children();
-        const spacing = this._box.get_theme_node().get_length('spacing');
-        // The allocated width: `width` would return the preferred width (all
-        // tabs at natural size) while a relayout is pending. A later change of
-        // the allocation re-queues this through notify::width.
-        const rowWidth = this._scroll.get_allocation_box().get_width();
-        if (rowWidth <= 0 || tabs.length === 0)
-            return;
-
-        const visible = this._visibleTabCount(tabs, rowWidth, spacing);
-        const slot = Math.floor((rowWidth - spacing * (visible - 1)) / visible);
-
-        for (const tab of tabs)
-            tab.width = slot;
-
-        this._slot = slot;
-        this._spacing = spacing;
-        this._visible = visible;
-        this._scrollToSelected();
-    }
-
-    // How many tabs fit when each is as wide as the widest tab's natural
-    // width (a full name, plus × on the selected one). Measured, so it
-    // follows the font, text scaling and locale.
-    _visibleTabCount(tabs, rowWidth, spacing) {
-        let natural = 0;
-        for (const tab of tabs) {
-            tab.width = -1; // measure the content, not the last fixed width
-            natural = Math.max(natural, tab.get_preferred_width(-1)[1]);
-        }
-        const fit = Math.floor((rowWidth + spacing) / (natural + spacing));
-        return Math.max(MIN_VISIBLE_TABS, Math.min(MAX_VISIBLE_TABS, fit));
-    }
-
-    // By index, not by allocation: freshly rebuilt tabs are not laid out
-    // yet. Runs after sizing and whenever the scroll range changes (which
-    // only happens after layout, and never on user scrolling).
-    _scrollToSelected() {
-        const tabs = this._box.get_children();
-        const index = tabs.findIndex(t => t.checked);
-        if (index < 0 || !this._slot)
-            return;
-        const x = (this._slot + this._spacing) * index;
-        this._scroll.hadjustment.clamp_page(x, x + this._slot);
+    // Keeps a tab in view. Its allocation is valid when this runs: from
+    // notify::allocation (after layout) or on focus of a laid-out tab.
+    _scrollTo(tab) {
+        const box = tab.get_allocation_box();
+        this._scroll.hadjustment.clamp_page(box.x1, box.x2);
     }
 
     _onScroll(event) {
         const adjustment = this._scroll.hadjustment;
-        const step = this._slot + this._spacing;
+        const step = adjustment.page_size / 4;
         let delta = 0;
         switch (event.get_scroll_direction()) {
         case Clutter.ScrollDirection.UP:
@@ -205,6 +115,23 @@ export class NoteTabs {
         return Clutter.EVENT_STOP;
     }
 
+    // Full name of a cut-off tab, in a small bubble under it, while hovered.
+    _showFullName(tab, name) {
+        const parent = this.tooltip.get_parent();
+        if (!tab.hover || !parent || shortTitle(name) === name) {
+            this.tooltip.hide();
+            return;
+        }
+        this.tooltip.text = name;
+        const [x, y] = tab.get_transformed_position();
+        const [, height] = tab.get_transformed_size();
+        const [, px, py] = parent.transform_stage_point(x, y + height);
+        const [, width] = this.tooltip.get_preferred_width(-1);
+        this.tooltip.set_position(
+            Math.round(Math.max(0, Math.min(px, parent.width - width))), Math.round(py));
+        this.tooltip.show();
+    }
+
     _makeTab(name, selected, color) {
         const tab = new St.Button({
             style_class: 'froonty-note-tab',
@@ -213,26 +140,29 @@ export class NoteTabs {
             track_hover: true,
             checked: selected,
         });
-        const box = new St.BoxLayout({x_expand: true});
+        const box = new St.BoxLayout();
         box.add_child(new St.Widget({
             style_class: `froonty-note-dot froonty-note-color-${color}`,
             y_align: Clutter.ActorAlign.CENTER,
         }));
-        // Sized for ~14 characters (a full "dd.mm.yy hh.mm"), see stylesheet;
-        // longer names are cut with "…" and shown whole on hover.
         const label = new St.Label({
             style_class: 'froonty-note-tab-label',
-            text: name,
-            x_expand: true,
+            text: shortTitle(name),
             y_align: Clutter.ActorAlign.CENTER,
         });
-        label.clutter_text.ellipsize = Pango.EllipsizeMode.END;
+        // St.Label ellipsizes by default, which would let the row squeeze it.
+        label.clutter_text.ellipsize = Pango.EllipsizeMode.NONE;
         box.add_child(label);
         const trashButton = this._makeTrashButton(tab, name);
         box.add_child(trashButton);
         tab.set_child(box);
 
         tab.connect('clicked', () => this._callbacks.onSelect(name));
+        tab.connect('notify::hover', () => this._showFullName(tab, name));
+        tab.connect('key-focus-in', () => this._scrollTo(tab));
+        if (selected)
+            tab.connect('notify::allocation', () => this._scrollTo(tab));
+
         // Middle-click closes (trashes) the note at once, like a browser tab.
         // St.Button only reacts to the primary button, so this never selects.
         tab.connect('button-release-event', (_actor, event) => {
@@ -241,8 +171,7 @@ export class NoteTabs {
             this._callbacks.onTrash(name);
             return Clutter.EVENT_STOP;
         });
-        tab.connect('key-focus-in', () => this._queueLayout());
-        tab.connect('notify::hover', () => this._showFullName(tab, label));
+
         // Clutter 14 events carry no click count; compare press times
         // against the system double-click time instead.
         let lastPress = 0;
@@ -269,16 +198,16 @@ export class NoteTabs {
             can_focus: true,
             child: new St.Icon({icon_name: 'window-close-symbolic'}),
         });
-        // Shown on hover or on the selected tab (see stylesheet).
-        // 'destroy' comes before children are disposed; hover may still
-        // change while the tab is torn down, so ignore it from then on.
+        // The × can go away before the tab does (tab teardown disposes children
+        // first; a rename replaces the tab's content), while the tab still
+        // reports hover changes: ignore them from then on.
         let alive = true;
-        tab.connect('destroy', () => (alive = false));
+        button.connect('destroy', () => (alive = false));
         const disarm = () => {
             if (!alive)
                 return;
             // Takes room only where it is usable: on hover and on the selected
-            // tab, so unselected tabs keep the whole width for the name.
+            // tab, so other tabs stay as narrow as their names.
             button.visible = tab.hover || tab.checked;
             button.remove_style_class_name('froonty-armed');
             button.child.icon_name = 'window-close-symbolic';
@@ -305,7 +234,11 @@ export class NoteTabs {
             can_focus: true,
             x_expand: true,
         });
+        // set_child() only detaches the old content (dot, name, ×); destroy it
+        // explicitly rather than leaving it to the garbage collector.
+        const oldContent = tab.child;
         tab.set_child(entry);
+        oldContent.destroy();
         entry.grab_key_focus();
         entry.clutter_text.set_selection(0, -1);
 

@@ -14,9 +14,8 @@ export default {
     },
     icon: 'document-edit-symbolic',
     enabledKey: 'notes-enabled',
-    // Compact (user request, 2026-09-28); the tab row then shows fewer,
-    // full-width tabs (see tabs.js).
-    hubSize: {width: 570, height: 255},
+    // User request (2026-09-28): 25% narrower and 25% taller than 570x255.
+    hubSize: {width: 428, height: 319},
     createService: ctx => new NotesService(ctx),
     createView: (ctx, service) => new NotesView(ctx, service),
 };

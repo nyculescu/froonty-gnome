@@ -493,8 +493,8 @@ async function testNotes(outDir) {
 
     const view = hub()._entries.get('notes')?.view;
     const [w, h] = pill().get_transformed_size();
-    check('notes: tab opens and resizes the island to 570x255',
-        view && w === 570 * scale() && h === 255 * scale(), `${w}x${h}`);
+    check('notes: tab opens and resizes the island to 428x319',
+        view && w === 428 * scale() && h === 319 * scale(), `${w}x${h}`);
     check('notes: empty folder shows the empty state',
         view._empty.visible && !view._scroll.visible);
     await screenshotTop(outDir, 'notes-empty');
@@ -621,7 +621,7 @@ async function testNotesTabsAndColors(outDir) {
         selectedTab.child.get_child_at_index(0).has_style_class_name('froonty-note-color-green'));
     await screenshotTop(outDir, 'notes-green');
 
-    // ---- tab strip: 8 notes, as many visible as fit a full name (2..5)
+    // ---- tab strip: tabs as wide as their names (up to ~14 characters)
     while (service.notes.length < 8)
         // eslint-disable-next-line no-await-in-loop
         await service.create();
@@ -630,21 +630,38 @@ async function testNotesTabsAndColors(outDir) {
     const scroll = view._tabs._scroll;
     const widths = tabs.map(t => t.get_transformed_size()[0]);
     const [scrollW] = scroll.get_transformed_size();
-    const spacing = view._tabs._box.get_theme_node().get_length('spacing');
-    const visible = view._tabs._visible;
-    const slot = Math.floor((scrollW - spacing * (visible - 1)) / visible);
-    const ellipsized = tabs.filter(t =>
-        t.child.get_child_at_index(1).clutter_text.get_layout().is_ellipsized());
-    check('tabs: 8 notes give 8 equal tabs, 2..5 visible, no name cut off',
-        tabs.length === 8 && visible >= 2 && visible <= 5 &&
-        widths.every(w => Math.abs(w - slot) <= 1) && ellipsized.length === 0,
-        `visible=${visible} widths=${widths.join(',')} slot=${slot} row=${scrollW} cut=${ellipsized.length}`);
+    // Names of up to 14 characters are shown whole; longer ones end in "…".
+    const ellipsized = tabs.filter(t => {
+        const shown = t.child.get_child_at_index(1).text;
+        return [...t.accessible_name].length <= 14
+            ? shown !== t.accessible_name : !shown.endsWith('…');
+    });
+    check('tabs: 8 tabs, names up to 14 characters are never cut, the row overflows',
+        tabs.length === 8 && ellipsized.length === 0 &&
+        widths.reduce((a, b) => a + b) > scrollW,
+        `widths=${widths.join(',')} row=${scrollW} cut=${ellipsized.length}`);
+
+    // A short name gives a short tab (it "wraps" the title).
+    const shortTab = tabs.find(t => !t.checked);
+    await service.select(shortTab.accessible_name);
+    await service.rename('as');
+    await sleep(2 * SETTLE_MS);
+    const asTab = view._tabs._box.get_children().find(t => t.accessible_name === 'as');
+    const stampTab = view._tabs._box.get_children().find(t => t.accessible_name !== 'as');
+    const [asW] = asTab.get_transformed_size();
+    const [stampW] = stampTab.get_transformed_size();
+    check('tabs: a 2-character name gives a much narrower tab',
+        asW < stampW * 0.7, `as=${asW} timestamp=${stampW}`);
+    await service.select(service.notes.at(-1));
+    await sleep(2 * SETTLE_MS);
+    // The rename and select rebuilt the tabs.
+    const rowTabs = view._tabs._box.get_children();
 
     const adjustment = scroll.hadjustment;
-    const last = boxOf(tabs.at(-1));
+    const last = boxOf(rowTabs.at(-1));
     const row = boxOf(scroll);
     check('tabs: the selected (newest) tab is scrolled into view',
-        tabs.at(-1).checked && last.x1 >= row.x1 - 1 && last.x2 <= row.x2 + 1,
+        rowTabs.at(-1).checked && last.x1 >= row.x1 - 1 && last.x2 <= row.x2 + 1,
         `tab=[${last.x1},${last.x2}] row=[${row.x1},${row.x2}] value=${adjustment.value}`);
 
     // Wheel over the strip scrolls it horizontally.
@@ -686,21 +703,51 @@ async function testNotesTabsAndColors(outDir) {
         await sleep(SETTLE_MS);
     };
     const tooltip = view._tabs.tooltip;
-    await hoverTab(view._tabs._box.get_children().find(t => t.checked));
-    check('tabs: a 14-character name is not cut and shows no bubble', !tooltip.visible);
+    const fourteen = view._tabs._box.get_children()
+        .find(t => [...t.accessible_name].length === 14);
+    view._tabs._scrollTo(fourteen);
+    await sleep(SETTLE_MS);
+    await hoverTab(fourteen);
+    check('tabs: a 14-character name is not cut and shows no bubble',
+        !tooltip.visible && fourteen.child.get_child_at_index(1).text === fourteen.accessible_name,
+        fourteen.accessible_name);
     await service.rename('Weekly planning and shopping list');
     await sleep(2 * SETTLE_MS);
     const longTab = view._tabs._box.get_children().find(t => t.checked);
     const longLabel = longTab.child.get_child_at_index(1);
     await hoverTab(longTab);
     check('tabs: a long name is cut and shown whole in a bubble on hover',
-        longLabel.clutter_text.get_layout().is_ellipsized() && tooltip.visible &&
+        longLabel.text === 'Weekly planni…' && tooltip.visible &&
         tooltip.text === 'Weekly planning and shopping list', `visible=${tooltip.visible}`);
     await screenshotTop(outDir, 'notes-tooltip');
     const e = boxOf(view._scroll);
     pointer.notify_absolute_motion(now(), (e.x1 + e.x2) / 2, (e.y1 + e.y2) / 2);
     await sleep(SETTLE_MS);
     check('tabs: the bubble hides when the pointer leaves', !tooltip.visible);
+
+    // ---- editor scrolling with a long note
+    view._entry.text = Array.from({length: 40}, (_, i) => `line ${i + 1}`).join('\n');
+    view._entry.clutter_text.grab_key_focus();
+    view._entry.clutter_text.set_cursor_position(-1);
+    await typeText('!');
+    const vadj = view._scroll.vadjustment;
+    const [, , cursorY, lineH] = view._entry.clutter_text.position_to_coords(
+        view._entry.clutter_text.cursor_position);
+    check('editor: a long note is scrollable and typing keeps the cursor in view',
+        vadj.upper > vadj.page_size && cursorY + lineH <= vadj.value + vadj.page_size + 20,
+        `upper=${vadj.upper} page=${vadj.page_size} value=${vadj.value} cursorY=${cursorY}`);
+    await screenshotTop(outDir, 'notes-long-bottom');
+    const eb = boxOf(view._scroll);
+    pointer.notify_absolute_motion(now(), (eb.x1 + eb.x2) / 2, (eb.y1 + eb.y2) / 2);
+    await sleep(50);
+    const bottom = vadj.value;
+    for (let i = 0; i < 3; i++) {
+        pointer.notify_discrete_scroll(now(), Clutter.ScrollDirection.UP, Clutter.ScrollSource.WHEEL);
+        // eslint-disable-next-line no-await-in-loop
+        await sleep(60);
+    }
+    check('editor: the mouse wheel scrolls the note', vadj.value < bottom,
+        `${bottom} -> ${vadj.value}`);
 
     island().collapse();
     await sleep(animationWait());

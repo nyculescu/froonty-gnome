@@ -9,13 +9,13 @@ Status: **implemented (v1)**. Decisions made 2026-09-28:
   `.`, not `:`, which is invalid on exFAT/NTFS. A second note in the same
   minute gets ` (2)`. These names do not sort chronologically, so tabs keep
   **creation order** instead.
-- There is **no cap** on the number of notes. Tabs are sized for **about
-  14 characters** (a full `dd.mm.yy hh.mm`). Longer titles are cut with "…"
-  and shown whole in a small note-style bubble while hovered.
-- As many equal-width tabs as fit are visible: **at most 5**, at least 2.
-  In the compact 570×255 island that is 3. The row scrolls with the wheel or
-  touchpad, shows an edge fade, and keeps the selected tab in view. "+"
-  stays outside the scrolling row.
+- There is **no cap** on the number of notes. Each tab is **as wide as
+  its name**, so "as" gives a small tab. Names longer than **14
+  characters** (a full `dd.mm.yy hh.mm` is exactly 14) are shortened to 13
+  plus "…", and shown whole in a small note-style bubble while hovered.
+- The row scrolls with the wheel or touchpad, shows an edge fade, and keeps
+  the selected tab in view. "+" stays outside the scrolling row.
+- The Notes island is **428×319**.
 - **Middle-click** on a tab moves that note to the Trash at once, like
   closing a browser tab (it can be restored from the Trash).
 - Each note has a **colour**, like Windows Sticky Notes: yellow (default),
@@ -109,6 +109,11 @@ features/notes/
   key focus.
 - The editor takes the key focus when the tab is shown, when a note is
   created, and when a tab is picked (`view.setActive`).
+- Long notes scroll inside the editor. Ubuntu's Yaru theme sets
+  `StEntry { min-height: 22px }`. A scrolled view sizes its content by its
+  minimum height, so that rule stopped scrolling; `min-height: auto` on the
+  editor fixes it. Only the Ubuntu-mode tests saw this, so `make test` now
+  runs both modes.
 - Unit tests run through `tools/unit/run.sh`, with a private `TMPDIR` and
   `XDG_DATA_HOME`. Trashed test notes once reached the real
   `~/.local/share/Trash`; the runner now prevents that, and the file tests
