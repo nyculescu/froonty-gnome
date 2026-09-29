@@ -169,6 +169,7 @@ function shellFootprint() {
         modalCount: Main.modalCount,
         actionMode: Main.actionMode,
         stripPresent: strip() !== null,
+        statusArea: Object.keys(Main.panel.statusArea).sort().join(','),
         handlers: {
             monitorsChanged: countHandlers(Main.layoutManager, 'monitors-changed'),
             systemModalOpened: countHandlers(Main.layoutManager, 'system-modal-opened'),
@@ -1013,13 +1014,83 @@ async function testLifecycle() {
     await sleep(SETTLE_MS);
 }
 
+// ---------------------------------------------------------------- hover open
+
+async function movePointerTo(x, y) {
+    pointer.notify_absolute_motion(now(), x, y);
+    await sleep(50);
+}
+
+async function testHoverOpen() {
+    const s = settings();
+    const monitor = Main.layoutManager.primaryMonitor;
+    const away = [monitor.x + 60, monitor.y + monitor.height / 2];
+    s.set_int('hover-open-delay', 350);
+
+    await movePointerTo(...away);
+    await movePointerTo(...pillCenter());
+    await sleep(200);
+    check('hover: not opened before the delay', !island().expanded);
+    await sleep(350);
+    check('hover: opened after resting 350 ms on the pill', island().expanded);
+
+    await pressKeys(Clutter.KEY_Escape);
+    await sleep(animationWait() + 400);
+    check('hover: Escape closes it and it does not reopen while the pointer stays',
+        !island().expanded);
+
+    await movePointerTo(...away);
+    await movePointerTo(...pillCenter());
+    await sleep(150);
+    await movePointerTo(...away);
+    await sleep(500);
+    check('hover: leaving before the delay cancels it', !island().expanded);
+
+    s.set_int('hover-open-delay', 0);
+    await movePointerTo(...pillCenter());
+    await sleep(600);
+    check('hover: delay 0 turns hover-open off', !island().expanded);
+    await movePointerTo(...away);
+}
+
+// ---------------------------------------------------------------- launcher
+
+async function testLauncher() {
+    const s = settings();
+    s.set_boolean('island-enabled', false);
+    await sleep(SETTLE_MS);
+    const launcher = Main.panel.statusArea['froonty-launcher'];
+    check('launcher: "Show island" off puts an icon in the top bar',
+        strip() === null && launcher?.mapped);
+
+    await clickActor(launcher);
+    check('launcher: clicking the icon opens the settings window',
+        await waitForSettingsWindow() !== null);
+    await closeSettingsWindows();
+
+    await pressKeys(Clutter.KEY_Super_L, Clutter.KEY_Alt_L, Clutter.KEY_i);
+    check('launcher: the shortcut opens the settings while the island is hidden',
+        await waitForSettingsWindow() !== null);
+    await closeSettingsWindows();
+
+    s.reset('island-enabled');
+    await sleep(SETTLE_MS);
+    check('launcher: showing the island removes the icon',
+        strip() !== null && !Main.panel.statusArea['froonty-launcher']);
+}
+
 export async function runAll(outDir) {
     results.length = 0;
+    // Pointer-driven checks move the pointer over the pill; keep hover-open
+    // out of their way (testHoverOpen enables it explicitly).
+    settings().set_int('hover-open-delay', 0);
     try {
         testLoaded();
         testGeometry();
         await testPointer(outDir);
         await testKeyboard();
+        await testHoverOpen();
+        await testLauncher();
         await testSettingsButton(outDir);
         await testHub(outDir);
         await testNotes(outDir);
@@ -1032,5 +1103,6 @@ export async function runAll(outDir) {
     } catch (e) {
         check('test run completed without exception', false, `${e}\n${e.stack}`);
     }
+    settings()?.reset('hover-open-delay');
     return results;
 }

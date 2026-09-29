@@ -59,9 +59,13 @@ export default class FroontyPreferences extends ExtensionPreferences {
 
     _islandGroup(settings) {
         const group = new Adw.PreferencesGroup({title: _('Island')});
-        group.add(switchRow(settings, 'island-enabled', _('Show island')));
+        group.add(switchRow(settings, 'island-enabled', _('Show island'),
+            _('When off, a small icon in the top bar opens these settings')));
         group.add(switchRow(settings, 'hide-panel-clock', _('Hide top bar clock'),
             _('The island replaces the clock; its calendar menu keeps working')));
+        const hoverRow = spinRow(settings, 'hover-open-delay', _('Open on hover after (ms)'), 50);
+        hoverRow.subtitle = _('0 turns opening on hover off');
+        group.add(hoverRow);
 
         // Read-only for now; a shortcut editor is not worth its size yet.
         // Change with: gsettings set org.gnome.shell.extensions.froonty

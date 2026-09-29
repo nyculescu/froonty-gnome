@@ -20,12 +20,13 @@ import St from 'gi://St';
 
 import * as GrabHelper from 'resource:///org/gnome/shell/ui/grabHelper.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
-import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 
 import {FEATURES} from '../features/registry.js';
 import {crossfade, showOnly} from './animations.js';
+import {addIslandChrome, removeIslandChrome} from './chrome.js';
 import {CollapsedView} from './collapsedView.js';
 import {IslandGeometry} from './geometry.js';
+import {HoverOpen} from './hoverOpen.js';
 import {Hub} from './hub.js';
 
 const EXPAND_MODE = Clutter.AnimationMode.EASE_OUT_BACK;
@@ -59,7 +60,7 @@ export class Island {
         this._geometry = new IslandGeometry(settings, panelClock, this._themeContext);
 
         this._buildActors();
-        this._addToChrome();
+        addIslandChrome(this._strip, this._pill, () => this.expand());
 
         // GrabHelper (also used by GNOME's app folder dialog and screenshot
         // UI) makes the expanded island behave like a menu: Escape or a click
@@ -69,6 +70,11 @@ export class Island {
         // actor.
         this._grabHelper = new GrabHelper.GrabHelper(this._strip, {
             actionMode: Shell.ActionMode.POPUP,
+        });
+
+        this._hoverOpen = new HoverOpen(this._pill, settings, {
+            isExpanded: () => this._expanded,
+            expand: () => this.expand(),
         });
 
         this._connectSignals();
@@ -92,7 +98,8 @@ export class Island {
         Main.layoutManager.panelBox.disconnectObject(this);
         this._themeContext.disconnectObject(this);
 
-        Main.ctrlAltTabManager.removeGroup(this._pill);
+        this._hoverOpen.destroy();
+        removeIslandChrome(this._pill);
 
         // The hub stops feature services and destroys their views.
         this._hub.disconnectObject(this);
@@ -197,23 +204,6 @@ export class Island {
         content.add_child(this._collapsedView.actor);
         content.add_child(this._hub.actor);
         this._showViewImmediately();
-    }
-
-    _addToChrome() {
-        // Only the pill takes input; the strip is click-through.
-        Main.layoutManager.addChrome(this._strip, {
-            affectsInputRegion: false,
-            trackFullscreen: true,
-        });
-        Main.layoutManager.trackChrome(this._pill, {
-            affectsInputRegion: true,
-        });
-
-        // Makes the island reachable with Ctrl+Alt+Tab, like the top bar.
-        Main.ctrlAltTabManager.addGroup(this._pill, _('Froonty'),
-            'x-office-calendar-symbolic', {
-                focusCallback: () => this.expand(),
-            });
     }
 
     _connectSignals() {
@@ -330,6 +320,8 @@ export class Island {
             this._pill.remove_accessible_state(Atk.StateType.EXPANDED);
         }
 
+        if (expanded)
+            this._hoverOpen.cancel();
         this._hub.setShown(expanded);
         this._animate();
     }

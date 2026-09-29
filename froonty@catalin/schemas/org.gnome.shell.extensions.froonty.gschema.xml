@@ -14,6 +14,12 @@
       <summary>Hide the top bar clock</summary>
       <description>Makes GNOME's top bar clock transparent so the island replaces it visually. The clock stays in place so its calendar menu keeps working.</description>
     </key>
+    <key name="hover-open-delay" type="i">
+      <range min="0" max="2000"/>
+      <default>350</default>
+      <summary>Open the island after hovering it this long (ms)</summary>
+      <description>0 turns opening on hover off; clicking always works.</description>
+    </key>
     <key name="toggle-shortcut" type="as">
       <default><![CDATA[['<Super><Alt>i']]]></default>
       <summary>Keyboard shortcut to expand or collapse the island</summary>

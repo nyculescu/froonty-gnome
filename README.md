@@ -28,6 +28,9 @@ froonty@catalin/          the extension (this directory is what gets installed)
 ├── ui/geometry.js        pill sizes and position (covers the top bar clock)
 ├── ui/collapsedView.js   collapsed content (time, optional date)
 ├── ui/hub.js             expanded content: icon tab row, feature host, ⚙️
+├── ui/hoverOpen.js       opens the island after hovering it (configurable)
+├── ui/panelLauncher.js   top bar icon while the island is hidden
+├── ui/chrome.js          registers the island as chrome + Ctrl+Alt+Tab
 ├── features/registry.js  every hub feature, in tab order
 ├── features/clock/       the Clock tab (first feature)
 ├── features/notes/       the Notes tab (Markdown files, autosave)
@@ -101,8 +104,9 @@ its own window with tabs: **General** (island, shortcut, clock) and
 
 | Key | Default | |
 |---|---|---|
-| `island-enabled` | `true` | Tears down the island without disabling the extension |
+| `island-enabled` | `true` | Tears down the island without disabling the extension; a top bar icon (and the shortcut) then opens the settings |
 | `hide-panel-clock` | `true` | Makes the top bar clock transparent; its menu keeps working |
+| `hover-open-delay` | 350 ms | Open the island after hovering it this long; 0 turns it off |
 | `toggle-shortcut` | `['<Super><Alt>i']` | |
 | `show-date` | `false` | |
 | `clock-format` | `system` | `system`, `24h` or `12h` |
