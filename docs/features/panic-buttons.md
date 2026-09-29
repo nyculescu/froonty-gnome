@@ -6,15 +6,17 @@ the following week; the bar and the catalog are ready for them.
 ## 1. Goal
 
 The hub has a bar of up to **5 quick-action buttons** at the top of the
-expanded island, in the place the feature tabs used to occupy. You choose
-and order the buttons in Settings → Panic buttons.
+expanded island, in the place the feature tabs used to occupy. The bar is
+**centered across the whole island**, and each button shows its name in a
+tooltip on hover. You choose and order the buttons in Settings → Panic
+buttons.
 
 The feature tabs (Clock, Notes, …) moved to a **vertical column on the
 left**. Each tab shows its feature's name in a tooltip on hover.
 
 ```
 ┌────┬──────────────────────────────────────┐
-│ 🕒 │ [🎤][🔊]                          ⚙️   │  panic bar (max 5)
+│ 🕒 │         [🎤][🔊]                 ⚙️   │  panic bar (max 5), centered
 │ 📝 │──────────────────────────────────────│
 │    │         active feature               │
 └────┴──────────────────────────────────────┘
@@ -73,7 +75,12 @@ core/tooltip.js     hover bubble, shared by the hub tabs and Notes tabs
   duplicates, the cap of 5).
 - **Headless:** the isolated session now runs its **own PipeWire**, with a
   virtual speaker and microphone and no hardware (host audio untouched).
-  So the mute buttons are tested for real:
+  WirePlumber's ALSA, Bluetooth and camera monitors are disabled there. An
+  early version found the host sound card through ALSA, which could have
+  reached the real mixer. A guard now fails the run, and skips every mute
+  check, unless all visible audio devices are test devices. The test
+  microphone uses `Audio/Source/Virtual`, so WirePlumber can make it the
+  default. With that, the mute buttons are tested for real:
   - mute and unmute of the default output and input;
   - a mute made elsewhere updates the button;
   - the bar follows the setting, ignores unknown ids and duplicates, and

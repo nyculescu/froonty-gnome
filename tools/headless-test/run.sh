@@ -34,9 +34,24 @@ context.objects = [
         media.class = Audio/Sink object.linger = true audio.position = [ FL FR ] } }
     { factory = adapter args = { factory.name = support.null-audio-sink
         node.name = "froonty-test-mic" node.description = "Test microphone"
-        media.class = Audio/Source object.linger = true audio.position = [ MONO ] } }
+        media.class = Audio/Source/Virtual object.linger = true audio.position = [ MONO ] } }
 ]
 CONF
+    # Never touch real hardware: without this, the private WirePlumber found
+    # the host's sound card through ALSA (muting it could change the real
+    # card's mixer). WirePlumber 0.4 runs Lua fragments in name order and
+    # 90-enable-all.lua starts the monitors, so this must sort between the
+    # 50-*-config files and 90.
+    mkdir -p "$XDG_CONFIG_HOME/wireplumber/main.lua.d" \
+        "$XDG_CONFIG_HOME/wireplumber/bluetooth.lua.d"
+    cat >"$XDG_CONFIG_HOME/wireplumber/main.lua.d/51-froonty-test.lua" <<'LUA'
+alsa_monitor.enabled = false
+v4l2_monitor.enabled = false
+libcamera_monitor.enabled = false
+LUA
+    echo 'bluez_monitor.enabled = false' \
+        >"$XDG_CONFIG_HOME/wireplumber/bluetooth.lua.d/51-froonty-test.lua"
+
     /usr/bin/pipewire >"$WORK/pipewire.log" 2>&1 &
     audio_pids=$!
     /usr/bin/wireplumber >"$WORK/wireplumber.log" 2>&1 &

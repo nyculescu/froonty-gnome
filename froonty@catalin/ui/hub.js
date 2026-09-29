@@ -3,7 +3,7 @@
 // docs/local/ideas.md) and contains no feature logic of its own:
 //
 //   ┌─────┬────────────────────────────────────┐
-//   │ tab │ [panic][panic]…                 ⚙️ │  header: panic bar (max 5)
+//   │ tab │      [panic][panic]…            ⚙️ │  panic bar (max 5), centered
 //   │ tab ├────────────────────────────────────┤
 //   │ …   │        active feature's view      │  content
 //   └─────┴────────────────────────────────────┘
@@ -135,9 +135,9 @@ export class Hub extends EventEmitter {
             x_expand: true,
             y_expand: true,
         });
+        // The header row holds ⚙️ on the right; the panic bar is centered over
+        // the whole island in its own layer (see below).
         const header = new St.BoxLayout({style_class: 'froonty-hub-header'});
-        this._panicBar = new PanicBar(this._settings);
-        header.add_child(this._panicBar.actor);
         header.add_child(new St.Widget({x_expand: true}));
 
         this.settingsButton = new St.Button({
@@ -160,11 +160,30 @@ export class Hub extends EventEmitter {
         right.add_child(this._content);
         main.add_child(right);
 
-        const overlay = new St.Widget({x_expand: true, y_expand: true});
+        // Panic bar: centered across the island (not just the column right of
+        // the tabs), on the header row. Its layer is click-through; only the
+        // buttons take input.
         this._tooltip = new Tooltip();
+        this._panicBar = new PanicBar(this._settings, this._tooltip);
+        const panicLayer = new St.Widget({
+            style_class: 'froonty-panic-layer',
+            layout_manager: new Clutter.BinLayout(),
+            x_expand: true,
+            y_expand: true,
+        });
+        this._panicBar.actor.set({
+            x_align: Clutter.ActorAlign.CENTER,
+            y_align: Clutter.ActorAlign.START,
+            x_expand: true,
+            y_expand: true,
+        });
+        panicLayer.add_child(this._panicBar.actor);
+
+        const overlay = new St.Widget({x_expand: true, y_expand: true});
         overlay.add_child(this._tooltip.actor);
 
         this.actor.add_child(main);
+        this.actor.add_child(panicLayer);
         this.actor.add_child(overlay);
     }
 

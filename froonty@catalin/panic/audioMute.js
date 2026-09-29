@@ -35,6 +35,7 @@ export class AudioMuteButton {
             style_class: 'froonty-icon-button froonty-panic-button',
             accessible_name: title,
             can_focus: true,
+            track_hover: true,
             child: new St.Icon(),
         });
         this.actor.connect('clicked', () => this._toggle());

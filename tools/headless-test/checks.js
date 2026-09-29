@@ -1091,9 +1091,12 @@ async function testHubLayout(outDir) {
         tabs.length === 2 && Math.abs(boxes[0].x1 - boxes[1].x1) < 1 &&
         boxes[1].y1 > boxes[0].y1 && boxes[0].x1 < boxOf(hub._content).x1,
         boxes.map(b => `[${b.x1},${b.y1}]`).join(' '));
-    check('layout: the panic bar sits where the tabs were, left of ⚙️',
-        boxOf(hub._panicBar.actor).x2 <= boxOf(hub.settingsButton).x1 &&
-        boxOf(hub._panicBar.actor).x1 > boxes[0].x2);
+    const bar = boxOf(hub._panicBar.actor);
+    const isle = boxOf(pill());
+    check('layout: the panic bar is centered on the island, clear of tabs and ⚙️',
+        Math.abs((bar.x1 + bar.x2) / 2 - (isle.x1 + isle.x2) / 2) <= 1 &&
+        bar.x2 <= boxOf(hub.settingsButton).x1 && bar.x1 > boxes[0].x2,
+        `bar=[${bar.x1},${bar.x2}] island=[${isle.x1},${isle.x2}]`);
 
     await movePointerTo((boxes[1].x1 + boxes[1].x2) / 2, (boxes[1].y1 + boxes[1].y2) / 2);
     await sleep(SETTLE_MS);
@@ -1131,11 +1134,35 @@ async function testPanic(outDir) {
         bar()._buttons.length === 2 && mic.actor.accessible_name === 'Mute microphone' &&
         sound.actor.accessible_name === 'Mute sound');
 
-    const ready = await waitFor(() => mic.actor.reactive && sound.actor.reactive);
+    await movePointerTo(...(() => {
+        const b = boxOf(sound.actor);
+        return [(b.x1 + b.x2) / 2, (b.y1 + b.y2) / 2];
+    })());
+    await sleep(SETTLE_MS);
+    const tip = island()._hub._tooltip.actor;
+    check('panic: hovering a button shows its name below it',
+        tip.visible && tip.text === 'Mute sound' && boxOf(tip).y1 >= boxOf(sound.actor).y2 - 1,
+        `visible=${tip.visible} text=${tip.text}`);
+    await screenshotTop(outDir, 'panic-tooltip');
+    await movePointerTo(...pillCenter());
+
+    // The private PipeWire and WirePlumber settle their default devices
+    // during the first seconds; wait until both test devices are the
+    // defaults, so the mute checks below do not race a device switch.
+    const ready = await waitFor(() => mic.actor.reactive && sound.actor.reactive &&
+        mixer.get_default_sink()?.name === 'froonty-test-speaker' &&
+        mixer.get_default_source()?.name === 'froonty-test-mic', 15000);
     check('panic: buttons become active once the sound server is ready', ready,
         `mixer state=${mixer.get_state()} sink=${mixer.get_default_sink()?.name} ` +
         `source=${mixer.get_default_source()?.name}`);
-    if (ready) {
+    // Safety, checked once the devices have loaded (an empty list proves
+    // nothing): the mute checks run only if every audio device the Shell
+    // sees is a test device (run.sh disables WirePlumber's hardware
+    // monitors).
+    const devices = [...mixer.get_sinks(), ...mixer.get_sources()].map(d => d.name);
+    const isolated = devices.length > 0 && devices.every(n => n?.startsWith('froonty-test'));
+    check('panic: test audio is isolated from real hardware', isolated, devices.join(', '));
+    if (ready && isolated) {
         const sink = mixer.get_default_sink();
         const source = mixer.get_default_source();
         await clickActor(sound.actor);
