@@ -367,8 +367,9 @@ error in the Shell log. Screenshots are kept with `--keep`.
 Release candidate 0.2.0-rc1: **139/139** in both session modes, plus 39
 unit tests.
 
-Release candidate 0.2.0-rc2 (GNOME Shell 50.1; start at login, Claude tab
-and panic button): **175/175** in both session modes, plus 56 unit tests.
+Release candidate 0.2.0-rc2 (GNOME Shell 50.1; start at login, Claude tab,
+its cloud session credits and panic button): **176/176** in both session
+modes, plus 59 unit tests.
 
 The Ubuntu run found a **GNOME Shell 46 race** in `ui/extensionSystem.js`:
 

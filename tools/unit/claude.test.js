@@ -116,6 +116,40 @@ test('usage: above 100% is kept as is; the bar is capped', () => {
     eq(Usage.fillFraction(0), 0);
 });
 
+const CREDITS_RESET = '2026-11-05T07:59:00+00:00';
+const credits = (entry = {}) => ({iguana_necktie: {utilization: 27.5626988, resets_at: CREDITS_RESET,
+    limit_dollars: 250, used_dollars: 68.906747, remaining_dollars: 181.093253,
+    locked_reason: null, ...entry}});
+
+test('usage: cloud session credits come last, in dollars, with their reset', () => {
+    const usage = Usage.usageFromConfig(config({extra: credits()}));
+    eq(summary(usage), 'session=13 weekly=33 model:fable=18 credits=27.5626988');
+    const row = usage.windows[3];
+    eq(row.kind, Usage.CREDITS);
+    eq([row.limit, row.used, row.remaining], [250, 68.906747, 181.093253]);
+    eq(row.resetsAt, Date.parse(CREDITS_RESET));
+    eq(row.severity, null);
+});
+
+test('usage: credits without remaining or utilization are worked out; locked is flagged', () => {
+    const row = Usage.usageFromConfig(config({extra: credits({utilization: null,
+        remaining_dollars: null, used_dollars: 50, locked_reason: 'spend_limit'})})).windows[3];
+    eq([row.percent, row.remaining, row.severity], [20, 200, 'locked']);
+});
+
+test('usage: no credits (null limits, as without a grant) or bad values leave the row out', () => {
+    for (const entry of [
+        {limit_dollars: null, used_dollars: null, remaining_dollars: null},
+        {limit_dollars: 0},
+        {limit_dollars: '250'},
+        {used_dollars: -1},
+    ])
+        eq(summary(Usage.usageFromConfig(config({extra: credits(entry)}))),
+            'session=13 weekly=33 model:fable=18', JSON.stringify(entry));
+    eq(summary(Usage.usageFromConfig(config({extra: {iguana_necktie: null}}))),
+        'session=13 weekly=33 model:fable=18');
+});
+
 test('describeReset: relative under a day, a weekday after, "renewed" once past', () => {
     const reset = Date.parse(SESSION_RESET);
     eq(Usage.describeReset(reset, reset - (4 * 60 + 2) * 60000), {kind: 'in', hours: 4, minutes: 2});

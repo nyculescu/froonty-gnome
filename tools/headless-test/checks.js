@@ -937,6 +937,8 @@ function claudeConfig({session = 13, weekly = 33, fable = 18, account = CLAUDE_A
                     {kind: 'weekly_scoped', group: 'weekly', percent: fable, severity: 'normal',
                         resets_at: week, scope: {model: {id: null, display_name: 'Fable'}, surface: null}},
                 ],
+                iguana_necktie: {utilization: 27.56, resets_at: iso(36 * 24 * 3600000),
+                    limit_dollars: 250, used_dollars: 68.9, remaining_dollars: 181.1, locked_reason: null},
             },
         },
     };
@@ -1009,7 +1011,7 @@ async function testClaude(outDir) {
     check('claude: the tab opens', hub().activeFeature?.id === 'claude' && view && service);
     const [w, h] = pill().get_transformed_size();
     check('claude: island resizes to the tab\'s hubSize',
-        w === 380 * scale() && h === 260 * scale(), `${w}x${h}`);
+        w === 380 * scale() && h === 320 * scale(), `${w}x${h}`);
 
     // Swap in a network we control, then show the tab again.
     const network = new FakeNetwork();
@@ -1033,8 +1035,12 @@ async function testClaude(outDir) {
 
     const rows = claudeRows(view);
     const text = JSON.stringify(rows);
-    check('claude: Session, Weekly and Weekly Fable with their usage',
-        rows.map(r => `${r[0]} ${r[1]}`).join(', ') === 'Session 13%, Weekly 33%, Weekly Fable 18%', text);
+    check('claude: Session, Weekly, Weekly Fable and the cloud session credits',
+        rows.map(r => `${r[0]} ${r[1]}`).join(', ') ===
+        'Session 13%, Weekly 33%, Weekly Fable 18%, Cloud session credits $181.10 left', text);
+    const creditsDay = GLib.DateTime.new_now_local().add_days(36).format('%a %-d %b');
+    check('claude: the credits, a month away, reset on a date',
+        rows[3][2].startsWith(`Resets ${creditsDay} `), text);
     check('claude: the session resets in hours and minutes',
         rows[0][2] === 'Resets in 4 h 2 min', text);
     const weekday = GLib.DateTime.new_now_local().add_hours(3 * 24 + 11).format('%a');
@@ -1077,7 +1083,7 @@ async function testClaude(outDir) {
     await sleep(SETTLE_MS);
     const offline = claudeRows(view);
     check('claude: offline, every value reads "Unknown"',
-        offline.length === 3 && offline.every(r => r[1] === 'Unknown' && r[2] === 'Resets: unknown'),
+        offline.length === 4 && offline.every(r => r[1] === 'Unknown' && r[2] === 'Resets: unknown'),
         JSON.stringify(offline));
     check('claude: offline, a line says Claude cannot be asked',
         view._notice.visible && view._notice.text.startsWith('No internet connection') &&

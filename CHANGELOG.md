@@ -13,6 +13,9 @@ Second release candidate. It targets GNOME Shell 50 on Ubuntu 26.04
     stays open. It never contacts Claude and never polls.
   - Without an internet connection every value reads "Unknown", with a
     line saying why.
+  - A **Cloud session credits** row shows the dollars left and when the
+    credits renew. Claude Code's cache stores them under a codename
+    (`iguana_necktie`), matched by hand against claude.ai.
   - The tab's icon is Claude's Spark. Settings → Claude turns the tab off.
   - The numbers are as fresh as Claude Code's last check, which happens
     only while it runs. The cache is Claude Code's private, undocumented
@@ -39,8 +42,8 @@ Second release candidate. It targets GNOME Shell 50 on Ubuntu 26.04
   and silently skipped Froonty.
 
 ### Quality
-- Headless GNOME Shell 50 suite: 175/175 in both session modes.
-- 56 plain-gjs unit tests.
+- Headless GNOME Shell 50 suite: 176/176 in both session modes.
+- 59 plain-gjs unit tests.
 
 ### Known limitations
 - Verified only in the isolated headless GNOME Shell 50, not yet in a real

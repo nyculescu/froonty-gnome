@@ -20,6 +20,9 @@ resets.
 │    │ Weekly Fable                     18% │
 │    │ ████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ │
 │    │ Resets Fri 22:56                     │
+│    │ Cloud session credits  $181.09 left  │
+│    │ ███████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ │
+│    │ Resets Thu 5 Nov 08:59               │
 │    │                    Updated 2 min ago │
 └────┴──────────────────────────────────────┘
 ```
@@ -34,9 +37,14 @@ Froonty reads a different one.
 - **Rows:** Session (5 hours), Weekly (all models), and one Weekly row per
   model the server lists separately (today: **Fable**; its name comes from
   the server). Anything else in the answer (per-product rows such as
-  Cowork, credits, spend) is left out.
+  Cowork, extra usage, spend) is left out.
+- **Cloud session credits** (added 2026-09-30, user request): last row,
+  "$181.09 left" (the dollars remaining, as claude.ai shows them), a bar
+  for the share used, and the monthly renewal. Shown only when the account
+  has a credit limit; red when the server gives a `locked_reason`.
 - **Resets:** under a day away it reads "Resets in 4 h 2 min" (rounded up,
-  so never "in 0 min"); further away, "Resets Fri 22:56", in the clock's
+  so never "in 0 min"); further away, "Resets Fri 22:56", and from six
+  days away with the date, "Resets Thu 5 Nov 08:59"; in the clock's
   12/24-hour format.
 - **Refresh on every visit, never poll** (user request). The file is read
   each time the tab comes on screen. While it stays on screen, a file
@@ -58,7 +66,7 @@ Froonty reads a different one.
   logo; check their trademark terms before publishing Froonty with it.
 - **On by default** (`claude-enabled`). Without Claude Code the tab shows a
   hint instead of rows.
-- **Size:** 380×260.
+- **Size:** 380×320 (260 before the credits row).
 - **Panic button** `claude-session` (added the same day, user request):
   the session's usage in orange, as large as the button allows, over a
   faint grey Spark, number only;
@@ -102,6 +110,11 @@ bundled with the Claude app on 2026-09-29) and the file it wrote:
   is left out, never guessed. The older top-level fields (`five_hour`,
   `seven_day`, `seven_day_opus`, `seven_day_sonnet`) fill in rows that
   `limits[]` lacks.
+- **Cloud session credits** are under a codename, `iguana_necktie`:
+  `{utilization, resets_at, limit_dollars, used_dollars, remaining_dollars,
+  locked_reason}`, all dollar fields null without a grant. Nothing in the
+  file names it; the user matched `remaining_dollars` against claude.ai's
+  Settings → Usage on 2026-09-30. A rename in Claude Code hides the row.
 - **Percentages are 0–100.** Above 100 is possible (use past a cap, e.g. at
   lower priority); the text keeps it, the bar is capped.
 - **Account check.** Claude Code discards a cache whose `accountUuid` is not
@@ -123,7 +136,7 @@ reading. The write's own file event reads it again.
 
 ```
 features/claude/
-├── index.js     descriptor: id, title, Spark icon, claude-enabled, 380×260
+├── index.js     descriptor: id, title, Spark icon, claude-enabled, 380×320
 ├── icon.js      the Spark as a Gio.FileIcon (tab and panic button)
 ├── usage.js     pure: parse the cache, reset arithmetic (unit-tested)
 ├── service.js   reads the file on show, file + network monitors while shown
@@ -157,13 +170,14 @@ tab is hidden. No timers of its own. Hidden, none of this exists.
 ## 6. Tests
 
 - `tools/unit/claude.test.js`: parsing (order, legacy fields, bad rows,
-  another account, over 100 %), reset wording, and the service against a
+  another account, over 100 %, cloud session credits), reset wording, and the service against a
   temporary file and a fake network monitor. The service tests cover no
   read while hidden, a read on show, following writes while shown, a fresh
   read on the next show, folding a burst of reads, missing, half-written
   and unreadable files, and connectivity.
 - `tools/headless-test/checks.js` `testClaude`: the real tab in the Shell
-  with a private `CLAUDE_CONFIG_DIR`. It checks the rows and their wording,
+  with a private `CLAUDE_CONFIG_DIR`. It checks the rows and their wording
+  (the credits row and its dated reset included),
   the hub size, a live update, offline and captive-portal states, nothing
   watched while collapsed, a fresh read on reopening, another account, a
   missing file, and turning the tab off.
