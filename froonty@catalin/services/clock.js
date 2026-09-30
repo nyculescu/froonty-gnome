@@ -92,18 +92,23 @@ export class ClockService extends EventEmitter {
     }
 
     /**
-     * A moment in the clock's time zone and format: "22:59", or with
-     * `weekday` "Sat 22:59".
+     * A moment in the clock's time zone and format: "22:59", with
+     * `weekday` "Sat 22:59", with `date` "Thu 5 Nov 08:59".
      *
      * @param {number} ms since the epoch
      * @param {object} [options]
      * @param {boolean} [options.weekday]
+     * @param {boolean} [options.date] weekday, day and month
      */
-    formatTime(ms, {weekday = false} = {}) {
+    formatTime(ms, {weekday = false, date = false} = {}) {
         const time = GLib.DateTime.new_from_unix_utc(Math.floor(ms / 1000))
             .to_timezone(this._timeZone());
-        const format = this._timeFormat();
-        return time.format(weekday ? `%a ${format}` : format).trim();
+        let format = this._timeFormat();
+        if (date)
+            format = `%a %-d %b ${format}`;
+        else if (weekday)
+            format = `%a ${format}`;
+        return time.format(format).trim();
     }
 
     _timeZone() {

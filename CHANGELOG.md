@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.2.0-rc2 (2026-09-30)
+
+Second release candidate. It targets GNOME Shell 50 on Ubuntu 26.04
+(Wayland only) and no longer supports GNOME Shell 46.
 
 ### Added
 - **Claude tab.** It shows your Claude plan's usage limits (Session,
@@ -18,9 +21,8 @@
   It shows the session's usage (0–100), large, in Claude's orange over a
   faint grey Spark, or "?" when unknown. A click opens the Claude tab.
 - **Start at login** (Settings → General → Startup, on by default). When
-  off, Froonty waits after login, or after a GNOME Shell restart, with only
-  a top bar icon; clicking it or pressing the shortcut starts it. A screen
-  unlock keeps the current state.
+  off, Froonty waits after login with only a top bar icon; clicking it or
+  pressing the shortcut starts it. A screen unlock keeps the current state.
 
 ### Changed
 - **Targets GNOME Shell 50** (Ubuntu 26.04) instead of 46. GNOME Shell 50
@@ -35,6 +37,16 @@
 - `make install` copies the extension instead of linking it. With a link
   into a drive mounted after login, GNOME Shell found a broken link at login
   and silently skipped Froonty.
+
+### Quality
+- Headless GNOME Shell 50 suite: 175/175 in both session modes.
+- 56 plain-gjs unit tests.
+
+### Known limitations
+- Verified only in the isolated headless GNOME Shell 50, not yet in a real
+  GNOME 50 session, with real suspend/resume, or on HiDPI/fractional
+  scaling.
+- Rendered Markdown and Calendar are still planned (see 0.2.0-rc1).
 
 ## 0.2.0-rc1 (2026-09-28)
 

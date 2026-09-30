@@ -7,7 +7,7 @@
     <key name="start-at-login" type="b">
       <default>true</default>
       <summary>Start at login</summary>
-      <description>When false, Froonty waits after login (and after a GNOME Shell restart) with only a top bar icon; clicking it or pressing the toggle shortcut starts it. Screen unlocks keep the current state.</description>
+      <description>When false, Froonty waits after login with only a top bar icon; clicking it or pressing the toggle shortcut starts it. Screen unlocks keep the current state.</description>
     </key>
     <key name="island-enabled" type="b">
       <default>true</default>

@@ -15,8 +15,9 @@ export default {
     },
     icon: sparkIcon(),
     enabledKey: 'claude-enabled',
-    // Three limits, each a name, a bar and a reset time.
-    hubSize: {width: 380, height: 260},
+    // Three limits and the cloud session credits, each a name, a bar and a
+    // reset time.
+    hubSize: {width: 380, height: 320},
     createService: () => new ClaudeService(),
     createView: (ctx, service) => new ClaudeView(ctx, service),
 };

@@ -10,6 +10,13 @@ export const SESSION = 'session';
 export const WEEKLY = 'weekly';
 // A weekly allowance for one model, such as Fable.
 export const MODEL = 'model';
+// Cloud session credits: a dollar allowance that renews monthly.
+export const CREDITS = 'credits';
+
+// The cache's name for the cloud session credits. A codename, not a label:
+// matched by the user against claude.ai's Settings → Usage on 2026-09-30
+// (its remaining_dollars is what claude.ai shows as left).
+const CREDITS_KEY = 'iguana_necktie';
 
 // Below this, a reset reads "in 3 h 5 min"; from it on, "Sat 22:59".
 export const RELATIVE_RESET_MS = 24 * 3600 * 1000;
@@ -22,7 +29,8 @@ const isObject = value => typeof value === 'object' && value !== null && !Array.
  * @param {object} config
  * @returns {{fetchedAt: number, windows: object[]}|null} windows in display
  *   order (session, weekly, then one per model), each {id, kind, model,
- *   percent, resetsAt, severity}; times in ms since the epoch. Null when the
+ *   percent, resetsAt, severity}; times in ms since the epoch. The credits
+ *   window also has {limit, used, remaining}, in dollars. Null when the
  *   file holds no usage for the signed-in account.
  */
 export function usageFromConfig(config) {
@@ -50,10 +58,11 @@ export function usageFromConfig(config) {
     add(fromLegacy(usage.seven_day, WEEKLY));
     add(fromLegacy(usage.seven_day_opus, MODEL, 'Opus'));
     add(fromLegacy(usage.seven_day_sonnet, MODEL, 'Sonnet'));
+    add(fromCredits(usage[CREDITS_KEY]));
 
     if (!windows.length)
         return null;
-    const rank = w => [SESSION, WEEKLY, MODEL].indexOf(w.kind);
+    const rank = w => [SESSION, WEEKLY, MODEL, CREDITS].indexOf(w.kind);
     // Array.prototype.sort is stable: models keep the server's order.
     windows.sort((a, b) => rank(a) - rank(b));
     return {fetchedAt, windows};
@@ -100,6 +109,32 @@ function fromLegacy(entry, kind, model = null) {
         severity: null,
     };
 }
+
+// {utilization, resets_at, limit_dollars, used_dollars, remaining_dollars,
+//  locked_reason}. Null limits mean the account has no credits.
+function fromCredits(entry) {
+    if (!isObject(entry) || !isMoney(entry.limit_dollars) || entry.limit_dollars <= 0 ||
+        !isMoney(entry.used_dollars))
+        return null;
+    const limit = entry.limit_dollars;
+    const used = entry.used_dollars;
+    const remaining = isMoney(entry.remaining_dollars)
+        ? entry.remaining_dollars : Math.max(0, limit - used);
+    const locked = typeof entry.locked_reason === 'string' && entry.locked_reason !== '';
+    return {
+        id: CREDITS,
+        kind: CREDITS,
+        model: null,
+        percent: isPercent(entry.utilization) ? entry.utilization : used / limit * 100,
+        resetsAt: parseTime(entry.resets_at),
+        severity: locked ? 'locked' : null,
+        limit,
+        used,
+        remaining,
+    };
+}
+
+const isMoney = value => typeof value === 'number' && Number.isFinite(value) && value >= 0;
 
 const modelId = model => `${MODEL}:${model.trim().toLowerCase()}`;
 

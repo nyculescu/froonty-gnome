@@ -10,6 +10,9 @@
 //   Weekly Fable                         18%
 //   ██████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 //   Resets Sat 22:59
+//   Cloud session credits          $181.09 left
+//   ███████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
+//   Resets Thu 5 Nov 08:59
 //                            Updated 2 min ago
 //
 // Offline, every value reads "Unknown" and a line says why (user request).
@@ -22,7 +25,10 @@ import St from 'gi://St';
 
 import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 
-import {SESSION, WEEKLY, describeReset, fillFraction, minutesSince} from './usage.js';
+import {CREDITS, SESSION, WEEKLY, describeReset, fillFraction, minutesSince} from './usage.js';
+
+// Beyond this, a reset shows its date, not only its weekday.
+const DATED_RESET_MS = 6 * 24 * 3600 * 1000;
 
 // Rows shown as "Unknown" offline before any reading was ever made.
 const DEFAULT_KINDS = [SESSION, WEEKLY];
@@ -139,7 +145,7 @@ export class ClaudeView {
         }));
         heading.add_child(new St.Label({
             style_class: 'froonty-claude-percent',
-            text: known ? _('%d%%').format(Math.round(window.percent)) : _('Unknown'),
+            text: known ? amountText(window) : _('Unknown'),
         }));
         row.add_child(heading);
 
@@ -150,19 +156,20 @@ export class ClaudeView {
 
         row.add_child(new St.Label({
             style_class: 'froonty-claude-reset',
-            text: this._resetText(reset),
+            text: this._resetText(reset, now),
         }));
         return row;
     }
 
-    _resetText(reset) {
+    _resetText(reset, now) {
         switch (reset.kind) {
         case 'in':
             return reset.hours > 0
                 ? _('Resets in %d h %d min').format(reset.hours, reset.minutes)
                 : _('Resets in %d min').format(reset.minutes);
         case 'at':
-            return _('Resets %s').format(this._clock.formatTime(reset.time, {weekday: true}));
+            return _('Resets %s').format(this._clock.formatTime(reset.time,
+                reset.time - now >= DATED_RESET_MS ? {date: true} : {weekday: true}));
         case 'renewed':
             return _('Renewed at %s; not checked since').format(this._clock.formatTime(reset.time));
         default:
@@ -188,10 +195,19 @@ function windowTitle(window) {
         return _('Session');
     case WEEKLY:
         return _('Weekly');
+    case CREDITS:
+        return _('Cloud session credits');
     default:
         // The model's name comes from Claude's servers, e.g. "Fable".
         return _('Weekly %s').format(window.model);
     }
+}
+
+// Credits: what is left, as claude.ai shows it; limits: the share used.
+function amountText(window) {
+    if (window.kind === CREDITS)
+        return _('$%s left').format(window.remaining.toFixed(2));
+    return _('%d%%').format(Math.round(window.percent));
 }
 
 // Used up, or flagged by Claude's servers (any severity but "normal").

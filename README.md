@@ -4,7 +4,7 @@ A small Dynamic-Island-style pill at the top center of the screen for
 **GNOME Shell 50** (Ubuntu 26.04, Wayland). The island is a compact entry point to
 facilities GNOME Shell already has. It does not reimplement them.
 
-Status: **0.2.0-rc1**, a release candidate. See [CHANGELOG.md](CHANGELOG.md).
+Status: **0.2.0-rc2**, a release candidate. See [CHANGELOG.md](CHANGELOG.md).
 
 - No subprocesses, no network access, no polling timers.
 - GJS and native GNOME Shell APIs only.
@@ -152,7 +152,7 @@ The keys behind it:
 
 | Key | Default | |
 |---|---|---|
-| `start-at-login` | `true` | When off, Froonty waits after login (or a GNOME Shell restart) with only a top bar icon; a click or the shortcut starts it. A screen unlock keeps the current state |
+| `start-at-login` | `true` | When off, Froonty waits after login with only a top bar icon; a click or the shortcut starts it. A screen unlock keeps the current state |
 | `island-enabled` | `true` | Tears down the island without disabling the extension; a top bar icon (and the shortcut) then opens the settings |
 | `hide-panel-clock` | `true` | Makes the top bar clock transparent; its menu keeps working |
 | `hover-open-delay` | 350 ms | Open the island after hovering it this long; 0 turns it off |
