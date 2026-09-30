@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Runs Froonty's checks inside an isolated, headless GNOME Shell 46.
+# Runs Froonty's checks inside an isolated, headless GNOME Shell 50.
 #
 # Isolation: private D-Bus session bus, private XDG data/config/cache/runtime
 # dirs and the keyfile GSettings backend. The real session, the real dconf
@@ -26,6 +26,8 @@ if [[ "${1:-}" == "--inner" ]]; then
     # A private PipeWire (in the private XDG_RUNTIME_DIR) with a virtual
     # speaker and microphone and no hardware, so the panic mute buttons can
     # be tested for real. The host's audio is not touched.
+    # priority.session: WirePlumber 0.5 otherwise picks the speaker's
+    # monitor as the default source.
     mkdir -p "$XDG_CONFIG_HOME/pipewire/pipewire.conf.d"
     cat >"$XDG_CONFIG_HOME/pipewire/pipewire.conf.d/froonty-test.conf" <<'CONF'
 context.objects = [
@@ -34,23 +36,31 @@ context.objects = [
         media.class = Audio/Sink object.linger = true audio.position = [ FL FR ] } }
     { factory = adapter args = { factory.name = support.null-audio-sink
         node.name = "froonty-test-mic" node.description = "Test microphone"
-        media.class = Audio/Source/Virtual object.linger = true audio.position = [ MONO ] } }
+        media.class = Audio/Source/Virtual object.linger = true audio.position = [ MONO ]
+        priority.session = 2000 } }
 ]
 CONF
     # Never touch real hardware: without this, the private WirePlumber found
     # the host's sound card through ALSA (muting it could change the real
-    # card's mixer). WirePlumber 0.4 runs Lua fragments in name order and
-    # 90-enable-all.lua starts the monitors, so this must sort between the
-    # 50-*-config files and 90.
-    mkdir -p "$XDG_CONFIG_HOME/wireplumber/main.lua.d" \
-        "$XDG_CONFIG_HOME/wireplumber/bluetooth.lua.d"
-    cat >"$XDG_CONFIG_HOME/wireplumber/main.lua.d/51-froonty-test.lua" <<'LUA'
-alsa_monitor.enabled = false
-v4l2_monitor.enabled = false
-libcamera_monitor.enabled = false
-LUA
-    echo 'bluez_monitor.enabled = false' \
-        >"$XDG_CONFIG_HOME/wireplumber/bluetooth.lua.d/51-froonty-test.lua"
+    # card's mixer). WirePlumber 0.5 reads SPA-JSON fragments from
+    # wireplumber.conf.d and merges this override into the "main" profile;
+    # it ignores the Lua fragments 0.4 used.
+    mkdir -p "$XDG_CONFIG_HOME/wireplumber/wireplumber.conf.d"
+    cat >"$XDG_CONFIG_HOME/wireplumber/wireplumber.conf.d/51-froonty-test.conf" <<'CONF'
+wireplumber.profiles = {
+  main = {
+    hardware.audio = disabled
+    hardware.bluetooth = disabled
+    hardware.video-capture = disabled
+    monitor.alsa = disabled
+    monitor.alsa-midi = disabled
+    monitor.bluez = disabled
+    monitor.bluez-midi = disabled
+    monitor.v4l2 = disabled
+    monitor.libcamera = disabled
+  }
+}
+CONF
 
     /usr/bin/pipewire >"$WORK/pipewire.log" 2>&1 &
     audio_pids=$!
@@ -109,7 +119,11 @@ KEEP=
 make -C "$REPO" --no-print-directory schemas >/dev/null
 
 # Short path on purpose: Wayland socket paths are limited to 108 bytes.
-WORK=$(mktemp -d -t froonty-test.XXXXXX)
+# Under ~/.cache, not /tmp: GLib refuses to trash on system internal mounts,
+# and /tmp is one (a tmpfs on Ubuntu 26.04).
+CACHE=${XDG_CACHE_HOME:-$HOME/.cache}
+mkdir -p "$CACHE"
+WORK=$(mktemp -d -p "$CACHE" froonty-test.XXXXXX)
 system_bus_pid=
 cleanup() {
     [[ -n "$system_bus_pid" ]] && kill "$system_bus_pid" 2>/dev/null

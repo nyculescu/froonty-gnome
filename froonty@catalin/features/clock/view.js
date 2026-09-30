@@ -11,7 +11,7 @@ export class ClockView {
 
         this.actor = new St.BoxLayout({
             style_class: 'froonty-clock',
-            vertical: true,
+            orientation: Clutter.Orientation.VERTICAL,
             x_expand: true,
             y_expand: true,
             x_align: Clutter.ActorAlign.CENTER,

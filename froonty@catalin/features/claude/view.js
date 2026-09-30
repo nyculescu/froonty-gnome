@@ -34,12 +34,15 @@ export class ClaudeView {
 
         this.actor = new St.BoxLayout({
             style_class: 'froonty-claude',
-            vertical: true,
+            orientation: Clutter.Orientation.VERTICAL,
             x_expand: true,
             y_expand: true,
         });
 
-        this._rows = new St.BoxLayout({style_class: 'froonty-claude-rows', vertical: true});
+        this._rows = new St.BoxLayout({
+            style_class: 'froonty-claude-rows',
+            orientation: Clutter.Orientation.VERTICAL,
+        });
         this._scroll = new St.ScrollView({
             hscrollbar_policy: St.PolicyType.NEVER,
             vscrollbar_policy: St.PolicyType.AUTOMATIC,
@@ -51,7 +54,7 @@ export class ClaudeView {
         this._notice = wrappingLabel('froonty-claude-notice');
         this._empty = new St.BoxLayout({
             style_class: 'froonty-claude-empty',
-            vertical: true,
+            orientation: Clutter.Orientation.VERTICAL,
             x_expand: true,
             y_expand: true,
             y_align: Clutter.ActorAlign.CENTER,
@@ -120,7 +123,10 @@ export class ClaudeView {
     }
 
     _row(window, online, now) {
-        const row = new St.BoxLayout({style_class: 'froonty-claude-row', vertical: true});
+        const row = new St.BoxLayout({
+            style_class: 'froonty-claude-row',
+            orientation: Clutter.Orientation.VERTICAL,
+        });
         const reset = online ? describeReset(window.resetsAt, now) : {kind: 'unknown'};
         // After a renewal, what was used since is not known either.
         const known = online && reset.kind !== 'renewed';

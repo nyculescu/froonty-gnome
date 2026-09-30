@@ -1,6 +1,6 @@
 # Froonty design notes
 
-Target: GNOME Shell 46 on Ubuntu 24.04, Wayland first. This document records
+Target: GNOME Shell 50 on Ubuntu 26.04 (Wayland only). This document records
 what was inspected, what was decided and why, and every GNOME Shell API
 Froonty depends on.
 
@@ -8,24 +8,56 @@ Froonty depends on.
 
 | Component | Version on the development machine |
 |---|---|
-| Ubuntu | 24.04.5 LTS |
-| GNOME Shell | 46.0 (Ubuntu build, includes Ubuntu patches) |
-| Mutter | 46.2 |
-| GJS | 1.80.2 |
-| libadwaita (prefs) | 1.5.0 |
+| Ubuntu | 26.04.1 LTS |
+| GNOME Shell | 50.1 (Ubuntu build) |
+| Mutter | 50.1 |
+| GJS | 1.88.0 |
+| GLib | 2.88.0 |
+| libadwaita (prefs) | 1.9.1 |
+| WirePlumber (tests) | 0.5.13 |
 
-All GNOME Shell source references below are to the JavaScript **extracted from
-the installed binary** (`/usr/lib/gnome-shell/libshell-14.so` gresource), not
-to upstream `main`, so they match exactly what runs on Ubuntu 24.04.
+Froonty was designed against GNOME Shell 46 (Ubuntu 24.04). Line numbers in
+Shell source references below are from 46 unless noted; the APIs themselves
+were re-checked against 50.1 by running `make test` (section 1.1).
+
+GNOME Shell source references are to the JavaScript **extracted from the
+installed binary** (the `libshell-*.so` gresource), not to upstream `main`,
+so they match exactly what runs on Ubuntu.
 
 To re-extract:
 
 ```sh
-for r in $(/usr/bin/gresource list /usr/lib/gnome-shell/libshell-14.so); do
-    mkdir -p "gs46$(dirname "$r")"
-    /usr/bin/gresource extract /usr/lib/gnome-shell/libshell-14.so "$r" > "gs46$r"
+lib=$(ls /usr/lib/gnome-shell/libshell-*.so)
+for r in $(/usr/bin/gresource list "$lib"); do
+    mkdir -p "gs50$(dirname "$r")"
+    /usr/bin/gresource extract "$lib" "$r" > "gs50$r"
 done
 ```
+
+### 1.1 Port from GNOME Shell 46 to 50
+
+What changed for Froonty, and how it adapts:
+
+- **No X11, no input region.** `LayoutManager.addChrome()`/`trackChrome()`
+  reject `affectsInputRegion`. Input goes to whichever reactive actor is
+  picked, so the non-reactive strip is click-through by itself
+  (`ui/chrome.js`).
+- **St.Button clicks through a `Clutter.ClickGesture`.** Stopping
+  `button-press-event` on an ancestor (the hub used to, so empty hub clicks
+  did not reach the pill) starves every button inside. The hub now carries
+  its own primary-button `ClickGesture`, which wins over the pill's and
+  loses to its buttons'. St.Button's gesture accepts any button and filters
+  by `button_mask` only when emitting `clicked`; a separate middle-button
+  gesture on the same button is cancelled by it. Note tabs therefore take
+  `ONE | TWO` and branch on the `clicked` button.
+- **Extensions are enabled during the startup animation**, while `uiGroup`
+  is scaled to 0.75. The clock's bounds are measured in `uiGroup`
+  coordinates, not stage coordinates, so the pill is not placed mid-screen
+  (`shell/dateMenu.js`).
+- `St.BoxLayout`'s `vertical` is replaced by `orientation`.
+- Test harness: WirePlumber 0.5 config (SPA-JSON, not Lua), test roots under
+  `~/.cache` (GLib refuses to trash on `/tmp`, a tmpfs), and window
+  timestamps from `get_current_time_roundtrip()`.
 
 ## 2. Principles
 

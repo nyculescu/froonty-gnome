@@ -1,7 +1,7 @@
 # Froonty
 
 A small Dynamic-Island-style pill at the top center of the screen for
-**GNOME Shell 46** (Ubuntu 24.04). The island is a compact entry point to
+**GNOME Shell 50** (Ubuntu 26.04, Wayland). The island is a compact entry point to
 facilities GNOME Shell already has. It does not reimplement them.
 
 Status: **0.2.0-rc1**, a release candidate. See [CHANGELOG.md](CHANGELOG.md).
@@ -9,7 +9,7 @@ Status: **0.2.0-rc1**, a release candidate. See [CHANGELOG.md](CHANGELOG.md).
 - No subprocesses, no network access, no polling timers.
 - GJS and native GNOME Shell APIs only.
 
-See [docs/DESIGN.md](docs/DESIGN.md) for the GNOME 46 API analysis, the list
+See [docs/DESIGN.md](docs/DESIGN.md) for the GNOME Shell API analysis (written for 46; see the note there), the list
 of private APIs used, compatibility risks and the NexNotch review. Each
 feature has a design note in [docs/features/](docs/features/).
 
@@ -79,7 +79,7 @@ froonty@catalin/             the extension (this directory is what gets installe
     └── settingsWindow.js    opens or raises the settings window
 tools/headless-test/         isolated headless GNOME Shell test harness
 tools/unit/                  plain-gjs unit tests
-docs/DESIGN.md               GNOME 46 API analysis, private APIs, risks
+docs/DESIGN.md               GNOME Shell API analysis, private APIs, risks
 docs/features/               one design note per feature
 docs/local/                  local notes and build rules (not in git)
 ```
@@ -94,10 +94,7 @@ make install    # compiles schemas, copies into ~/.local/share/gnome-shell/exten
 when the working tree is on a drive that is mounted later. Run it again
 after each change.
 
-GNOME Shell 46 only discovers new extensions at startup:
-
-- **Wayland:** log out and back in.
-- **X11:** press Alt+F2, type `r`, press Enter.
+GNOME Shell only discovers new extensions at startup: log out and back in.
 
 Then run:
 
@@ -112,11 +109,11 @@ make pack       # build dist/froonty@catalin.shell-extension.zip
 
 ```sh
 make unit       # fast: pure logic and file I/O, no Shell
-make test       # headless GNOME Shell 46, default and Ubuntu session modes
+make test       # headless GNOME Shell 50, default and Ubuntu session modes
 tools/headless-test/run.sh --keep   # one mode, keep screenshots and logs
 ```
 
-`make test` runs a fully isolated headless GNOME Shell 46:
+`make test` runs a fully isolated headless GNOME Shell 50:
 
 - its own session bus and an empty private system bus
 - private XDG dirs and keyfile GSettings

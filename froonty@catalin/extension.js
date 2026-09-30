@@ -30,9 +30,9 @@ export default class FroontyExtension extends Extension {
         this._launcher = null;
 
         // "Start at login": the first enable() in a Shell process is the
-        // login (or, on X11, a Shell restart). Later ones (screen unlock,
-        // another extension being toggled) keep what the user had, so
-        // disable() deliberately leaves this field alone.
+        // login. Later ones (screen unlock, another extension being
+        // toggled) keep what the user had, so disable() deliberately leaves
+        // this field alone.
         this._started ??= this._settings.get_boolean('start-at-login');
 
         // Always available: starts Froonty while it waits after login,

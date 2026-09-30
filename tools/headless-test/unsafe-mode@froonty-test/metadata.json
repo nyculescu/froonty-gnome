@@ -2,5 +2,5 @@
     "uuid": "unsafe-mode@froonty-test",
     "name": "Froonty test helper (unsafe mode)",
     "description": "TEST ONLY. Enables unsafe mode so the headless test runner can use org.gnome.Shell.Eval. Only ever loaded inside the isolated headless session started by run.sh; never install it in a real session.",
-    "shell-version": ["46"]
+    "shell-version": ["50"]
 }

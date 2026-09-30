@@ -22,7 +22,16 @@
   a top bar icon; clicking it or pressing the shortcut starts it. A screen
   unlock keeps the current state.
 
+### Changed
+- **Targets GNOME Shell 50** (Ubuntu 26.04) instead of 46. GNOME Shell 50
+  marked the 46-only extension "out of date" and did not load it, so the
+  island did not appear. See docs/DESIGN.md, section 1.1.
+
 ### Fixed
+- The pill could be placed mid-screen at login: it measured the top bar
+  clock while GNOME Shell's startup animation still had the screen scaled.
+- Buttons inside the open island (feature tabs, ⚙️, panic buttons) ignored
+  clicks on GNOME Shell 50; middle-click on a note tab trashes it again.
 - `make install` copies the extension instead of linking it. With a link
   into a drive mounted after login, GNOME Shell found a broken link at login
   and silently skipped Froonty.

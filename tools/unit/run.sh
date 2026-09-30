@@ -11,7 +11,12 @@ set -uo pipefail
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 GJS=${GJS:-/usr/bin/gjs}
 
-ROOT=$(mktemp -d -t froonty-unit.XXXXXX)
+# Under ~/.cache, not /tmp: GLib refuses to trash on system internal mounts,
+# and /tmp is one (a tmpfs on Ubuntu 26.04). On the home file system Gio
+# trashes into the private $XDG_DATA_HOME/Trash below.
+CACHE=${XDG_CACHE_HOME:-$HOME/.cache}
+mkdir -p "$CACHE"
+ROOT=$(mktemp -d -p "$CACHE" froonty-unit.XXXXXX)
 trap 'rm -rf "$ROOT"' EXIT
 mkdir -p "$ROOT/tmp" "$ROOT/data"
 export TMPDIR=$ROOT/tmp

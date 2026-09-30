@@ -2,7 +2,7 @@
     "uuid": "froonty@catalin",
     "name": "Froonty",
     "description": "A compact Dynamic-Island-style entry point at the top center of the screen that reuses GNOME Shell's own clock, calendar and notification facilities.",
-    "shell-version": ["46"],
+    "shell-version": ["50"],
     "settings-schema": "org.gnome.shell.extensions.froonty",
     "gettext-domain": "froonty",
     "url": "https://github.com/nyculescu/froonty-gnome",

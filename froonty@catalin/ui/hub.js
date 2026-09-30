@@ -119,8 +119,11 @@ export class Hub extends EventEmitter {
             // Clicking inside the expanded hub never collapses it.
             reactive: true,
         });
-        for (const signal of ['button-press-event', 'button-release-event', 'touch-event'])
-            this.actor.connect(signal, () => Clutter.EVENT_STOP);
+        // On GNOME Shell 50 St.Button clicks through a Clutter.ClickGesture;
+        // stopping press/release events here would starve the tabs' own
+        // gestures too. A gesture of our own instead wins over the pill's
+        // (an ancestor) and loses to the buttons' (descendants).
+        this.actor.add_action(new Clutter.ClickGesture({required_button: Clutter.BUTTON_PRIMARY}));
 
         const main = new St.BoxLayout({style_class: 'froonty-hub', x_expand: true, y_expand: true});
         this._tabGrid = new Clutter.GridLayout({orientation: Clutter.Orientation.VERTICAL});
@@ -132,7 +135,7 @@ export class Hub extends EventEmitter {
 
         const right = new St.BoxLayout({
             style_class: 'froonty-hub-main',
-            vertical: true,
+            orientation: Clutter.Orientation.VERTICAL,
             x_expand: true,
             y_expand: true,
         });

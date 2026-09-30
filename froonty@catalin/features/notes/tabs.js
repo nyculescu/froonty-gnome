@@ -126,6 +126,8 @@ export class NoteTabs {
             can_focus: true,
             track_hover: true,
             checked: selected,
+            // Middle-click closes (trashes) the note, like a browser tab.
+            button_mask: St.ButtonMask.ONE | St.ButtonMask.TWO,
         });
         const box = new St.BoxLayout();
         box.add_child(new St.Widget({
@@ -144,20 +146,16 @@ export class NoteTabs {
         box.add_child(trashButton);
         tab.set_child(box);
 
-        tab.connect('clicked', () => this._callbacks.onSelect(name));
+        tab.connect('clicked', (_tab, button) => {
+            if (button === Clutter.BUTTON_MIDDLE)
+                this._callbacks.onTrash(name);
+            else
+                this._callbacks.onSelect(name);
+        });
         this._tooltip.attach(tab, () => (shortTitle(name) === name ? null : name), 'below');
         tab.connect('key-focus-in', () => this._scrollTo(tab));
         if (selected)
             tab.connect('notify::allocation', () => this._scrollTo(tab));
-
-        // Middle-click closes (trashes) the note at once, like a browser tab.
-        // St.Button only reacts to the primary button, so this never selects.
-        tab.connect('button-release-event', (_actor, event) => {
-            if (event.get_button() !== Clutter.BUTTON_MIDDLE)
-                return Clutter.EVENT_PROPAGATE;
-            this._callbacks.onTrash(name);
-            return Clutter.EVENT_STOP;
-        });
 
         // Clutter 14 events carry no click count; compare press times
         // against the system double-click time instead.

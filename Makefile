@@ -22,8 +22,8 @@ $(SRC)/schemas/gschemas.compiled: $(SRC)/schemas/*.gschema.xml
 # symlink: GNOME Shell loads extensions once, at login, and a link into a
 # drive that is mounted later (e.g. a data partition udisks mounts on first
 # use) is broken at that moment, so the extension silently does not start.
-# GNOME Shell 46 only loads new code at startup: log out and in (Wayland) or
-# press Alt+F2, r (X11). First install: gnome-extensions enable $(UUID)
+# GNOME Shell only loads new code at startup: log out and in.
+# First install: gnome-extensions enable $(UUID)
 install: schemas uninstall
 	mkdir -p $(dir $(INSTALL_DIR))
 	cp -r $(SRC) $(INSTALL_DIR)
@@ -33,7 +33,7 @@ install: schemas uninstall
 uninstall:
 	rm -rf $(INSTALL_DIR)
 
-# gnome-extensions 46 segfaults if --out-dir does not exist yet.
+# gnome-extensions 46 segfaulted if --out-dir did not exist yet.
 pack: schemas
 	mkdir -p dist
 	$(GNOME_EXTENSIONS) pack --force $(addprefix --extra-source=,$(SOURCE_DIRS)) \
@@ -43,7 +43,7 @@ pack: schemas
 unit:
 	tools/unit/run.sh
 
-# Isolated headless GNOME Shell 46 runs; do not touch the real session.
+# Isolated headless GNOME Shell 50 runs; do not touch the real session.
 # Both session modes: layout can depend on the theme (Ubuntu uses Yaru).
 test:
 	tools/headless-test/run.sh

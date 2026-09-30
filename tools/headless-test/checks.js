@@ -1165,7 +1165,7 @@ async function waitForSettingsWindow(timeoutMs = 10000) {
 
 async function closeSettingsWindows() {
     for (const window of settingsWindows())
-        window.delete(global.get_current_time());
+        window.delete(global.display.get_current_time_roundtrip());
     for (let waited = 0; waited < 5000 && settingsWindows().length; waited += 100)
         await sleep(100);
 }
@@ -1299,8 +1299,12 @@ async function switchPrimary() {
         const monitor = monitors.find(m => m[0][0] === connector);
         return monitor[1].find(mode => mode[6]['is-current'])[0];
     };
-    const config = logicalMonitors.map(([x, y, lmScale, transform, primary, lmMonitors]) =>
-        [x, y, lmScale, transform, !primary,
+    // The new primary is whichever logical monitor the Shell does not use as
+    // primary now, matched by position: right after a change Mutter 50 can
+    // report no logical monitor as primary, so its flags cannot be flipped.
+    const current = Main.layoutManager.primaryMonitor;
+    const config = logicalMonitors.map(([x, y, lmScale, transform, , lmMonitors]) =>
+        [x, y, lmScale, transform, x !== current.x || y !== current.y,
             lmMonitors.map(([connector]) => [connector, currentMode(connector), {}])]);
     await call('ApplyMonitorsConfig',
         new GLib.Variant('(uua(iiduba(ssa{sv}))a{sv})', [serial, 1, config, {}]), null);

@@ -2,7 +2,7 @@
 // Adapter around GNOME Shell's top bar date menu (ui/dateMenu.js).
 //
 // PRIVATE / INTERNAL API. Every GNOME Shell internal Froonty touches for the
-// date menu is confined to this file. Verified against GNOME Shell 46.0:
+// date menu is confined to this file. Verified against GNOME Shell 50.1:
 //
 //   Main.panel.statusArea.dateMenu     DateMenuButton instance registered by
 //                                      Panel._ensureIndicator() (ui/panel.js)
@@ -21,6 +21,7 @@
 // completely; coverBounds tells the island where it is on screen.
 
 import GLib from 'gi://GLib';
+import Graphene from 'gi://Graphene';
 import Meta from 'gi://Meta';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
@@ -37,22 +38,30 @@ export class PanelClock extends EventEmitter {
     }
 
     /**
-     * Stage-pixel box {x1, y1, x2, y2} of the concealed clock button, which
-     * the island must cover, or null when the clock is visible or not laid
-     * out yet.
+     * Box {x1, y1, x2, y2} of the concealed clock button, which the island
+     * must cover, in uiGroup coordinates (the island's own space), or null
+     * when the clock is visible or not laid out yet.
+     *
+     * Not stage coordinates: at login GNOME Shell 50 enables extensions
+     * while uiGroup is still scaled to 0.75 for the startup animation, and
+     * a scale change emits no allocation change to resync on.
      */
     get coverBounds() {
         const container = this._hiddenContainer;
         if (!container?.mapped)
             return null;
 
-        const [x, y] = container.get_transformed_position();
-        const [width, height] = container.get_transformed_size();
+        const uiGroup = Main.layoutManager.uiGroup;
+        const corner = (x, y) => container.apply_relative_transform_to_point(
+            uiGroup, new Graphene.Point3D({x, y, z: 0}));
+        const topLeft = corner(0, 0);
+        const bottomRight = corner(container.width, container.height);
+        const bounds = {x1: topLeft.x, y1: topLeft.y, x2: bottomRight.x, y2: bottomRight.y};
         // Before the first layout pass these are NaN.
-        if (![x, y, width, height].every(Number.isFinite))
+        if (!Object.values(bounds).every(Number.isFinite))
             return null;
 
-        return {x1: x, y1: y, x2: x + width, y2: y + height};
+        return bounds;
     }
 
     /** Make GNOME's top bar clock invisible (it stays mapped). */

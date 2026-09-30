@@ -11,11 +11,10 @@ import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js'
  * @param {Function} expand called when chosen in Ctrl+Alt+Tab
  */
 export function addIslandChrome(strip, pill, expand) {
-    Main.layoutManager.addChrome(strip, {
-        affectsInputRegion: false,
-        trackFullscreen: true,
-    });
-    Main.layoutManager.trackChrome(pill, {affectsInputRegion: true});
+    // GNOME Shell 50 is Wayland only and has no input region: input goes to
+    // whatever reactive actor is picked, so the non-reactive strip is
+    // click-through by itself and only the pill takes clicks.
+    Main.layoutManager.addChrome(strip, {trackFullscreen: true});
 
     Main.ctrlAltTabManager.addGroup(pill, _('Froonty'), 'x-office-calendar-symbolic', {
         focusCallback: expand,

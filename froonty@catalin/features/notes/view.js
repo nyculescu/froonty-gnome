@@ -102,14 +102,17 @@ export class NotesView {
 
         const editorArea = new St.BoxLayout({
             style_class: 'froonty-notes-editor-area',
-            vertical: true,
+            orientation: Clutter.Orientation.VERTICAL,
             x_expand: true,
             y_expand: true,
         });
         editorArea.add_child(this._scroll);
         editorArea.add_child(this._empty);
         editorArea.add_child(this._error);
-        const header = new St.BoxLayout({style_class: 'froonty-notes-header', vertical: true});
+        const header = new St.BoxLayout({
+            style_class: 'froonty-notes-header',
+            orientation: Clutter.Orientation.VERTICAL,
+        });
         header.add_child(this._tabs.actor);
         header.add_child(this._tools);
         grid.attach(editorArea, 0, 1, 1, 1); // first: drawn below the header
@@ -187,7 +190,7 @@ export class NotesView {
         // box below the text (or on the entry's padding) focuses the editor
         // with the cursor at the end, like a text area.
         const box = new St.BoxLayout({
-            vertical: true,
+            orientation: Clutter.Orientation.VERTICAL,
             x_expand: true,
             y_expand: true,
             reactive: true,
@@ -218,7 +221,7 @@ export class NotesView {
         });
         button.connect('clicked', () => this._create());
         this._empty = new St.BoxLayout({
-            vertical: true,
+            orientation: Clutter.Orientation.VERTICAL,
             x_expand: true,
             y_expand: true,
             x_align: Clutter.ActorAlign.CENTER,
