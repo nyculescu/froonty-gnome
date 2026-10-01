@@ -1,6 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.3.0-rc0 (2026-10-01)
+
+First release candidate of 0.3.0, for GNOME Shell 50 on Ubuntu 26.04
+(Wayland). It builds on 0.2.1-rc1. The Btop tab (a system monitor) is
+new work, so it opens 0.3.0. The ZeroTier tab stays out of the packed
+extension.
 
 ### Added
 - **Btop tab** (a system monitor, with btop's "B" as its icon). CPU

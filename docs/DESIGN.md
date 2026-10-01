@@ -391,6 +391,10 @@ modes, plus 59 unit tests.
 Release candidate 0.2.1-rc1 (the Claude tab's livenerf row and chart):
 **178/178** in both session modes, plus 73 unit tests.
 
+Release candidate 0.3.0-rc0 (the Btop tab, one tab column, fresh Claude
+usage, Notes size settings): **201/201** in both session modes, plus 136
+unit tests.
+
 The Ubuntu run found a **GNOME Shell 46 race** in `ui/extensionSystem.js`:
 
 - `enable/disableExtension()` write two keys, and each write starts an async
