@@ -15,6 +15,7 @@
 //                  Trash; leaving the tab disarms it (no timer involved)
 
 import Clutter from 'gi://Clutter';
+import GLib from 'gi://GLib';
 import Pango from 'gi://Pango';
 import St from 'gi://St';
 
@@ -154,8 +155,14 @@ export class NoteTabs {
         });
         this._tooltip.attach(tab, () => (shortTitle(name) === name ? null : name), 'below');
         tab.connect('key-focus-in', () => this._scrollTo(tab));
-        if (selected)
-            tab.connect('notify::allocation', () => this._scrollTo(tab));
+        // Once, when first laid out: later allocations (hover shows the
+        // close button) must not undo the user's scrolling.
+        if (selected) {
+            const allocationId = tab.connect('notify::allocation', () => {
+                tab.disconnect(allocationId);
+                this._scrollTo(tab);
+            });
+        }
 
         // Clutter 14 events carry no click count; compare press times
         // against the system double-click time instead.
@@ -213,17 +220,37 @@ export class NoteTabs {
     }
 
     _startRename(tab, name) {
+        // A fixed width (stylesheet), not x_expand: once the row overflows
+        // there is no spare width to expand into, and an entry's natural
+        // width is only a few pixels, so the tab shrank to a sliver.
         const entry = new St.Entry({
             style_class: 'froonty-note-tab-entry',
             text: name,
             can_focus: true,
-            x_expand: true,
         });
         // set_child() only detaches the old content (dot, name, ×); destroy it
         // explicitly rather than leaving it to the garbage collector.
         const oldContent = tab.child;
         tab.set_child(entry);
         oldContent.destroy();
+        // The entry shows the full name; the bubble would cover it.
+        this._tooltip.hide();
+        // The tab changes width: keep it in view once laid out again. After
+        // that layout, not during it: the row updates its scroll range only
+        // after placing its tabs, so a wider tab could not be reached yet.
+        let idleId = 0;
+        const allocationId = tab.connect('notify::allocation', () => {
+            tab.disconnect(allocationId);
+            idleId = GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+                idleId = 0;
+                this._scrollTo(tab);
+                return GLib.SOURCE_REMOVE;
+            });
+        });
+        tab.connect('destroy', () => {
+            if (idleId)
+                GLib.source_remove(idleId);
+        });
         entry.grab_key_focus();
         entry.clutter_text.set_selection(0, -1);
 

@@ -64,6 +64,18 @@
       <summary>Show the formatting row in notes</summary>
       <description>Off: the row with the formatting buttons, line wrap and note colour is folded away (⤵ after "+" unfolds it), leaving more room for the note.</description>
     </key>
+    <key name="notes-width" type="i">
+      <range min="360" max="960"/>
+      <default>428</default>
+      <summary>Notes island width</summary>
+      <description>In logical pixels, while the Notes tab is shown.</description>
+    </key>
+    <key name="notes-height" type="i">
+      <range min="200" max="720"/>
+      <default>319</default>
+      <summary>Notes island height</summary>
+      <description>In logical pixels, while the Notes tab is shown.</description>
+    </key>
     <key name="notes-last" type="s">
       <default>''</default>
       <summary>Note selected last</summary>
@@ -99,6 +111,59 @@
       <default>false</default>
       <summary>Internal: the current low power was acted on</summary>
       <description>Set from the start of a low-power stretch to its end, so turning claude-ask-claude-code back on during it is kept.</description>
+    </key>
+
+    <!-- Btop feature, the system monitor (docs/features/sysmon.md) -->
+    <key name="sysmon-enabled" type="b">
+      <default>true</default>
+      <summary>Show the Btop tab</summary>
+      <description>CPU, graphics cards, memory, disks and network, read while the tab is on screen and not at all otherwise.</description>
+    </key>
+    <key name="sysmon-interval" type="i">
+      <range min="1" max="10"/>
+      <default>2</default>
+      <summary>Btop refresh interval (s)</summary>
+      <description>How often the Btop tab reads the machine while it is on screen.</description>
+    </key>
+    <key name="sysmon-show-cpu" type="b">
+      <default>true</default>
+      <summary>Btop: show the CPU</summary>
+      <description>Model, clock, temperature and load; each thread in a fold-out.</description>
+    </key>
+    <key name="sysmon-show-gpu" type="b">
+      <default>true</default>
+      <summary>Btop: show the graphics cards</summary>
+      <description>Each card's load, temperature, power and memory, as far as its driver reports them. NVIDIA cards are read with nvidia-smi, and never while asleep.</description>
+    </key>
+    <key name="sysmon-show-memory" type="b">
+      <default>true</default>
+      <summary>Btop: show the memory</summary>
+    </key>
+    <key name="sysmon-show-disks" type="b">
+      <default>true</default>
+      <summary>Btop: show the disks</summary>
+      <description>Root file system, swap and the EFI system partition.</description>
+    </key>
+    <key name="sysmon-show-network" type="b">
+      <default>true</default>
+      <summary>Btop: show the network</summary>
+      <description>Download and upload speed and totals, over physical interfaces only.</description>
+    </key>
+    <key name="sysmon-width" type="i">
+      <range min="280" max="960"/>
+      <default>460</default>
+      <summary>Btop island width</summary>
+      <description>In logical pixels, while the Btop tab is shown. Below 460, each thread takes a row of its own.</description>
+    </key>
+    <key name="sysmon-height" type="i">
+      <range min="200" max="720"/>
+      <default>480</default>
+      <summary>Btop island height</summary>
+      <description>In logical pixels, while the Btop tab is shown.</description>
+    </key>
+    <key name="sysmon-cores-expanded" type="b">
+      <default>false</default>
+      <summary>Btop: each thread unfolded</summary>
     </key>
 
     <!-- Clock -->
@@ -139,6 +204,7 @@
       <range min="80" max="720"/>
       <default>140</default>
       <summary>Expanded island height</summary>
+      <description>Minimum. The island grows to show every feature tab in its column.</description>
     </key>
     <key name="corner-radius" type="i">
       <range min="0" max="64"/>

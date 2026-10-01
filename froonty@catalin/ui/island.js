@@ -225,6 +225,14 @@ export class Island {
             this._settings.connectObject(`changed::${key}`,
                 () => this._syncGeometry(), this);
         }
+        // Feature sizes set in Settings resize the open island like a tab
+        // switch does (a no-op unless that feature is the one shown).
+        for (const {hubSizeKeys} of FEATURES) {
+            for (const key of Object.values(hubSizeKeys ?? {})) {
+                this._settings.connectObject(`changed::${key}`,
+                    () => this._onHubSizeChanged(), this);
+            }
+        }
 
         Main.layoutManager.connectObject(
             'monitors-changed', () => this._syncGeometry(),
@@ -244,9 +252,17 @@ export class Island {
     }
 
     _targetSize(expanded) {
-        return expanded
-            ? this._geometry.expandedSize(this._hub.activeFeature)
-            : this._geometry.collapsedSize();
+        if (!expanded)
+            return this._geometry.collapsedSize();
+        const size = this._geometry.expandedSize(this._hub.activeFeature);
+        // Tall enough for every feature tab, in one column. (Off stage
+        // there is no theme node, and nothing to show yet.)
+        if (!this._pill.get_stage())
+            return size;
+        const node = this._pill.get_theme_node();
+        const tabs = this._hub.minHeight + node.get_vertical_padding() +
+            node.get_border_width(St.Side.TOP) + node.get_border_width(St.Side.BOTTOM);
+        return {width: size.width, height: Math.max(size.height, tabs)};
     }
 
     // Places the strip on the primary monitor and snaps the pill to the

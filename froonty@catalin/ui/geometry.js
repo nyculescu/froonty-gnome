@@ -32,10 +32,16 @@ export class IslandGeometry {
         };
     }
 
-    /** @param {?object} feature active hub feature; its hubSize wins */
+    /**
+     * @param {?object} feature active hub feature; its hubSizeKeys (settings
+     *   the user can change) or hubSize win
+     */
     expandedSize(feature) {
         const scale = this._themeContext.scale_factor;
-        const size = feature?.hubSize;
+        const keys = feature?.hubSizeKeys;
+        const size = keys
+            ? {width: this._settings.get_int(keys.width), height: this._settings.get_int(keys.height)}
+            : feature?.hubSize;
         return {
             width: (size?.width ?? this._settings.get_int('expanded-width')) * scale,
             height: (size?.height ?? this._settings.get_int('expanded-height')) * scale,

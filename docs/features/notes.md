@@ -15,7 +15,13 @@ Status: **implemented (v1)**. Decisions made 2026-09-28:
   plus "…", and shown whole in a small note-style bubble while hovered.
 - The row scrolls with the wheel or touchpad, shows an edge fade, and keeps
   the selected tab in view. "+" stays outside the scrolling row.
-- The Notes island is **428×319**.
+- The Notes island is **428×319** by default. Settings → Notes → Size
+  changes its width and height (`notes-width`, `notes-height`; applies
+  live), and **Default size** goes back to 428×319. The descriptor names
+  the keys (`hubSizeKeys`) instead of a fixed `hubSize`.
+- **Renaming** (double-click) swaps the tab's content for an entry of a
+  fixed width (10em). It used to expand into the row's spare width, which
+  an overflowing row does not have: the entry shrank to a sliver.
 - **Middle-click** on a tab moves that note to the Trash at once, like
   closing a browser tab (it can be restored from the Trash).
 - A **Wrap lines** toggle at the end of the formatting bar (one setting for

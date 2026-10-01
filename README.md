@@ -6,7 +6,8 @@ facilities GNOME Shell already has. It does not reimplement them.
 
 Status: **0.2.1-rc1**, a release candidate. See [CHANGELOG.md](CHANGELOG.md).
 
-- No background subprocesses or polling timers. The published extension
+- No background subprocesses. The one polling timer is the Btop (system
+  monitor) tab's, and it runs only while that tab is on screen. The published extension
   package omits the working-tree-only ZeroTier controls; `make install`
   includes them. Froonty also makes one direct network request: the Claude
   tab's livenerf row fetches two public files from GitHub, at most once an
@@ -26,7 +27,8 @@ feature has a design note in [docs/features/](docs/features/).
   - **Close:** Escape or a click outside.
   - It follows the primary monitor and hides over fullscreen windows.
 - **Hub.** The expanded island.
-  - Feature tabs sit in a column on the left, each named in a tooltip.
+  - Feature tabs sit in one column on the left, each named in a tooltip;
+    the island grows taller when they need the room.
   - The panic bar is centered at the top, with ⚙️ (settings) on the right.
 - **Panic buttons.** Up to 5 quick actions, chosen in Settings. Available
   now: **Mute microphone** and **Mute sound**, through GNOME's own audio
@@ -49,11 +51,20 @@ feature has a design note in [docs/features/](docs/features/).
     measured change once livenerf publishes one. These are the tab's only
     network requests: livenerf's README and chart, from GitHub, at most
     once an hour while the tab is open.
-  - **ZeroTier** tab (working-tree installs only): whether ZeroTier runs,
-    starts with the computer and reaches its network, and how each joined
-    network is doing, with Start/Stop. Networks are managed in ZeroTier
-    itself. Turned off on the first start when ZeroTier is not installed;
-    see [docs/features/zerotier.md](docs/features/zerotier.md).
+- **Btop** tab, a system monitor: the CPU (model, clock, temperature,
+  load, and each thread's load and temperature in a fold-out), each
+  graphics card (load, temperature, power, memory), RAM and cache, root,
+  swap and EFI usage, and download/upload speed and totals. Each share is
+  its value and a five-cell level, green to red (`▂▄▆▇█` at 100%).
+  - It reads the computer only while the tab is on screen, every 2 s
+    (1-10 s in Settings); sections switched off are not read.
+  - NVIDIA cards are read with `nvidia-smi`, and never while asleep. See
+    [docs/features/sysmon.md](docs/features/sysmon.md).
+- **ZeroTier** tab (working-tree installs only): whether ZeroTier runs,
+  starts with the computer and reaches its network, and how each joined
+  network is doing, with Start/Stop. Networks are managed in ZeroTier
+  itself. Turned off on the first start when ZeroTier is not installed;
+  see [docs/features/zerotier.md](docs/features/zerotier.md).
 - **Always reachable.** With "Show island" off, a puzzle-piece icon in the
   top bar (and the shortcut) opens the settings.
 - **Start at login**, or not. With it off, Froonty waits after login behind
@@ -83,8 +94,9 @@ froonty@catalin/             the extension (this directory is what gets installe
 ├── features/                hub tabs, one folder each (registry.js lists them)
 │   ├── clock/
 │   ├── notes/               Markdown notes: store, service, tabs, editor, prefs
-│   └── claude/              Claude plan usage, read from Claude Code's config;
-│                            livenerf's Opus 5.5 row, fetched from GitHub
+│   ├── claude/              Claude plan usage, read from Claude Code's config;
+│   │                        livenerf's Opus 5.5 row, fetched from GitHub
+│   └── sysmon/              Btop tab (system monitor): /proc and /sys, nvidia-smi
 ├── panic/                   panic button catalog, factories, mute buttons, prefs
 ├── core/                    shared by features: emitter.js, tooltip.js
 ├── services/clock.js        GnomeDesktop.WallClock-based clock

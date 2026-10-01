@@ -3,6 +3,19 @@
 ## Unreleased
 
 ### Added
+- **Btop tab** (a system monitor, with btop's "B" as its icon). CPU
+  model, clock, temperature and load, with each thread's load and
+  temperature in a fold-out; each graphics card's load, temperature, power
+  and memory (NVIDIA through `nvidia-smi`; a sleeping card shows "Asleep"
+  and is never woken up); RAM used and cache; root, swap and EFI usage;
+  download and upload speed and totals. Loads and used space show their
+  value and a five-cell level from green to red (`_____` at 0%, `▂▄▆▇█`
+  at 100%). It reads the computer only while the tab is on screen, every
+  2 s by default (Settings → Btop: 1-10 s, and which sections to show;
+  sections that are off are not read). Its size, 460 × 480 by default, is
+  set in Settings → Btop → Size, as for Notes.
+- The feature tabs stay in one column: the expanded island grows taller
+  than "Expanded height" when the tabs need it.
 - **Fresh Claude usage.** The Claude tab no longer waits for you to open
   Account & Usage in Claude Code. Two ways in, both under Settings →
   Claude → Fresh usage:
@@ -20,6 +33,8 @@
     when that ends. Switching it back on in the meantime is kept. The tab's
     footer says when only the status line brings new numbers.
 - Rows over an hour old are dimmed and say when they were checked.
+- Notes: the island's width and height can be set under Settings → Notes →
+  Size, with a **Default size** button (428×319).
 - **ZeroTier tab** (working-tree installs; not in the published package
   yet). It shows whether ZeroTier is installed, running, set to start with
   the computer and online, and each joined network's addresses and
@@ -31,6 +46,11 @@
 ### Fixed
 - Feature icons are no longer created when the extension loads, before
   `enable()` (extensions.gnome.org review guidelines).
+- Notes: the mouse wheel scrolls the tab strip with the pointer on the
+  selected tab too. Before, the selected tab pulled itself back into view.
+- Notes: renaming a tab (double-click) once the tab row is full no longer
+  shrinks the tab to a sliver; the name field keeps its width and stays in
+  view.
 
 ### Changed
 - Froonty can now make Claude Code contact Anthropic (one usage check per

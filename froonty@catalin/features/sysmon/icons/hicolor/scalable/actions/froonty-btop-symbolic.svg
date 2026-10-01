@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 100 100">
+  <!-- btop's "B" (user-supplied, 2026-10-01), centred, without its dark
+       offset outline. Fill #bebebe: the Shell recolours symbolic icons by
+       fill, so the tab follows the theme. -->
+  <path fill="#bebebe" fill-rule="evenodd" transform="translate(23 8)" d="M3 2h41v16h7v16H44v16h7v16H44v16H3V2Zm14 16v16h21V18H17Zm0 32v16h21V50H17Z"/>
+</svg>

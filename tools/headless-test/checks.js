@@ -260,9 +260,13 @@ async function testPointer(outDir) {
     const [w, h] = pill().get_transformed_size();
     const s = settings();
     check('click on pill expands', island().expanded);
-    check('expanded size matches settings',
+    // expanded-height is a minimum: the island grows to show every tab.
+    const tabs = island()._hub._tabColumn.get_children().map(boxOf);
+    check('expanded size matches settings, tall enough for every tab',
         w === s.get_int('expanded-width') * scale() &&
-        h === s.get_int('expanded-height') * scale(), `${w}x${h}`);
+        h >= s.get_int('expanded-height') * scale() && tabs.at(-1).y2 <= boxOf(pill()).y2 &&
+        (h === s.get_int('expanded-height') * scale() || h - (tabs.at(-1).y2 - boxOf(pill()).y1) <= 16 * scale()),
+        `${w}x${h}`);
     check('expanded island holds one modal grab', Main.modalCount === modalBefore + 1,
         `modalCount ${modalBefore} -> ${Main.modalCount}`);
     check('expanded pill has key focus', global.stage.key_focus === pill());
@@ -398,6 +402,7 @@ async function testHub(outDir) {
     const hub = island()._hub;
     settings().set_boolean('notes-enabled', false);
     settings().set_boolean('claude-enabled', false);
+    settings().set_boolean('sysmon-enabled', false);
     settings().set_boolean('zerotier-enabled', false);
     await sleep(SETTLE_MS);
     check('hub: a single feature hides the tab row', !hub._tabColumn.visible);
@@ -407,10 +412,13 @@ async function testHub(outDir) {
         hub._tabColumn.visible && hub._tabColumn.get_n_children() === 2);
     settings().reset('claude-enabled');
     await sleep(SETTLE_MS);
+    settings().reset('sysmon-enabled');
+    await sleep(SETTLE_MS);
     settings().reset('zerotier-enabled');
     await sleep(SETTLE_MS);
-    check('hub: tabs follow the registry order (Clock, Notes, Claude, ZeroTier)',
-        hub._tabColumn.get_children().map(b => b.accessible_name).join(',') === 'Clock,Notes,Claude,ZeroTier',
+    check('hub: tabs follow the registry order (Clock, Notes, Claude, Btop, ZeroTier)',
+        hub._tabColumn.get_children().map(b => b.accessible_name).join(',') ===
+            'Clock,Notes,Claude,Btop,ZeroTier',
         hub._tabColumn.get_children().map(b => b.accessible_name).join(','));
     check('hub: clock is the active tab', hub.activeFeature?.id === 'clock');
 
@@ -427,6 +435,49 @@ async function testHub(outDir) {
         `${zeroTierWidth}x${zeroTierHeight}`);
     check('zerotier: the first start recorded its install check',
         settings().get_boolean('zerotier-install-checked'));
+
+    await clickActor(tabButton('sysmon'));
+    await sleep(animationWait());
+    const sysmon = hub._entries.get('sysmon');
+    const [sysmonWidth, sysmonHeight] = pill().get_transformed_size();
+    check('hub: Btop opens at the configured size and polls while on screen',
+        hub.activeFeature?.id === 'sysmon' && sysmon?.service.polling === true &&
+        sysmonWidth === 460 * scale() && sysmonHeight === 480 * scale(),
+        `${sysmonWidth}x${sysmonHeight} polling=${sysmon?.service.polling}`);
+    await sleep(2500);
+    check('sysmon: a sample reached the tab',
+        sysmon?.service.snapshot?.memory?.total > 0 && sysmon.view._memory._value.text !== '—',
+        sysmon?.view._memory._value.text);
+    await screenshotTop(outDir, 'sysmon', 600);
+    settings().set_boolean('sysmon-cores-expanded', true);
+    await sleep(2500);
+    check('sysmon: unfolding lists each thread with its load',
+        sysmon?.view._cores.visible && sysmon.view._coreCells.length > 0 &&
+        sysmon.view._coreCells[0].load.text.endsWith('%') && sysmon.view._coreCells[0].level.actor.visible,
+        `${sysmon?.view._coreCells.length} threads`);
+    await screenshotTop(outDir, 'sysmon-cores', 520);
+    check('sysmon: at the default width, two threads share a row',
+        sysmon?.view._coreColumns === 2, `${sysmon?.view._coreColumns} columns`);
+    settings().set_int('sysmon-width', 380);
+    await sleep(animationWait() + 2500);
+    const [narrowWidth] = pill().get_transformed_size();
+    check('sysmon: a width set in Settings resizes the open island; narrow, a thread per row',
+        narrowWidth === 380 * scale() && sysmon?.view._coreColumns === 1,
+        `${narrowWidth} ${sysmon?.view._coreColumns} columns`);
+    await screenshotTop(outDir, 'sysmon-narrow', 520);
+    settings().reset('sysmon-width');
+    settings().reset('sysmon-cores-expanded');
+    await sleep(animationWait());
+    await clickActor(tabButton('clock'));
+    await sleep(animationWait());
+    check('sysmon: another tab stops the polling', sysmon?.service.polling === false);
+    await clickActor(tabButton('sysmon'));
+    await sleep(animationWait());
+    island().collapse();
+    await sleep(animationWait());
+    check('sysmon: collapsing the island stops the polling', sysmon?.service.polling === false);
+    island().expand();
+    await sleep(animationWait());
     await clickActor(tabButton('clock'));
     await sleep(animationWait());
     island().collapse();
@@ -439,7 +490,7 @@ async function testHub(outDir) {
         await setExtensionEnabled(false);
         await setExtensionEnabled(true);
         check('hub: a registered feature adds a tab',
-            island()._hub._tabColumn.get_n_children() === 5);
+            island()._hub._tabColumn.get_n_children() === 6);
         check('hub: a feature is not created before its tab is selected',
             log.length === 0, log.join(','));
 
@@ -557,6 +608,18 @@ async function testNotes(outDir) {
     const [w, h] = pill().get_transformed_size();
     check('notes: tab opens and resizes the island to 428x319',
         view && w === 428 * scale() && h === 319 * scale(), `${w}x${h}`);
+    // Settings → Notes → Size applies live; "Default size" resets it.
+    settings().set_int('notes-width', 500);
+    settings().set_int('notes-height', 400);
+    await sleep(animationWait());
+    const [sw, sh] = pill().get_transformed_size();
+    settings().reset('notes-width');
+    settings().reset('notes-height');
+    await sleep(animationWait());
+    const [rw, rh] = pill().get_transformed_size();
+    check('notes: the size settings resize the open island, and reset',
+        sw === 500 * scale() && sh === 400 * scale() &&
+        rw === 428 * scale() && rh === 319 * scale(), `${sw}x${sh} -> ${rw}x${rh}`);
     check('notes: empty folder shows the empty state',
         view._empty.visible && !view._scroll.visible);
     await screenshotTop(outDir, 'notes-empty');
@@ -725,6 +788,27 @@ async function testNotesTabsAndColors(outDir) {
     check('tabs: the selected (newest) tab is scrolled into view',
         rowTabs.at(-1).checked && last.x1 >= row.x1 - 1 && last.x2 <= row.x2 + 1,
         `tab=[${last.x1},${last.x2}] row=[${row.x1},${row.x2}] value=${adjustment.value}`);
+
+    // Double-click rename on the last tab of an overflowing row: the entry
+    // keeps a usable width (it used to shrink to a sliver) and stays in view.
+    pointer.notify_absolute_motion(now(), (last.x1 + last.x2) / 2 - 10, (last.y1 + last.y2) / 2);
+    await sleep(50);
+    for (let i = 0; i < 2; i++) {
+        pointer.notify_button(now(), Clutter.BUTTON_PRIMARY, Clutter.ButtonState.PRESSED);
+        pointer.notify_button(now(), Clutter.BUTTON_PRIMARY, Clutter.ButtonState.RELEASED);
+        // eslint-disable-next-line no-await-in-loop
+        await sleep(40);
+    }
+    await sleep(SETTLE_MS);
+    const renameEntry = rowTabs.at(-1).child;
+    const entryBox = renameEntry instanceof St.Entry ? boxOf(renameEntry) : null;
+    check('tabs: renaming the last tab of a full row gives a wide entry, in view',
+        entryBox && entryBox.x2 - entryBox.x1 >= 80 * scale() &&
+        entryBox.x1 >= row.x1 - 1 && entryBox.x2 <= row.x2 + 1,
+        entryBox ? `entry=[${entryBox.x1},${entryBox.x2}] row=[${row.x1},${row.x2}]` : 'no entry');
+    await screenshotTop(outDir, 'notes-rename-last-tab');
+    await pressKeys(Clutter.KEY_Return); // same name: nothing changes
+    await sleep(2 * SETTLE_MS);
 
     // Wheel over the strip scrolls it horizontally.
     const before = adjustment.value;
@@ -1656,15 +1740,17 @@ async function testHubLayout(outDir) {
     const hub = island()._hub;
     const tabs = hub._tabColumn.get_children();
     const boxes = tabs.map(boxOf);
-    check('layout: feature tabs are stacked vertically on the left',
-        tabs.length === 4 && Math.abs(boxes[0].x1 - boxes[1].x1) < 1 &&
-        boxes[1].y1 > boxes[0].y1 && boxes[0].x1 < boxOf(hub._content).x1,
-        boxes.map(b => `[${b.x1},${b.y1}]`).join(' '));
+    // One column; the island grows past expanded-height to show every tab.
+    check('layout: feature tabs are stacked vertically on the left, all inside the island',
+        tabs.length === 5 && boxes.every(b => Math.abs(b.x1 - boxes[0].x1) < 1) &&
+        boxes.every((b, i) => i === 0 || b.y1 > boxes[i - 1].y1) &&
+        boxes[0].x2 <= boxOf(hub._content).x1 && boxes.at(-1).y2 <= boxOf(pill()).y2,
+        `${boxes.map(b => `[${b.x1},${b.y1}]`).join(' ')} island bottom=${boxOf(pill()).y2}`);
     const bar = boxOf(hub._panicBar.actor);
     const isle = boxOf(pill());
     check('layout: the panic bar is centered on the island, clear of tabs and ⚙️',
         Math.abs((bar.x1 + bar.x2) / 2 - (isle.x1 + isle.x2) / 2) <= 1 &&
-        bar.x2 <= boxOf(hub.settingsButton).x1 && bar.x1 > boxes[0].x2,
+        bar.x2 <= boxOf(hub.settingsButton).x1 && bar.x1 > Math.max(...boxes.map(b => b.x2)),
         `bar=[${bar.x1},${bar.x2}] island=[${isle.x1},${isle.x2}]`);
 
     await movePointerTo((boxes[1].x1 + boxes[1].x2) / 2, (boxes[1].y1 + boxes[1].y2) / 2);

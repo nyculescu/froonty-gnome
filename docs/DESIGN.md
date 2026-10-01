@@ -63,11 +63,16 @@ What changed for Froonty, and how it adapts:
 
 1. Reuse GNOME Shell facilities; never duplicate a store, a daemon or a
    calendar that GNOME already has.
-2. Event-driven. No polling loop exists. A timer may only be
-   added with a written justification and a configurable interval.
+2. Event-driven. A timer may only be added with a written justification
+   and a configurable interval. The one periodic timer is the Btop
+   tab's (system monitor), and only while its tab is on screen: no event tells when a
+   CPU's load or a GPU's temperature changes, and readings are only worth
+   anything live ([features/sysmon.md](features/sysmon.md)).
 3. No background processes or polling loop. Short-lived local subprocesses
-  are limited to the Claude usage refresh and the working-tree-only ZeroTier
-  integration. Its status reads use the installed CLI; explicit actions
+  are limited to the Claude usage refresh, the Btop tab's
+  `nvidia-smi` (NVIDIA's driver puts its readings nowhere else; only while
+  the tab is on screen and the card is awake) and the working-tree-only
+  ZeroTier integration. Its status reads use the installed CLI; explicit actions
   (Start/Stop, allowing status access) use fixed `pkexec` arguments. It is omitted, along with its setting, from
   `make pack` output. The Claude tab's livenerf row is the only direct
   network access: it GETs two public files from GitHub while the tab is on
@@ -100,7 +105,7 @@ resizes. Froonty's CSS was written from scratch.
 | Calendar | Own month grid; CalendarServer D-Bus; Google Tasks over REST with OAuth | Heavy; duplicates GNOME | `DateMenuButton` (the whole menu), `Calendar.Calendar`, `DBusEventSource` | **Discard.** Open GNOME's own menu (§5) |
 | Weather | Soup + wttr.in, always on, every 30 min | Works | `misc/weather.js` `WeatherClient` (GWeather; same locations as GNOME Weather) | **Discard** the fetcher and reuse `WeatherClient` in Phase 6, off by default |
 | Quick actions | `loginctl`/`systemctl` subprocesses; polls `pactl`, `fuser`, `upower` every 15 s | Spawns processes | `misc/systemActions.js` `getDefault()`; `ui/status/*` | **Discard** the polling; use SystemActions if needed |
-| System metrics | Synchronous `/proc` reads every 1 s while visible, 3 s otherwise, never stopped | Works | Nothing equivalent | Phase 7 only: async reads, only while visible, configurable interval |
+| System metrics | Synchronous `/proc` reads every 1 s while visible, 3 s otherwise, never stopped | Works | Nothing equivalent | **Rewritten** as the Btop tab: async reads, only while its tab is on screen, configurable interval |
 
 Other NexNotch issues noted: `enable()` spawns `evolution-source-registry`
 each time; several synchronous D-Bus calls on the compositor thread; some
@@ -128,7 +133,7 @@ The hub (`ui/hub.js`) is the expanded content:
 
 ```
 hub     BinLayout, reactive (stops clicks from reaching the pill)
- ├ main     [tab column (GridLayout, TAB_COLUMNS = 1)] [header ⚙️ / content]
+ ├ main     [tab column (GridLayout, TAB_COLUMNS = 1; the island grows to fit it)] [header ⚙️ / content]
  ├ panic    panic bar, centered across the island (click-through layer)
  └ overlay  tooltips (click-through, fixed positions)
 ```
@@ -313,19 +318,21 @@ Two St/Clutter rules also shaped the island:
 | Top bar icon | 1, only while the island is hidden | `_syncIsland()` / `disable()` |
 | Mixer connections | Per panic button: 2 on the Shell's mixer + 1 on its current stream | `PanicBar.destroy()` |
 | Ctrl+Alt+Tab group | 1 | `Island.destroy()` |
-| Timers / GLib sources | **No periodic timers.** One-shot only: the hover-open delay while the pointer rests on the collapsed pill (`HoverOpen`); a 10 s give-up timeout while a requested settings window has not appeared (`SettingsWindow.destroy()`); Notes' 0.8 s autosave while there are unsaved edits (`NotesService.stop()` flushes and removes it). At most one pending `BEFORE_REDRAW` later (cover recompute), removed in `PanelClock.restore()`. WallClock's internal timerfd is removed with `run_dispose()` | `ClockService.stop()` |
+| Timers / GLib sources | **No periodic timers.** One-shot only: the hover-open delay while the pointer rests on the collapsed pill (`HoverOpen`); a 10 s give-up timeout while a requested settings window has not appeared (`SettingsWindow.destroy()`); Notes' 0.8 s autosave while there are unsaved edits (`NotesService.stop()` flushes and removes it). **One periodic timer**, only while the Btop tab is on screen: every `sysmon-interval` seconds (1-10, default 2), `timeout_add_seconds` so GLib can batch its wakeups (`SysmonService.setActive(false)`); plus a 5 s give-up timeout per `nvidia-smi` run. At most one pending `BEFORE_REDRAW` later (cover recompute), removed in `PanelClock.restore()`. WallClock's internal timerfd is removed with `run_dispose()` | `ClockService.stop()` |
 | File watching | Notes: one inotify folder monitor (`Gio.FileMonitor`), only while the Notes tab has been opened. Claude: one monitor on Claude Code's config file while the Claude tab is on screen, and one more while the island is open with the Claude session panic button | `NotesService.stop()`; `ClaudeService.setActive(false)` |
 | Network monitor | Claude: three connections on the shared `Gio.NetworkMonitor` (`network-changed`, `notify::connectivity`, `notify::network-available`) per active reader: the tab while on screen, the panic button while the island is open | `ClaudeService.setActive(false)` |
 | Network requests | Claude tab, livenerf row: one `Soup.Session`, made on the first fetch; two GETs (about 28 kB) per visit while online, at most once an hour | `LivenerfService.stop()` (aborts the session) |
-| Subprocesses / D-Bus proxies | 0 of Froonty's own. The Claude tab reads GIO's process-wide `Gio.NetworkMonitor`, whose NetworkManager backend keeps GIO's own proxy for the life of the Shell | — |
+| File reads | Btop tab, per interval while on screen: `/proc/stat`, `/proc/cpuinfo`, `/proc/meminfo`, `/proc/net/dev`, `/proc/self/mounts`, the CPU's package temperature, a few sysfs files per GPU, and one temperature per core only while the threads are unfolded. Sections that are off are not read | `SysmonService.setActive(false)` cancels a sample in flight |
+| Subprocesses / D-Bus proxies | Btop tab: one `nvidia-smi` per interval while the tab is on screen and an NVIDIA card is awake (about 40 ms). Otherwise 0 of Froonty's own. The Claude tab reads GIO's process-wide `Gio.NetworkMonitor`, whose NetworkManager backend keeps GIO's own proxy for the life of the Shell | — |
 
 ## 9. Testing
 
 Two test layers:
 
 - **`make unit`** runs plain-gjs unit tests for Shell-free logic: Notes names,
-  Markdown edits, metadata, file store and service, the panic catalog, and
-  the Claude usage parser and service.
+  Markdown edits, metadata, file store and service, the panic catalog,
+  the Claude usage parser and service, and the Btop tab's parsers,
+  sampler (over a fake `/proc` and `/sys`) and polling lifecycle.
   Each run gets a private `TMPDIR` and `XDG_DATA_HOME`, so trashed test files
   never reach the real Trash.
 - **`make test`** (`tools/headless-test/run.sh`) starts a **fully isolated
@@ -418,4 +425,4 @@ it makes a leak-free `disable()` matter even more.
 | 5 Battery | UPower DisplayDevice (`/org/freedesktop/UPower/devices/DisplayDevice`), as `ui/status/system.js` does; `UPowerGlib` is already loaded by the Shell |
 | 5 Volume/OSD | `ui/status/volume.js` `getMixerControl()` (shared Gvc mixer; already used by the panic buttons); `Main.osdWindowManager` |
 | 6 Weather | `misc/weather.js` `WeatherClient`; off by default |
-| 7 Metrics | No GNOME equivalent. Async `/proc` reads only while visible, with a configurable interval |
+| 7 Metrics | No GNOME equivalent. Done as the Btop tab ([features/sysmon.md](features/sysmon.md)): async `/proc` and `/sys` reads only while visible, with a configurable interval |

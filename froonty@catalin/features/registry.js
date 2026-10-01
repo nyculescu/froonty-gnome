@@ -6,11 +6,13 @@
 import claude from './claude/index.js';
 import clock from './clock/index.js';
 import notes from './notes/index.js';
+import sysmon from './sysmon/index.js';
 import {LOCAL_FEATURES} from './localFeatures.js';
 
 export const FEATURES = [
     clock,
     notes,
     claude,
+    sysmon,
     ...LOCAL_FEATURES,
 ];

@@ -273,6 +273,9 @@
 
 .froonty-note-tab-entry,
 .froonty-note-tab-entry:focus {
+    /* Fixed: the row gives the entry no spare width once it overflows
+       (tabs.js). Room for a full "dd.mm.yy hh.mm"; longer names scroll. */
+    width: 10em;
     padding: 0 4px;
     border: none;
     border-radius: 6px;
@@ -519,4 +522,95 @@
     font-weight: 800;
     letter-spacing: -0.5px;
     font-feature-settings: "tnum";
+}
+
+/* Btop (system monitor) feature. Shares as a five-cell level
+   (features/sysmon/level.js): green, lime, yellow, orange, red. */
+.froonty-sysmon {
+    spacing: 4px;
+}
+.froonty-sysmon-empty {
+    padding: 8px 4px;
+    color: rgba(255, 255, 255, 0.7);
+}
+.froonty-sysmon-sections {
+    spacing: 10px;
+    padding: 2px 4px 4px;
+}
+.froonty-sysmon-section,
+.froonty-sysmon-list {
+    spacing: 6px;
+}
+.froonty-sysmon-heading {
+    font-size: 0.75em;
+    font-weight: bold;
+    color: rgba(255, 255, 255, 0.55);
+}
+.froonty-sysmon-row {
+    spacing: 3px;
+}
+.froonty-sysmon-name {
+    font-weight: bold;
+    font-size: 0.9em;
+}
+.froonty-sysmon-value {
+    margin-left: 8px;
+    font-size: 0.9em;
+    font-feature-settings: "tnum";
+    color: rgba(255, 255, 255, 0.85);
+}
+.froonty-sysmon-level {
+    margin-left: 8px;
+    font-family: monospace;
+    font-size: 0.9em;
+}
+.froonty-sysmon-cell-1 { color: #33d17a; }
+.froonty-sysmon-cell-2 { color: #a5e34a; }
+.froonty-sysmon-cell-3 { color: #f6d32d; }
+.froonty-sysmon-cell-4 { color: #ff7800; }
+.froonty-sysmon-cell-5 { color: #e01b24; }
+.froonty-sysmon-cell-empty { color: #5e5c64; }
+.froonty-sysmon-detail {
+    font-size: 0.78em;
+    font-feature-settings: "tnum";
+    color: rgba(255, 255, 255, 0.55);
+}
+.froonty-sysmon-expander {
+    border-radius: 5px;
+    padding: 1px 6px 1px 2px;
+    font-size: 0.8em;
+    color: rgba(255, 255, 255, 0.75);
+}
+.froonty-sysmon-expander:hover,
+.froonty-sysmon-expander:focus {
+    background-color: rgba(255, 255, 255, 0.08);
+}
+.froonty-sysmon-expander-content {
+    spacing: 4px;
+}
+.froonty-sysmon-expander StIcon {
+    icon-size: 12px;
+}
+.froonty-sysmon-cores {
+    padding-left: 6px;
+}
+.froonty-sysmon-core-name,
+.froonty-sysmon-core-value {
+    font-size: 0.78em;
+    font-feature-settings: "tnum";
+}
+.froonty-sysmon-core-name {
+    padding-right: 8px;
+    color: rgba(255, 255, 255, 0.55);
+}
+/* Clutter.GridLayout has no CSS spacing; padding separates the columns. */
+.froonty-sysmon-core-value {
+    padding: 1px 12px 1px 0;
+    text-align: right;
+    color: rgba(255, 255, 255, 0.85);
+}
+.froonty-sysmon-level.froonty-sysmon-core-level {
+    margin-left: 0;
+    padding-right: 8px;
+    font-size: 0.78em;
 }

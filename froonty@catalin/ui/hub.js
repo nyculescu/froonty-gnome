@@ -26,8 +26,8 @@ import {PanicBar} from './panicBar.js';
 
 const LAST_TAB_KEY = 'hub-last-tab';
 
-// Feature tabs fill a grid column by column. One column for now; raising
-// this is the planned way to fit more features (placeholder).
+// Feature tabs fill a grid column by column. One column: the island grows
+// taller when the tabs need it (minHeight).
 const TAB_COLUMNS = 1;
 
 /** Emits 'size-changed' when the active feature's preferred size changes. */
@@ -65,6 +65,18 @@ export class Hub extends EventEmitter {
     /** Descriptor of the active feature. */
     get activeFeature() {
         return this._entries.get(this._activeId)?.feature ?? null;
+    }
+
+    /**
+     * The height the tab column needs (physical pixels), so the island
+     * can grow to show every tab; 0 while there is no column.
+     */
+    get minHeight() {
+        if (!this._tabColumn.visible || !this._tabColumn.get_stage())
+            return 0;
+        const [, natural] = this._tabColumn.get_preferred_height(-1);
+        this._reportedMinHeight = natural;
+        return natural;
     }
 
     /** Tell the active feature whether the hub is visible. */
@@ -132,6 +144,16 @@ export class Hub extends EventEmitter {
             layout_manager: this._tabGrid,
         });
         main.add_child(this._tabColumn);
+        // Before they are first shown (styled), the tabs measure short.
+        // Once laid out they are measured again, and the island follows if
+        // that changed; their own height does not change while the island
+        // animates, so this does not fire then.
+        this._reportedMinHeight = 0;
+        this._tabColumn.connect('notify::allocation', () => {
+            const reported = this._reportedMinHeight;
+            if (this._tabColumn.mapped && this.minHeight !== reported)
+                this.emit('size-changed');
+        });
 
         const right = new St.BoxLayout({
             style_class: 'froonty-hub-main',
@@ -216,6 +238,8 @@ export class Hub extends EventEmitter {
         });
         // A single tab is not a choice; keep the column out of the way.
         this._tabColumn.visible = enabled.length > 1;
+        // More or fewer tabs may need another island height (minHeight).
+        this.emit('size-changed');
 
         if (!this._entries.has(this._activeId)) {
             this._activeId = null;
