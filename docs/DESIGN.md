@@ -259,6 +259,7 @@ Consequences:
 
 | API | Why it is needed | Where |
 |---|---|---|
+| `Main.panel.statusArea.dateMenu._clock` | Listen to the top bar clock's `GnomeDesktop.WallClock` for minute ticks instead of owning one: a WallClock's timer is only removed in dispose, and extensions should not call `run_dispose()`. Without it, `ClockService` falls back to a WallClock of its own | `shell/dateMenu.js` `topBarWallClock()` |
 | `Main.panel.statusArea.dateMenu.container.opacity` | Visually replace the top bar clock while keeping its menu usable; read its on-screen bounds (`notify::allocation` on it and its ancestors up to `panelBox`) so the pill covers it | `shell/dateMenu.js` |
 | (Phase 3) `Main.panel.toggleCalendar()` | Open GNOME's own calendar/notification menu | will live in `shell/dateMenu.js` |
 
@@ -313,12 +314,12 @@ Two St/Clutter rules also shaped the island:
 | Resource | Count | Released in |
 |---|---|---|
 | Actors | 1 strip (+ children), added as chrome | `Island.destroy()` |
-| GObject signal connections | layoutManager ×2, panelBox ×1 (+1 allocation watch), ThemeContext ×1, dateMenu container ×2 + one allocation watch per ancestor (3), settings ×7, WallClock ×2, desktop interface settings ×1 | `disconnectObject()` in each owner's teardown |
+| GObject signal connections | layoutManager ×2, panelBox ×1 (+1 allocation watch), ThemeContext ×1, dateMenu container ×2 + one allocation watch per ancestor (3), settings ×7, the top bar's WallClock ×2, desktop interface settings ×1 | `disconnectObject()` in each owner's teardown |
 | Keybinding | 1, for the whole time the extension is enabled | `disable()` |
 | Top bar icon | 1, only while the island is hidden | `_syncIsland()` / `disable()` |
 | Mixer connections | Per panic button: 2 on the Shell's mixer + 1 on its current stream | `PanicBar.destroy()` |
 | Ctrl+Alt+Tab group | 1 | `Island.destroy()` |
-| Timers / GLib sources | **No periodic timers.** One-shot only: the hover-open delay while the pointer rests on the collapsed pill (`HoverOpen`); a 10 s give-up timeout while a requested settings window has not appeared (`SettingsWindow.destroy()`); Notes' 0.8 s autosave while there are unsaved edits (`NotesService.stop()` flushes and removes it). **One periodic timer**, only while the Btop tab is on screen: every `sysmon-interval` seconds (1-10, default 2), `timeout_add_seconds` so GLib can batch its wakeups (`SysmonService.setActive(false)`); plus a 5 s give-up timeout per `nvidia-smi` run. At most one pending `BEFORE_REDRAW` later (cover recompute), removed in `PanelClock.restore()`. WallClock's internal timerfd is removed with `run_dispose()` | `ClockService.stop()` |
+| Timers / GLib sources | **No periodic timers.** One-shot only: the hover-open delay while the pointer rests on the collapsed pill (`HoverOpen`); a 10 s give-up timeout while a requested settings window has not appeared (`SettingsWindow.destroy()`); Notes' 0.8 s autosave while there are unsaved edits (`NotesService.stop()` flushes and removes it). **One periodic timer**, only while the Btop tab is on screen: every `sysmon-interval` seconds (1-10, default 2), `timeout_add_seconds` so GLib can batch its wakeups (`SysmonService.setActive(false)`); plus a 5 s give-up timeout per `nvidia-smi` run. At most one pending `BEFORE_REDRAW` later (cover recompute), removed in `PanelClock.restore()`. The clock ticks come from the top bar's own WallClock, so Froonty owns none | `ClockService.stop()` |
 | File watching | Notes: one inotify folder monitor (`Gio.FileMonitor`), only while the Notes tab has been opened. Claude: one monitor on Claude Code's config file while the Claude tab is on screen, and one more while the island is open with the Claude session panic button | `NotesService.stop()`; `ClaudeService.setActive(false)` |
 | Network monitor | Claude: three connections on the shared `Gio.NetworkMonitor` (`network-changed`, `notify::connectivity`, `notify::network-available`) per active reader: the tab while on screen, the panic button while the island is open | `ClaudeService.setActive(false)` |
 | Network requests | Claude tab, livenerf row: one `Soup.Session`, made on the first fetch; two GETs (about 28 kB) per visit while online, at most once an hour | `LivenerfService.stop()` (aborts the session) |
@@ -394,6 +395,10 @@ Release candidate 0.2.1-rc1 (the Claude tab's livenerf row and chart):
 Release candidate 0.3.0-rc0 (the Btop tab, one tab column, fresh Claude
 usage, Notes size settings): **201/201** in both session modes, plus 136
 unit tests.
+
+Release candidate 0.3.0-rc1 (no Shexli findings: the clock follows the top
+bar's WallClock, helpers are widget subclasses): **202/202** in both
+session modes, plus 136 unit tests.
 
 The Ubuntu run found a **GNOME Shell 46 race** in `ui/extensionSystem.js`:
 

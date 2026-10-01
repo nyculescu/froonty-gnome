@@ -4,7 +4,7 @@ A small Dynamic-Island-style pill at the top center of the screen for
 **GNOME Shell 50** (Ubuntu 26.04, Wayland). The island is a compact entry point to
 facilities GNOME Shell already has. It does not reimplement them.
 
-Status: **0.3.0-rc0**, a release candidate. See [CHANGELOG.md](CHANGELOG.md).
+Status: **0.3.0-rc1**, a release candidate. See [CHANGELOG.md](CHANGELOG.md).
 
 - No background subprocesses. The one polling timer is the Btop (system
   monitor) tab's, and it runs only while that tab is on screen. The published extension
@@ -99,7 +99,7 @@ froonty@catalin/             the extension (this directory is what gets installe
 │   └── sysmon/              Btop tab (system monitor): /proc and /sys, nvidia-smi
 ├── panic/                   panic button catalog, factories, mute buttons, prefs
 ├── core/                    shared by features: emitter.js, tooltip.js
-├── services/clock.js        GnomeDesktop.WallClock-based clock
+├── services/clock.js        clock ticks from the top bar's GnomeDesktop.WallClock
 └── shell/                   adapters over GNOME Shell APIs
     ├── dateMenu.js          the only place touching Shell internals
     ├── mixer.js             the Shell's shared audio mixer

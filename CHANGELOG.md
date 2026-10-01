@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.0-rc1 (2026-10-01)
+
+Second release candidate of 0.3.0, the one submitted to
+extensions.gnome.org. It builds on 0.3.0-rc0 with no new features.
+
+### Fixed
+- The packed extension passes the Shexli static analyzer with no
+  findings. The clock now follows the top bar clock's own WallClock
+  instead of owning one, so nothing needs `run_dispose()`. The Claude
+  tab's bar and chart, and the Btop tab's rows and levels, are widget
+  subclasses (as GNOME's own bars are), so no helper keeps an actor or a
+  signal of its own.
+
 ## 0.3.0-rc0 (2026-10-01)
 
 First release candidate of 0.3.0, for GNOME Shell 50 on Ubuntu 26.04
