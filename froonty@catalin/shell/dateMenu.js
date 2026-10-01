@@ -9,6 +9,9 @@
 //   dateMenu.container                 St.Bin wrapper that PanelMenu.ButtonBox
 //                                      places in the panel's center box
 //                                      (ui/panelMenu.js)
+//   dateMenu._clock                    the GnomeDesktop.WallClock behind the
+//                                      top bar clock (ui/dateMenu.js), alive
+//                                      as long as the Shell (topBarWallClock)
 //
 // Why opacity instead of hide(): the date menu's popup is anchored to the
 // button (PopupMenu -> BoxPointer.setPosition(sourceActor)), PopupMenu closes
@@ -21,11 +24,23 @@
 // completely; coverBounds tells the island where it is on screen.
 
 import GLib from 'gi://GLib';
+import GnomeDesktop from 'gi://GnomeDesktop';
 import Graphene from 'gi://Graphene';
 import Meta from 'gi://Meta';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import {EventEmitter} from 'resource:///org/gnome/shell/misc/signals.js';
+
+/**
+ * The top bar clock's own WallClock, or null if this Shell has none
+ * there. Froonty listens to it rather than making one: a WallClock's
+ * timer is only removed when it is disposed, which extensions should not
+ * force (run_dispose), so one of its own would tick on after disable().
+ */
+export function topBarWallClock() {
+    const clock = Main.panel?.statusArea?.dateMenu?._clock;
+    return clock instanceof GnomeDesktop.WallClock ? clock : null;
+}
 
 /** Emits 'cover-changed' when coverBounds may have changed. */
 export class PanelClock extends EventEmitter {

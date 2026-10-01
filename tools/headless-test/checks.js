@@ -179,6 +179,9 @@ function shellFootprint() {
             panelBoxAllocation: countHandlers(Main.layoutManager.panelBox, 'notify::allocation'),
             scaleFactor: countHandlers(themeContext, 'notify::scale-factor'),
             dateMenuDestroy: countHandlers(dateMenu, 'destroy'),
+            // The clock service listens to the top bar's own WallClock.
+            topBarClock: countHandlers(Main.panel.statusArea.dateMenu._clock, 'notify::clock'),
+            topBarTimezone: countHandlers(Main.panel.statusArea.dateMenu._clock, 'notify::timezone'),
             mixerState: countHandlers(Volume.getMixerControl(), 'state-changed'),
             mixerSink: countHandlers(Volume.getMixerControl(), 'default-sink-changed'),
             mixerSource: countHandlers(Volume.getMixerControl(), 'default-source-changed'),
@@ -260,6 +263,8 @@ async function testPointer(outDir) {
     const [w, h] = pill().get_transformed_size();
     const s = settings();
     check('click on pill expands', island().expanded);
+    check('the clock follows the top bar\'s WallClock (no clock of its own to dispose)',
+        extension().stateObj._clock?._wallClock === Main.panel.statusArea.dateMenu._clock);
     // expanded-height is a minimum: the island grows to show every tab.
     const tabs = island()._hub._tabColumn.get_children().map(boxOf);
     check('expanded size matches settings, tall enough for every tab',
@@ -446,14 +451,14 @@ async function testHub(outDir) {
         `${sysmonWidth}x${sysmonHeight} polling=${sysmon?.service.polling}`);
     await sleep(2500);
     check('sysmon: a sample reached the tab',
-        sysmon?.service.snapshot?.memory?.total > 0 && sysmon.view._memory._value.text !== '—',
-        sysmon?.view._memory._value.text);
+        sysmon?.service.snapshot?.memory?.total > 0 && sysmon.view._memory._part('value').text !== '—',
+        sysmon?.view._memory._part('value').text);
     await screenshotTop(outDir, 'sysmon', 600);
     settings().set_boolean('sysmon-cores-expanded', true);
     await sleep(2500);
     check('sysmon: unfolding lists each thread with its load',
         sysmon?.view._cores.visible && sysmon.view._coreCells.length > 0 &&
-        sysmon.view._coreCells[0].load.text.endsWith('%') && sysmon.view._coreCells[0].level.actor.visible,
+        sysmon.view._coreCells[0].load.text.endsWith('%') && sysmon.view._coreCells[0].level.visible,
         `${sysmon?.view._coreCells.length} threads`);
     await screenshotTop(outDir, 'sysmon-cores', 520);
     check('sysmon: at the default width, two threads share a row',

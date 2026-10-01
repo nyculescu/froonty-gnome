@@ -7,6 +7,7 @@
 
 import Clutter from 'gi://Clutter';
 import GLib from 'gi://GLib';
+import GObject from 'gi://GObject';
 import St from 'gi://St';
 
 import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
@@ -99,7 +100,7 @@ export class SysmonView {
 
     _buildCpu(parent) {
         const box = this._section(parent, _('CPU'));
-        this._cpu = new Meter(box);
+        this._cpu = addMeter(box);
 
         const content = new St.BoxLayout({style_class: 'froonty-sysmon-expander-content'});
         this._expanderIcon = new St.Icon({icon_name: 'pan-end-symbolic'});
@@ -139,22 +140,22 @@ export class SysmonView {
 
     _buildMemory(parent) {
         const box = this._section(parent, _('Memory'));
-        this._memory = new Meter(box);
+        this._memory = addMeter(box);
         return box;
     }
 
     _buildDisks(parent) {
         const box = this._section(parent, _('Disks'));
-        this._root = new Meter(box, {detail: false});
-        this._swap = new Meter(box, {detail: false});
-        this._efi = new Meter(box, {detail: false});
+        this._root = addMeter(box, {detail: false});
+        this._swap = addMeter(box, {detail: false});
+        this._efi = addMeter(box, {detail: false});
         return box;
     }
 
     _buildNetwork(parent) {
         const box = this._section(parent, _('Network'));
-        this._download = new Meter(box, {level: false});
-        this._upload = new Meter(box, {level: false});
+        this._download = addMeter(box, {level: false});
+        this._upload = addMeter(box, {level: false});
         return box;
     }
 
@@ -178,7 +179,7 @@ export class SysmonView {
     }
 
     _syncCpu(cpu, expanded) {
-        this._cpu.set({
+        this._cpu.update({
             name: cpu?.model ?? _('Processor'),
             value: percent(cpu?.load),
             fraction: share(cpu?.load, 100),
@@ -202,7 +203,7 @@ export class SysmonView {
     _syncCores(cores) {
         const columns = this._service.width >= TWO_CORE_COLUMNS_WIDTH ? 2 : 1;
         if (cores.length !== this._coreCount || columns !== this._coreColumns) {
-            this._cores.remove_all_children();
+            this._cores.destroy_all_children();
             this._coreCells = cores.map((core, i) => {
                 const column = (i % columns) * 4;
                 const row = Math.floor(i / columns);
@@ -213,7 +214,7 @@ export class SysmonView {
                 const load = new St.Label({style_class: 'froonty-sysmon-core-value'});
                 const level = new Level('froonty-sysmon-core-level');
                 const temp = new St.Label({style_class: 'froonty-sysmon-core-value'});
-                [name, load, level.actor, temp].forEach((actor, j) =>
+                [name, load, level, temp].forEach((actor, j) =>
                     this._coreGrid.attach(actor, column + j, row, 1, 1));
                 return {load, level, temp};
             });
@@ -223,7 +224,7 @@ export class SysmonView {
         cores.forEach((core, i) => {
             const {load, level, temp} = this._coreCells[i];
             load.text = percent(core.load);
-            level.set(share(core.load, 100));
+            level.setFraction(share(core.load, 100));
             temp.text = celsius(core.temp);
         });
     }
@@ -231,8 +232,8 @@ export class SysmonView {
     _syncGpus(gpus) {
         const key = gpus?.map(gpu => gpu.id).join(',') ?? '';
         if (key !== this._gpuKey) {
-            this._gpuList.remove_all_children();
-            this._gpus = (gpus ?? []).map(() => new Meter(this._gpuList));
+            this._gpuList.destroy_all_children();
+            this._gpus = (gpus ?? []).map(() => addMeter(this._gpuList));
             if (gpus && !gpus.length) {
                 this._gpuList.add_child(new St.Label({
                     style_class: 'froonty-sysmon-detail',
@@ -241,11 +242,11 @@ export class SysmonView {
             }
             this._gpuKey = key;
         }
-        gpus?.forEach((gpu, i) => this._gpus[i].set(gpuRow(gpu)));
+        gpus?.forEach((gpu, i) => this._gpus[i].update(gpuRow(gpu)));
     }
 
     _syncMemory(memory) {
-        this._memory.set({
+        this._memory.update({
             name: _('RAM'),
             value: amount(memory?.used, memory?.total),
             fraction: share(memory?.used, memory?.total),
@@ -254,7 +255,7 @@ export class SysmonView {
     }
 
     _syncDisks(disks) {
-        const meter = (target, name, usage, missing) => target.set({
+        const meter = (target, name, usage, missing) => target.update({
             name,
             value: usage ? amount(usage.used, usage.total) : missing,
             fraction: share(usage?.used, usage?.total),
@@ -267,12 +268,12 @@ export class SysmonView {
 
     _syncNetwork(network) {
         const total = value => known(value) ? _('%s in total').format(GLib.format_size(value)) : '';
-        this._download.set({
+        this._download.update({
             name: _('Download'),
             value: speed(network?.down),
             detail: total(network?.downTotal),
         });
-        this._upload.set({
+        this._upload.update({
             name: _('Upload'),
             value: speed(network?.up),
             detail: total(network?.upTotal),
@@ -307,63 +308,75 @@ function gpuRow(gpu) {
     };
 }
 
+function addMeter(parent, options) {
+    const meter = new Meter(options);
+    parent.add_child(meter);
+    return meter;
+}
+
 // A share as five cells (level.js), one label each: a ClutterText's
 // markup colours do not reach its first character, CSS classes do.
-class Level {
-    constructor(styleClass = '') {
-        this.actor = new St.BoxLayout({style_class: `froonty-sysmon-level ${styleClass}`});
-        this._cells = LEVEL_GLYPHS.map(() => {
-            const cell = new St.Label();
-            this.actor.add_child(cell);
-            return cell;
-        });
+const Level = GObject.registerClass(
+class Level extends St.BoxLayout {
+    _init(styleClass = '') {
+        super._init({style_class: `froonty-sysmon-level ${styleClass}`});
+        for (let i = 0; i < LEVEL_GLYPHS.length; i++)
+            this.add_child(new St.Label());
     }
 
     /** Shows the level for `fraction` (0…1), or hides it when unknown (null). */
-    set(fraction) {
-        this.actor.visible = fraction !== null;
+    setFraction(fraction) {
+        this.visible = fraction !== null;
         if (fraction === null)
             return;
+        const cells = this.get_children();
         levelCells(fraction).forEach(({glyph, styleClass}, i) => {
-            const cell = this._cells[i];
-            if (cell.text !== glyph)
-                cell.text = glyph;
-            if (cell.style_class !== styleClass)
-                cell.style_class = styleClass;
+            if (cells[i].text !== glyph)
+                cells[i].text = glyph;
+            if (cells[i].style_class !== styleClass)
+                cells[i].style_class = styleClass;
         });
     }
-}
+});
 
 // A name, its value and level on the right (optional), and a line of
-// detail under them (optional), updated in place.
-class Meter {
-    constructor(parent, {level = true, detail = true} = {}) {
-        this.actor = new St.BoxLayout({
+// detail under them (optional), updated in place. Its children are found
+// by name, so it holds no references of its own to release.
+const Meter = GObject.registerClass(
+class Meter extends St.BoxLayout {
+    _init({level = true, detail = true} = {}) {
+        super._init({
             style_class: 'froonty-sysmon-row',
             orientation: Clutter.Orientation.VERTICAL,
         });
         const heading = new St.BoxLayout();
-        this._name = new St.Label({style_class: 'froonty-sysmon-name', x_expand: true});
-        this._value = new St.Label({style_class: 'froonty-sysmon-value'});
-        heading.add_child(this._name);
-        heading.add_child(this._value);
-        this._level = level ? new Level() : null;
-        if (this._level)
-            heading.add_child(this._level.actor);
-        this.actor.add_child(heading);
-        this._detail = detail ? new St.Label({style_class: 'froonty-sysmon-detail'}) : null;
-        if (this._detail)
-            this.actor.add_child(this._detail);
-        parent.add_child(this.actor);
+        heading.add_child(new St.Label({
+            name: 'name', style_class: 'froonty-sysmon-name', x_expand: true,
+        }));
+        heading.add_child(new St.Label({name: 'value', style_class: 'froonty-sysmon-value'}));
+        if (level) {
+            const levelActor = new Level();
+            levelActor.name = 'level';
+            heading.add_child(levelActor);
+        }
+        this.add_child(heading);
+        if (detail)
+            this.add_child(new St.Label({name: 'detail', style_class: 'froonty-sysmon-detail'}));
     }
 
-    set({name, value, fraction = null, detail = ''}) {
-        this._name.text = name;
-        this._value.text = value;
-        this._level?.set(fraction);
-        if (this._detail) {
-            this._detail.text = detail;
-            this._detail.visible = Boolean(detail);
+    _part(name) {
+        return this.get_children().flatMap(child => [child, ...child.get_children()])
+            .find(child => child.name === name) ?? null;
+    }
+
+    update({name, value, fraction = null, detail = ''}) {
+        this._part('name').text = name;
+        this._part('value').text = value;
+        this._part('level')?.setFraction(fraction);
+        const detailLabel = this._part('detail');
+        if (detailLabel) {
+            detailLabel.text = detail;
+            detailLabel.visible = Boolean(detail);
         }
     }
-}
+});

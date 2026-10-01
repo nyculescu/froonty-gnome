@@ -34,6 +34,7 @@
 
 import Clutter from 'gi://Clutter';
 import GLib from 'gi://GLib';
+import GObject from 'gi://GObject';
 import Pango from 'gi://Pango';
 import PangoCairo from 'gi://PangoCairo';
 import St from 'gi://St';
@@ -165,7 +166,7 @@ export class ClaudeView {
         const known = online && reset.kind !== 'renewed';
         const bar = new UsageBar(known ? fillFraction(window.percent) : 0);
         if (known && isCritical(window))
-            bar.actor.add_style_class_name('froonty-claude-bar-critical');
+            bar.add_style_class_name('froonty-claude-bar-critical');
         const stale = known && now - window.fetchedAt >= STALE_MS;
         let detail = this._resetText(reset, now);
         if (stale)
@@ -277,7 +278,7 @@ function row(name, value, bar, detail, wrap = false) {
     heading.add_child(new St.Label({style_class: 'froonty-claude-name', text: name, x_expand: true}));
     heading.add_child(new St.Label({style_class: 'froonty-claude-percent', text: value}));
     actor.add_child(heading);
-    actor.add_child(bar.actor);
+    actor.add_child(bar);
     const label = wrap ? wrappingLabel('froonty-claude-reset')
         : new St.Label({style_class: 'froonty-claude-reset'});
     label.text = detail;
@@ -341,17 +342,17 @@ function wrappingLabel(styleClass) {
 
 // A rounded bar: CSS paints the track (background-color, border-radius),
 // this paints the used part in the foreground colour, as GNOME's own
-// ui/barLevel.js does.
-class UsageBar {
-    constructor(fraction) {
+// ui/barLevel.js does (also a DrawingArea subclass).
+const UsageBar = GObject.registerClass(
+class UsageBar extends St.DrawingArea {
+    _init(fraction) {
+        super._init({style_class: 'froonty-claude-bar', x_expand: true});
         this._fraction = fraction;
-        this.actor = new St.DrawingArea({style_class: 'froonty-claude-bar', x_expand: true});
-        this.actor.connect('repaint', () => this._repaint());
     }
 
-    _repaint() {
-        const cr = this.actor.get_context();
-        const [width, height] = this.actor.get_surface_size();
+    vfunc_repaint() {
+        const cr = this.get_context();
+        const [width, height] = this.get_surface_size();
         const fill = Math.round(this._fraction * width);
         if (fill > 0) {
             // At least a full circle, so a sliver still reads as rounded.
@@ -360,28 +361,28 @@ class UsageBar {
             cr.arc(r, r, r, Math.PI / 2, Math.PI * 3 / 2);
             cr.arc(w - r, r, r, -Math.PI / 2, Math.PI / 2);
             cr.closePath();
-            cr.setSourceColor(this.actor.get_theme_node().get_foreground_color());
+            cr.setSourceColor(this.get_theme_node().get_foreground_color());
             cr.fill();
         }
         cr.$dispose();
     }
-}
+});
 
 // livenerf's hero chart, redrawn small: the daily score (percent correct)
 // with its 95% interval, the baseline window shaded, the baseline mean
 // dashed once known, and the latest score printed by its point. The
 // series is in the CSS colour; the rest in greys over the island's black.
-class ScoreChart {
-    constructor(chart) {
+const ScoreChart = GObject.registerClass(
+class ScoreChart extends St.DrawingArea {
+    _init(chart) {
+        super._init({style_class: 'froonty-claude-chart', x_expand: true});
         this._chart = chart;
-        this.actor = new St.DrawingArea({style_class: 'froonty-claude-chart', x_expand: true});
-        this.actor.connect('repaint', () => this._repaint());
     }
 
-    _repaint() {
-        const cr = this.actor.get_context();
-        const [width, height] = this.actor.get_surface_size();
-        const node = this.actor.get_theme_node();
+    vfunc_repaint() {
+        const cr = this.get_context();
+        const [width, height] = this.get_surface_size();
+        const node = this.get_theme_node();
         const {grid, band, ticks, points, latest, baselineMean, collecting} = this._chart;
 
         const font = node.get_font();
@@ -486,4 +487,4 @@ class ScoreChart {
         }
         cr.$dispose();
     }
-}
+});
