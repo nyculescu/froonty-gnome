@@ -65,7 +65,10 @@ What changed for Froonty, and how it adapts:
    calendar that GNOME already has.
 2. Event-driven. No polling loop exists. A timer may only be
    added with a written justification and a configurable interval.
-3. No subprocesses, no network access, no background process.
+3. No subprocesses, no background process, and no network access with
+   one exception (user request, 0.2.0-rc3): the Claude tab's livenerf row
+   GETs two public files from GitHub while the tab is on screen, at most
+   once an hour ([features/claude.md](features/claude.md)).
 4. Every private Shell API is listed in section 6 and isolated in `shell/`.
 5. `disable()` undoes everything `enable()` did. GNOME Shell 46 calls
    `disable()` on every screen lock (default `session-modes` is `["user"]`,
@@ -222,7 +225,9 @@ Consequences:
 | `Atk.StateType.EXPANDED` | Accessibility |
 | `Gvc` streams (`change_is_muted`, `notify::is-muted`), through the Shell's mixer | Panic buttons: mute microphone / sound |
 | `Gio.File` async I/O, `Gio.FileMonitor` | Notes: Markdown files, folder watching; Claude: Claude Code's config file |
-| `Gio.NetworkMonitor` (`network-changed`, `notify::connectivity`, `notify::network-available`) | Claude: "Unknown" while offline, from NetworkManager's own check, with no network access of Froonty's |
+| `Gio.NetworkMonitor` (`network-changed`, `notify::connectivity`, `notify::network-available`) | Claude: "Unknown" while offline, from NetworkManager's own check |
+| `Soup` 3 (`Session.send_and_read_async`) | Claude: livenerf's README and chart from `raw.githubusercontent.com` |
+| `PangoCairo` | Claude: the labels of livenerf's chart, drawn on an `St.DrawingArea` |
 | `Meta.KeyBindingFlags`, `Shell.ActionMode` | Keybinding |
 | `Adw` 1.5, `Gtk` 4 | Preferences |
 
@@ -293,6 +298,7 @@ Two St/Clutter rules also shaped the island:
 | HiDPI / fractional scaling | Wrong sizes | Scale-factor aware; **not yet verified on real HiDPI hardware** |
 | Ubuntu session mode | Ubuntu patches Shell 46 | The tests run the Ubuntu build; `FROONTY_TEST_MODE=ubuntu` runs the Ubuntu session mode |
 | Claude Code changes its private usage cache (`cachedUsageUtilization` in `~/.claude.json`) | Claude tab shows the hint instead of rows, or loses a row | Defensive parser that leaves out what it does not know; unit tests pin the format seen in Claude Code 2.1.280 ([features/claude.md](features/claude.md)) |
+| livenerf rewords its README or redraws its chart differently | The livenerf row loses its chart or reads "could not be read" | Readers that leave out what they do not know; unit tests run them against the `third_party/livenerf` submodule |
 
 ## 8. Lifecycle and resource budget
 
@@ -307,7 +313,8 @@ Two St/Clutter rules also shaped the island:
 | Timers / GLib sources | **No periodic timers.** One-shot only: the hover-open delay while the pointer rests on the collapsed pill (`HoverOpen`); a 10 s give-up timeout while a requested settings window has not appeared (`SettingsWindow.destroy()`); Notes' 0.8 s autosave while there are unsaved edits (`NotesService.stop()` flushes and removes it). At most one pending `BEFORE_REDRAW` later (cover recompute), removed in `PanelClock.restore()`. WallClock's internal timerfd is removed with `run_dispose()` | `ClockService.stop()` |
 | File watching | Notes: one inotify folder monitor (`Gio.FileMonitor`), only while the Notes tab has been opened. Claude: one monitor on Claude Code's config file while the Claude tab is on screen, and one more while the island is open with the Claude session panic button | `NotesService.stop()`; `ClaudeService.setActive(false)` |
 | Network monitor | Claude: three connections on the shared `Gio.NetworkMonitor` (`network-changed`, `notify::connectivity`, `notify::network-available`) per active reader: the tab while on screen, the panic button while the island is open | `ClaudeService.setActive(false)` |
-| Subprocesses / network / D-Bus proxies | 0 of Froonty's own. The Claude tab reads GIO's process-wide `Gio.NetworkMonitor`, whose NetworkManager backend keeps GIO's own proxy for the life of the Shell | — |
+| Network requests | Claude tab, livenerf row: one `Soup.Session`, made on the first fetch; two GETs (about 28 kB) per visit while online, at most once an hour | `LivenerfService.stop()` (aborts the session) |
+| Subprocesses / D-Bus proxies | 0 of Froonty's own. The Claude tab reads GIO's process-wide `Gio.NetworkMonitor`, whose NetworkManager backend keeps GIO's own proxy for the life of the Shell | — |
 
 ## 9. Testing
 

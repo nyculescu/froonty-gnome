@@ -140,6 +140,9 @@ export XDG_RUNTIME_DIR=$WORK/runtime
 export GSETTINGS_BACKEND=keyfile
 # Claude Code's config file (the Claude tab reads it): a private one.
 export CLAUDE_CONFIG_DIR=$WORK/claude
+# livenerf's README and chart (the Claude tab fetches them from GitHub):
+# private files the checks write, so the Shell under test never goes online.
+export FROONTY_LIVENERF_DIR=$WORK/livenerf
 export WAYLAND_DISPLAY=wayland-froonty-test
 # D-Bus activated GTK apps (the prefs window) inherit this environment;
 # an X11 host session may force GDK_BACKEND=x11 and load X11-only modules.

@@ -1,0 +1,3 @@
+[submodule "third_party/livenerf"]
+	path = third_party/livenerf
+	url = https://github.com/ninjahawk/livenerf

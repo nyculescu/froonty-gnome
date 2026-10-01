@@ -6,7 +6,9 @@ facilities GNOME Shell already has. It does not reimplement them.
 
 Status: **0.2.0-rc2**, a release candidate. See [CHANGELOG.md](CHANGELOG.md).
 
-- No subprocesses, no network access, no polling timers.
+- No subprocesses, no polling timers. One network request: the Claude
+  tab's livenerf row fetches two public files from GitHub, at most once an
+  hour while the tab is open.
 - GJS and native GNOME Shell APIs only.
 
 See [docs/DESIGN.md](docs/DESIGN.md) for the GNOME Shell API analysis (written for 46; see the note there), the list
@@ -39,14 +41,19 @@ feature has a design note in [docs/features/](docs/features/).
   - It is read from Claude Code's own config file each time the tab opens.
     Froonty never contacts Claude and never polls.
   - Offline, the values read "Unknown", with a line saying why.
+  - A last row shows Claude Opus 5.5 against its own launch week, from the
+    independent [livenerf](https://github.com/ninjahawk/livenerf) benchmark:
+    the latest day's score over a small copy of livenerf's chart, and the
+    measured change once livenerf publishes one. These are the tab's only
+    network requests: livenerf's README and chart, from GitHub, at most
+    once an hour while the tab is open.
 - **Always reachable.** With "Show island" off, a puzzle-piece icon in the
   top bar (and the shortcut) opens the settings.
 - **Start at login**, or not. With it off, Froonty waits after login behind
   that icon; a click (or the shortcut) starts it.
 
-Planned: Calendar (Evolution Data Server; see
-[docs/features/calendar.md](docs/features/calendar.md)), more panic buttons,
-and rendered Markdown in notes.
+> Planned: Calendar (Evolution Data Server; see
+[docs/features/calendar.md](docs/features/calendar.md)), more panic buttons, rendered Markdown in notes and many more inspired from https://github.com/vorssaint/vorssaint-utils
 
 ## Layout
 
@@ -69,7 +76,8 @@ froonty@catalin/             the extension (this directory is what gets installe
 ├── features/                hub tabs, one folder each (registry.js lists them)
 │   ├── clock/
 │   ├── notes/               Markdown notes: store, service, tabs, editor, prefs
-│   └── claude/              Claude plan usage, read from Claude Code's config
+│   └── claude/              Claude plan usage, read from Claude Code's config;
+│                            livenerf's Opus 5.5 row, fetched from GitHub
 ├── panic/                   panic button catalog, factories, mute buttons, prefs
 ├── core/                    shared by features: emitter.js, tooltip.js
 ├── services/clock.js        GnomeDesktop.WallClock-based clock
@@ -77,6 +85,8 @@ froonty@catalin/             the extension (this directory is what gets installe
     ├── dateMenu.js          the only place touching Shell internals
     ├── mixer.js             the Shell's shared audio mixer
     └── settingsWindow.js    opens or raises the settings window
+third_party/livenerf/        git submodule: the benchmark behind the Claude
+                             tab's Opus 5.5 row (not installed or packed)
 tools/headless-test/         isolated headless GNOME Shell test harness
 tools/unit/                  plain-gjs unit tests
 docs/DESIGN.md               GNOME Shell API analysis, private APIs, risks

@@ -391,6 +391,17 @@
     font-feature-settings: "tnum";
     color: rgba(255, 255, 255, 0.55);
 }
+.froonty-claude-benchmark {
+    padding: 6px 4px 0;
+}
+/* livenerf's chart: the series in livenerf's own blue. */
+.froonty-claude-chart {
+    height: 112px;
+    margin: 2px 0;
+    font-size: 0.68em;
+    font-feature-settings: "tnum";
+    color: #3987e5;
+}
 .froonty-claude-notice {
     font-size: 0.8em;
     color: #ffb74d;

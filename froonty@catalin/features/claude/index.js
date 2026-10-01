@@ -4,6 +4,7 @@
 import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 
 import {sparkIcon} from './icon.js';
+import {LivenerfService} from './livenerfService.js';
 import {ClaudeService} from './service.js';
 import {ClaudeView} from './view.js';
 
@@ -16,8 +17,8 @@ export default {
     icon: sparkIcon(),
     enabledKey: 'claude-enabled',
     // Three limits and the cloud session credits, each a name, a bar and a
-    // reset time.
-    hubSize: {width: 380, height: 320},
-    createService: () => new ClaudeService(),
+    // reset time; then livenerf's Opus 5.5 row with its chart.
+    hubSize: {width: 380, height: 465},
+    createService: () => new ClaudeService({benchmark: new LivenerfService()}),
     createView: (ctx, service) => new ClaudeView(ctx, service),
 };

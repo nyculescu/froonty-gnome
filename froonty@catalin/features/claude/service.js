@@ -5,14 +5,17 @@
 //
 // Froonty never asks Claude itself: no network access, no sign-in, no
 // token. Claude Code checks the account's limits while it runs and caches
-// the answer in its config file (at most once a minute).
+// the answer in its config file (at most once a minute). The tab's
+// livenerf row is the exception: given a `benchmark` (LivenerfService),
+// shown and online, it fetches livenerf's README from GitHub.
 //
 // Nothing runs while the tab is not on screen. Each time it is shown, the
 // file is read again (user request: refresh on every visit, never poll);
 // while it stays shown, a file monitor and the network monitor bring in
 // changes as they happen. Hidden, both are disconnected.
 //
-// Emits 'changed' when the usage, the error or the connection changes.
+// Emits 'changed' when the usage, the error, the connection or the
+// benchmark changes.
 
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
@@ -47,11 +50,17 @@ export class ClaudeService extends Emitter {
      * @param {object} [options]
      * @param {Function} [options.file] () → Gio.File to read (tests)
      * @param {Gio.NetworkMonitor} [options.network] (tests)
+     * @param {LivenerfService} [options.benchmark] livenerf's results, or
+     *   null for none (the panic button)
      */
-    constructor({file = configFile, network = null} = {}) {
+    constructor({file = configFile, network = null, benchmark = null} = {}) {
         super();
         this._fileFor = file;
         this._network = network;
+
+        /** LivenerfService, or null. */
+        this.benchmark = benchmark;
+        this.benchmark?.connect('changed', () => this.emit('changed'));
 
         /** {fetchedAt, windows} (usage.js), or null when there is none. */
         this.usage = null;
@@ -72,12 +81,14 @@ export class ClaudeService extends Emitter {
 
     start() {
         this._cancellable = new Gio.Cancellable();
+        this.benchmark?.start();
     }
 
     stop() {
         this.setActive(false);
         this._cancellable?.cancel();
         this._cancellable = null;
+        this.benchmark?.stop();
     }
 
     /** Shown: read now and watch; hidden: stop watching. */
@@ -89,6 +100,7 @@ export class ClaudeService extends Emitter {
             this._watchNetwork();
             this._watchFile();
             this.refresh();
+            this._refreshBenchmark();
         } else {
             this._monitor?.cancel();
             this._monitor = null;
@@ -138,6 +150,13 @@ export class ClaudeService extends Emitter {
             return;
         this.online = online;
         this.emit('changed');
+        this._refreshBenchmark();
+    }
+
+    // Shown and online only; the benchmark skips a fetch within the hour.
+    _refreshBenchmark() {
+        if (this._active && this.online)
+            this.benchmark?.refresh();
     }
 
     // The file's folder is watched too (Gio does this for a file monitor), so

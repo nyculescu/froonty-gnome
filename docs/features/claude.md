@@ -24,8 +24,21 @@ resets.
 │    │ ███████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ │
 │    │ Resets Thu 5 Nov 08:59               │
 │    │                    Updated 2 min ago │
+│    │ Opus 5.5 vs launch week 54.5% correct│
+│    │ 80%┆░░░░░░░░                          │
+│    │ 60%┆░•─•─•╮░ 54.5%  Collecting the    │
+│    │ 40%┆░░░░░░╰•         baseline: day 7…  │
+│    │     Sep 24   Oct 01   Oct 08   Oct 22 │
+│    │ Baseline day 7 of 10 · livenerf, up… │
 └────┴──────────────────────────────────────┘
 ```
+
+The last row redraws livenerf's own chart (its README's hero image): the
+daily score with its 95% interval, the baseline days shaded, the latest
+score printed by its point, and once the baseline is complete its mean as
+a dashed line. Once livenerf publishes a 10-day result, the line under the
+chart reads `Δ −2.1 ± 1.4, days 11–20 (…): no change · livenerf, updated
+Wed 21:44`.
 
 The idea comes from vorssaint-utils' AI agents section, which shows plan
 limits and their resets. No code was taken; its data source (a history file
@@ -66,7 +79,37 @@ Froonty reads a different one.
   logo; check their trademark terms before publishing Froonty with it.
 - **On by default** (`claude-enabled`). Without Claude Code the tab shows a
   hint instead of rows.
-- **Size:** 380×320 (260 before the credits row).
+- **livenerf row** (added 2026-09-30, user request): "Opus 5.5 vs launch
+  week", from [livenerf](https://github.com/ninjahawk/livenerf), an
+  independent benchmark that runs Opus 5.5 daily through headless Claude
+  Code against its launch-week baseline. See section 3.1.
+  - **The value is the latest day's score**, "54.5% correct", exactly as
+    livenerf's chart prints it (user request: "I cannot see any current
+    %"). Before the chart has been read, "Day 7 of 30" from the README.
+  - **The chart** (user request, after livenerf's hero image): redrawn
+    with Cairo from livenerf's own SVG, not shown as an image (at 300 px
+    its 960-px text would be unreadable). Scores 40–80% (the SVG's own
+    grid), dates along the bottom, the series in livenerf's blue. A
+    pointer on it does nothing.
+  - **The line under it:** until a result is published (baseline to about
+    2026-10-04, first 10-day result after day 20) "Baseline day 7 of 10";
+    then "Δ <Δ ± SE>, <window>: <decision>", copied from livenerf's
+    Results table. Then "livenerf, updated Wed 21:44", when livenerf last
+    redrew its chart, in local time. The line wraps.
+  - **Fetched live** (user choice, over reading the submodule's pinned
+    copy): the README and the chart from `raw.githubusercontent.com`,
+    when the tab comes on screen while online, at most once an hour after
+    a good reading (livenerf updates daily). These are the tab's only
+    network requests.
+  - Offline: "Unknown", like the other rows. A file that fails keeps its
+    last good reading and is retried on the next visit. With nothing
+    read, "livenerf's results could not be read." Without the chart, the
+    day count shows as a bar instead.
+  - Always the last row, below the usage footer, and shown even without
+    Claude Code (it does not depend on it). Not on the panic button.
+- **Size:** 380×465: room for the usage rows, the chart and a two-line
+  Δ under it without scrolling (320 before the livenerf row, 260 before
+  the credits row).
 - **Panic button** `claude-session` (added the same day, user request):
   the session's usage in orange, as large as the button allows, over a
   faint grey Spark, number only;
@@ -76,8 +119,9 @@ Froonty reads a different one.
 
 ## 3. Where the numbers come from
 
-Froonty never asks Claude: no network access, no sign-in, no token. Claude
-Code checks the account's limits itself (its `/api/oauth/usage` endpoint)
+For the usage rows, Froonty never asks Claude: no network access, no
+sign-in, no token. (The livenerf row's one request is to GitHub; see 3.1.)
+Claude Code checks the account's limits itself (its `/api/oauth/usage` endpoint)
 and caches the answer in its config file, `~/.claude.json`, under
 `cachedUsageUtilization`:
 
@@ -132,14 +176,65 @@ rewritten often. Files over 16 MB are not parsed, to keep the Shell's main
 thread free. A read that fails halfway through a write keeps the last good
 reading. The write's own file event reads it again.
 
+## 3.1 Where the livenerf row comes from
+
+livenerf publishes no machine-readable results. Its `.eval` logs are
+gitignored, and each daily run commits only redrawn SVG charts and a
+README edit (checked 2026-09-30, commit `71d1639`). So two published files
+are read (`livenerf.js`).
+
+From the **README**:
+
+- The **Progress** line under Status, hard-wrapped prose:
+  `**Progress (2026-09-30):** 7 of 30 days collected (baseline 7 of 10)`.
+- The **Results** table under `## Results`. Columns are found by their
+  header (`window`, `Δ …`, `decision`), not their place. The last row
+  whose Δ cell reads `<number> [pts] ± <number>` (Unicode minus accepted)
+  is the result. Rows reading `baseline` or `-` are skipped.
+
+From the **hero chart**, `media/livenerf-dark.svg`, as `livenerf/plot.py`
+draws it:
+
+- **Scale:** the right-aligned grid labels (`40%` … `80%`) and their y,
+  4 px above the label's baseline. Two labels fix the linear scale. The
+  grid lines' ends are the plot's left and right edges.
+- **Days:** each `<circle>` is a day's score. The vertical line at its x
+  (`opacity="0.5"`) is its 95% interval. Values are read back through the
+  scale. plot.py rounds positions to 0.1 px, which is under 0.02 points
+  at its usual 236 px for 40 points. These values are only drawn, never
+  printed.
+- **Printed values**, taken exactly as text: the latest score (the bold
+  `54.5%` by the last point), `baseline 58.1%` (the mean, once known),
+  `Collecting the baseline: day 7 of 10.`, the shaded baseline `<rect>`,
+  the date labels, and `546 samples · updated 2026-09-30 19:44 UTC`.
+
+Anything else, or a change of wording upstream, gives no row data rather
+than a guess. The unit tests read the submodule's README and chart, and
+check that the printed latest score matches the last point read back. So
+updating the submodule (`git submodule update --remote third_party/livenerf`)
+checks the readers against the current upstream format.
+
+The **submodule** (`third_party/livenerf`) is there for that check and as
+a reference. It sits outside `froonty@catalin/`, so `make install` and
+`make pack` never ship it. livenerf's README says "License: Not yet
+chosen", so its files are not redistributed.
+
+What livenerf measures is its own claim, not Froonty's: Opus 5.5 as served
+through Claude Code on a Max subscription, on a 78-question panel, with a
+pre-registered decision rule. Its README lists its limits (for example,
+a same-family model swap was not detectable in validation).
+
 ## 4. Structure
 
 ```
 features/claude/
-├── index.js     descriptor: id, title, Spark icon, claude-enabled, 380×320
+├── index.js     descriptor: id, title, Spark icon, claude-enabled, 380×465
 ├── icon.js      the Spark as a Gio.FileIcon (tab and panic button)
 ├── usage.js     pure: parse the cache, reset arithmetic (unit-tested)
-├── service.js   reads the file on show, file + network monitors while shown
+├── livenerf.js  pure: read livenerf's README and chart SVG (unit-tested)
+├── livenerfService.js  fetches both (Soup), at most hourly
+├── service.js   reads the file on show, file + network monitors while shown;
+│                asks the livenerf service to refresh when shown and online
 ├── view.js      rows (name, %, bar, reset), offline line, empty hint, footer
 ├── prefs.js     settings tab: show the tab
 └── icons/hicolor/scalable/actions/froonty-claude-symbolic.svg
@@ -167,6 +262,13 @@ changes. The minute re-render for "Resets in" and "Updated … ago" rides the
 shared clock's tick (`GnomeDesktop.WallClock`), and is skipped while the
 tab is hidden. No timers of its own. Hidden, none of this exists.
 
+livenerf: one `Soup.Session` (20 s timeout), made on the first fetch and
+aborted when the tab is turned off, and two GETs (README about 22 kB,
+chart about 6 kB) per visit, at most once an hour. The chart is a
+`St.DrawingArea`, repainted only when St asks. `FROONTY_LIVENERF_DIR`, when
+set, names a local folder laid out like the repository to read instead
+(the headless tests; the Shell under test never goes online).
+
 ## 6. Tests
 
 - `tools/unit/claude.test.js`: parsing (order, legacy fields, bad rows,
@@ -175,9 +277,19 @@ tab is hidden. No timers of its own. Hidden, none of this exists.
   read while hidden, a read on show, following writes while shown, a fresh
   read on the next show, folding a burst of reads, missing, half-written
   and unreadable files, and connectivity.
+- `tools/unit/livenerf.test.js`: the README reader (hard-wrapped progress,
+  Δ rows, Unicode minus, columns by name, nothing guessed), the chart
+  reader (scores and intervals through the grid, printed values, the
+  collecting note, nothing without a grid or points), both against the
+  submodule's real files when checked out, and the service with a fake
+  fetch (not before start, hourly limit, failures, one file enough, each
+  file's last good reading kept, fetched only when shown and online).
 - `tools/headless-test/checks.js` `testClaude`: the real tab in the Shell
   with a private `CLAUDE_CONFIG_DIR`. It checks the rows and their wording
   (the credits row and its dated reset included),
-  the hub size, a live update, offline and captive-portal states, nothing
+  the hub size, the livenerf row (the latest score over the chart, then a
+  published Δ and decision, "Unknown" offline) from a private README and
+  chart in plot.py's format, a live
+  update, offline and captive-portal states, nothing
   watched while collapsed, a fresh read on reopening, another account, a
   missing file, and turning the tab off.

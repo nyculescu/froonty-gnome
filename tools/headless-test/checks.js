@@ -983,6 +983,82 @@ class FakeNetwork {
     }
 }
 
+// run.sh points FROONTY_LIVENERF_DIR at a private folder; GitHub is never
+// asked. Shaped like livenerf's README and chart on 2026-09-30, a Δ row
+// and a baseline mean optional.
+function writeLivenerf({resultRow = '', baselineMean = null} = {}) {
+    const readme = `# livenerf
+
+## Status
+
+**Progress (2026-09-30):** 7 of 30 days collected (baseline 7 of
+10), none missed.
+
+## Results
+
+| # | window | samples | score | Δ vs baseline ± SE | output tok (median) | control Δ | CLI | decision |
+|---|------|---------|-------|--------------------|---------------------|-----------|-----|----------|
+| 0 | days 1–10 (from 2026-09-24) | - | - | baseline | - | baseline | pinned | baseline (collecting) |
+${resultRow}
+## Getting started
+`;
+    const dir = Gio.File.new_for_path(GLib.getenv('FROONTY_LIVENERF_DIR'));
+    const media = dir.get_child('media');
+    if (!media.query_exists(null))
+        media.make_directory_with_parents(null);
+    const put = (file, text) => file.replace_contents(text, null, false, Gio.FileCreateFlags.NONE, null);
+    put(dir.get_child('README.md'), readme);
+    put(media.get_child('livenerf-dark.svg'), livenerfSvg([[59.0, 5.6], [61.9, 5.6], [58.4, 5.6],
+        [60.2, 5.6], [64.1, 5.6], [52.6, 5.6], [54.5, 5.6]], baselineMean));
+}
+
+// The hero chart as livenerf/plot.py draws it (dark theme): 40–80% over
+// y 328–92, 32 days over x 64–932, the baseline's 10 days shaded.
+function livenerfSvg(days, baselineMean) {
+    const x = day => (64 + day / 32 * 868).toFixed(1);
+    const y = v => (92 + (80 - v) / 40 * 236).toFixed(1);
+    const o = ['<svg xmlns="http://www.w3.org/2000/svg" width="960" height="380" viewBox="0 0 960 380">',
+        '<title id="t">Claude Opus 5.5 compared with its own launch week</title>',
+        '<rect width="960" height="380" rx="10" fill="#1a1a19"/>'];
+    for (let v = 40; v <= 80; v += 10) {
+        o.push(`<line x1="64" y1="${y(v)}" x2="932" y2="${y(v)}" stroke="#2c2c2a" stroke-width="1"/>`);
+        o.push(`<text x="54" y="${(+y(v) + 4).toFixed(1)}" text-anchor="end" fill="#898781" font-size="12">${v}%</text>`);
+    }
+    o.push(`<rect x="64.0" y="92" width="${(10 / 32 * 868).toFixed(1)}" height="236" fill="#2c2c2a" opacity="0.6"/>`);
+    ['Sep 24', 'Oct 01', 'Oct 08', 'Oct 15', 'Oct 22'].forEach((label, i) =>
+        o.push(`<text x="${x(7 * i)}" y="350" text-anchor="middle" fill="#898781" font-size="12">${label}</text>`));
+    if (baselineMean !== null) {
+        o.push(`<line x1="64" y1="${y(baselineMean)}" x2="932" y2="${y(baselineMean)}" stroke="#c3c2b7" ` +
+            'stroke-width="1.5" stroke-dasharray="6 5"/>');
+        o.push(`<text x="928" y="${(y(baselineMean) - 6).toFixed(1)}" text-anchor="end" fill="#c3c2b7" ` +
+            `font-size="12">baseline ${baselineMean.toFixed(1)}%</text>`);
+    }
+    days.forEach(([v, se], i) => {
+        o.push(`<line x1="${x(i + 0.5)}" y1="${y(v - 1.96 * se)}" x2="${x(i + 0.5)}" y2="${y(v + 1.96 * se)}" ` +
+            'stroke="#3987e5" stroke-width="1.5" opacity="0.5"/>');
+        o.push(`<circle cx="${x(i + 0.5)}" cy="${y(v)}" r="3.5" fill="#3987e5" stroke="#1a1a19" stroke-width="1.5"/>`);
+    });
+    const [last] = days.slice(-1);
+    o.push(`<text x="${(+x(days.length - 0.5) + 10).toFixed(1)}" y="${(y(last[0]) - 8).toFixed(1)}" ` +
+        `fill="#ffffff" font-size="13" font-weight="600">${last[0].toFixed(1)}%</text>`);
+    if (baselineMean === null) {
+        o.push(`<text x="633.6" y="210.0" text-anchor="middle" fill="#898781" font-size="14">` +
+            `Collecting the baseline: day ${days.length} of 10.</text>`);
+    }
+    o.push('<text x="932" y="368" text-anchor="end" fill="#898781" font-size="11">' +
+        '546 samples · updated 2026-09-30 19:44 UTC</text>', '</svg>');
+    return o.join('\n');
+}
+
+// [name, value, detail] of the livenerf row, or null while it is hidden.
+function benchmarkRow(view) {
+    const [row] = view._benchmark.get_children();
+    if (!view._benchmark.visible || !row)
+        return null;
+    const [heading, , detail] = row.get_children();
+    return [...heading.get_children().map(l => l.text), detail.text];
+}
+
 // [[name, percent, reset], …] as the tab shows them.
 function claudeRows(view) {
     return view._rows.get_children().map(row => {
@@ -997,6 +1073,7 @@ const claudeButton = () => island()._hub._panicBar._buttons
 async function testClaude(outDir) {
     const hub = () => island()._hub;
     writeClaudeConfig(claudeConfig());
+    writeLivenerf();
     settings().set_strv('panic-buttons', ['mute-microphone', 'mute-sound', 'claude-session']);
     await sleep(SETTLE_MS);
     check('claude button: not read while the island is collapsed',
@@ -1011,7 +1088,7 @@ async function testClaude(outDir) {
     check('claude: the tab opens', hub().activeFeature?.id === 'claude' && view && service);
     const [w, h] = pill().get_transformed_size();
     check('claude: island resizes to the tab\'s hubSize',
-        w === 380 * scale() && h === 320 * scale(), `${w}x${h}`);
+        w === 380 * scale() && h === 465 * scale(), `${w}x${h}`);
 
     // Swap in a network we control, then show the tab again.
     const network = new FakeNetwork();
@@ -1049,7 +1126,32 @@ async function testClaude(outDir) {
     check('claude: the footer says when Claude Code checked',
         view._footer.visible && view._footer.text === 'Updated 2 min ago', view._footer.text);
     check('claude: no offline notice while online', !view._notice.visible);
-    await screenshotTop(outDir, 'claude-tab', 320);
+    // livenerf's chart says when it was redrawn, in UTC; the tab, locally.
+    const redrawn = GLib.DateTime.new_from_unix_utc(Date.parse('2026-09-30T19:44:00Z') / 1000).to_local();
+    const livenerfUpdated = `livenerf, updated ${redrawn.format('%a')} `;
+    const chartOf = () => view._benchmark.get_first_child()?.get_child_at_index(1);
+    check('claude: livenerf\'s row, the latest score over its chart',
+        await waitFor(() => benchmarkRow(view)?.[1] === '54.5% correct') &&
+        benchmarkRow(view)[0] === 'Opus 5.5 vs launch week' &&
+        benchmarkRow(view)[2].startsWith(`Baseline day 7 of 10 · ${livenerfUpdated}`) &&
+        chartOf()?.has_style_class_name('froonty-claude-chart') &&
+        service.benchmark.benchmark.chart.points.length === 7,
+        JSON.stringify(benchmarkRow(view)));
+    await screenshotTop(outDir, 'claude-tab', 465);
+
+    // Within the hour no second fetch; forget the reading to fetch again.
+    writeLivenerf({baselineMean: 59.4, resultRow: '| 1 | days 11–20 (from 2026-10-04) | 7020 | 61.2% | ' +
+        '−2.1 ± 1.4 | 812 | +0.3 ± 1.9 | pinned | no change |\n'});
+    service.benchmark.fetchedAt = null;
+    await service.benchmark.refresh();
+    await sleep(SETTLE_MS);
+    check('claude: once published, the Δ and livenerf\'s decision under the chart',
+        benchmarkRow(view)?.[1] === '54.5% correct' &&
+        benchmarkRow(view)[2].startsWith(
+            `Δ −2.1 ± 1.4, days 11–20 (from 2026-10-04): no change · ${livenerfUpdated}`) &&
+        service.benchmark.benchmark.chart.baselineMean === 59.4,
+        JSON.stringify(benchmarkRow(view)));
+    await screenshotTop(outDir, 'claude-tab-delta', 465);
 
     writeClaudeConfig(claudeConfig({session: 21}));
     check('claude: while shown, a new reading from Claude Code appears',
@@ -1083,12 +1185,13 @@ async function testClaude(outDir) {
     await sleep(SETTLE_MS);
     const offline = claudeRows(view);
     check('claude: offline, every value reads "Unknown"',
-        offline.length === 4 && offline.every(r => r[1] === 'Unknown' && r[2] === 'Resets: unknown'),
-        JSON.stringify(offline));
+        offline.length === 4 && offline.every(r => r[1] === 'Unknown' && r[2] === 'Resets: unknown') &&
+        benchmarkRow(view)?.[1] === 'Unknown',
+        JSON.stringify([...offline, benchmarkRow(view)]));
     check('claude: offline, a line says Claude cannot be asked',
         view._notice.visible && view._notice.text.startsWith('No internet connection') &&
         !view._footer.visible, view._notice.text);
-    await screenshotTop(outDir, 'claude-offline', 320);
+    await screenshotTop(outDir, 'claude-offline', 465);
     network.set(true, Gio.NetworkConnectivity.PORTAL);
     await sleep(SETTLE_MS);
     check('claude: a captive portal is not a connection to Claude', view._notice.visible);
@@ -1139,7 +1242,7 @@ async function testClaude(outDir) {
     check('claude: without Claude Code\'s file, a hint instead of rows',
         view._empty.visible && service.error === 'missing' && !view._footer.visible,
         view._emptyTitle.text);
-    await screenshotTop(outDir, 'claude-empty', 320);
+    await screenshotTop(outDir, 'claude-empty', 465);
 
     settings().set_boolean('claude-enabled', false);
     await sleep(SETTLE_MS);

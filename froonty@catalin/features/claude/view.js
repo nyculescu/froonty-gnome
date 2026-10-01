@@ -14,13 +14,24 @@
 //   ███████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 //   Resets Thu 5 Nov 08:59
 //                            Updated 2 min ago
+//   Opus 5.5 vs launch week     54.5% correct
+//   80% ┆░░░░░░░░░░                          (livenerf's chart: daily
+//   60% ┆░•─•─•─•─•╮░  Collecting the          score, 95% interval,
+//   40% ┆░░░░░░░░░░╰•  baseline: day 7 of 10   baseline shaded)
+//       Sep 24     Oct 01     Oct 08
+//   Baseline day 7 of 10 · livenerf, updated Wed 21:44
 //
+// The last row is livenerf's (livenerf.js): the latest day's score and
+// its chart, redrawn here; once livenerf publishes a Δ, the line under it
+// gives the Δ and livenerf's decision.
 // Offline, every value reads "Unknown" and a line says why (user request).
 // Renders ClaudeService state; re-renders on its changes and on the shared
 // clock's minute tick, for "Resets in" and "Updated … ago".
 
 import Clutter from 'gi://Clutter';
+import GLib from 'gi://GLib';
 import Pango from 'gi://Pango';
+import PangoCairo from 'gi://PangoCairo';
 import St from 'gi://St';
 
 import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
@@ -73,11 +84,17 @@ export class ClaudeView {
             style_class: 'froonty-claude-footer',
             x_align: Clutter.ActorAlign.END,
         });
+        this._benchmark = new St.BoxLayout({
+            style_class: 'froonty-claude-benchmark',
+            orientation: Clutter.Orientation.VERTICAL,
+            x_expand: true,
+        });
 
         this.actor.add_child(this._scroll);
         this.actor.add_child(this._empty);
-        this.actor.add_child(this._notice);
         this.actor.add_child(this._footer);
+        this.actor.add_child(this._benchmark);
+        this.actor.add_child(this._notice);
 
         this._active = false;
         this._serviceId = this._service.connect('changed', () => this._sync());
@@ -126,39 +143,68 @@ export class ClaudeView {
         this._footer.visible = online && Boolean(usage);
         if (usage)
             this._footer.text = this._updatedText(usage.fetchedAt, now);
+
+        this._syncBenchmark(online);
     }
 
     _row(window, online, now) {
-        const row = new St.BoxLayout({
-            style_class: 'froonty-claude-row',
-            orientation: Clutter.Orientation.VERTICAL,
-        });
         const reset = online ? describeReset(window.resetsAt, now) : {kind: 'unknown'};
         // After a renewal, what was used since is not known either.
         const known = online && reset.kind !== 'renewed';
-
-        const heading = new St.BoxLayout({style_class: 'froonty-claude-row-heading'});
-        heading.add_child(new St.Label({
-            style_class: 'froonty-claude-name',
-            text: windowTitle(window),
-            x_expand: true,
-        }));
-        heading.add_child(new St.Label({
-            style_class: 'froonty-claude-percent',
-            text: known ? amountText(window) : _('Unknown'),
-        }));
-        row.add_child(heading);
-
         const bar = new UsageBar(known ? fillFraction(window.percent) : 0);
         if (known && isCritical(window))
             bar.actor.add_style_class_name('froonty-claude-bar-critical');
-        row.add_child(bar.actor);
+        return row(windowTitle(window), known ? amountText(window) : _('Unknown'), bar,
+            this._resetText(reset, now));
+    }
 
-        row.add_child(new St.Label({
-            style_class: 'froonty-claude-reset',
-            text: this._resetText(reset, now),
-        }));
-        return row;
+    // livenerf's row: hidden until its first fetch ends, so nothing flashes
+    // up for a moment; offline, "Unknown" like the rest.
+    _syncBenchmark(online) {
+        const source = this._service.benchmark;
+        this._benchmark.visible = Boolean(source) && (source.loaded || !online);
+        if (!this._benchmark.visible)
+            return;
+        const name = _('Opus 5.5 vs launch week');
+        const {progress, result, chart} = source.benchmark ?? {};
+        let actor;
+        if (!online) {
+            actor = row(name, _('Unknown'), new UsageBar(0), _('livenerf: unknown'));
+        } else if (!source.benchmark) {
+            actor = row(name, _('Unknown'), new UsageBar(0),
+                _('livenerf’s results could not be read.'));
+        } else {
+            // The latest day's score, exactly as livenerf's chart prints it.
+            let value = _('Unknown');
+            if (typeof chart?.latest === 'number')
+                value = _('%s%% correct').format(chart.latest.toFixed(1));
+            else if (progress)
+                value = _('Day %d of %d').format(progress.collected, progress.total);
+            const body = chart ? new ScoreChart(chart)
+                : new UsageBar(progress ? progress.collected / progress.total : 0);
+            actor = row(name, value, body, this._benchmarkText(progress, result, chart), true);
+        }
+        this._benchmark.destroy_all_children();
+        this._benchmark.add_child(actor);
+    }
+
+    // Once published, the Δ and livenerf's decision; before, the baseline's
+    // progress. Then when livenerf last redrew its chart.
+    _benchmarkText(progress, result, chart) {
+        let status = '';
+        if (result) {
+            status = result.decision
+                ? _('Δ %s, %s: %s').format(result.deltaText, result.window, result.decision)
+                : _('Δ %s, %s').format(result.deltaText, result.window);
+        } else if (progress?.baselineTotal) {
+            status = _('Baseline day %d of %d').format(progress.baselineCollected, progress.baselineTotal);
+        } else if (chart?.collecting) {
+            status = _('Baseline day %d of %d').format(chart.collecting.day, chart.collecting.of);
+        }
+        const source = chart?.updated
+            ? _('livenerf, updated %s').format(this._clock.formatTime(chart.updated, {weekday: true}))
+            : progress ? _('livenerf, %s').format(dayText(progress.date)) : _('livenerf');
+        return status ? `${status} · ${source}` : source;
     }
 
     _resetText(reset, now) {
@@ -187,6 +233,30 @@ export class ClaudeView {
             return _('Updated %d h ago').format(Math.floor(minutes / 60));
         return _('Updated %s').format(this._clock.formatTime(fetchedAt, {weekday: true}));
     }
+}
+
+// Name and value, a bar, and a line under it (wrapped if `wrap`).
+function row(name, value, bar, detail, wrap = false) {
+    const actor = new St.BoxLayout({
+        style_class: 'froonty-claude-row',
+        orientation: Clutter.Orientation.VERTICAL,
+    });
+    const heading = new St.BoxLayout({style_class: 'froonty-claude-row-heading'});
+    heading.add_child(new St.Label({style_class: 'froonty-claude-name', text: name, x_expand: true}));
+    heading.add_child(new St.Label({style_class: 'froonty-claude-percent', text: value}));
+    actor.add_child(heading);
+    actor.add_child(bar.actor);
+    const label = wrap ? wrappingLabel('froonty-claude-reset')
+        : new St.Label({style_class: 'froonty-claude-reset'});
+    label.text = detail;
+    actor.add_child(label);
+    return actor;
+}
+
+// "2026-09-30" as "30 Sep".
+function dayText(date) {
+    const [y, m, d] = date.split('-').map(Number);
+    return GLib.DateTime.new_local(y, m, d, 0, 0, 0)?.format('%-d %b') ?? date;
 }
 
 function windowTitle(window) {
@@ -245,6 +315,127 @@ class UsageBar {
             cr.closePath();
             cr.setSourceColor(this.actor.get_theme_node().get_foreground_color());
             cr.fill();
+        }
+        cr.$dispose();
+    }
+}
+
+// livenerf's hero chart, redrawn small: the daily score (percent correct)
+// with its 95% interval, the baseline window shaded, the baseline mean
+// dashed once known, and the latest score printed by its point. The
+// series is in the CSS colour; the rest in greys over the island's black.
+class ScoreChart {
+    constructor(chart) {
+        this._chart = chart;
+        this.actor = new St.DrawingArea({style_class: 'froonty-claude-chart', x_expand: true});
+        this.actor.connect('repaint', () => this._repaint());
+    }
+
+    _repaint() {
+        const cr = this.actor.get_context();
+        const [width, height] = this.actor.get_surface_size();
+        const node = this.actor.get_theme_node();
+        const {grid, band, ticks, points, latest, baselineMean, collecting} = this._chart;
+
+        const font = node.get_font();
+        const bold = font.copy();
+        bold.set_weight(Pango.Weight.BOLD);
+        const layout = (text, desc = font) => {
+            const l = PangoCairo.create_layout(cr);
+            l.set_font_description(desc);
+            l.set_text(text, -1);
+            const [, extents] = l.get_pixel_extents();
+            return {l, w: extents.width, h: extents.height};
+        };
+        // anchor: 0 left, 0.5 centre, 1 right; y is the text's middle.
+        const text = (t, x, y, anchor, rgba, desc) => {
+            const {l, w, h} = layout(t, desc);
+            cr.setSourceRGBA(...rgba);
+            cr.moveTo(Math.round(x - anchor * w), Math.round(y - h / 2));
+            PangoCairo.show_layout(cr, l);
+        };
+        const MUTED = [1, 1, 1, 0.45];
+
+        const labelWidth = Math.max(...grid.map(v => layout(`${v}%`).w));
+        const lineHeight = layout('0%').h;
+        const [left, right, top, bottom] = [labelWidth + 6, 2, lineHeight / 2, lineHeight + 3];
+        const [pw, ph] = [width - left - right, height - top - bottom];
+        const [vMin, vMax] = [grid[0], grid[grid.length - 1]];
+        const X = at => left + at * pw;
+        const Y = v => top + (vMax - Math.min(vMax, Math.max(vMin, v))) / (vMax - vMin) * ph;
+
+        if (band) {
+            cr.setSourceRGBA(1, 1, 1, 0.07);
+            cr.rectangle(X(band[0]), top, X(band[1]) - X(band[0]), ph);
+            cr.fill();
+        }
+        cr.setLineWidth(1);
+        for (const v of grid) {
+            cr.setSourceRGBA(1, 1, 1, 0.1);
+            cr.moveTo(left, Math.round(Y(v)) + 0.5);
+            cr.lineTo(width - right, Math.round(Y(v)) + 0.5);
+            cr.stroke();
+            text(`${v}%`, left - 5, Y(v), 1, MUTED);
+        }
+        for (const {at, label} of ticks) {
+            const anchor = at < 0.05 ? 0 : at > 0.95 ? 1 : 0.5;
+            text(label, X(at), height - lineHeight / 2, anchor, MUTED);
+        }
+        if (collecting && band) {
+            const x = (X(band[1]) + width - right) / 2;
+            text(_('Collecting the baseline:'), x, top + ph / 2 - lineHeight / 2, 0.5, MUTED);
+            text(_('day %d of %d').format(collecting.day, collecting.of), x,
+                top + ph / 2 + lineHeight / 2, 0.5, MUTED);
+        }
+        if (baselineMean !== null) {
+            cr.setSourceRGBA(1, 1, 1, 0.7);
+            cr.setDash([4, 3], 0);
+            cr.moveTo(left, Y(baselineMean));
+            cr.lineTo(width - right, Y(baselineMean));
+            cr.stroke();
+            cr.setDash([], 0);
+        }
+
+        const color = node.get_foreground_color();
+        if (points.length > 1) {
+            // The 95% band, faint.
+            cr.pushGroup();
+            points.forEach((p, i) => (i ? cr.lineTo : cr.moveTo).call(cr, X(p.at), Y(p.high)));
+            [...points].reverse().forEach(p => cr.lineTo(X(p.at), Y(p.low)));
+            cr.closePath();
+            cr.setSourceColor(color);
+            cr.fill();
+            cr.popGroupToSource();
+            cr.paintWithAlpha(0.15);
+        }
+        cr.setSourceColor(color);
+        cr.setLineWidth(1);
+        for (const p of points) {
+            cr.moveTo(X(p.at), Y(p.low));
+            cr.lineTo(X(p.at), Y(p.high));
+        }
+        cr.pushGroup();
+        cr.setSourceColor(color);
+        cr.stroke();
+        cr.popGroupToSource();
+        cr.paintWithAlpha(0.5);
+
+        cr.setSourceColor(color);
+        cr.setLineWidth(1.5);
+        cr.setLineJoin(1); // Cairo.LineJoin.ROUND
+        points.forEach((p, i) => (i ? cr.lineTo : cr.moveTo).call(cr, X(p.at), Y(p.score)));
+        cr.stroke();
+        for (const p of points) {
+            cr.arc(X(p.at), Y(p.score), 2.5, 0, 2 * Math.PI);
+            cr.fill();
+        }
+
+        if (typeof latest === 'number') {
+            const last = points[points.length - 1];
+            const t = `${latest.toFixed(1)}%`;
+            const {w} = layout(t, bold);
+            const x = X(last.at) + 6 + w <= width ? X(last.at) + 6 : X(last.at) - 6 - w;
+            text(t, x, Y(last.score) - lineHeight / 2 - 1, 0, [1, 1, 1, 1], bold);
         }
         cr.$dispose();
     }
