@@ -1,5 +1,49 @@
 # Changelog
 
+## 0.2.0-rc3 (2026-09-30)
+
+Third release candidate, for GNOME Shell 50 on Ubuntu 26.04 (Wayland).
+
+### Added
+- **Claude tab: "Opus 5.5 vs launch week".** A last row shows what the
+  independent [livenerf](https://github.com/ninjahawk/livenerf) benchmark
+  reports about Claude Opus 5.5 against its own launch week.
+  - The value is the latest day's score ("54.5% correct"), as livenerf's
+    chart prints it.
+  - Below it is a small redraw of livenerf's chart: the daily score with
+    its 95% interval, the baseline days shaded, and the baseline mean as a
+    dashed line once the baseline is complete.
+  - Under the chart: the baseline's progress ("Baseline day 7 of 10"). Once
+    livenerf publishes a 10-day result, the line shows the change against
+    launch week (Δ ± SE) and livenerf's pre-registered decision instead.
+  - Offline, the row reads "Unknown", like the rest of the tab.
+
+### Changed
+- **One network request.** To fill that row, Froonty fetches livenerf's
+  README and chart SVG from GitHub when the Claude tab opens, at most once
+  an hour. No sign-in, no token. Until now Froonty made no network access
+  at all.
+- The Claude tab is 380×465 (was 380×320).
+- livenerf is a git submodule in `third_party/livenerf`. The unit tests
+  check Froonty's readers against its files. It is never installed or
+  packed, because livenerf has no license yet.
+
+### Quality
+- Headless GNOME Shell 50 suite: 178/178 in both session modes.
+- 73 plain-gjs unit tests.
+
+### Known limitations
+- livenerf publishes no machine-readable results, so Froonty reads its
+  README (prose) and its chart (an SVG drawn by `livenerf/plot.py`). If
+  livenerf changes either, the row shows "could not be read" or loses its
+  chart rather than a wrong number.
+- The Δ format is not yet known: no 10-day result exists (the first is
+  expected after day 20, around 2026-10-14). Froonty expects
+  `−2.1 ± 1.4`-style values.
+- livenerf measures Opus 5.5 as served through Claude Code on a Max plan,
+  on its own 78-question panel; what it can and cannot detect is described
+  in its README.
+
 ## 0.2.0-rc2 (2026-09-30)
 
 Second release candidate. It targets GNOME Shell 50 on Ubuntu 26.04

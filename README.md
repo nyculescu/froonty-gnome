@@ -4,7 +4,7 @@ A small Dynamic-Island-style pill at the top center of the screen for
 **GNOME Shell 50** (Ubuntu 26.04, Wayland). The island is a compact entry point to
 facilities GNOME Shell already has. It does not reimplement them.
 
-Status: **0.2.0-rc2**, a release candidate. See [CHANGELOG.md](CHANGELOG.md).
+Status: **0.2.0-rc3**, a release candidate. See [CHANGELOG.md](CHANGELOG.md).
 
 - No subprocesses, no polling timers. One network request: the Claude
   tab's livenerf row fetches two public files from GitHub, at most once an
