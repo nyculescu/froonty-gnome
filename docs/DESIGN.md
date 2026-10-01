@@ -65,10 +65,13 @@ What changed for Froonty, and how it adapts:
    calendar that GNOME already has.
 2. Event-driven. No polling loop exists. A timer may only be
    added with a written justification and a configurable interval.
-3. No subprocesses, no background process, and no network access with
-   one exception (user request, 0.2.1-rc1): the Claude tab's livenerf row
-   GETs two public files from GitHub while the tab is on screen, at most
-   once an hour ([features/claude.md](features/claude.md)).
+3. No background processes or polling loop. Short-lived local subprocesses
+  are limited to the Claude usage refresh and the working-tree-only ZeroTier
+  integration. Its status reads use the installed CLI; explicit actions
+  (Start/Stop, allowing status access) use fixed `pkexec` arguments. It is omitted, along with its setting, from
+  `make pack` output. The Claude tab's livenerf row is the only direct
+  network access: it GETs two public files from GitHub while the tab is on
+  screen, at most once an hour ([features/claude.md](features/claude.md)).
 4. Every private Shell API is listed in section 6 and isolated in `shell/`.
 5. `disable()` undoes everything `enable()` did. GNOME Shell 46 calls
    `disable()` on every screen lock (default `session-modes` is `["user"]`,

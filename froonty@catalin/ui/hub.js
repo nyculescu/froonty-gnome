@@ -92,11 +92,11 @@ export class Hub extends EventEmitter {
         entry.button.checked = true;
         this._ensureView(entry);
         entry.view.actor.show();
+        this.emit('size-changed');
         this._setEntryActive(entry, this._shown);
         // Only on change: select() also runs on every enable (screen unlock).
         if (this._settings.get_string(LAST_TAB_KEY) !== id)
             this._settings.set_string(LAST_TAB_KEY, id);
-        this.emit('size-changed');
     }
 
     // Tells the feature (service and view, both optional) whether it is
@@ -169,6 +169,7 @@ export class Hub extends EventEmitter {
         // buttons take input.
         this._tooltip = new Tooltip();
         this._panicBar = new PanicBar(this._settings, this._tooltip, {
+            settings: this._settings,
             selectTab: id => {
                 this.select(id);
                 return this._activeId === id;

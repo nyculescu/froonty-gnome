@@ -6,9 +6,11 @@
 import claude from './claude/index.js';
 import clock from './clock/index.js';
 import notes from './notes/index.js';
+import {LOCAL_FEATURES} from './localFeatures.js';
 
 export const FEATURES = [
     clock,
     notes,
     claude,
+    ...LOCAL_FEATURES,
 ];

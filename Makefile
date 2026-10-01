@@ -33,11 +33,12 @@ install: schemas uninstall
 uninstall:
 	rm -rf $(INSTALL_DIR)
 
-# gnome-extensions 46 segfaulted if --out-dir did not exist yet.
+# gnome-extensions 46 segfaulted if --out-dir did not exist yet. The archive
+# is built from a staged public copy; `make install` keeps local-only features.
 pack: schemas
 	mkdir -p dist
-	$(GNOME_EXTENSIONS) pack --force $(addprefix --extra-source=,$(SOURCE_DIRS)) \
-		--out-dir=$(CURDIR)/dist $(SRC)
+	GNOME_EXTENSIONS=$(GNOME_EXTENSIONS) GLIB_COMPILE_SCHEMAS=$(GLIB_COMPILE_SCHEMAS) \
+		bash tools/pack-public.sh $(SRC) $(SOURCE_DIRS)
 
 # Plain-gjs unit tests (isolated TMPDIR/XDG_DATA_HOME).
 unit:

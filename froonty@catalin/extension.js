@@ -12,6 +12,8 @@ import Shell from 'gi://Shell';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import {Extension, gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 
+import {acquireShared, releaseShared} from './features/claude/refresher.js';
+import {FEATURES} from './features/registry.js';
 import {ClockService} from './services/clock.js';
 import {PanelClock} from './shell/dateMenu.js';
 import {SettingsWindow} from './shell/settingsWindow.js';
@@ -46,13 +48,26 @@ export default class FroontyExtension extends Extension {
         this._settings.connectObject(
             'changed::island-enabled', () => this._syncIsland(),
             'changed::hide-panel-clock', () => this._syncPanelClock(),
+            'changed::claude-enabled', () => this._syncClaudeRefresher(),
             this);
 
+        // One-time checks of features (e.g. a tab whose app is not
+        // installed starts off); each remembers that it ran.
+        for (const feature of FEATURES) {
+            feature.setup?.(this._settings)?.catch?.(e =>
+                console.warn(`Froonty: ${feature.id} setup failed: ${e.message}`));
+        }
+
         this._syncIsland();
+        this._holdsClaudeRefresher = false;
+        this._syncClaudeRefresher();
     }
 
     disable() {
         this._settings.disconnectObject(this);
+        if (this._holdsClaudeRefresher)
+            releaseShared();
+        this._holdsClaudeRefresher = false;
         Main.wm.removeKeybinding(TOGGLE_SHORTCUT_KEY);
         this._destroyIsland();
         this._launcher?.destroy();
@@ -62,6 +77,20 @@ export default class FroontyExtension extends Extension {
         this._settingsWindow = null;
         this._panelClock = null;
         this._settings = null;
+    }
+
+    // Low power switches "Ask Claude Code for fresh usage" off and on
+    // (features/claude/refresher.js) as long as the Claude tab is enabled,
+    // not only once its tab has been opened.
+    _syncClaudeRefresher() {
+        const want = this._settings.get_boolean('claude-enabled');
+        if (want === this._holdsClaudeRefresher)
+            return;
+        this._holdsClaudeRefresher = want;
+        if (want)
+            acquireShared(this._settings);
+        else
+            releaseShared();
     }
 
     _onShortcut() {

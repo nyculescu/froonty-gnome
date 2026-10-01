@@ -1,5 +1,41 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **Fresh Claude usage.** The Claude tab no longer waits for you to open
+  Account & Usage in Claude Code. Two ways in, both under Settings →
+  Claude → Fresh usage:
+  - **"Ask Claude Code for fresh usage"** (on by default). When the island
+    opens, Froonty runs your Claude Code's `/usage` (at most once a
+    minute, 2-3 s in the background). It makes no model request and uses
+    no plan usage; Froonty never touches your sign-in.
+  - **Claude Code status line.** "Set up" adds Froonty's status line to
+    Claude Code's settings (never over one of your own). It then saves
+    Session and Weekly after each Claude Code reply, with no extra
+    requests. It shows "Fable · Session 13% · Weekly 33%" in Claude Code.
+    Needs `python3`.
+  - **Low power.** Power Saver mode, or the battery under 20% while on
+    battery, switches "Ask Claude Code" off by itself; it comes back on
+    when that ends. Switching it back on in the meantime is kept. The tab's
+    footer says when only the status line brings new numbers.
+- Rows over an hour old are dimmed and say when they were checked.
+- **ZeroTier tab** (working-tree installs; not in the published package
+  yet). It shows whether ZeroTier is installed, running, set to start with
+  the computer and online, and each joined network's addresses and
+  problems (not authorized, no IP address, …). Start/Stop stays in the
+  tab; networks are joined and left in ZeroTier itself. Settings →
+  ZeroTier → Allow lets Froonty read ZeroTier's status. On the first start,
+  the tab is turned off when ZeroTier is not installed.
+
+### Fixed
+- Feature icons are no longer created when the extension loads, before
+  `enable()` (extensions.gnome.org review guidelines).
+
+### Changed
+- Froonty can now make Claude Code contact Anthropic (one usage check per
+  run of `/usage`). Turn "Ask Claude Code for fresh usage" off to stop it.
+
 ## 0.2.1-rc1 (2026-09-30)
 
 First release candidate of 0.2.1, for GNOME Shell 50 on Ubuntu 26.04

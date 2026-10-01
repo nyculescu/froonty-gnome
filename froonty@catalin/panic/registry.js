@@ -20,6 +20,7 @@ const FACTORIES = {
  * @param {string} id
  * @param {object} actions
  * @param {Function} actions.selectTab (featureId) → whether that tab exists
+ * @param {Gio.Settings} actions.settings Froonty's settings
  * @returns {?object} a panic button, or null for an unknown id
  */
 export function createPanicButton(id, actions) {

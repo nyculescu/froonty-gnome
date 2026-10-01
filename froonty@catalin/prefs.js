@@ -15,6 +15,7 @@ import {
 // features/registry.js: that loads Shell-side modules this process cannot.)
 import {addIconPath, claudePage} from './features/claude/prefs.js';
 import {notesPage} from './features/notes/prefs.js';
+import {addLocalPrefs} from './features/localPrefs.js';
 import {panicPage} from './panic/prefs.js';
 
 const CLOCK_FORMATS = ['system', '24h', '12h'];
@@ -28,7 +29,7 @@ export default class FroontyPreferences extends ExtensionPreferences {
         const settings = this.getSettings();
         // Keep the settings object alive as long as the window.
         window._settings = settings;
-        // Bundled icons (Claude's Spark: its tab and its panic button).
+        // Bundled icons used in feature tabs and preferences.
         addIconPath();
 
         // With more than one page, Adw.PreferencesWindow shows them as tabs
@@ -38,6 +39,7 @@ export default class FroontyPreferences extends ExtensionPreferences {
         window.add(panicPage(settings));
         window.add(notesPage(settings));
         window.add(claudePage(settings));
+        addLocalPrefs(window, settings);
         window.visible_page_name = GENERAL_PAGE;
     }
 

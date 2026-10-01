@@ -398,6 +398,7 @@ async function testHub(outDir) {
     const hub = island()._hub;
     settings().set_boolean('notes-enabled', false);
     settings().set_boolean('claude-enabled', false);
+    settings().set_boolean('zerotier-enabled', false);
     await sleep(SETTLE_MS);
     check('hub: a single feature hides the tab row', !hub._tabColumn.visible);
     settings().reset('notes-enabled');
@@ -406,10 +407,30 @@ async function testHub(outDir) {
         hub._tabColumn.visible && hub._tabColumn.get_n_children() === 2);
     settings().reset('claude-enabled');
     await sleep(SETTLE_MS);
-    check('hub: tabs follow the registry order (Clock, Notes, Claude)',
-        hub._tabColumn.get_children().map(b => b.accessible_name).join(',') === 'Clock,Notes,Claude',
+    settings().reset('zerotier-enabled');
+    await sleep(SETTLE_MS);
+    check('hub: tabs follow the registry order (Clock, Notes, Claude, ZeroTier)',
+        hub._tabColumn.get_children().map(b => b.accessible_name).join(',') === 'Clock,Notes,Claude,ZeroTier',
         hub._tabColumn.get_children().map(b => b.accessible_name).join(','));
     check('hub: clock is the active tab', hub.activeFeature?.id === 'clock');
+
+    island().expand();
+    await sleep(animationWait());
+    await clickActor(tabButton('zerotier'));
+    await sleep(animationWait());
+    const zeroTierView = hub._entries.get('zerotier')?.view;
+    const [zeroTierWidth, zeroTierHeight] = pill().get_transformed_size();
+    // Header, summary, notices, networks: informative, no join controls.
+    check('hub: ZeroTier opens its status at the configured size',
+        hub.activeFeature?.id === 'zerotier' && zeroTierView?.actor.get_children().length === 4 &&
+        zeroTierWidth === 420 * scale() && zeroTierHeight === 280 * scale(),
+        `${zeroTierWidth}x${zeroTierHeight}`);
+    check('zerotier: the first start recorded its install check',
+        settings().get_boolean('zerotier-install-checked'));
+    await clickActor(tabButton('clock'));
+    await sleep(animationWait());
+    island().collapse();
+    await sleep(animationWait());
 
     const {FEATURES} = await import(`file://${extension().path}/features/registry.js`);
     const log = [];
@@ -418,7 +439,7 @@ async function testHub(outDir) {
         await setExtensionEnabled(false);
         await setExtensionEnabled(true);
         check('hub: a registered feature adds a tab',
-            island()._hub._tabColumn.get_n_children() === 4);
+            island()._hub._tabColumn.get_n_children() === 5);
         check('hub: a feature is not created before its tab is selected',
             log.length === 0, log.join(','));
 
@@ -1067,6 +1088,111 @@ function claudeRows(view) {
     });
 }
 
+const claudeDir = () => GLib.getenv('CLAUDE_CONFIG_DIR');
+const claudeRuns = () => {
+    try {
+        const [, bytes] = Gio.File.new_for_path(`${claudeDir()}/runs.log`).load_contents(null);
+        return new TextDecoder().decode(bytes).split('\n').filter(Boolean);
+    } catch (e) {
+        return [];
+    }
+};
+const statusLineFile = () => Gio.File.new_for_path(GLib.build_filenamev(
+    [GLib.get_user_cache_dir(), 'froonty', 'claude-status-line.json']));
+
+async function reopenIsland() {
+    island().collapse();
+    await sleep(animationWait());
+    island().expand();
+    await sleep(animationWait());
+}
+
+// Fresh usage: Claude Code's /usage on open (A), the status line (B), and
+// low power turning the setting off and back on (docs/features/claude.md).
+async function testClaudeFreshness(view, service, button) {
+    const refresher = service._refresher;
+    check('claude: the tab and the panic button share one refresher',
+        refresher && refresher === button._service._refresher);
+    check('claude: Claude Code is run with -p --no-session-persistence /usage, the fake only',
+        claudeRuns().length >= 1 && claudeRuns().every(r => r === '-p --no-session-persistence /usage'),
+        JSON.stringify(claudeRuns()));
+
+    // Its run puts a new cache in place, as Claude Code's /usage does.
+    const before = claudeRuns().length;
+    refresher._lastRun = -Infinity;
+    const next = claudeConfig({session: 55});
+    next.cachedUsageUtilization.fetchedAtMs = Date.now();
+    Gio.File.new_for_path(`${claudeDir()}/next.json`).replace_contents(JSON.stringify(next),
+        null, false, Gio.FileCreateFlags.NONE, null);
+    await reopenIsland();
+    check('claude: opening the island runs Claude Code once; its new reading appears',
+        await waitFor(() => claudeRows(view)[0]?.[1] === '55%') && claudeRuns().length === before + 1,
+        `${claudeRuns().length - before} runs ${JSON.stringify(claudeRows(view))}`);
+    check('claude button: shows the new reading too', await waitFor(() => button._number.text === '55'));
+    await reopenIsland();
+    await sleep(SETTLE_MS);
+    check('claude: reopened within a minute, Claude Code is not run again',
+        claudeRuns().length === before + 1, `${claudeRuns().length - before} runs`);
+
+    // An old cache from here on, so only the setting can stop a run.
+    const old = claudeConfig({session: 55});
+    writeClaudeConfig(old);
+    await waitFor(() => service._cacheFetchedAt === old.cachedUsageUtilization.fetchedAtMs);
+
+    // Low power: the setting turns off by itself; nothing is run.
+    refresher._power.known = true;
+    refresher._power.reason = 'power-saver';
+    refresher._power.emit('changed');
+    await sleep(SETTLE_MS);
+    check('claude: Power Saver turns "Ask Claude Code for fresh usage" off',
+        !settings().get_boolean('claude-ask-claude-code') &&
+        settings().get_boolean('claude-ask-paused-for-power'));
+    check('claude: the footer says only the status line brings new numbers',
+        view._footer.text.endsWith(' · Power Saver: status line only'), view._footer.text);
+    refresher._lastRun = -Infinity;
+    await reopenIsland();
+    await sleep(SETTLE_MS);
+    check('claude: in low power, opening the island runs nothing (with an old cache)',
+        claudeRuns().length === before + 1, `${claudeRuns().length - before} runs`);
+
+    // The status line's newer Session and Weekly win.
+    const status = statusLineFile();
+    try {
+        status.get_parent().make_directory_with_parents(null);
+    } catch (e) {}
+    // The same windows as the cache's, with more used since.
+    const reset = id => Math.floor(service._cacheUsage.windows.find(w => w.id === id).resetsAt / 1000);
+    status.replace_contents(JSON.stringify({writtenAtMs: Date.now(), rate_limits: {
+        five_hour: {used_percentage: 66, resets_at: reset('session')},
+        seven_day: {used_percentage: 44, resets_at: reset('weekly')},
+    }}), null, false, Gio.FileCreateFlags.NONE, null);
+    check('claude: a newer status line replaces Session and Weekly; Fable stays',
+        await waitFor(() => claudeRows(view)[0]?.[1] === '66%') &&
+        claudeRows(view)[1][1] === '44%' && claudeRows(view)[2][1] === '18%',
+        JSON.stringify(claudeRows(view)));
+    check('claude button: follows the status line', await waitFor(() => button._number.text === '66'));
+
+    refresher._power.reason = null;
+    refresher._power.emit('changed');
+    await sleep(SETTLE_MS);
+    check('claude: when low power ends, the setting is back on',
+        settings().get_boolean('claude-ask-claude-code') &&
+        !settings().get_boolean('claude-ask-paused-for-power') &&
+        !view._footer.text.includes('status line only'), view._footer.text);
+    // The control: with the same old cache, no low power, a run happens.
+    writeClaudeConfig(claudeConfig({session: 55}));
+    await sleep(SETTLE_MS);
+    refresher._lastRun = -Infinity;
+    await reopenIsland();
+    check('claude: back out of low power, opening the island runs Claude Code again',
+        await waitFor(() => claudeRuns().length === before + 2), `${claudeRuns().length - before} runs`);
+
+    status.delete(null);
+    for (const key of ['claude-ask-claude-code', 'claude-ask-paused-for-power', 'claude-low-power-handled'])
+        settings().reset(key);
+    await sleep(SETTLE_MS);
+}
+
 const claudeButton = () => island()._hub._panicBar._buttons
     .find(b => b.actor.has_style_class_name('froonty-claude-session')) ?? null;
 
@@ -1226,6 +1352,8 @@ async function testClaude(outDir) {
     service._read = read;
     check('claude button: reopening the island reads the latest usage',
         await waitFor(() => button._number.text === '34'), button._number.text);
+
+    await testClaudeFreshness(view, service, button);
 
     await clickActor(tabButton('clock'));
     await sleep(animationWait());
@@ -1529,7 +1657,7 @@ async function testHubLayout(outDir) {
     const tabs = hub._tabColumn.get_children();
     const boxes = tabs.map(boxOf);
     check('layout: feature tabs are stacked vertically on the left',
-        tabs.length === 3 && Math.abs(boxes[0].x1 - boxes[1].x1) < 1 &&
+        tabs.length === 4 && Math.abs(boxes[0].x1 - boxes[1].x1) < 1 &&
         boxes[1].y1 > boxes[0].y1 && boxes[0].x1 < boxOf(hub._content).x1,
         boxes.map(b => `[${b.x1},${b.y1}]`).join(' '));
     const bar = boxOf(hub._panicBar.actor);

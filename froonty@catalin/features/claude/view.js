@@ -24,6 +24,10 @@
 // The last row is livenerf's (livenerf.js): the latest day's score and
 // its chart, redrawn here; once livenerf publishes a Δ, the line under it
 // gives the Δ and livenerf's decision.
+// A row older than an hour (one only Claude Code's cache has, while the
+// status line keeps Session and Weekly current) is dimmed, its line ending
+// "· checked 3 h ago". In low power the footer says only the status line
+// brings in new numbers.
 // Offline, every value reads "Unknown" and a line says why (user request).
 // Renders ClaudeService state; re-renders on its changes and on the shared
 // clock's minute tick, for "Resets in" and "Updated … ago".
@@ -36,10 +40,15 @@ import St from 'gi://St';
 
 import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 
-import {CREDITS, SESSION, WEEKLY, describeReset, fillFraction, minutesSince} from './usage.js';
+import {
+    CREDITS, SESSION, STALE_MS, WEEKLY, describeReset, fillFraction, minutesSince,
+} from './usage.js';
 
 // Beyond this, a reset shows its date, not only its weekday.
 const DATED_RESET_MS = 6 * 24 * 3600 * 1000;
+
+// A row over an hour old, of 255.
+const STALE_OPACITY = 140;
 
 // Rows shown as "Unknown" offline before any reading was ever made.
 const DEFAULT_KINDS = [SESSION, WEEKLY];
@@ -141,8 +150,11 @@ export class ClaudeView {
             : _('It appears once Claude Code, signed in with a Claude plan, checks your usage.');
 
         this._footer.visible = online && Boolean(usage);
-        if (usage)
-            this._footer.text = this._updatedText(usage.fetchedAt, now);
+        if (usage) {
+            const mode = modeText(this._service.refreshMode);
+            const updated = this._updatedText(usage.fetchedAt, now);
+            this._footer.text = mode ? `${updated} · ${mode}` : updated;
+        }
 
         this._syncBenchmark(online);
     }
@@ -154,8 +166,18 @@ export class ClaudeView {
         const bar = new UsageBar(known ? fillFraction(window.percent) : 0);
         if (known && isCritical(window))
             bar.actor.add_style_class_name('froonty-claude-bar-critical');
-        return row(windowTitle(window), known ? amountText(window) : _('Unknown'), bar,
-            this._resetText(reset, now));
+        const stale = known && now - window.fetchedAt >= STALE_MS;
+        let detail = this._resetText(reset, now);
+        if (stale)
+            detail = _('%s · checked %s').format(detail, this._agoText(window.fetchedAt, now));
+        const actor = row(windowTitle(window), known ? amountText(window) : _('Unknown'), bar,
+            detail);
+        // Dimmed (St's CSS has no opacity), a hint rather than a value.
+        if (stale) {
+            actor.add_style_class_name('froonty-claude-row-stale');
+            actor.opacity = STALE_OPACITY;
+        }
+        return actor;
     }
 
     // livenerf's row: hidden until its first fetch ends, so nothing flashes
@@ -233,6 +255,16 @@ export class ClaudeView {
             return _('Updated %d h ago').format(Math.floor(minutes / 60));
         return _('Updated %s').format(this._clock.formatTime(fetchedAt, {weekday: true}));
     }
+
+    // "3 h ago" for a stale row (an hour or more by then).
+    _agoText(time, now) {
+        const minutes = minutesSince(time, now);
+        if (minutes < 60)
+            return _('%d min ago').format(minutes);
+        if (minutes < 24 * 60)
+            return _('%d h ago').format(Math.floor(minutes / 60));
+        return this._clock.formatTime(time, {weekday: true});
+    }
 }
 
 // Name and value, a bar, and a line under it (wrapped if `wrap`).
@@ -270,6 +302,21 @@ function windowTitle(window) {
     default:
         // The model's name comes from Claude's servers, e.g. "Fable".
         return _('Weekly %s').format(window.model);
+    }
+}
+
+// Why only the status line brings in new numbers, when it is not the
+// user's choice (the setting off says nothing).
+function modeText(mode) {
+    switch (mode?.reason) {
+    case 'power-saver':
+        return _('Power Saver: status line only');
+    case 'battery':
+        return _('Low battery: status line only');
+    case null:
+        return mode.found ? null : _('Claude Code not found');
+    default:
+        return null;
     }
 }
 

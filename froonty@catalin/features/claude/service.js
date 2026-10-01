@@ -1,27 +1,33 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Claude service: the plan usage Claude Code last checked, read from its
-// config file, and whether this computer can reach the internet. No St;
-// unit-tested with plain gjs.
+// config file, merged with what Froonty's status line saved, and whether
+// this computer can reach the internet. No St; unit-tested with plain gjs.
 //
-// Froonty never asks Claude itself: no network access, no sign-in, no
-// token. Claude Code checks the account's limits while it runs and caches
-// the answer in its config file (at most once a minute). The tab's
-// livenerf row is the exception: given a `benchmark` (LivenerfService),
-// shown and online, it fetches livenerf's README from GitHub.
+// Froonty never asks Claude itself: no sign-in, no token. Two sources:
+// - Claude Code caches the account's limits in its config file, but only
+//   when it checks them (its /usage command, VS Code's Account & Usage).
+//   Given a refresher (refresher.js), showing the tab runs that /usage
+//   (A), unless the setting is off or the laptop is in low power.
+// - Froonty's Claude Code status line (statusline.py) saves Session and
+//   Weekly after each Claude Code reply (B). Whichever is newer wins.
+// The tab's livenerf row is separate: given a `benchmark`
+// (LivenerfService), shown and online, it fetches livenerf's README from
+// GitHub.
 //
 // Nothing runs while the tab is not on screen. Each time it is shown, the
-// file is read again (user request: refresh on every visit, never poll);
-// while it stays shown, a file monitor and the network monitor bring in
-// changes as they happen. Hidden, both are disconnected.
+// files are read again (user request: refresh on every visit, never poll);
+// while it stays shown, file monitors and the network monitor bring in
+// changes as they happen. Hidden, all are disconnected.
 //
-// Emits 'changed' when the usage, the error, the connection or the
-// benchmark changes.
+// Emits 'changed' when the usage, the error, the connection, the refresh
+// mode or the benchmark changes.
 
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 
 import {Emitter} from '../../core/emitter.js';
-import {usageFromConfig} from './usage.js';
+import {acquireShared, releaseShared} from './refresher.js';
+import {mergeStatusLine, statusLineFromFile, usageFromConfig} from './usage.js';
 
 for (const method of ['load_contents_async', 'query_info_async'])
     Gio._promisify(Gio.File.prototype, method);
@@ -45,18 +51,34 @@ export function configFile() {
     return Gio.File.new_for_path(GLib.build_filenamev([dir ?? home, '.claude.json']));
 }
 
+/** Where statusline.py saves the status line's usage. */
+export function statusLineFile() {
+    return Gio.File.new_for_path(GLib.build_filenamev(
+        [GLib.get_user_cache_dir(), 'froonty', 'claude-status-line.json']));
+}
+
 export class ClaudeService extends Emitter {
     /**
      * @param {object} [options]
      * @param {Function} [options.file] () → Gio.File to read (tests)
      * @param {Gio.NetworkMonitor} [options.network] (tests)
+     * @param {Function} [options.statusFile] () → Gio.File (tests)
      * @param {LivenerfService} [options.benchmark] livenerf's results, or
      *   null for none (the panic button)
+     * @param {Gio.Settings} [options.settings] to share the Shell's
+     *   refresher (refresher.js); without it or `refresher`, no runs
+     * @param {ClaudeRefresher} [options.refresher] (tests)
      */
-    constructor({file = configFile, network = null, benchmark = null} = {}) {
+    constructor({file = configFile, statusFile = statusLineFile, network = null,
+        benchmark = null, settings = null, refresher = null} = {}) {
         super();
         this._fileFor = file;
+        this._statusFileFor = statusFile;
         this._network = network;
+        this._settings = settings;
+        this._refresher = refresher;
+        this._ownsRefresher = false;
+        this._refresherIds = [];
 
         /** LivenerfService, or null. */
         this.benchmark = benchmark;
@@ -71,8 +93,12 @@ export class ClaudeService extends Emitter {
         /** False until the file has been read once. */
         this.loaded = false;
 
+        /** The cache's own reading, without the status line's. */
+        this._cacheUsage = null;
+        this._cacheFetchedAt = null;
         this._active = false;
         this._monitor = null;
+        this._statusMonitor = null;
         this._networkIds = [];
         this._reading = null;
         this._readAgain = false;
@@ -82,6 +108,15 @@ export class ClaudeService extends Emitter {
     start() {
         this._cancellable = new Gio.Cancellable();
         this.benchmark?.start();
+        if (!this._refresher && this._settings) {
+            this._refresher = acquireShared(this._settings);
+            this._ownsRefresher = true;
+        }
+        this._refresherIds = this._refresher ? [
+            this._refresher.connect('changed', () => this.emit('changed')),
+            // The file monitor sees the write too; this covers a missed one.
+            this._refresher.connect('done', () => this._active && this.refresh()),
+        ] : [];
     }
 
     stop() {
@@ -89,6 +124,23 @@ export class ClaudeService extends Emitter {
         this._cancellable?.cancel();
         this._cancellable = null;
         this.benchmark?.stop();
+        this._refresherIds.forEach(id => this._refresher.disconnect(id));
+        this._refresherIds = [];
+        if (this._ownsRefresher) {
+            releaseShared();
+            this._refresher = null;
+            this._ownsRefresher = false;
+        }
+    }
+
+    /**
+     * How new readings arrive (refresher.js `mode`), or null without a
+     * refresher.
+     */
+    get refreshMode() {
+        if (!this._refresher)
+            return null;
+        return {...this._refresher.mode, found: this._refresher.found};
     }
 
     /** Shown: read now and watch; hidden: stop watching. */
@@ -97,13 +149,18 @@ export class ClaudeService extends Emitter {
             return;
         this._active = active;
         if (active) {
+            this._refresher?.setActive(true);
             this._watchNetwork();
             this._watchFile();
-            this.refresh();
+            // Read what there is first, then ask Claude Code for newer.
+            this.refresh().then(() => this._requestFresh());
             this._refreshBenchmark();
         } else {
+            this._refresher?.setActive(false);
             this._monitor?.cancel();
             this._monitor = null;
+            this._statusMonitor?.cancel();
+            this._statusMonitor = null;
             this._networkIds.forEach(id => this._network.disconnect(id));
             this._networkIds = [];
         }
@@ -153,6 +210,13 @@ export class ClaudeService extends Emitter {
         this._refreshBenchmark();
     }
 
+    // Shown and online only; the refresher decides the rest (mode, once a
+    // minute).
+    _requestFresh() {
+        if (this._active && this.online)
+            this._refresher?.request(this._cacheFetchedAt);
+    }
+
     // Shown and online only; the benchmark skips a fetch within the hour.
     _refreshBenchmark() {
         if (this._active && this.online)
@@ -163,12 +227,33 @@ export class ClaudeService extends Emitter {
     // a write that replaces the file by renaming a new one onto it counts.
     _watchFile() {
         this._file = this._fileFor();
+        this._statusFile = this._statusFileFor();
+        this._monitor = this._monitorFile(this._file);
+        this._statusMonitor = this._monitorFile(this._statusFile);
+    }
+
+    _monitorFile(file) {
         try {
-            this._monitor = this._file.monitor_file(Gio.FileMonitorFlags.WATCH_MOVES, null);
-            this._monitor.connect('changed', () => this.refresh());
+            const monitor = file.monitor_file(Gio.FileMonitorFlags.WATCH_MOVES, null);
+            monitor.connect('changed', () => this.refresh());
+            return monitor;
         } catch (e) {
             // No monitor (e.g. the folder is gone): reads on each visit still work.
-            this._monitor = null;
+            return null;
+        }
+    }
+
+    // The status line's file: null when there is none (not set up, or no
+    // reply since), or it cannot be used.
+    async _readStatusLine() {
+        const file = this._statusFile ?? this._statusFileFor();
+        try {
+            const [bytes] = await file.load_contents_async(this._cancellable);
+            return statusLineFromFile(JSON.parse(new TextDecoder().decode(bytes)));
+        } catch (e) {
+            if (e.matches?.(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
+                throw e;
+            return null;
         }
     }
 
@@ -176,6 +261,12 @@ export class ClaudeService extends Emitter {
         const file = this._file ?? this._fileFor();
         let usage = null;
         let error = null;
+        let status;
+        try {
+            status = await this._readStatusLine();
+        } catch (e) {
+            return;
+        }
         try {
             const info = await file.query_info_async('standard::size',
                 Gio.FileQueryInfoFlags.NONE, GLib.PRIORITY_DEFAULT, this._cancellable);
@@ -188,7 +279,7 @@ export class ClaudeService extends Emitter {
                 return;
             if (e.matches?.(Gio.IOErrorEnum, Gio.IOErrorEnum.NOT_FOUND)) {
                 error = 'missing';
-            } else if (this.usage) {
+            } else if (this._cacheUsage) {
                 // Most likely caught halfway through a write that does not
                 // replace the file atomically: keep the last good reading,
                 // the write's own event reads it again.
@@ -199,11 +290,17 @@ export class ClaudeService extends Emitter {
                     console.warn(`Froonty: cannot read Claude Code's usage: ${e.message}`);
             }
         }
+        this._cacheUsage = usage;
+        this._cacheFetchedAt = usage?.fetchedAt ?? null;
+        // The status line alone is enough for Session and Weekly.
+        const merged = mergeStatusLine(usage, status);
+        if (merged)
+            error = null;
         if (this.loaded &&
-            JSON.stringify([usage, error]) === JSON.stringify([this.usage, this.error]))
+            JSON.stringify([merged, error]) === JSON.stringify([this.usage, this.error]))
             return;
         this.loaded = true;
-        this.usage = usage;
+        this.usage = merged;
         this.error = error;
         this.emit('changed');
     }

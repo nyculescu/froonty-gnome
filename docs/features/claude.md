@@ -63,6 +63,25 @@ Froonty reads a different one.
   each time the tab comes on screen. While it stays on screen, a file
   monitor picks up new readings as Claude Code writes them. With the tab
   hidden or the island collapsed, nothing is watched or read.
+- **Fresh usage** (added 2026-09-30, user request: "I want both
+  implementations, A and B"). Claude Code rewrites its cache only when it
+  checks usage, so the numbers went stale until the user opened Account &
+  Usage in VS Code. Two ways in, see 3.2:
+  - **A, "Ask Claude Code for fresh usage"** (`claude-ask-claude-code`, on
+    by default): when the tab or the panic button comes on screen,
+    Froonty runs the user's Claude Code `/usage`, at most once a minute.
+  - **B, the status line**: Froonty's Claude Code status line saves
+    Session and Weekly after each Claude Code reply. Set up from Settings
+    → Claude, never over a status line of the user's own.
+  - **Low power turns A off** (user request): as Power Saver mode or a
+    battery below 20% (while on battery) begins, the setting switches off
+    by itself; as it ends, back on, if Froonty switched it off. Switching
+    it back on meanwhile is the user's choice and stays until the next
+    low-power stretch. While off for low power, the footer ends "· Power
+    Saver: status line only" or "· Low battery: status line only".
+  - **Stale rows:** a row over an hour old (Claude Code's own limit for
+    its cache) is dimmed, its line ending "· checked 3 h ago". With B
+    alone, that is the per-model and credits rows.
 - **No internet: "Unknown"** (user request). Offline, every value and
   every reset reads "Unknown", and a line says "No internet connection:
   Claude cannot be asked for these details." Offline means anything short
@@ -119,8 +138,10 @@ Froonty reads a different one.
 
 ## 3. Where the numbers come from
 
-For the usage rows, Froonty never asks Claude: no network access, no
-sign-in, no token. (The livenerf row's one request is to GitHub; see 3.1.)
+For the usage rows, Froonty never asks Claude itself: no sign-in, no
+token. It reads Claude Code's cache, merged with its status line's file,
+and may run Claude Code's own `/usage` (3.2). (The livenerf row's one
+request is to GitHub; see 3.1.)
 Claude Code checks the account's limits itself (its `/api/oauth/usage` endpoint)
 and caches the answer in its config file, `~/.claude.json`, under
 `cachedUsageUtilization`:
@@ -163,9 +184,12 @@ bundled with the Claude app on 2026-09-29) and the file it wrote:
   lower priority); the text keeps it, the bar is capped.
 - **Account check.** Claude Code discards a cache whose `accountUuid` is not
   the signed-in `oauthAccount.accountUuid`. Froonty does the same.
-- **Freshness.** Claude Code writes the cache at most once a minute, and
-  only when it checks usage while it runs. When exactly it checks is Claude
-  Code's choice. The footer says how old the reading is.
+- **Freshness.** Claude Code (2.1.285, read from its bundle 2026-09-30)
+  writes the cache only after it asks for usage: its `/usage` command
+  (interactive or `-p`), and VS Code's Account & Usage panel (on open and
+  on Retry). Not at startup, not on a timer, not after replies: their
+  rate-limit headers stay in memory (they feed the status line). It asks
+  at most once a minute. The footer says how old the reading is.
 - **Location**, as Claude Code finds it: a legacy `.config.json` in its
   config folder wins; otherwise `.claude.json` in `$CLAUDE_CONFIG_DIR`, or
   in the home folder. (GNOME Shell rarely has `CLAUDE_CONFIG_DIR` set; the
@@ -224,6 +248,76 @@ through Claude Code on a Max subscription, on a 78-question panel, with a
 pre-registered decision rule. Its README lists its limits (for example,
 a same-family model swap was not detectable in validation).
 
+## 3.2 Fresh usage: A and B
+
+**A: Claude Code's `/usage`** (`refresher.js`). Showing the tab or the
+panic button runs, from the home folder:
+
+```
+<claude> -p --no-session-persistence /usage
+```
+
+- A local command: Claude Code asks Anthropic for the plan's usage and
+  writes its cache. Checked 2026-09-30: 2.4-2.7 s, about 350 MB while it
+  runs, the cache 70 s old before and 1 s after, Session usage unchanged
+  (no model request), no transcript saved. Froonty never sees a
+  credential; the unmodified Claude Code signs in as always.
+- Not run when: the setting is off; one runs already; one ran within a
+  minute; the cache is under a minute old (Claude Code would not ask
+  again); offline. Closing the island lets a run finish; it is stopped
+  (SIGTERM, so Claude Code ends cleanly) after 30 s or when Froonty is
+  disabled. The tab and the panic button share one refresher, so opening
+  the island runs it once.
+- The binary: the newest `~/.vscode{,-insiders}/extensions/
+  anthropic.claude-code-<version>-linux-<arch>/resources/native-binary/claude`,
+  else `claude` on `PATH`, `~/.local/bin/claude` or `~/.claude/local/claude`.
+  `FROONTY_CLAUDE_CODE` replaces the search (the headless tests' fake).
+  None found: the footer says "Claude Code not found".
+- Low power (`power.js`): power-profiles-daemon's `ActiveProfile` is
+  `power-saver`, or UPower's display device is a battery, discharging
+  (states 2, 3, 6) and under 20%. Charging or plugged in, a low battery
+  is not low power. A state that cannot be read (neither service on the
+  bus, or one that was there restarting) is not "low power ended": nothing
+  changes until it can be read again. The extension holds the refresher
+  while the Claude tab is enabled, so this works with the island collapsed
+  and before the tab was ever opened. Two internal keys keep the user's
+  choice:
+  `claude-ask-paused-for-power` (Froonty switched it off, so it switches
+  it back on) and `claude-low-power-handled` (this stretch was acted on,
+  also across a Shell restart or lock).
+
+**B: the status line** (`statusline.py`, `statusLineSetup.js`). Claude
+Code runs its status line command after each reply, with the session's
+details as JSON on stdin ([docs](https://code.claude.com/docs/en/statusline)).
+Froonty's script keeps only `rate_limits` (Session and Weekly, for Claude
+plans, after the session's first reply) in
+`$XDG_CACHE_HOME/froonty/claude-status-line.json`, renamed into place,
+and prints "Fable · Session 13% · Weekly 33%". No extra requests, so it
+also runs in low power; no per-model rows, no credits.
+
+```json
+{"writtenAtMs": 1790819528707,
+ "rate_limits": {"five_hour": {"used_percentage": 13, "resets_at": 1790819999},
+                 "seven_day": {"used_percentage": 33, "resets_at": 1791100000}}}
+```
+
+Settings → Claude → "Claude Code status line" adds
+`"statusLine": {"type": "command", "command": "python3 '<path>'", "padding": 0}`
+to Claude Code's `settings.json` (`$CLAUDE_CONFIG_DIR` or `~/.claude`),
+keeping everything else, and removes it again. It does nothing when the
+file already has another status line, or cannot be parsed. Needs
+`python3` (on Ubuntu by default).
+
+**Merging** (`usage.js` `mergeStatusLine`, `isNewerReading`): for
+Session and Weekly, the newer reading wins; each row keeps its own
+reading time. "Newer" is not "saved later": Claude Code also re-runs an
+idle session's status line with numbers from its last reply, maybe hours
+old. So a later window (reset time) wins, an earlier one loses, and within
+the same window the higher use wins, as use only grows until the reset;
+only a tie falls back to the time. `statusline.py` applies the same rule
+before it saves, and leaves the file alone when nothing is newer. The
+status line alone (no cache) is enough for both rows.
+
 ## 4. Structure
 
 ```
@@ -233,10 +327,16 @@ features/claude/
 ├── usage.js     pure: parse the cache, reset arithmetic (unit-tested)
 ├── livenerf.js  pure: read livenerf's README and chart SVG (unit-tested)
 ├── livenerfService.js  fetches both (Soup), at most hourly
-├── service.js   reads the file on show, file + network monitors while shown;
-│                asks the livenerf service to refresh when shown and online
+├── service.js   reads the cache and the status line's file on show, file +
+│                network monitors while shown; asks the refresher for a
+│                /usage run and the livenerf service to refresh
+├── refresher.js A: runs Claude Code's /usage (shared, once a minute);
+│                low power switches its setting off and back on
+├── power.js     low power from UPower and power-profiles-daemon (D-Bus)
+├── statusline.py  B: Claude Code status line, saves rate_limits
+├── statusLineSetup.js  adds/removes it in Claude Code's settings.json
 ├── view.js      rows (name, %, bar, reset), offline line, empty hint, footer
-├── prefs.js     settings tab: show the tab
+├── prefs.js     settings tab: show the tab, fresh usage, status line
 └── icons/hicolor/scalable/actions/froonty-claude-symbolic.svg
 ```
 
@@ -260,7 +360,18 @@ NetworkManager backend reports NetworkManager's state and connectivity check
 only as property notifications, and `network-changed` comes only with route
 changes. The minute re-render for "Resets in" and "Updated … ago" rides the
 shared clock's tick (`GnomeDesktop.WallClock`), and is skipped while the
-tab is hidden. No timers of its own. Hidden, none of this exists.
+tab is hidden. No timers of its own. Hidden, none of this exists, except
+the power monitor below.
+
+Fresh usage: while shown, a second `Gio.FileMonitor`, on the status
+line's file. Per visit, at most one `/usage` run a minute (2-3 s, about
+350 MB, one request by Claude Code), with a 30 s timeout source while it
+runs. The power monitor lives as long as the Claude tab is enabled (or its
+panic button exists), so the setting follows the power state with the
+island collapsed:
+two `Gio.DBusProxy` on the system bus (UPower's display device,
+power-profiles-daemon) and their property-change signals; no polling.
+The status line script runs in Claude Code, not in the Shell.
 
 livenerf: one `Soup.Session` (20 s timeout), made on the first fetch and
 aborted when the tab is turned off, and two GETs (README about 22 kB,
@@ -276,7 +387,14 @@ set, names a local folder laid out like the repository to read instead
   temporary file and a fake network monitor. The service tests cover no
   read while hidden, a read on show, following writes while shown, a fresh
   read on the next show, folding a burst of reads, missing, half-written
-  and unreadable files, and connectivity.
+  and unreadable files, and connectivity. Fresh usage: the status line
+  file (parsing, merging newer or older, alone), `lowPowerReason`, picking
+  the newest Claude Code, the refresher (once a minute, a fresh cache
+  skipped, two views run it once, not found, the setting off), low power
+  switching the setting off and back on, the user's choice kept within a
+  stretch and across a new refresher, `settings.json` set-up (keeps the
+  rest, never over the user's own, bad JSON left alone, quoting), and
+  `statusline.py` run as Claude Code runs it.
 - `tools/unit/livenerf.test.js`: the README reader (hard-wrapped progress,
   Δ rows, Unicode minus, columns by name, nothing guessed), the chart
   reader (scores and intervals through the grid, printed values, the
@@ -292,4 +410,10 @@ set, names a local folder laid out like the repository to read instead
   chart in plot.py's format, a live
   update, offline and captive-portal states, nothing
   watched while collapsed, a fresh read on reopening, another account, a
-  missing file, and turning the tab off.
+  missing file, and turning the tab off. Fresh usage, with a fake Claude
+  Code (`FROONTY_CLAUDE_CODE`, set by `run.sh` so the real one is never
+  run): one shared refresher, its arguments, a run on opening that brings
+  a new reading to the tab and the panic button, none again within a
+  minute, Power Saver switching the setting off (footer, no run), a newer
+  status line replacing Session and Weekly, and the setting back on when
+  low power ends.

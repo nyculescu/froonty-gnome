@@ -24,8 +24,9 @@ export class ClaudeSessionButton {
      * @param {string} title
      * @param {object} actions
      * @param {Function} actions.selectTab
+     * @param {Gio.Settings} [actions.settings] to share the tab's refresher
      */
-    constructor(title, {selectTab}) {
+    constructor(title, {selectTab, settings = null}) {
         this._title = title;
 
         this._number = new St.Label({
@@ -60,7 +61,7 @@ export class ClaudeSessionButton {
         });
         this.actor.connect('clicked', () => selectTab('claude'));
 
-        this._service = new ClaudeService();
+        this._service = new ClaudeService({settings});
         this._service.start();
         this._serviceId = this._service.connect('changed', () => this._sync());
         this._sync();

@@ -6,7 +6,9 @@ facilities GNOME Shell already has. It does not reimplement them.
 
 Status: **0.2.1-rc1**, a release candidate. See [CHANGELOG.md](CHANGELOG.md).
 
-- No subprocesses, no polling timers. One network request: the Claude
+- No background subprocesses or polling timers. The published extension
+  package omits the working-tree-only ZeroTier controls; `make install`
+  includes them. Froonty also makes one direct network request: the Claude
   tab's livenerf row fetches two public files from GitHub, at most once an
   hour while the tab is open.
 - GJS and native GNOME Shell APIs only.
@@ -47,6 +49,11 @@ feature has a design note in [docs/features/](docs/features/).
     measured change once livenerf publishes one. These are the tab's only
     network requests: livenerf's README and chart, from GitHub, at most
     once an hour while the tab is open.
+  - **ZeroTier** tab (working-tree installs only): whether ZeroTier runs,
+    starts with the computer and reaches its network, and how each joined
+    network is doing, with Start/Stop. Networks are managed in ZeroTier
+    itself. Turned off on the first start when ZeroTier is not installed;
+    see [docs/features/zerotier.md](docs/features/zerotier.md).
 - **Always reachable.** With "Show island" off, a puzzle-piece icon in the
   top bar (and the shortcut) opens the settings.
 - **Start at login**, or not. With it off, Froonty waits after login behind
@@ -98,6 +105,7 @@ docs/local/                  local notes and build rules (not in git)
 
 ```sh
 make install    # compiles schemas, copies into ~/.local/share/gnome-shell/extensions
+make pack       # builds a public archive without local-only ZeroTier controls
 ```
 
 `make install` copies rather than links, so Froonty starts at login even
@@ -150,13 +158,14 @@ session. Never install it in a real session.
 
 The settings window (⚙️, the top bar icon while the island is hidden, or
 `gnome-extensions prefs froonty@catalin`) opens as its own window. It has
-five tabs:
+six tabs:
 
 - **General:** startup, island, hover, shortcut, clock.
 - **Appearance:** size, animation.
 - **Panic buttons:** which buttons, and their order.
 - **Notes:** enable, folder.
 - **Claude:** enable.
+- **ZeroTier:** enable, allow reading ZeroTier's status.
 
 The keys behind it:
 
@@ -179,6 +188,8 @@ The keys behind it:
 | `notes-wrap` | `true` | Wrap long lines in notes; off scrolls horizontally |
 | `notes-show-tools` | `true` | Show the notes formatting row (it can be folded away) |
 | `claude-enabled` | `true` | Show the Claude tab |
+| `zerotier-enabled` | `true` | Show the ZeroTier tab |
+| `zerotier-install-checked` | `false` | ZeroTier's installation was checked on the first start (internal) |
 | `hub-last-tab`, `notes-last` | | Remembered selections (internal) |
 
 ## License and provenance

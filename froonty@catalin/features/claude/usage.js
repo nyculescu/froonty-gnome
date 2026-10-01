@@ -21,6 +21,10 @@ const CREDITS_KEY = 'iguana_necktie';
 // Below this, a reset reads "in 3 h 5 min"; from it on, "Sat 22:59".
 export const RELATIVE_RESET_MS = 24 * 3600 * 1000;
 
+// A reading older than this is marked as such. Claude Code itself stops
+// trusting its cache after an hour.
+export const STALE_MS = 3600 * 1000;
+
 const isObject = value => typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /**
@@ -29,7 +33,7 @@ const isObject = value => typeof value === 'object' && value !== null && !Array.
  * @param {object} config
  * @returns {{fetchedAt: number, windows: object[]}|null} windows in display
  *   order (session, weekly, then one per model), each {id, kind, model,
- *   percent, resetsAt, severity}; times in ms since the epoch. The credits
+ *   percent, resetsAt, severity, fetchedAt}; times in ms since the epoch. The credits
  *   window also has {limit, used, remaining}, in dollars. Null when the
  *   file holds no usage for the signed-in account.
  */
@@ -62,10 +66,98 @@ export function usageFromConfig(config) {
 
     if (!windows.length)
         return null;
+    windows.forEach(w => (w.fetchedAt = fetchedAt));
+    return {fetchedAt, windows: sorted(windows)};
+}
+
+const sorted = windows => {
     const rank = w => [SESSION, WEEKLY, MODEL, CREDITS].indexOf(w.kind);
     // Array.prototype.sort is stable: models keep the server's order.
-    windows.sort((a, b) => rank(a) - rank(b));
-    return {fetchedAt, windows};
+    return windows.sort((a, b) => rank(a) - rank(b));
+};
+
+/**
+ * What Froonty's Claude Code status line script (statusline.py) last saved:
+ * Claude Code's `rate_limits` for the status line, documented at
+ * code.claude.com/docs/en/statusline, plus when it was saved.
+ *
+ * @param {object} data the parsed file:
+ *   {writtenAtMs, rate_limits: {five_hour: {used_percentage, resets_at}, seven_day}}
+ *   with resets_at in seconds since the epoch
+ * @returns {{writtenAt: number, windows: object[]}|null} Session and Weekly
+ *   windows shaped as usageFromConfig's; null when there is nothing usable
+ */
+export function statusLineFromFile(data) {
+    const writtenAt = data?.writtenAtMs;
+    if (typeof writtenAt !== 'number' || !Number.isFinite(writtenAt) || writtenAt <= 0 ||
+        !isObject(data.rate_limits))
+        return null;
+    const windows = [];
+    for (const [key, kind] of [['five_hour', SESSION], ['seven_day', WEEKLY]]) {
+        const entry = data.rate_limits[key];
+        if (!isObject(entry) || !isPercent(entry.used_percentage))
+            continue;
+        const resets = entry.resets_at;
+        windows.push({
+            id: kind,
+            kind,
+            model: null,
+            percent: entry.used_percentage,
+            resetsAt: typeof resets === 'number' && Number.isFinite(resets) && resets > 0
+                ? resets * 1000 : null,
+            severity: null,
+            fetchedAt: writtenAt,
+        });
+    }
+    return windows.length ? {writtenAt, windows} : null;
+}
+
+// Reset times from the two sources differ by a fraction of a second (the
+// cache has microseconds, the status line whole seconds).
+const SAME_WINDOW_MS = 60 * 1000;
+
+/**
+ * Whether `fresh` (the status line's) is the better reading of a window
+ * than `old` (the cache's). Saved later is not enough: an idle session's
+ * status line can save numbers it got hours ago. So a later window wins,
+ * an earlier one loses, and within the same window the higher use wins
+ * (use only grows until the window resets).
+ */
+export function isNewerReading(fresh, old) {
+    if (fresh.resetsAt !== null && old.resetsAt !== null) {
+        const d = fresh.resetsAt - old.resetsAt;
+        if (Math.abs(d) >= SAME_WINDOW_MS)
+            return d > 0;
+        if (fresh.percent !== old.percent)
+            return fresh.percent > old.percent;
+    }
+    return fresh.fetchedAt > old.fetchedAt;
+}
+
+/**
+ * Claude Code's cached usage with the status line's newer Session and
+ * Weekly in place of older ones (isNewerReading). Rows only the cache has
+ * (per model, credits) keep their own, older `fetchedAt`.
+ *
+ * @param {?object} usage from usageFromConfig
+ * @param {?object} status from statusLineFromFile
+ * @returns {?object} {fetchedAt (the newest reading), windows}
+ */
+export function mergeStatusLine(usage, status) {
+    if (!status)
+        return usage;
+    const windows = (usage?.windows ?? []).map(w => ({...w}));
+    for (const fresh of status.windows) {
+        const i = windows.findIndex(w => w.id === fresh.id);
+        if (i < 0)
+            windows.push(fresh);
+        else if (isNewerReading(fresh, windows[i]))
+            windows[i] = fresh;
+    }
+    return {
+        fetchedAt: Math.max(...windows.map(w => w.fetchedAt)),
+        windows: sorted(windows),
+    };
 }
 
 // {kind: 'session' | 'weekly_all' | 'weekly_scoped', percent, resets_at,

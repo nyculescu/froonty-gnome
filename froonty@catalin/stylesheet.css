@@ -131,6 +131,83 @@
 
 /* Notes feature */
 
+.froonty-zerotier {
+    spacing: 6px;
+}
+
+.froonty-zerotier-header {
+    spacing: 6px;
+}
+
+.froonty-zerotier-title {
+    margin-left: 4px;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.froonty-zerotier-status {
+    opacity: 0.7;
+}
+
+.froonty-zerotier-notices {
+    spacing: 3px;
+}
+
+.froonty-zerotier-notice {
+    color: #ffd27a;
+    font-size: 0.85em;
+}
+
+.froonty-zerotier-error,
+.froonty-zerotier-network-problem {
+    color: #ff8b8b;
+    font-size: 0.85em;
+}
+
+.froonty-zerotier-action {
+    border-radius: 6px;
+    padding: 2px 8px;
+    background-color: rgba(255, 255, 255, 0.08);
+}
+
+.froonty-zerotier-action-content {
+    spacing: 5px;
+}
+
+.froonty-zerotier-action StIcon {
+    icon-size: 14px;
+}
+
+.froonty-zerotier-network-scroll {
+    min-height: 48px;
+}
+
+.froonty-zerotier-network-list {
+    spacing: 3px;
+}
+
+.froonty-zerotier-network {
+    spacing: 1px;
+    padding: 4px 6px;
+    border-radius: 5px;
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.froonty-zerotier-network-name {
+    font-size: 0.9em;
+    font-weight: 600;
+}
+
+.froonty-zerotier-network-meta {
+    opacity: 0.65;
+    font-size: 0.75em;
+}
+
+.froonty-zerotier-network-ok {
+    color: #8fd88f;
+    font-size: 0.75em;
+}
+
 .froonty-notes-header {
     spacing: 6px;
 }

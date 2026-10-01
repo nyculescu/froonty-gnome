@@ -14,11 +14,18 @@ export default {
     get title() {
         return _('Claude');
     },
-    icon: sparkIcon(),
+    // A getter: no GObject is created when the module loads, before
+    // enable() (extensions.gnome.org review guidelines).
+    get icon() {
+        return sparkIcon();
+    },
     enabledKey: 'claude-enabled',
     // Three limits and the cloud session credits, each a name, a bar and a
     // reset time; then livenerf's Opus 5.5 row with its chart.
     hubSize: {width: 380, height: 465},
-    createService: () => new ClaudeService({benchmark: new LivenerfService()}),
+    createService: ctx => new ClaudeService({
+        benchmark: new LivenerfService(),
+        settings: ctx.settings,
+    }),
     createView: (ctx, service) => new ClaudeView(ctx, service),
 };

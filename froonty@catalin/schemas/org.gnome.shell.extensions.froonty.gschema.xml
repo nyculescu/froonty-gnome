@@ -73,7 +73,32 @@
     <key name="claude-enabled" type="b">
       <default>true</default>
       <summary>Show the Claude tab</summary>
-      <description>Claude plan usage (session, weekly, weekly per model) and when each resets, as Claude Code last checked it. Froonty reads Claude Code's config file; it never contacts Claude itself.</description>
+      <description>Claude plan usage (session, weekly, weekly per model, cloud session credits) and when each resets, as Claude Code last checked it. Froonty reads Claude Code's config file and what its own Claude Code status line saved; it never signs in to Claude itself.</description>
+    </key>
+    <key name="zerotier-enabled" type="b">
+      <default>true</default>
+      <summary>Show the ZeroTier tab</summary>
+      <description>Whether ZeroTier runs, starts with the computer and reaches its networks, and how each joined network is doing. Turned off on Froonty's first start when ZeroTier is not installed.</description>
+    </key>
+    <key name="zerotier-install-checked" type="b">
+      <default>false</default>
+      <summary>Internal: ZeroTier's installation was checked</summary>
+      <description>Set on Froonty's first start, once it has turned the ZeroTier tab off if ZeroTier is not installed, so that check is not repeated.</description>
+    </key>
+    <key name="claude-ask-claude-code" type="b">
+      <default>true</default>
+      <summary>Ask Claude Code for fresh usage</summary>
+      <description>When the Claude tab or its panic button comes on screen, run Claude Code's /usage (at most once a minute) so its usage cache is current. Off: only Froonty's Claude Code status line updates Session and Weekly. Froonty turns this off as Power Saver mode or a battery below 20% (on battery) begins, and back on as it ends if it was Froonty that turned it off; turning it on meanwhile is kept.</description>
+    </key>
+    <key name="claude-ask-paused-for-power" type="b">
+      <default>false</default>
+      <summary>Internal: fresh usage turned off for low power</summary>
+      <description>Set while Froonty has turned claude-ask-claude-code off for low power, so it turns it back on when low power ends.</description>
+    </key>
+    <key name="claude-low-power-handled" type="b">
+      <default>false</default>
+      <summary>Internal: the current low power was acted on</summary>
+      <description>Set from the start of a low-power stretch to its end, so turning claude-ask-claude-code back on during it is kept.</description>
     </key>
 
     <!-- Clock -->
