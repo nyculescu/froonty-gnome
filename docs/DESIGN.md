@@ -66,7 +66,7 @@ What changed for Froonty, and how it adapts:
 2. Event-driven. No polling loop exists. A timer may only be
    added with a written justification and a configurable interval.
 3. No subprocesses, no background process, and no network access with
-   one exception (user request, 0.2.0-rc3): the Claude tab's livenerf row
+   one exception (user request, 0.2.1-rc1): the Claude tab's livenerf row
    GETs two public files from GitHub while the tab is on screen, at most
    once an hour ([features/claude.md](features/claude.md)).
 4. Every private Shell API is listed in section 6 and isolated in `shell/`.
@@ -378,7 +378,7 @@ Release candidate 0.2.0-rc2 (GNOME Shell 50.1; start at login, Claude tab,
 its cloud session credits and panic button): **176/176** in both session
 modes, plus 59 unit tests.
 
-Release candidate 0.2.0-rc3 (the Claude tab's livenerf row and chart):
+Release candidate 0.2.1-rc1 (the Claude tab's livenerf row and chart):
 **178/178** in both session modes, plus 73 unit tests.
 
 The Ubuntu run found a **GNOME Shell 46 race** in `ui/extensionSystem.js`:

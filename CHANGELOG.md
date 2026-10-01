@@ -1,8 +1,9 @@
 # Changelog
 
-## 0.2.0-rc3 (2026-09-30)
+## 0.2.1-rc1 (2026-09-30)
 
-Third release candidate, for GNOME Shell 50 on Ubuntu 26.04 (Wayland).
+First release candidate of 0.2.1, for GNOME Shell 50 on Ubuntu 26.04
+(Wayland). It builds on 0.2.0-rc2.
 
 ### Added
 - **Claude tab: "Opus 5.5 vs launch week".** A last row shows what the
