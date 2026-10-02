@@ -77,6 +77,22 @@ export class ClipboardView {
             y_align: Clutter.ActorAlign.CENTER,
         });
         header.add_child(this._status);
+        // "Paste as plain text": only while formatted text is on the clipboard.
+        const plainContent = new St.BoxLayout({style_class: 'froonty-clipboard-plain-content'});
+        plainContent.add_child(new St.Icon({icon_name: 'format-text-plaintext-symbolic'}));
+        plainContent.add_child(new St.Label({
+            text: _('Plain text'),
+            y_align: Clutter.ActorAlign.CENTER,
+        }));
+        this._plainButton = new St.Button({
+            style_class: 'froonty-clipboard-plain',
+            accessible_name: _('Paste as plain text: keep only the text, without formatting'),
+            can_focus: true,
+            track_hover: true,
+            child: plainContent,
+        });
+        this._plainButton.connect('clicked', () => this._recorder.copyAsPlainText());
+        header.add_child(this._plainButton);
         this._clearButton = new St.Button({
             style_class: 'froonty-icon-button',
             accessible_name: _('Clear clipboard history'),
@@ -117,6 +133,9 @@ export class ClipboardView {
         overlay.add_child(this._tooltip.actor);
         this.actor.add_child(overlay);
 
+        this._tooltip.attach(this._plainButton, () =>
+            _('Paste as plain text: the next paste has no formatting'), 'below');
+
         this._recorderId = this._recorder.connect('changed', () => this._onChanged());
         this._sync();
     }
@@ -152,6 +171,7 @@ export class ClipboardView {
         else
             this._status.text = entries.length ? _('Click an entry to copy it again') : '';
         this._clearButton.visible = entries.length > 0;
+        this._plainButton.visible = this._recorder.currentFormatted;
         this._empty.visible = loaded && entries.length === 0;
         this._scroll.visible = entries.length > 0;
 

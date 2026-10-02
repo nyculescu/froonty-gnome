@@ -1355,6 +1355,8 @@ async function testClipboard(outDir) {
         passwordText === '••••••••' && !saved.includes('Kx9vR2mQpL4wTz8') && recorder.password !== null,
         `${passwordText} saved=${saved.includes('Kx9vR2mQpL4wTz8')}`);
     const [w, h] = pill().get_transformed_size();
+    check('clipboard: "Plain text" is offered only for formatted text',
+        view && !view._plainButton.visible && recorder.currentFormatted === false);
     check('clipboard: the tab opens at its configured size',
         w === 400 * scale() && h === 440 * scale(), `${w}x${h}`);
     await screenshotTop(outDir, 'clipboard', 520);

@@ -3,7 +3,8 @@ import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 
 import {
-    addEntry, classify, copiedFilesText, excerpt, imageExtension, isIgnoredApp, looksLikePassword,
+    addEntry, classify, copiedFilesText, excerpt, imageExtension, isFormatted, isIgnoredApp,
+    looksLikePassword,
     parseFiles,
     trim, uriName, uriPath, validEntries,
 } from '../../froonty@catalin/features/clipboard/entries.js';
@@ -53,6 +54,15 @@ test('text that looks like a password', () => {
         '2026-10-01T16:42', 'a3f9c2e1d4b5a6c7', 'snake_case_1', 'CONST_VALUE_2', 'foo(bar)=1;',
         'abcdefgh', 'ABCD1234'])
         ok(!looksLikePassword(no), no);
+});
+
+test('formatted text is recognised by its extra formats', () => {
+    ok(isFormatted([...TEXT, 'text/html']));
+    ok(isFormatted([...TEXT, 'text/html;charset=utf-8']));
+    ok(isFormatted([...TEXT, 'text/rtf']));
+    ok(isFormatted([...TEXT, 'application/x-openoffice-embed-source-xml;windows_formatname="Star Embed Source (XML)"']));
+    ok(!isFormatted(TEXT));
+    ok(!isFormatted(['image/png']));
 });
 
 test('copied and cut files round-trip', () => {
@@ -421,6 +431,31 @@ test('the limit drops the oldest entries and their images', async () => {
     eq(recorder.entries.map(e => e.text), ['c']);
     recorder.destroy();
     eq(settings.handlers.size, 0);
+});
+
+test('paste as plain text keeps only the text of a formatted copy', async () => {
+    const {recorder, fake} = await recorderWith();
+    fake.copy({[PLAIN]: 'Hello world', 'text/html': '<b>Hello</b> world'});
+    await settle();
+    eq(recorder.currentFormatted, true);
+    eq(recorder.entries.map(e => e.text), ['Hello world']);
+    ok(recorder.copyAsPlainText());
+    await settle();
+    eq([...fake.state.offer.keys()], [PLAIN]);
+    eq(fake.state.offer.get(PLAIN), 'Hello world');
+    eq(recorder.currentFormatted, false);
+    eq(recorder.entries.length, 1, 'the same entry, not a new one');
+    eq(recorder.currentId, recorder.entries[0].id);
+    ok(!recorder.copyAsPlainText(), 'nothing to do for plain text');
+
+    fake.copy({[PLAIN]: 'plain only'});
+    await settle();
+    eq(recorder.currentFormatted, false);
+    fake.copy({[PLAIN]: 'again', 'text/html': '<i>again</i>'});
+    await settle();
+    fake.empty();
+    eq(recorder.currentFormatted, false, 'cleared');
+    recorder.destroy();
 });
 
 test('remove and clear', async () => {

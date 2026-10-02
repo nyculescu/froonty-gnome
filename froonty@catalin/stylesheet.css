@@ -690,3 +690,19 @@
 .froonty-clipboard-hidden {
     letter-spacing: 2px;
 }
+.froonty-clipboard-plain {
+    border-radius: 6px;
+    padding: 2px 8px;
+    font-size: 0.85em;
+    background-color: rgba(255, 255, 255, 0.08);
+}
+.froonty-clipboard-plain:hover,
+.froonty-clipboard-plain:focus {
+    background-color: rgba(255, 255, 255, 0.16);
+}
+.froonty-clipboard-plain-content {
+    spacing: 5px;
+}
+.froonty-clipboard-plain StIcon {
+    icon-size: 14px;
+}

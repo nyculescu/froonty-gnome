@@ -19,6 +19,18 @@ const TEXT_TYPES = ['text/plain;charset=utf-8', 'text/plain', 'UTF8_STRING', 'ST
 export const MAX_TEXT_LENGTH = 1024 * 1024;
 export const MAX_IMAGE_BYTES = 16 * 1024 * 1024;
 
+// Formats a copy of formatted text offers next to its plain text (web
+// pages, office suites, Qt apps). Their plain text alone pastes without
+// formatting ("Paste as plain text").
+const FORMATTED = [/^text\/html\b/, /^text\/rtf$/, /^application\/rtf$/, /^text\/richtext$/,
+    /^application\/x-qt-richtext$/, /^application\/vnd\.oasis\.opendocument\./,
+    /^application\/x-openoffice/];
+
+/** Whether a copy carries formatting besides its plain text. */
+export function isFormatted(mimetypes) {
+    return mimetypes.some(type => FORMATTED.some(pattern => pattern.test(type)));
+}
+
 /**
  * Whether the app that copied is one whose copies are never kept: its
  * app id, window class or sandboxed app id contains one of `ignored`

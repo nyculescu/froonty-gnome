@@ -110,6 +110,35 @@ from the tab.
   when the callback returns, so they are copied inside it. Keeping them
   crashed the Shell in testing.
 
+## Paste as plain text
+
+When the copy on the clipboard is formatted text (it also offers
+`text/html`, RTF, or an office suite's or Qt's rich formats;
+`entries.js` `isFormatted`), the tab's header shows **Plain text**. A
+click puts only its plain text back on the clipboard, so the next paste
+anywhere has no formatting.
+
+Entries copied again from the history are always plain text: only the
+text is kept.
+
+Froonty does not paste by itself. That would need simulated key
+presses, and the review guidelines forbid a default shortcut for
+clipboard data. Many apps also paste without formatting with
+Ctrl+Shift+V.
+
+## Screenshots
+
+Screenshots are already in the history; there is nothing separate to
+turn on. In GNOME Shell 50, Print (the screenshot UI), Shift+Print (the
+whole screen) and Alt+Print (a window) all end in `_storeScreenshot`,
+which puts the PNG on the clipboard (`ui/screenshot.js`, checked
+2026-10-02). It arrives as any other image copy. The exception is a
+password app having the focus: then the capture is not kept, because a
+screenshot of it may show a secret.
+
+Screencasts (video) are not put on the clipboard, so they are not in the
+history.
+
 ## Storage
 
 ```

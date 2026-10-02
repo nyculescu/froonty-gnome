@@ -27,7 +27,7 @@ import GLib from 'gi://GLib';
 
 import {Emitter} from '../../core/emitter.js';
 import {
-    addEntry, classify, copiedFilesText, COPIED_FILES, imageExtension, looksLikePassword,
+    addEntry, classify, copiedFilesText, COPIED_FILES, imageExtension, isFormatted, looksLikePassword,
     MAX_IMAGE_BYTES, MAX_TEXT_LENGTH, parseFiles, trim,
 } from './entries.js';
 
@@ -91,6 +91,11 @@ export class ClipboardRecorder extends Emitter {
         this.loaded = false;
         /** The id of the entry on the clipboard now, or null. */
         this.currentId = null;
+        /**
+         * Whether what is on the clipboard now is text with formatting
+         * (copyAsPlainText() leaves only its plain text).
+         */
+        this.currentFormatted = false;
         /** Why the last copy was not kept (entries.js classify), or null. */
         this.lastSkip = null;
     }
@@ -163,6 +168,20 @@ export class ClipboardRecorder extends Emitter {
         return true;
     }
 
+    /**
+     * "Paste as plain text": puts the current text back without its
+     * formatting, so the next paste anywhere is plain. Froonty never pastes
+     * by itself (review guidelines).
+     */
+    copyAsPlainText() {
+        const entry = this.entries.find(e => e.id === this.currentId);
+        if (!entry || entry.kind !== 'text' || !this.currentFormatted)
+            return false;
+        this._ownCopy = true;
+        this._clipboard.setText(entry.text);
+        return true;
+    }
+
     async remove(id) {
         if (this.password?.id === id) {
             this._dropPassword();
@@ -209,6 +228,7 @@ export class ClipboardRecorder extends Emitter {
     // app that copied quitting): a hidden password goes with it.
     _onCleared() {
         this._seq++;
+        this.currentFormatted = false;
         this._ownCopy = null;
         this._dropPassword();
         this.currentId = null;
@@ -250,6 +270,7 @@ export class ClipboardRecorder extends Emitter {
 
     async _capture() {
         const seq = ++this._seq;
+        this.currentFormatted = false;
         const own = this._ownCopy;
         this._ownCopy = null;
         // Anything copied replaces a hidden password, except putting that
@@ -271,7 +292,7 @@ export class ClipboardRecorder extends Emitter {
                 this.emit('changed');
                 return;
             }
-            await this._keep(entry.entry, entry.bytes);
+            await this._keep(entry.entry, entry.bytes, entry.formatted);
         } catch (e) {
             // A copy that cannot be read (its app quit meanwhile) is not kept.
             if (!this._destroyed && seq === this._seq) {
@@ -305,7 +326,8 @@ export class ClipboardRecorder extends Emitter {
     // What the clipboard holds now, as an entry to keep, a password, or why not.
     async _read(own, seq) {
         const skip = reason => ({kept: false, reason});
-        const decision = classify(this._clipboard.mimetypes(), {
+        const mimetypes = this._clipboard.mimetypes();
+        const decision = classify(mimetypes, {
             names: own ? [] : this._focusedApp(),
             ignored: this._settings.get_strv(IGNORED_KEY),
         });
@@ -329,7 +351,11 @@ export class ClipboardRecorder extends Emitter {
             // A pick from the history stays history, whatever it looks like.
             if (own !== true && this._settings.get_boolean(DETECT_KEY) && looksLikePassword(text))
                 return {...password, reason: 'looks'};
-            return {kept: true, entry: {...base, kind: 'text', hash: `text:${hash}`, text}};
+            return {
+                kept: true,
+                formatted: isFormatted(mimetypes),
+                entry: {...base, kind: 'text', hash: `text:${hash}`, text},
+            };
         }
 
         const bytes = await this._clipboard.content(decision.mime);
@@ -362,7 +388,7 @@ export class ClipboardRecorder extends Emitter {
         };
     }
 
-    async _keep(entry, bytes) {
+    async _keep(entry, bytes, formatted = false) {
         const known = this.entries.some(e => e.hash === entry.hash);
         // A new image is on disk before the history names it.
         if (entry.kind === 'image' && !known)
@@ -372,6 +398,7 @@ export class ClipboardRecorder extends Emitter {
         const {entries, top, dropped} = addEntry(this.entries, entry, this._limit());
         this.entries = entries;
         this.currentId = top.id;
+        this.currentFormatted = formatted;
         this.lastSkip = null;
         this.emit('changed');
         await this._store.save(entries);

@@ -15,8 +15,13 @@
     •••••••• and can be copied again for 5 minutes (adjustable; 0 = never
     listed), until the clipboard is cleared or something else is copied,
     whichever comes first.
-  - Settings → Clipboard: entries to keep (default 50), the apps never
-    recorded, and the tab's size. The extension's description now declares
+  - **Paste as plain text:** while formatted text (from a web page or an
+    office suite) is on the clipboard, a "Plain text" button leaves only
+    its text, so the next paste has no formatting.
+  - Screenshots (Print, Shift+Print, Alt+Print) are on the clipboard in
+    GNOME, so they show up in the history too.
+  - Settings → Clipboard: entries to keep (default 50), how long a password
+    is listed, password recognition, the password apps, and the tab's size. The extension's description now declares
     clipboard access, as the review guidelines require.
 
 ### Changed
