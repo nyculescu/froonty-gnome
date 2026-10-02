@@ -92,6 +92,11 @@
     icon-size: 16px;
 }
 
+/* Feature tabs: 25% larger than other icon buttons (user request). */
+.froonty-tab StIcon {
+    icon-size: 20px;
+}
+
 .froonty-icon-button:hover,
 .froonty-icon-button:focus {
     color: #ffffff;
@@ -613,4 +618,75 @@
     margin-left: 0;
     padding-right: 8px;
     font-size: 0.78em;
+}
+
+/* Clipboard feature: the history, newest first; the entry now on the
+   clipboard is outlined. */
+.froonty-clipboard {
+    spacing: 4px;
+}
+.froonty-clipboard-header {
+    spacing: 6px;
+    padding: 0 4px;
+}
+.froonty-clipboard-status,
+.froonty-clipboard-empty {
+    font-size: 0.85em;
+    color: rgba(255, 255, 255, 0.6);
+}
+.froonty-clipboard-empty {
+    padding: 8px 4px;
+}
+.froonty-clipboard-list {
+    spacing: 4px;
+    padding: 2px 4px 4px;
+}
+.froonty-clipboard-row {
+    spacing: 2px;
+    border-radius: 7px;
+    border: 1px solid transparent;
+    background-color: rgba(255, 255, 255, 0.05);
+}
+.froonty-clipboard-row-current {
+    border-color: rgba(98, 160, 234, 0.7);
+}
+.froonty-clipboard-entry {
+    border-radius: 7px;
+    padding: 5px 6px;
+    transition-duration: 150ms;
+}
+.froonty-clipboard-entry:hover,
+.froonty-clipboard-entry:focus {
+    background-color: rgba(255, 255, 255, 0.08);
+}
+.froonty-clipboard-entry-content {
+    spacing: 8px;
+}
+.froonty-clipboard-kind {
+    icon-size: 14px;
+    padding-top: 2px;
+    color: rgba(255, 255, 255, 0.55);
+}
+.froonty-clipboard-body {
+    spacing: 2px;
+}
+.froonty-clipboard-preview {
+    font-size: 0.88em;
+}
+.froonty-clipboard-meta {
+    font-size: 0.75em;
+    font-feature-settings: "tnum";
+    color: rgba(255, 255, 255, 0.5);
+}
+.froonty-clipboard-row-current .froonty-clipboard-meta {
+    color: #99c1f1;
+}
+.froonty-clipboard-remove StIcon {
+    icon-size: 14px;
+}
+.froonty-clipboard-thumbnail {
+    max-width: 240px;
+}
+.froonty-clipboard-hidden {
+    letter-spacing: 2px;
 }

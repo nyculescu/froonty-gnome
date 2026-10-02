@@ -4,6 +4,7 @@
 // separate GTK process and cannot load these Shell-side modules).
 
 import claude from './claude/index.js';
+import clipboard from './clipboard/index.js';
 import clock from './clock/index.js';
 import notes from './notes/index.js';
 import sysmon from './sysmon/index.js';
@@ -14,5 +15,6 @@ export const FEATURES = [
     notes,
     claude,
     sysmon,
+    clipboard,
     ...LOCAL_FEATURES,
 ];

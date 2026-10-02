@@ -60,6 +60,11 @@ feature has a design note in [docs/features/](docs/features/).
     (1-10 s in Settings); sections switched off are not read.
   - NVIDIA cards are read with `nvidia-smi`, and never while asleep. See
     [docs/features/sysmon.md](docs/features/sysmon.md).
+- **Clipboard** tab (off by default; turn it on in Settings → Clipboard):
+  a history of what you copy or cut, meaning text, images and file
+  locations. Click an entry to copy it again. It is kept on this computer
+  only, readable by you only; password managers' copies are never kept.
+  See [docs/features/clipboard.md](docs/features/clipboard.md).
 - **ZeroTier** tab (working-tree installs only): whether ZeroTier runs,
   starts with the computer and reaches its network, and how each joined
   network is doing, with Start/Stop. Networks are managed in ZeroTier
@@ -96,7 +101,8 @@ froonty@catalin/             the extension (this directory is what gets installe
 │   ├── notes/               Markdown notes: store, service, tabs, editor, prefs
 │   ├── claude/              Claude plan usage, read from Claude Code's config;
 │   │                        livenerf's Opus 5.5 row, fetched from GitHub
-│   └── sysmon/              Btop tab (system monitor): /proc and /sys, nvidia-smi
+│   ├── sysmon/              Btop tab (system monitor): /proc and /sys, nvidia-smi
+│   └── clipboard/           clipboard history: recorder, store, tab
 ├── panic/                   panic button catalog, factories, mute buttons, prefs
 ├── core/                    shared by features: emitter.js, tooltip.js
 ├── services/clock.js        clock ticks from the top bar's GnomeDesktop.WallClock

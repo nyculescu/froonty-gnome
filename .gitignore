@@ -3,3 +3,6 @@ dist/
 
 # Ignore all files in the docs/local/ directory
 docs/local/
+
+# Logo artwork (kept out of the repository)
+logo/

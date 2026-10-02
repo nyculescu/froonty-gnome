@@ -233,7 +233,7 @@ export class SysmonView {
         const key = gpus?.map(gpu => gpu.id).join(',') ?? '';
         if (key !== this._gpuKey) {
             this._gpuList.destroy_all_children();
-            this._gpus = (gpus ?? []).map(() => addMeter(this._gpuList));
+            this._gpus = (gpus ?? []).map(() => addMeter(this._gpuList, {steadyDetail: true}));
             if (gpus && !gpus.length) {
                 this._gpuList.add_child(new St.Label({
                     style_class: 'froonty-sysmon-detail',
@@ -344,11 +344,21 @@ class Level extends St.BoxLayout {
 // by name, so it holds no references of its own to release.
 const Meter = GObject.registerClass(
 class Meter extends St.BoxLayout {
-    _init({level = true, detail = true} = {}) {
+    /**
+     * @param {object} [options]
+     * @param {boolean} [options.level] a level after the value
+     * @param {boolean} [options.detail] a line of detail under them
+     * @param {boolean} [options.steadyDetail] keep that line's room when it
+     *   is empty, so the row's height never changes: a row that grew and
+     *   shrank with each sample (an iGPU between idle and busy) made the
+     *   list jump while scrolled to its end
+     */
+    _init({level = true, detail = true, steadyDetail = false} = {}) {
         super._init({
             style_class: 'froonty-sysmon-row',
             orientation: Clutter.Orientation.VERTICAL,
         });
+        this._steadyDetail = steadyDetail;
         const heading = new St.BoxLayout();
         heading.add_child(new St.Label({
             name: 'name', style_class: 'froonty-sysmon-name', x_expand: true,
@@ -376,7 +386,7 @@ class Meter extends St.BoxLayout {
         const detailLabel = this._part('detail');
         if (detailLabel) {
             detailLabel.text = detail;
-            detailLabel.visible = Boolean(detail);
+            detailLabel.visible = this._steadyDetail || Boolean(detail);
         }
     }
 });

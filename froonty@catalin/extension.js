@@ -13,6 +13,7 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import {Extension, gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 
 import {acquireShared, releaseShared} from './features/claude/refresher.js';
+import {acquireRecorder, releaseRecorder} from './features/clipboard/shared.js';
 import {FEATURES} from './features/registry.js';
 import {ClockService} from './services/clock.js';
 import {PanelClock} from './shell/dateMenu.js';
@@ -49,6 +50,7 @@ export default class FroontyExtension extends Extension {
             'changed::island-enabled', () => this._syncIsland(),
             'changed::hide-panel-clock', () => this._syncPanelClock(),
             'changed::claude-enabled', () => this._syncClaudeRefresher(),
+            'changed::clipboard-enabled', () => this._syncClipboardRecorder(),
             this);
 
         // One-time checks of features (e.g. a tab whose app is not
@@ -61,6 +63,8 @@ export default class FroontyExtension extends Extension {
         this._syncIsland();
         this._holdsClaudeRefresher = false;
         this._syncClaudeRefresher();
+        this._holdsClipboardRecorder = false;
+        this._syncClipboardRecorder();
     }
 
     disable() {
@@ -68,6 +72,9 @@ export default class FroontyExtension extends Extension {
         if (this._holdsClaudeRefresher)
             releaseShared();
         this._holdsClaudeRefresher = false;
+        if (this._holdsClipboardRecorder)
+            releaseRecorder();
+        this._holdsClipboardRecorder = false;
         Main.wm.removeKeybinding(TOGGLE_SHORTCUT_KEY);
         this._destroyIsland();
         this._launcher?.destroy();
@@ -91,6 +98,19 @@ export default class FroontyExtension extends Extension {
             acquireShared(this._settings);
         else
             releaseShared();
+    }
+
+    // Clipboard history records copies as long as the Clipboard tab is
+    // enabled, not only once its tab has been opened (or while it is shown).
+    _syncClipboardRecorder() {
+        const want = this._settings.get_boolean('clipboard-enabled');
+        if (want === this._holdsClipboardRecorder)
+            return;
+        this._holdsClipboardRecorder = want;
+        if (want)
+            acquireRecorder(this._settings);
+        else
+            releaseRecorder();
     }
 
     _onShortcut() {

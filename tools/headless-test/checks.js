@@ -426,6 +426,10 @@ async function testHub(outDir) {
             'Clock,Notes,Claude,Btop,ZeroTier',
         hub._tabColumn.get_children().map(b => b.accessible_name).join(','));
     check('hub: clock is the active tab', hub.activeFeature?.id === 'clock');
+    check('hub: tab icons are 20 px (25% over other icon buttons)',
+        tabButton('clock').child.get_width() === 20 * scale() &&
+        hub.settingsButton.child.get_width() === 16 * scale(),
+        `${tabButton('clock').child.get_width()} / ${hub.settingsButton.child.get_width()}`);
 
     island().expand();
     await sleep(animationWait());
@@ -454,6 +458,15 @@ async function testHub(outDir) {
         sysmon?.service.snapshot?.memory?.total > 0 && sysmon.view._memory._part('value').text !== '—',
         sysmon?.view._memory._part('value').text);
     await screenshotTop(outDir, 'sysmon', 600);
+    // An iGPU goes between idle (no detail) and busy every sample; its row
+    // must not change height, or a list scrolled to its end jumps.
+    const gpuRow = sysmon?.view._gpus[0];
+    const rowHeight = () => gpuRow.get_preferred_height(-1)[1];
+    gpuRow?.update({name: 'GPU', value: 'Idle', fraction: null, detail: ''});
+    const idleHeight = gpuRow ? rowHeight() : -1;
+    gpuRow?.update({name: 'GPU', value: '5%', fraction: 0.05, detail: '650 MHz'});
+    check('sysmon: a GPU row keeps its height between idle and busy',
+        gpuRow && idleHeight === rowHeight(), `${idleHeight} vs ${gpuRow && rowHeight()}`);
     settings().set_boolean('sysmon-cores-expanded', true);
     await sleep(2500);
     check('sysmon: unfolding lists each thread with its load',
@@ -1285,6 +1298,89 @@ async function testClaudeFreshness(view, service, button) {
 const claudeButton = () => island()._hub._panicBar._buttons
     .find(b => b.actor.has_style_class_name('froonty-claude-session')) ?? null;
 
+
+// ---------------------------------------------------------------- clipboard
+
+const stClipboard = () => St.Clipboard.get_default();
+const CLIPBOARD = St.ClipboardType.CLIPBOARD;
+const clipboardRecorder = () => island()._hub._entries.get('clipboard')?.service?.recorder ?? null;
+
+function clipboardText() {
+    return new Promise(resolve =>
+        stClipboard().get_text(CLIPBOARD, (_c, text) => resolve(text)));
+}
+
+async function testClipboard(outDir) {
+    const selection = global.display.get_selection();
+    const before = countHandlers(selection, 'owner-changed');
+    check('clipboard: off by default, so nothing listens to copies',
+        !settings().get_boolean('clipboard-enabled') && !tabButton('clipboard'));
+
+    settings().set_boolean('clipboard-enabled', true);
+    await sleep(SETTLE_MS);
+    check('clipboard: turning it on listens to copies, once',
+        countHandlers(selection, 'owner-changed') === before + 1,
+        `${before} -> ${countHandlers(selection, 'owner-changed')}`);
+
+    // Recorded with the island collapsed and the tab never opened.
+    stClipboard().set_text(CLIPBOARD, 'Froonty clipboard test: first line\nsecond line');
+    await sleep(SETTLE_MS);
+    const pixbuf = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, false, 8, 48, 32);
+    pixbuf.fill(0x62a0eaff);
+    const [, png] = pixbuf.save_to_bufferv('png', [], []);
+    stClipboard().set_content(CLIPBOARD, 'image/png', new GLib.Bytes(png));
+    await sleep(SETTLE_MS);
+    stClipboard().set_content(CLIPBOARD, 'x-special/gnome-copied-files', new GLib.Bytes(
+        new TextEncoder().encode('cut\nfile:///home/test/Report%202026.pdf\nfile:///home/test/Photos')));
+    await sleep(SETTLE_MS);
+    // A browser's password manager marks nothing: the text gives it away.
+    stClipboard().set_text(CLIPBOARD, 'Kx9vR2mQpL4wTz8!');
+    await sleep(SETTLE_MS);
+
+    island().expand();
+    await sleep(animationWait());
+    await clickActor(tabButton('clipboard'));
+    await sleep(animationWait());
+    const recorder = clipboardRecorder();
+    const view = island()._hub._entries.get('clipboard')?.view;
+    const rows = view?._list.get_children() ?? [];
+    check('clipboard: copies made with the tab closed are listed, newest first',
+        recorder?.shown.map(e => e.kind).join(',') === 'password,files,image,text' && rows.length === 4,
+        `${recorder?.shown.map(e => e.kind).join(',')} rows=${rows.length}`);
+    const historyFile = Gio.File.new_for_path(GLib.build_filenamev([GLib.get_user_data_dir(),
+        'froonty', 'clipboard', 'history.json']));
+    const saved = new TextDecoder().decode(historyFile.load_contents(null)[1]);
+    const passwordText = rows[0].get_first_child().child.get_children()[1].get_first_child().text;
+    check('clipboard: a copied password is listed hidden, and never saved',
+        passwordText === '••••••••' && !saved.includes('Kx9vR2mQpL4wTz8') && recorder.password !== null,
+        `${passwordText} saved=${saved.includes('Kx9vR2mQpL4wTz8')}`);
+    const [w, h] = pill().get_transformed_size();
+    check('clipboard: the tab opens at its configured size',
+        w === 400 * scale() && h === 440 * scale(), `${w}x${h}`);
+    await screenshotTop(outDir, 'clipboard', 520);
+
+    // Click the text entry (the oldest): it is on the clipboard again.
+    await clickActor(rows[3].get_first_child());
+    await sleep(SETTLE_MS);
+    check('clipboard: a click copies the entry back, ready to paste',
+        await clipboardText() === 'Froonty clipboard test: first line\nsecond line' &&
+        recorder.entries[0].kind === 'text' && recorder.currentId === recorder.entries[0].id &&
+        recorder.entries.length === 3 && recorder.password === null,
+        `${await clipboardText()} ${recorder.entries.map(e => e.kind)} password=${recorder.password !== null}`);
+    check('clipboard: the history is in the private data folder',
+        Gio.File.new_for_path(GLib.build_filenamev([GLib.get_user_data_dir(), 'froonty',
+            'clipboard', 'history.json'])).query_exists(null));
+
+    await clickActor(tabButton('clock'));
+    await sleep(animationWait());
+    island().collapse();
+    await sleep(animationWait());
+    settings().reset('clipboard-enabled');
+    await sleep(SETTLE_MS);
+    check('clipboard: turning it off stops listening to copies',
+        countHandlers(selection, 'owner-changed') === before && !tabButton('clipboard'));
+}
+
 async function testClaude(outDir) {
     const hub = () => island()._hub;
     writeClaudeConfig(claudeConfig());
@@ -2012,6 +2108,7 @@ export async function runAll(outDir) {
         await testNotes(outDir);
         await testNotesTabsAndColors(outDir);
         await testClaude(outDir);
+        await testClipboard(outDir);
         await testSettings(outDir);
         await testCoversPanelClock(outDir);
         await testMonitors();

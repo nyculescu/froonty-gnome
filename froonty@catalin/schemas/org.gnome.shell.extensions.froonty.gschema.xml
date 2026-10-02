@@ -166,6 +166,47 @@
       <summary>Btop: each thread unfolded</summary>
     </key>
 
+    <!-- Clipboard feature (docs/features/clipboard.md) -->
+    <key name="clipboard-enabled" type="b">
+      <default>false</default>
+      <summary>Show the Clipboard tab and record clipboard history</summary>
+      <description>While on, Froonty keeps what you copy or cut (text, images, file and folder locations) in a history on this computer only (~/.local/share/froonty/clipboard, readable by you only), so it can be copied again. Passwords are never saved: copies marked secret by password managers, copies made while an app in clipboard-ignored-apps has the focus, and (clipboard-detect-passwords) text that looks like a password. Off by default.</description>
+    </key>
+    <key name="clipboard-history-size" type="i">
+      <range min="5" max="500"/>
+      <default>50</default>
+      <summary>Clipboard history: entries to keep</summary>
+      <description>Older entries are deleted, with their images.</description>
+    </key>
+    <key name="clipboard-ignored-apps" type="as">
+      <default>['keepass', '1password', 'bitwarden', 'enpass', 'lastpass', 'dashlane', 'keeper', 'protonpass', 'proton-pass', 'proton.pass', 'world.secrets', 'passwordsafe', 'seahorse', 'authenticator']</default>
+      <summary>Clipboard history: apps whose copies are never kept</summary>
+      <description>Matched, ignoring case, against the focused app's desktop id and name, its window class and its Flatpak app id; "keepass" covers org.keepassxc.KeePassXC. Password managers and authenticators by default.</description>
+    </key>
+    <key name="clipboard-password-minutes" type="i">
+      <range min="0" max="60"/>
+      <default>5</default>
+      <summary>Clipboard history: minutes a copied password is shown, hidden</summary>
+      <description>A copied password is never saved. The latest one is listed as •••••••• (in memory only) and can be copied again until these minutes pass, the clipboard is cleared or something else is copied, whichever comes first. 0: passwords are not listed at all.</description>
+    </key>
+    <key name="clipboard-detect-passwords" type="b">
+      <default>true</default>
+      <summary>Clipboard history: treat text that looks like a password as one</summary>
+      <description>Browsers' password managers do not mark their copies, so one word of 8-64 characters mixing at least three of lower case, upper case, digits and symbols (and not a link, path, date, hash or code name) is treated as a password: never saved, only shown hidden.</description>
+    </key>
+    <key name="clipboard-width" type="i">
+      <range min="280" max="960"/>
+      <default>400</default>
+      <summary>Clipboard island width</summary>
+      <description>In logical pixels, while the Clipboard tab is shown.</description>
+    </key>
+    <key name="clipboard-height" type="i">
+      <range min="200" max="720"/>
+      <default>440</default>
+      <summary>Clipboard island height</summary>
+      <description>In logical pixels, while the Clipboard tab is shown.</description>
+    </key>
+
     <!-- Clock -->
     <key name="show-date" type="b">
       <default>false</default>

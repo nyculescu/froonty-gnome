@@ -92,6 +92,11 @@ Intel cards report no load. Their row shows the current clock in MHz
 instead (`gt_act_freq_mhz`, or `xe`'s `tile0/gt0/freq0/act_freq`), and
 "Idle" when that is 0 MHz (power-gated).
 
+GPU rows always keep room for their detail line, even when it is empty
+(asleep or idle). An iGPU draws the desktop, so it goes between idle and
+busy constantly; a row that grew and shrank with it made a list scrolled
+to its end jump up every sample.
+
 **Asleep cards are not woken up.** When a card's
 `device/power/runtime_status` is `suspended` (an idle laptop dGPU), its
 row is only its name and "Asleep": no level and no detail. Nothing else

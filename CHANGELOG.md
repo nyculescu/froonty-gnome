@@ -1,5 +1,33 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **Clipboard tab** (off by default). It keeps a history of what you copy
+  or cut: text, images, and file and folder locations (cut or copied in
+  Files). Click an entry to put it back on the clipboard, then paste as
+  usual.
+  - The history is kept on this computer only, in
+    `~/.local/share/froonty/clipboard`, readable by you only.
+  - Passwords are never saved. A copy is a password when a password
+    manager marks it secret, when a password app has the focus, or when the
+    text looks like one (browsers mark nothing). The latest one is listed as
+    •••••••• and can be copied again for 5 minutes (adjustable; 0 = never
+    listed), until the clipboard is cleared or something else is copied,
+    whichever comes first.
+  - Settings → Clipboard: entries to keep (default 50), the apps never
+    recorded, and the tab's size. The extension's description now declares
+    clipboard access, as the review guidelines require.
+
+### Changed
+- Feature tab icons are 25% larger (20 px).
+
+### Fixed
+- Btop: a list scrolled to its end no longer jumps up every couple of
+  seconds. A GPU row lost its detail line while the GPU idled, and got it
+  back when busy (an iGPU, which draws the desktop, does both constantly);
+  GPU rows now keep that line's room.
+
 ## 0.3.0-rc1 (2026-10-01)
 
 Second release candidate of 0.3.0, the one submitted to
