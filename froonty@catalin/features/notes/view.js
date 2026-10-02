@@ -23,6 +23,7 @@ import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js'
 import {ColorPicker} from './colorPicker.js';
 import {COLOR_IDS} from './colors.js';
 import {FormatBar} from './formatBar.js';
+import {MarkdownStyler} from './styler.js';
 import {NoteTabs} from './tabs.js';
 
 // ⤴ / ⤵ as bundled symbolic icons: the Unicode arrows need a fallback font
@@ -185,6 +186,8 @@ export class NotesView {
         // Immediate, unlike cursor-changed (emitted at the next relayout).
         text.connect('notify::cursor-position', () => this._syncFormatState());
         text.connect('notify::selection-bound', () => this._syncFormatState());
+        // Bold looks bold, headings large: Markdown drawn rendered.
+        this._styler = new MarkdownStyler(this._entry);
 
         // St.Entry is not scrollable itself; a BoxLayout is. A click on the
         // box below the text (or on the entry's padding) focuses the editor

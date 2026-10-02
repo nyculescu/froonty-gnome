@@ -393,6 +393,8 @@
     caret-color: #1f1f1f;
     selection-background-color: rgba(0, 0, 0, 0.18);
     selected-color: #1f1f1f;
+    /* Rendered Markdown's markers, quotes and done items (notes/styler.js). */
+    -froonty-markdown-muted: #8a8a8a;
 }
 
 .froonty-notes-scroll .froonty-notes-editor StLabel.hint-text {
@@ -406,6 +408,7 @@
     caret-color: #ffffff;
     selection-background-color: rgba(255, 255, 255, 0.25);
     selected-color: #ffffff;
+    -froonty-markdown-muted: #a0a0a0;
 }
 
 .froonty-notes-scroll.froonty-note-color-charcoal .froonty-notes-editor StLabel.hint-text {

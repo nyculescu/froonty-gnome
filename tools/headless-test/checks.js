@@ -964,9 +964,36 @@ async function testNotesTabsAndColors(outDir) {
 
     await testFormatState(outDir, view);
     await testToolsFold(outDir, view);
+    await testRenderedMarkdown(outDir, view);
 
     island().collapse();
     await sleep(animationWait());
+}
+
+// Rendered Markdown: the note is drawn formatted; its text stays Markdown.
+// Markers hide off the line being edited, as in Obsidian's live preview.
+async function testRenderedMarkdown(outDir, view) {
+    const text = view._entry.clutter_text;
+    const md = '# Shopping list\n**Bold**, _italic_ and ~~gone~~\n- [ ] milk\n- [x] bread\n' +
+        'See [the docs](https://example.org) and `code`';
+    view._entry.text = md;
+    text.grab_key_focus();
+    text.set_selection(0, 0); // on the heading
+    await sleep(SETTLE_MS);
+    const styled = text.get_attributes()?.get_attributes().length ?? 0;
+    // "**Bold**" starts line 1 (offset 16): its "B" is at 18.
+    const xOfB = () => text.position_to_coords(18)[1] - text.position_to_coords(16)[1];
+    const hiddenWidth = xOfB();
+    check('markdown: the note is drawn formatted, its text stays Markdown',
+        styled > 10 && view._entry.text === md, `attributes=${styled}`);
+    check('markdown: markers off the edited line take almost no room', hiddenWidth < 3,
+        `"**" is ${hiddenWidth.toFixed(1)} px wide`);
+    await screenshotTop(outDir, 'notes-markdown', 360);
+    text.set_selection(20, 20); // into "Bold"
+    await sleep(SETTLE_MS);
+    check('markdown: the edited line shows its markers', xOfB() > 6,
+        `"**" is ${xOfB().toFixed(1)} px wide`);
+    await screenshotTop(outDir, 'notes-markdown-editing', 360);
 }
 
 // Formatting toggles light up for the formatting at the cursor.

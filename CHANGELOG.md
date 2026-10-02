@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **Notes: rendered Markdown.** Notes are drawn formatted while staying
+  plain Markdown files. Headings are larger, bold is bold, italic is
+  italic, struck text is struck, code is monospace, links are underlined,
+  quotes are muted, and ticked checklist items are struck through. The
+  Markdown markers are hidden except on the line you are editing, so the
+  formatting buttons' results show at once.
+
 ## 0.4.0-rc0 (2026-10-02)
 
 First release candidate of 0.4.0, for GNOME Shell 50 on Ubuntu 26.04

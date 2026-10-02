@@ -46,17 +46,37 @@ Status: **implemented (v1)**. Decisions made 2026-09-28:
   cursor inside `**hi**` counts as bold, and Bold then unwraps the span
   instead of inserting `****`. Markers pair left to right within one line.
 
-**Next (on hold, agreed 2026-09-28): rendered Markdown.** The formatting
-bar only pays off if the note *shows* formatting as Sticky Notes does, with
-bold looking bold and headings larger. Proposed approach, not yet validated:
+**Rendered Markdown** (second iteration, 2026-10-02, user request: "render
+Markdown so that I can use the edit buttons"):
 
-- Style the editable `Clutter.Text` with Pango attributes computed from the
-  Markdown source.
-- Hide the markers (`**`, `#`, `_`) except on the line being edited, as
-  Obsidian's live preview does.
-- Files stay plain Markdown.
-- First step: a prototype confirming that `Clutter.Text` honours
-  attributes while editable.
+- **What shows.** The editor draws the note formatted while it stays plain
+  Markdown in its file, as in Obsidian's live preview.
+  - Headings are bold and larger (`#`, `##`, `###`).
+  - `**bold**` is bold, `_italic_`/`*italic*` is italic, and `~~struck~~`
+    is struck through.
+  - `` `code` `` and fenced blocks are monospace, code spans on a light
+    grey background.
+  - Links show their label underlined.
+  - `> quotes` are italic and muted.
+  - Ticked checklist items (`- [x]`) are struck through and muted.
+- **Markers** (`**`, `_`, `~~`, `` ` ``, `# `, `[`, `](url)`) are hidden
+  except on the line holding the cursor. There they show muted, so they
+  can be edited. Without the key focus, all of them are hidden. List
+  bullets, numbers, checkboxes and code fences always show, muted.
+- **How:** `render.js` (pure, unit-tested) finds the spans. `styler.js`
+  turns them into Pango attributes on the editable `Clutter.Text`, with
+  byte offsets. It restyles on each edit, when the cursor changes line,
+  and on focus changes. Clutter does honour attributes while editable
+  (checked in the headless Shell).
+- **Why markers shrink instead of disappearing.** Pango has no "invisible"
+  attribute and Clutter ignores Pango's foreground alpha. So hidden markers
+  are drawn at 5% size in the muted colour. Every character stays in place,
+  so cursor positions and the formatting bar's edits are those of the plain
+  text.
+- **Muted colour.** It comes from the editor's CSS
+  (`-froonty-markdown-muted`, read from St's theme node), so it follows the
+  note's colour: grey on the pastels, lighter on charcoal.
+- **Not yet:** clicking a checkbox to tick it, and images.
 
 ## 1. Goal
 
@@ -86,6 +106,8 @@ features/notes/
 ├── names.js      pure: note name ↔ file name, timestamps, uniqueness
 ├── markdown.js   pure: formatting-bar edits on text + selection, and
 │                 which formatting applies there (toggle state)
+├── render.js     pure: rendered Markdown spans, markers to hide
+├── styler.js     Pango attributes on the editor from render.js
 ├── store.js      Gio async file I/O: list, read, atomic write, create,
 │                 rename (never overwrites), trash; folder monitor
 ├── service.js    notes list + selection; queued operations; autosave
