@@ -565,9 +565,11 @@
     padding: 8px 4px;
     color: rgba(255, 255, 255, 0.7);
 }
+/* Room on the right for the overlay scrollbar, so it never covers the
+   right-aligned values. */
 .froonty-sysmon-sections {
     spacing: 10px;
-    padding: 2px 4px 4px;
+    padding: 2px 14px 4px 4px;
 }
 .froonty-sysmon-section,
 .froonty-sysmon-list {
@@ -664,9 +666,10 @@
 .froonty-clipboard-empty {
     padding: 8px 4px;
 }
+/* Room on the right for the overlay scrollbar (the trash buttons). */
 .froonty-clipboard-list {
     spacing: 4px;
-    padding: 2px 4px 4px;
+    padding: 2px 14px 4px 4px;
 }
 .froonty-clipboard-row {
     spacing: 2px;
