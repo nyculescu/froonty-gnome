@@ -3,11 +3,12 @@
 // docs/local/ideas.md) and contains no feature logic of its own:
 //
 //   ┌─────┬────────────────────────────────────┐
-//   │ tab │      [panic][panic]…            ⚙️ │  panic bar (max 5), centered
+//   │ tab │      [panic][panic]…          📅 ⚙️ │  panic bar (max 5), centered
 //   │ tab ├────────────────────────────────────┤
 //   │ …   │        active feature's view      │  content
 //   └─────┴────────────────────────────────────┘
 //     tab column: one icon per feature; its name shows in a tooltip on hover
+//     📅: GNOME's own calendar and notification menu, with GNOME's unread dot
 //
 // A feature's view (and its service, if any) is created the first time its
 // tab is selected, and destroyed when the feature is disabled or the hub is
@@ -37,8 +38,10 @@ export class Hub extends EventEmitter {
      * @param {object[]} features descriptors, in tab order
      * @param {object} actions
      * @param {Function} actions.openSettings
+     * @param {?Function} actions.openCalendar opens GNOME's calendar and
+     *   notification menu; null when this Shell has none (no 📅 button)
      */
-    constructor(ctx, features, {openSettings}) {
+    constructor(ctx, features, {openSettings, openCalendar}) {
         super();
         this._ctx = ctx;
         this._settings = ctx.settings;
@@ -46,8 +49,10 @@ export class Hub extends EventEmitter {
         this._entries = new Map(); // id -> {feature, button, view, service}
         this._activeId = null;
         this._shown = false;
+        this.calendarButton = null;
+        this._unreadBadge = null;
 
-        this._buildActors(openSettings);
+        this._buildActors(openSettings, openCalendar);
 
         for (const key of features.map(f => f.enabledKey).filter(Boolean))
             this._settings.connectObject(`changed::${key}`, () => this._syncTabs(), this);
@@ -77,6 +82,12 @@ export class Hub extends EventEmitter {
         const [, natural] = this._tabColumn.get_preferred_height(-1);
         this._reportedMinHeight = natural;
         return natural;
+    }
+
+    /** @param {boolean} unread whether GNOME's clock would show its dot */
+    setUnread(unread) {
+        if (this._unreadBadge)
+            this._unreadBadge.visible = unread;
     }
 
     /** Tell the active feature whether the hub is visible. */
@@ -118,7 +129,7 @@ export class Hub extends EventEmitter {
         entry?.view?.setActive?.(active);
     }
 
-    _buildActors(openSettings) {
+    _buildActors(openSettings, openCalendar) {
         // Main layout plus an overlay layer (fixed positions, click-through)
         // for the tab tooltips.
         this.actor = new St.Widget({
@@ -161,10 +172,17 @@ export class Hub extends EventEmitter {
             x_expand: true,
             y_expand: true,
         });
-        // The header row holds ⚙️ on the right; the panic bar is centered over
-        // the whole island in its own layer (see below).
+        // The header row holds 📅 and ⚙️ on the right; the panic bar is
+        // centered over the whole island in its own layer (see below).
         const header = new St.BoxLayout({style_class: 'froonty-hub-header'});
         header.add_child(new St.Widget({x_expand: true}));
+        this._tooltip = new Tooltip();
+
+        if (openCalendar) {
+            this.calendarButton = this._buildCalendarButton();
+            this.calendarButton.connect('clicked', () => openCalendar());
+            header.add_child(this.calendarButton);
+        }
 
         this.settingsButton = new St.Button({
             style_class: 'froonty-icon-button',
@@ -189,7 +207,6 @@ export class Hub extends EventEmitter {
         // Panic bar: centered across the island (not just the column right of
         // the tabs), on the header row. Its layer is click-through; only the
         // buttons take input.
-        this._tooltip = new Tooltip();
         this._panicBar = new PanicBar(this._settings, this._tooltip, {
             settings: this._settings,
             selectTab: id => {
@@ -217,6 +234,33 @@ export class Hub extends EventEmitter {
         this.actor.add_child(main);
         this.actor.add_child(panicLayer);
         this.actor.add_child(overlay);
+    }
+
+    // 📅 opens GNOME's own calendar and notification menu, which the island
+    // covers. While GNOME's clock would show its unread-notifications dot,
+    // the button carries the same dot.
+    _buildCalendarButton() {
+        this._unreadBadge = new St.Widget({
+            style_class: 'froonty-unread-dot',
+            x_align: Clutter.ActorAlign.END,
+            y_align: Clutter.ActorAlign.START,
+            x_expand: true,
+            y_expand: true,
+            visible: false,
+        });
+        const icon = new St.Widget({layout_manager: new Clutter.BinLayout()});
+        icon.add_child(new St.Icon({icon_name: 'x-office-calendar-symbolic'}));
+        icon.add_child(this._unreadBadge);
+
+        const button = new St.Button({
+            style_class: 'froonty-icon-button',
+            accessible_name: _('Calendar and notifications'),
+            can_focus: true,
+            track_hover: true,
+            child: icon,
+        });
+        this._tooltip.attach(button, () => button.accessible_name, 'below');
+        return button;
     }
 
     // Adds entries for newly enabled features, removes disabled ones, and

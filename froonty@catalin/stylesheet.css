@@ -25,8 +25,21 @@
 
 /* Collapsed */
 
+.froonty-collapsed-row {
+    spacing: 5px;
+}
+
 .froonty-collapsed {
     spacing: 8px;
+}
+
+/* The unread-notifications dot of GNOME's clock, which the pill covers: on
+   the collapsed pill and on the hub's calendar button. */
+.froonty-unread-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 3px;
+    background-color: #ffffff;
 }
 
 .froonty-collapsed-time {
@@ -79,7 +92,7 @@
     color: rgba(255, 255, 255, 0.25);
 }
 
-/* Icon buttons: hub tabs and ⚙️ */
+/* Icon buttons: hub tabs, 📅 and ⚙️ */
 
 .froonty-icon-button {
     border-radius: 9px;

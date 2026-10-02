@@ -21,7 +21,7 @@ feature has a design note in [docs/features/](docs/features/).
 ## Features
 
 - **Island.** A pill replaces the top bar clock visually. GNOME's clock stays
-  underneath, so its calendar menu keeps working.
+  underneath, so its calendar and notification menu keeps working (below).
   - **Open:** click, hover (350 ms, configurable), `Super+Alt+I` or
     Ctrl+Alt+Tab.
   - **Close:** Escape or a click outside.
@@ -29,7 +29,19 @@ feature has a design note in [docs/features/](docs/features/).
 - **Hub.** The expanded island.
   - Feature tabs sit in one column on the left, each named in a tooltip;
     the island grows taller when they need the room.
-  - The panic bar is centered at the top, with ⚙️ (settings) on the right.
+  - The panic bar is centered at the top, with 📅 (calendar and
+    notifications) and ⚙️ (settings) on the right.
+- **Calendar and notifications:** GNOME's own menu, the one its clock
+  opens: notifications (with their actions, Clear and Do Not Disturb), the
+  calendar, events, world clocks and weather. Froonty reimplements none of
+  it.
+  - **Open:** 📅 in the open island (or Tab to it, Enter), or GNOME's own
+    `Super+V` at any time. It opens under the pill, and the island closes.
+  - **Unread:** while GNOME's clock would show its dot, the pill shows it
+    after the time, and 📅 carries it too. Opening GNOME's list marks
+    them seen, and the dot goes.
+  - Banners that arrive while the island is open wait, and show when it
+    closes. See [docs/features/calendar.md](docs/features/calendar.md).
 - **Panic buttons.** Up to 5 quick actions, chosen in Settings. Available
   now: **Mute microphone** and **Mute sound**, through GNOME's own audio
   mixer, and **Claude session usage**. That one shows the session's
@@ -75,7 +87,7 @@ feature has a design note in [docs/features/](docs/features/).
 - **Start at login**, or not. With it off, Froonty waits after login behind
   that icon; a click (or the shortcut) starts it.
 
-> Planned: Calendar (Evolution Data Server; see
+> Planned: a Calendar tab (Evolution Data Server; see
 [docs/features/calendar.md](docs/features/calendar.md)), more panic buttons, rendered Markdown in notes and many more inspired from https://github.com/vorssaint/vorssaint-utils
 
 ## Layout
@@ -91,8 +103,8 @@ froonty@catalin/             the extension (this directory is what gets installe
 │   ├── geometry.js          pill sizes and position (covers the top bar clock)
 │   ├── animations.js        content cross-fade
 │   ├── chrome.js            registers the island as chrome + Ctrl+Alt+Tab
-│   ├── collapsedView.js     collapsed content (time, optional date)
-│   ├── hub.js               expanded content: tab column, panic bar, ⚙️
+│   ├── collapsedView.js     collapsed content (time, optional date, unread dot)
+│   ├── hub.js               expanded content: tab column, panic bar, 📅, ⚙️
 │   ├── panicBar.js          up to 5 panic buttons
 │   ├── hoverOpen.js         opens the island after hovering it
 │   └── panelLauncher.js     top bar icon while the island is not shown
@@ -107,7 +119,8 @@ froonty@catalin/             the extension (this directory is what gets installe
 ├── core/                    shared by features: emitter.js, tooltip.js
 ├── services/clock.js        clock ticks from the top bar's GnomeDesktop.WallClock
 └── shell/                   adapters over GNOME Shell APIs
-    ├── dateMenu.js          the only place touching Shell internals
+    ├── dateMenu.js          the only place touching Shell internals: the
+    │                        clock, GNOME's calendar and notification menu
     ├── mixer.js             the Shell's shared audio mixer
     └── settingsWindow.js    opens or raises the settings window
 third_party/livenerf/        git submodule: the benchmark behind the Claude

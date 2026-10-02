@@ -133,7 +133,7 @@ The hub (`ui/hub.js`) is the expanded content:
 
 ```
 hub     BinLayout, reactive (stops clicks from reaching the pill)
- ├ main     [tab column (GridLayout, TAB_COLUMNS = 1; the island grows to fit it)] [header ⚙️ / content]
+ ├ main     [tab column (GridLayout, TAB_COLUMNS = 1; the island grows to fit it)] [header 📅 ⚙️ / content]
  ├ panic    panic bar, centered across the island (click-through layer)
  └ overlay  tooltips (click-through, fixed positions)
 ```
@@ -212,13 +212,35 @@ Consequences:
     new primary monitor only re-allocates ancestors.
   - The adapter recomputes once per frame through a `BEFORE_REDRAW` later,
     after layout, so it never resizes actors mid-allocation.
-- Phase 3 plan: an island action calls `Main.panel.toggleCalendar()` *after*
-  releasing Froonty's own grab. GNOME's menu then opens with its arrow
-  pointing at top center, below the island. It needs no re-anchoring and no
-  private menu internals. GNOME keeps full ownership of notification storage,
-  actions, DND, the calendar, world clocks and weather.
+- **Done** (Unreleased; [features/calendar.md](features/calendar.md) §A,
+  `CalendarMenu` in `shell/dateMenu.js`; line numbers below are from
+  50.1): 📅 in the hub calls
+  `Main.panel.toggleCalendar()`, the handler of GNOME's own Super+V. GNOME's
+  menu opens with its arrow pointing at top center, below the island. It
+  needs no re-anchoring and no private menu internals. GNOME keeps full
+  ownership of notification storage, actions, DND, the calendar, world
+  clocks and weather.
+  - The plan was to call it *after* releasing Froonty's own grab. It is
+    called first instead: the menu's `open-state-changed` collapses the
+    island, for 📅 and Super+V alike, and the island's grab is released
+    from under the menu's. `Main.popModal()` supports a grab that is not
+    the topmost and shifts its saved focus on to the menu's record
+    (`main.js:845-870`), so Escape returns the focus to where it was
+    before the island opened. Expanding the island first closes GNOME's
+    menu (`closeCalendar()`): one modal at a time.
+  - The clock's unread-notifications dot is under the pill. Froonty
+    follows the `visible` property of the clock's own `MessagesIndicator`
+    (`dateMenu.js:742-799`, GNOME's rule: unseen minus queued for a
+    banner, hidden under DND) and shows the same dot on the pill and on 📅.
+  - Banners show under the clock (`Panel._updatePanel()` aligns them with
+    the date menu, `panel.js:641-647`), where the expanded island is, and
+    the island is drawn above the message tray. While expanded it sets
+    `Main.messageTray.bannerBlocked`, as `Panel._onMenuSet()` does for a
+    menu open at the banners' alignment (`panel.js:731-750`); otherwise a
+    banner would show under the island and be marked seen
+    (`messageTray.js:1161`).
 - A popup menu is raised to the top of `uiGroup` on open
-  (`popupMenu.js:982`), so the menu draws above the island.
+  (`popupMenu.js:1069` in 50.1), so the menu draws above the island.
 
 ## 6. API inventory
 
@@ -261,7 +283,10 @@ Consequences:
 |---|---|---|
 | `Main.panel.statusArea.dateMenu._clock` | Listen to the top bar clock's `GnomeDesktop.WallClock` for minute ticks instead of owning one: a WallClock's timer is only removed in dispose, and extensions should not call `run_dispose()`. Without it, `ClockService` falls back to a WallClock of its own | `shell/dateMenu.js` `topBarWallClock()` |
 | `Main.panel.statusArea.dateMenu.container.opacity` | Visually replace the top bar clock while keeping its menu usable; read its on-screen bounds (`notify::allocation` on it and its ancestors up to `panelBox`) so the pill covers it | `shell/dateMenu.js` |
-| (Phase 3) `Main.panel.toggleCalendar()` | Open GNOME's own calendar/notification menu | will live in `shell/dateMenu.js` |
+| `Main.panel.toggleCalendar()` / `closeCalendar()` (Panel methods, not an extension API) | Open GNOME's own calendar and notification menu from 📅, as Super+V does; close it when the island expands | `shell/dateMenu.js` `CalendarMenu` |
+| `Main.panel.statusArea.dateMenu.menu` (`isOpen`, signal `open-state-changed`) | Collapse the island whenever GNOME's menu opens (📅, Super+V); one modal at a time | `shell/dateMenu.js` `CalendarMenu` |
+| `Main.panel.statusArea.dateMenu._indicator` (`MessagesIndicator`, its `visible`) | Show GNOME's unread-notifications dot on the pill that covers the clock, with GNOME's own rules | `shell/dateMenu.js` `CalendarMenu` |
+| `Main.messageTray.bannerAlignment` / `bannerBlocked` (public setter) | Hold banners back while the expanded island covers their place, as the panel does for an open menu there | `shell/dateMenu.js` `CalendarMenu.holdBanners()` |
 
 `statusArea.dateMenu` is a role name set by `PANEL_ITEM_IMPLEMENTATIONS`
 (`panel.js:633`). It is widely relied on, but it is not an API contract.
@@ -299,8 +324,8 @@ Two St/Clutter rules also shaped the island:
 
 | Risk | Impact | Mitigation |
 |---|---|---|
-| `statusArea.dateMenu` renamed or restructured | Clock not hidden; Phase 3 menu entry breaks | All access is in one adapter; optional chaining; no-op if absent |
-| Another extension moves or hides the clock | Opacity fight; or `toggleCalendar()` refuses to open while the clock is unmapped | `hide-panel-clock` can be turned off; documented |
+| `statusArea.dateMenu` renamed or restructured | Clock not hidden; no 📅 (no menu) or no unread dot (no `_indicator`) | All access is in one adapter; optional chaining; no-op if absent |
+| Another extension moves or hides the clock | Opacity fight; or `toggleCalendar()` refuses to open while the clock is unmapped, so 📅 does nothing (the island stays open) | `hide-panel-clock` can be turned off; documented |
 | GrabHelper semantics change (Clutter grab model changed in 42) | Escape or outside-click stop working | The headless tests cover it and fail loudly |
 | Shell 47+ API changes (Clutter.Color removal, St accent colors, `--nested` → `--devkit`) | Porting needed | `metadata.json` declares only `"46"` |
 | Panel hidden (e.g. by a hide-top-bar extension) | Island still sits at the top of the monitor | Acceptable; the offset falls back to 0 |
@@ -314,7 +339,9 @@ Two St/Clutter rules also shaped the island:
 | Resource | Count | Released in |
 |---|---|---|
 | Actors | 1 strip (+ children), added as chrome | `Island.destroy()` |
-| GObject signal connections | layoutManager ×2, panelBox ×1 (+1 allocation watch), ThemeContext ×1, dateMenu container ×2 + one allocation watch per ancestor (3), settings ×7, the top bar's WallClock ×2, desktop interface settings ×1 | `disconnectObject()` in each owner's teardown |
+| GObject signal connections | layoutManager ×2, panelBox ×1 (+1 allocation watch), ThemeContext ×1, dateMenu container ×2 + one allocation watch per ancestor (3), the clock's unread indicator ×2 (`notify::visible`, `destroy`), settings ×7, the top bar's WallClock ×2, desktop interface settings ×1 | `disconnectObject()` in each owner's teardown |
+| GNOME's date menu (JS signals) | 1 (`open-state-changed`), while the island exists | `CalendarMenu.destroy()` from `Island.destroy()` |
+| Message tray | `bannerBlocked` set only while the island is expanded (and banners are centered) | collapse; `CalendarMenu.destroy()` |
 | Keybinding | 1, for the whole time the extension is enabled | `disable()` |
 | Top bar icon | 1, only while the island is hidden | `_syncIsland()` / `disable()` |
 | Mixer connections | Per panic button: 2 on the Shell's mixer + 1 on its current stream | `PanicBar.destroy()` |
@@ -371,6 +398,12 @@ input through Clutter virtual devices and cover:
   updates while shown, "Unknown" offline, nothing watched while collapsed,
   a fresh read on reopening.
 - **Settings window:** open, raise instead of duplicating, focus.
+- **GNOME's calendar and notification menu:** 📅 by pointer and keyboard,
+  Super+V over the open island, one modal grab at a time, the menu above
+  the island and taking clicks, the unread dot from a test notification
+  source (seen, Do Not Disturb, removed), banners held while expanded, and
+  the date menu's handlers across disable/enable
+  ([features/calendar.md](features/calendar.md) §A.6).
 - **Startup:** with `start-at-login` off, a simulated login waits behind the
   top bar icon, a lock/unlock keeps the state, and the icon or the shortcut
   starts Froonty.
@@ -430,7 +463,7 @@ it makes a leak-free `disable()` matter even more.
 
 | Phase | Reuse |
 |---|---|
-| 3 Notifications | `Main.messageTray` `source-added`; `Source` `notification-request-banner` (the signal GNOME's own banner logic uses); `MessageTray.bannerBlocked` (public setter); `Main.panel.toggleCalendar()` |
+| 3 Notifications | **Done:** `Main.panel.toggleCalendar()` (📅), the clock's unread dot, `MessageTray.bannerBlocked` (public setter) while expanded (§5). Not needed so far: `Main.messageTray` `source-added`; `Source` `notification-request-banner` (the signal GNOME's own banner logic uses) |
 | 4 MPRIS | `ui/mpris.js` `MprisPlayer`, or async `Gio.DBusProxy` with `NameOwnerChanged` |
 | 5 Battery | UPower DisplayDevice (`/org/freedesktop/UPower/devices/DisplayDevice`), as `ui/status/system.js` does; `UPowerGlib` is already loaded by the Shell |
 | 5 Volume/OSD | `ui/status/volume.js` `getMixerControl()` (shared Gvc mixer; already used by the panic buttons); `Main.osdWindowManager` |
