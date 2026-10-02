@@ -690,3 +690,140 @@
 .froonty-clipboard-hidden {
     letter-spacing: 2px;
 }
+
+/* Kill Process feature: the user's processes, busiest first, with a
+   kill button each; confirming and "Force quit" are red. */
+.froonty-killprocess {
+    spacing: 4px;
+}
+.froonty-killprocess-header {
+    spacing: 4px;
+    padding: 0 4px;
+}
+/* Overrides the theme's StEntry look (as the Notes editor does). */
+.froonty-killprocess-filter,
+.froonty-killprocess-filter:focus,
+.froonty-killprocess-filter:hover {
+    padding: 4px 8px;
+    border: none;
+    border-radius: 8px;
+    box-shadow: none;
+    font-size: 0.88em;
+    color: #ffffff;
+    caret-color: #ffffff;
+    background-color: rgba(255, 255, 255, 0.08);
+    selection-background-color: rgba(120, 170, 255, 0.45);
+    selected-color: #ffffff;
+}
+.froonty-killprocess-filter:focus {
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
+}
+/* Yaru (light) would draw the hint dark, unreadable on the black island. */
+.froonty-killprocess-filter StLabel.hint-text {
+    color: rgba(255, 255, 255, 0.45);
+}
+.froonty-killprocess-filter StIcon {
+    icon-size: 14px;
+    padding-right: 6px;
+    color: rgba(255, 255, 255, 0.55);
+}
+.froonty-killprocess-sort {
+    border-radius: 7px;
+    padding: 3px 8px;
+    font-size: 0.8em;
+    color: rgba(255, 255, 255, 0.6);
+    transition-duration: 150ms;
+}
+.froonty-killprocess-sort:hover,
+.froonty-killprocess-sort:focus {
+    color: #ffffff;
+    background-color: rgba(255, 255, 255, 0.09);
+}
+.froonty-killprocess-sort:checked {
+    color: #ffffff;
+    background-color: rgba(255, 255, 255, 0.16);
+}
+.froonty-killprocess-status,
+.froonty-killprocess-empty {
+    padding: 0 4px;
+    font-size: 0.78em;
+    color: rgba(255, 255, 255, 0.55);
+}
+.froonty-killprocess-empty {
+    padding: 8px 4px;
+    font-size: 0.85em;
+}
+.froonty-killprocess-status.froonty-killprocess-news {
+    color: #99c1f1;
+}
+.froonty-killprocess-list {
+    spacing: 1px;
+    padding: 2px 4px 4px;
+}
+.froonty-killprocess-row {
+    spacing: 8px;
+    min-height: 26px;
+    padding: 0 0 0 6px;
+    border-radius: 7px;
+}
+.froonty-killprocess-row:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+.froonty-killprocess-info {
+    spacing: 6px;
+}
+.froonty-killprocess-name {
+    font-size: 0.88em;
+}
+.froonty-killprocess-pid {
+    font-size: 0.75em;
+    font-feature-settings: "tnum";
+    color: rgba(255, 255, 255, 0.45);
+}
+.froonty-killprocess-number {
+    font-size: 0.8em;
+    font-feature-settings: "tnum";
+    text-align: right;
+    color: rgba(255, 255, 255, 0.85);
+}
+/* Fixed widths: the columns line up, and a tight row shortens the name. */
+.froonty-killprocess-cpu {
+    min-width: 40px;
+}
+.froonty-killprocess-memory {
+    min-width: 64px;
+}
+.froonty-killprocess-ended .froonty-killprocess-name,
+.froonty-killprocess-ended .froonty-killprocess-number {
+    color: rgba(255, 255, 255, 0.35);
+}
+.froonty-killprocess-state {
+    font-size: 0.78em;
+    font-style: italic;
+    color: rgba(255, 255, 255, 0.6);
+}
+.froonty-killprocess-kill:hover,
+.froonty-killprocess-kill:focus {
+    color: #ff7b63;
+}
+.froonty-killprocess-lock {
+    icon-size: 14px;
+    padding: 5px 8px;
+    color: rgba(255, 255, 255, 0.3);
+}
+.froonty-killprocess-confirm {
+    border-radius: 7px;
+    padding: 2px 10px;
+    font-size: 0.8em;
+    font-weight: bold;
+    color: #ffffff;
+    background-color: #c01c28;
+    transition-duration: 150ms;
+}
+.froonty-killprocess-confirm:hover,
+.froonty-killprocess-confirm:focus {
+    background-color: #e01b24;
+}
+.froonty-killprocess-confirm:focus {
+    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.6);
+}

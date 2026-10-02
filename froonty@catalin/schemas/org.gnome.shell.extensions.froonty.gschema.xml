@@ -207,6 +207,40 @@
       <description>In logical pixels, while the Clipboard tab is shown.</description>
     </key>
 
+    <!-- Kill Process feature (docs/features/kill-process.md) -->
+    <key name="killprocess-enabled" type="b">
+      <default>false</default>
+      <summary>Show the Kill Process tab</summary>
+      <description>Your own processes, busiest first, each with a kill button (a click, then a confirmation; SIGTERM, then "Force quit" with SIGKILL if it is still running a few seconds later). GNOME Shell, whatever started it, and session programs are never offered. Read from /proc only while the tab is on screen. Off by default.</description>
+    </key>
+    <key name="killprocess-interval" type="i">
+      <range min="1" max="10"/>
+      <default>3</default>
+      <summary>Kill Process refresh interval (s)</summary>
+      <description>How often the Kill Process tab reads the processes while it is on screen.</description>
+    </key>
+    <key name="killprocess-sort" type="s">
+      <choices>
+        <choice value="cpu"/>
+        <choice value="memory"/>
+      </choices>
+      <default>'cpu'</default>
+      <summary>Kill Process: sort by</summary>
+      <description>"cpu": most CPU use first; "memory": most memory first. Chosen in the tab.</description>
+    </key>
+    <key name="killprocess-width" type="i">
+      <range min="360" max="960"/>
+      <default>480</default>
+      <summary>Kill Process island width</summary>
+      <description>In logical pixels, while the Kill Process tab is shown.</description>
+    </key>
+    <key name="killprocess-height" type="i">
+      <range min="200" max="720"/>
+      <default>440</default>
+      <summary>Kill Process island height</summary>
+      <description>In logical pixels, while the Kill Process tab is shown.</description>
+    </key>
+
     <!-- Clock -->
     <key name="show-date" type="b">
       <default>false</default>

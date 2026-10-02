@@ -18,6 +18,24 @@
   - Settings → Clipboard: entries to keep (default 50), the apps never
     recorded, and the tab's size. The extension's description now declares
     clipboard access, as the review guidelines require.
+- **Kill Process tab** (off by default). Your own processes, busiest
+  first (by CPU or by memory, at most 30, with a filter by name, command
+  or process id for the rest), each with a kill button.
+  - Two clicks: ⊘, then "Kill “name”?". The process is asked to quit
+    (SIGTERM). If it is still running 3 s later, the row offers "Force
+    quit" (SIGKILL).
+  - Never offered: GNOME Shell, whatever started it, and a short list of
+    session programs (gnome-session, gdm's session wrapper, systemd --user,
+    Xwayland, D-Bus, PipeWire and WirePlumber, the keyring). Other users'
+    processes are not listed; Froonty never asks for administrator rights.
+  - Right before each signal the process is read again, so a process id
+    the kernel has since given to another process is never signalled.
+  - The list holds still while the pointer is on it, so a click never
+    lands on a process that has just moved there.
+  - It reads `/proc` only while the tab is on screen, every 3 s by
+    default, and runs `/usr/bin/kill` once per confirmed step.
+  - Settings → Kill Process: show the tab, refresh interval (1-10 s),
+    what is never killed, and the tab's size (480 × 440 by default).
 
 ### Changed
 - Feature tab icons are 25% larger (20 px).

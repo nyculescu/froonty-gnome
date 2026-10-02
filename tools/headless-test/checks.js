@@ -1381,6 +1381,203 @@ async function testClipboard(outDir) {
         countHandlers(selection, 'owner-changed') === before && !tabButton('clipboard'));
 }
 
+// ---------------------------------------------------------------- kill process
+
+// The Kill Process tab lists the real user's processes: the Shell under
+// test reads the host's /proc. These checks only ever click rows of the
+// processes they spawned themselves (a sleep, and a sleep that ignores
+// SIGTERM), and check the row's process id before every click. Whatever
+// they spawned and is still running at the end is ended with
+// Gio.Subprocess.force_exit(), which only reaches their own children.
+
+const killProcessEntry = () => island()._hub._entries.get('killprocess') ?? null;
+
+function spawnChild(argv) {
+    const proc = Gio.Subprocess.new(argv, Gio.SubprocessFlags.NONE);
+    const child = {proc, pid: Number(proc.get_identifier()), exited: false};
+    proc.wait_async(null, () => {
+        child.exited = true;
+    });
+    return child;
+}
+
+const killRow = (view, pid) =>
+    view?._rows.find(row => row.visible && row.process?.pid === pid) ?? null;
+
+// Clicks one part of the row of `child`, only if that row still shows it
+// once the pointer rests on the list (which holds the rows in place).
+async function clickOwnRow(view, child, part) {
+    const row = killRow(view, child.pid);
+    const actor = row?._part(part);
+    if (!actor?.visible)
+        return false;
+    const center = () => {
+        const b = boxOf(actor);
+        return [(b.x1 + b.x2) / 2, (b.y1 + b.y2) / 2];
+    };
+    await movePointerTo(...center());
+    await sleep(SETTLE_MS);
+    if (killRow(view, child.pid) !== row || row.process.pid !== child.pid || !actor.visible)
+        return false;
+    await clickAt(...center());
+    return true;
+}
+
+function parentPid() {
+    const [, bytes] = GLib.file_get_contents('/proc/self/stat');
+    const text = new TextDecoder().decode(bytes);
+    return Number(text.slice(text.lastIndexOf(')') + 1).trim().split(/\s+/)[1]);
+}
+
+async function testKillProcess(outDir) {
+    check('kill process: off by default, so no tab and nothing read',
+        !settings().get_boolean('killprocess-enabled') && !tabButton('killprocess'));
+
+    const children = [];
+    try {
+        const sleeper = spawnChild(['/usr/bin/sleep', '600']);
+        children.push(sleeper);
+        // Test-only shell: SIGTERM ignored is kept through exec, so only
+        // "Force quit" (SIGKILL) ends this one.
+        const stubborn = spawnChild(['/bin/sh', '-c', 'trap "" TERM; exec /usr/bin/sleep 601']);
+        children.push(stubborn);
+        await sleep(300);
+
+        settings().set_boolean('killprocess-enabled', true);
+        await sleep(SETTLE_MS);
+        island().expand();
+        await sleep(animationWait());
+        await clickActor(tabButton('killprocess'));
+        await sleep(animationWait());
+        const service = killProcessEntry()?.service;
+        const view = killProcessEntry()?.view;
+        const [w, h] = pill().get_transformed_size();
+        check('kill process: the tab opens at its size and reads processes while on screen',
+            island()._hub.activeFeature?.id === 'killprocess' && service?.polling === true &&
+            w === 480 * scale() && h === 440 * scale(),
+            `${w}x${h} polling=${service?.polling}`);
+        await waitFor(() => service?.processes?.some(p => p.pid === sleeper.pid));
+        const listed = pid => service?.processes?.find(p => p.pid === pid) ?? null;
+        check('kill process: only the user\'s processes are listed, the spawned ones included',
+            listed(sleeper.pid)?.name === 'sleep' && listed(1) === null &&
+            service.processes.every(p => p.pid > 1),
+            `${service?.processes?.length} processes; sleep=${JSON.stringify(listed(sleeper.pid))}`);
+        await screenshotTop(outDir, 'killprocess', 520);
+
+        const shellPid = new Gio.Credentials().get_unix_pid();
+        const shellParent = parentPid();
+        const dbus = service?.processes?.filter(p => p.name === 'dbus-daemon') ?? [];
+        check('kill process: GNOME Shell, what started it and session programs are protected',
+            listed(shellPid)?.protected === 'shell' && listed(shellParent)?.protected === 'session' &&
+            dbus.length > 0 && dbus.every(p => p.protected === 'session'),
+            `shell=${listed(shellPid)?.protected} parent ${shellParent}=${listed(shellParent)?.protected} ` +
+            `dbus=${dbus.map(p => p.protected)}`);
+        // verify() only reads /proc; it is what kill() asks before signalling.
+        check('kill process: a kill of GNOME Shell is refused before any signal',
+            await service?._sampler.verify(listed(shellPid)) === 'protected');
+
+        check('kill process: the filter has the key focus',
+            global.stage.get_key_focus() === view?._filter.clutter_text,
+            `${global.stage.get_key_focus()}`);
+        await typeText(String(shellPid));
+        await sleep(SETTLE_MS);
+        const shellRow = killRow(view, shellPid);
+        check('kill process: typing filters; a protected row has a lock, no kill button',
+            view?._filter.text === String(shellPid) && shellRow &&
+            shellRow._part('lock').visible && !shellRow._part('kill').visible,
+            `filter=${view?._filter.text} row=${Boolean(shellRow)}`);
+
+        // The process id of the sleep, with another start time: a reused id.
+        view._filter.text = String(sleeper.pid);
+        await sleep(SETTLE_MS);
+        const sleepRow = killRow(view, sleeper.pid);
+        const rowTop = sleepRow ? boxOf(sleepRow).y1 : -1;
+        await service.kill({...listed(sleeper.pid), key: `${sleeper.pid}:0`, start: 0});
+        await sleep(SETTLE_MS);
+        check('kill process: a reused process id (another start time) is never signalled',
+            service.lastResult?.outcome === 'gone' && !sleeper.exited,
+            JSON.stringify(service.lastResult));
+        check('kill process: news of a kill does not move the rows under the pointer',
+            view._status.text.includes('had already ended') && sleepRow &&
+            boxOf(sleepRow).y1 === rowTop,
+            `${rowTop} -> ${sleepRow && boxOf(sleepRow).y1}`);
+
+        check('kill process: the spawned sleep has a kill button',
+            sleepRow?._part('kill').visible && sleepRow.process.name === 'sleep');
+        const asked = await clickOwnRow(view, sleeper, 'kill');
+        await sleep(SETTLE_MS);
+        check('kill process: the first click only asks "Kill “sleep”?"',
+            asked && sleepRow._part('confirm').visible &&
+            sleepRow._part('confirm').label === 'Kill “sleep”?' &&
+            sleepRow._part('cancel').visible && !sleeper.exited,
+            `asked=${asked} confirm=${sleepRow?._part('confirm').label} exited=${sleeper.exited}`);
+        await screenshotTop(outDir, 'killprocess-confirm', 520);
+        const confirmed = await clickOwnRow(view, sleeper, 'confirm');
+        await waitFor(() => sleeper.exited);
+        check('kill process: confirming ends it with SIGTERM',
+            confirmed && sleeper.exited && sleeper.proc.get_if_signaled() &&
+            sleeper.proc.get_term_sig() === 15,
+            `confirmed=${confirmed} exited=${sleeper.exited}`);
+        await waitFor(() => service.lastResult?.outcome === 'ended');
+        check('kill process: the tab says it ended, and holds the row while pointed at',
+            view._status.text.includes(`(${sleeper.pid}) has ended`) &&
+            killRow(view, sleeper.pid)?._part('state').text === 'Ended',
+            `${view._status.text} / ${killRow(view, sleeper.pid)?._part('state').text}`);
+        const header = boxOf(view._filter);
+        await movePointerTo(header.x1 + 10, header.y1 + 5);
+        await sleep(SETTLE_MS);
+        check('kill process: once the pointer leaves, the ended process is gone from the list',
+            killRow(view, sleeper.pid) === null, view._status.text);
+
+        view._filter.text = String(stubborn.pid);
+        await waitFor(() => killRow(view, stubborn.pid) !== null);
+        const stubbornRow = killRow(view, stubborn.pid);
+        const killed = await clickOwnRow(view, stubborn, 'kill') &&
+            await clickOwnRow(view, stubborn, 'confirm');
+        await sleep(1000);
+        check('kill process: no "Force quit" while it may still be quitting',
+            killed && !stubborn.exited && !stubbornRow._part('force').visible &&
+            stubbornRow._part('state').text === 'Asked to quit…',
+            `killed=${killed} state=${stubbornRow?._part('state').text}`);
+        await waitFor(() => stubbornRow._part('force').visible, 8000);
+        check('kill process: still running after SIGTERM, it is offered "Force quit"',
+            !stubborn.exited && stubbornRow._part('force').visible &&
+            stubbornRow.process.pid === stubborn.pid);
+        await screenshotTop(outDir, 'killprocess-force', 520);
+        const forced = await clickOwnRow(view, stubborn, 'force');
+        await waitFor(() => stubborn.exited);
+        check('kill process: "Force quit" ends it with SIGKILL',
+            forced && stubborn.exited && stubborn.proc.get_if_signaled() &&
+            stubborn.proc.get_term_sig() === 9,
+            `forced=${forced} exited=${stubborn.exited}`);
+
+        await clickActor(tabButton('clock'));
+        await sleep(animationWait());
+        check('kill process: another tab stops the reading, and clears the filter',
+            service.polling === false && view._filter.text === '');
+        await clickActor(tabButton('killprocess'));
+        await sleep(animationWait());
+        check('kill process: back on screen, it reads again', service.polling === true);
+        island().collapse();
+        await sleep(animationWait());
+        check('kill process: collapsing the island stops the reading', service.polling === false);
+        island().expand();
+        await sleep(animationWait());
+        await clickActor(tabButton('clock'));
+        await sleep(animationWait());
+        island().collapse();
+        await sleep(animationWait());
+    } finally {
+        for (const child of children) {
+            if (!child.exited)
+                child.proc.force_exit();
+        }
+        settings().reset('killprocess-enabled');
+        await sleep(SETTLE_MS);
+    }
+    check('kill process: turning it off removes the tab', !tabButton('killprocess'));
+}
+
 async function testClaude(outDir) {
     const hub = () => island()._hub;
     writeClaudeConfig(claudeConfig());
@@ -2109,6 +2306,7 @@ export async function runAll(outDir) {
         await testNotesTabsAndColors(outDir);
         await testClaude(outDir);
         await testClipboard(outDir);
+        await testKillProcess(outDir);
         await testSettings(outDir);
         await testCoversPanelClock(outDir);
         await testMonitors();

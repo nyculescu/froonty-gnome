@@ -6,8 +6,9 @@ facilities GNOME Shell already has. It does not reimplement them.
 
 Status: **0.3.0-rc1**, a release candidate. See [CHANGELOG.md](CHANGELOG.md).
 
-- No background subprocesses. The one polling timer is the Btop (system
-  monitor) tab's, and it runs only while that tab is on screen. The published extension
+- No background subprocesses. The polling timers are the Btop (system
+  monitor) and Kill Process tabs', each running only while its tab is on
+  screen. The published extension
   package omits the working-tree-only ZeroTier controls; `make install`
   includes them. Froonty also makes one direct network request: the Claude
   tab's livenerf row fetches two public files from GitHub, at most once an
@@ -65,6 +66,19 @@ feature has a design note in [docs/features/](docs/features/).
   locations. Click an entry to copy it again. It is kept on this computer
   only, readable by you only; password managers' copies are never kept.
   See [docs/features/clipboard.md](docs/features/clipboard.md).
+- **Kill Process** tab (off by default; turn it on in Settings → Kill
+  Process): your own processes, busiest by CPU or memory first (at most
+  30, with a filter for the rest), each with a kill button.
+  - Two clicks: ⊘, then "Kill “name”?". The process is asked to quit
+    (SIGTERM); "Force quit" (SIGKILL) is offered only if it is still
+    running 3 s later.
+  - GNOME Shell, whatever started it and a short list of session programs
+    (gnome-session, systemd, Xwayland, D-Bus, PipeWire, the keyring) are
+    never offered. Other users' processes are not listed, and Froonty
+    never asks for administrator rights.
+  - It reads `/proc` only while the tab is on screen, every 3 s (1-10 s
+    in Settings), and runs `/usr/bin/kill` once per confirmed step. See
+    [docs/features/kill-process.md](docs/features/kill-process.md).
 - **ZeroTier** tab (working-tree installs only): whether ZeroTier runs,
   starts with the computer and reaches its network, and how each joined
   network is doing, with Start/Stop. Networks are managed in ZeroTier
@@ -102,7 +116,8 @@ froonty@catalin/             the extension (this directory is what gets installe
 │   ├── claude/              Claude plan usage, read from Claude Code's config;
 │   │                        livenerf's Opus 5.5 row, fetched from GitHub
 │   ├── sysmon/              Btop tab (system monitor): /proc and /sys, nvidia-smi
-│   └── clipboard/           clipboard history: recorder, store, tab
+│   ├── clipboard/           clipboard history: recorder, store, tab
+│   └── killprocess/         Kill Process tab: your processes from /proc, kill(1)
 ├── panic/                   panic button catalog, factories, mute buttons, prefs
 ├── core/                    shared by features: emitter.js, tooltip.js
 ├── services/clock.js        clock ticks from the top bar's GnomeDesktop.WallClock
@@ -175,14 +190,15 @@ session. Never install it in a real session.
 ## Settings
 
 The settings window (⚙️, the top bar icon while the island is hidden, or
-`gnome-extensions prefs froonty@catalin`) opens as its own window. It has
-six tabs:
+`gnome-extensions prefs froonty@catalin`) opens as its own window. Among
+its tabs:
 
 - **General:** startup, island, hover, shortcut, clock.
 - **Appearance:** size, animation.
 - **Panic buttons:** which buttons, and their order.
 - **Notes:** enable, folder.
 - **Claude:** enable.
+- **Kill Process:** enable, refresh interval, what is never killed, size.
 - **ZeroTier:** enable, allow reading ZeroTier's status.
 
 The keys behind it:
