@@ -15,6 +15,7 @@ import {
 // features/registry.js: that loads Shell-side modules this process cannot.)
 import {addIconPath, claudePage} from './features/claude/prefs.js';
 import {clipboardPage} from './features/clipboard/prefs.js';
+import {killProcessPage} from './features/killprocess/prefs.js';
 import {notesPage} from './features/notes/prefs.js';
 import {sysmonPage} from './features/sysmon/prefs.js';
 import {addLocalPrefs} from './features/localPrefs.js';
@@ -43,6 +44,7 @@ export default class FroontyPreferences extends ExtensionPreferences {
         window.add(claudePage(settings));
         window.add(sysmonPage(settings));
         window.add(clipboardPage(settings));
+        window.add(killProcessPage(settings));
         addLocalPrefs(window, settings);
         window.visible_page_name = GENERAL_PAGE;
     }

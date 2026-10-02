@@ -64,14 +64,19 @@ What changed for Froonty, and how it adapts:
 1. Reuse GNOME Shell facilities; never duplicate a store, a daemon or a
    calendar that GNOME already has.
 2. Event-driven. A timer may only be added with a written justification
-   and a configurable interval. The one periodic timer is the Btop
-   tab's (system monitor), and only while its tab is on screen: no event tells when a
-   CPU's load or a GPU's temperature changes, and readings are only worth
-   anything live ([features/sysmon.md](features/sysmon.md)).
+   and a configurable interval. The periodic timers are the Btop tab's
+   (system monitor) and the Kill Process tab's, each only while its tab
+   is on screen: no event tells when a CPU's load, a GPU's temperature or
+   a process's CPU use changes, and readings are only worth anything live
+   ([features/sysmon.md](features/sysmon.md),
+   [features/kill-process.md](features/kill-process.md)).
 3. No background processes or polling loop. Short-lived local subprocesses
   are limited to the Claude usage refresh, the Btop tab's
   `nvidia-smi` (NVIDIA's driver puts its readings nowhere else; only while
-  the tab is on screen and the card is awake) and the working-tree-only
+  the tab is on screen and the card is awake), the Kill Process tab's
+  `/usr/bin/kill -s TERM|KILL <pid>` (GJS, GLib and the Shell cannot
+  signal another process; once per confirmed click, fixed path and
+  arguments, no shell) and the working-tree-only
   ZeroTier integration. Its status reads use the installed CLI; explicit actions
   (Start/Stop, allowing status access) use fixed `pkexec` arguments. It is omitted, along with its setting, from
   `make pack` output. The Claude tab's livenerf row is the only direct
@@ -348,13 +353,13 @@ Two St/Clutter rules also shaped the island:
 | Mixer connections | Per panic button: 2 on the Shell's mixer + 1 on its current stream | `PanicBar.destroy()` |
 | GNOME privacy settings | Block-camera panic button only: one `org.gnome.desktop.privacy` `Gio.Settings` per button, with 2 handlers (`changed::disable-camera`, `writable-changed::disable-camera`) | `PanicBar.destroy()` (`CameraAccess.destroy()`) |
 | Ctrl+Alt+Tab group | 1 | `Island.destroy()` |
-| Timers / GLib sources | **No periodic timers.** One-shot only: the hover-open delay while the pointer rests on the collapsed pill (`HoverOpen`); a 10 s give-up timeout while a requested settings window has not appeared (`SettingsWindow.destroy()`); Notes' 0.8 s autosave while there are unsaved edits (`NotesService.stop()` flushes and removes it); the Clipboard tab's hidden password expiry (`clipboard-password-minutes`), only while one is listed (`ClipboardRecorder.destroy()`). **One periodic timer**, only while the Btop tab is on screen: every `sysmon-interval` seconds (1-10, default 2), `timeout_add_seconds` so GLib can batch its wakeups (`SysmonService.setActive(false)`); plus a 5 s give-up timeout per `nvidia-smi` run. At most one pending `BEFORE_REDRAW` later (cover recompute), removed in `PanelClock.restore()`. The clock ticks come from the top bar's own WallClock, so Froonty owns none | `ClockService.stop()` |
+| Timers / GLib sources | **No periodic timer while the island is closed.** One-shot only: the hover-open delay while the pointer rests on the collapsed pill (`HoverOpen`); a 10 s give-up timeout while a requested settings window has not appeared (`SettingsWindow.destroy()`); Notes' 0.8 s autosave while there are unsaved edits (`NotesService.stop()` flushes and removes it); the Clipboard tab's hidden password expiry (`clipboard-password-minutes`), only while one is listed (`ClipboardRecorder.destroy()`). **Two periodic timers**, each only while its tab is on screen: the Btop tab's, every `sysmon-interval` seconds (1-10, default 2), and the Kill Process tab's, every `killprocess-interval` seconds (1-10, default 3), both `timeout_add_seconds` so GLib can batch their wakeups (`SysmonService.setActive(false)`, `KillProcessService.setActive(false)`); plus a 5 s give-up timeout per `nvidia-smi` or `kill` run, and the Kill Process tab's one-shot early reading (0.5 s after it comes on screen or a signal is sent, then each second while a killed process is still listed). At most one pending `BEFORE_REDRAW` later (cover recompute), removed in `PanelClock.restore()`. The clock ticks come from the top bar's own WallClock, so Froonty owns none | `ClockService.stop()` |
 | File watching | Notes: one inotify folder monitor (`Gio.FileMonitor`), only while the Notes tab has been opened. Claude: one monitor on Claude Code's config file while the Claude tab is on screen, and one more while the island is open with the Claude session panic button | `NotesService.stop()`; `ClaudeService.setActive(false)` |
 | Clipboard | Clipboard tab enabled (off by default): one `owner-changed` connection on `global.display.get_selection()`, one settings connection, and one read per copy (`St.Clipboard`); history and images under `~/.local/share/froonty/clipboard` (0700/0600) | `releaseRecorder()` (extension `disable()`, tab turned off) |
 | Network monitor | Claude: three connections on the shared `Gio.NetworkMonitor` (`network-changed`, `notify::connectivity`, `notify::network-available`) per active reader: the tab while on screen, the panic button while the island is open | `ClaudeService.setActive(false)` |
 | Network requests | Claude tab, livenerf row: one `Soup.Session`, made on the first fetch; two GETs (about 28 kB) per visit while online, at most once an hour | `LivenerfService.stop()` (aborts the session) |
-| File reads | Btop tab, per interval while on screen: `/proc/stat`, `/proc/cpuinfo`, `/proc/meminfo`, `/proc/net/dev`, `/proc/self/mounts`, the CPU's package temperature, a few sysfs files per GPU, and one temperature per core only while the threads are unfolded. Sections that are off are not read | `SysmonService.setActive(false)` cancels a sample in flight |
-| Subprocesses / D-Bus proxies | Btop tab: one `nvidia-smi` per interval while the tab is on screen and an NVIDIA card is awake (about 40 ms). Otherwise 0 of Froonty's own. The Claude tab reads GIO's process-wide `Gio.NetworkMonitor`, whose NetworkManager backend keeps GIO's own proxy for the life of the Shell | — |
+| File reads | Btop tab, per interval while on screen: `/proc/stat`, `/proc/cpuinfo`, `/proc/meminfo`, `/proc/net/dev`, `/proc/self/mounts`, the CPU's package temperature, a few sysfs files per GPU, and one temperature per core only while the threads are unfolded. Sections that are off are not read. Kill Process tab, per interval while on screen: one listing of `/proc` (with owners), `/proc/stat`, and `/proc/<pid>/stat` for each of the user's processes (256 on the development machine); `/proc/<pid>/cmdline` once per process; a handful of small reads (the process, and GNOME Shell's parents) right before each signal | `SysmonService.setActive(false)`, `KillProcessService.setActive(false)` cancel a reading in flight |
+| Subprocesses / D-Bus proxies | Btop tab: one `nvidia-smi` per interval while the tab is on screen and an NVIDIA card is awake (about 40 ms). Kill Process tab: one `/usr/bin/kill` per confirmed kill or "Force quit" click, never otherwise. Otherwise 0 of Froonty's own. The Claude tab reads GIO's process-wide `Gio.NetworkMonitor`, whose NetworkManager backend keeps GIO's own proxy for the life of the Shell | — |
 
 ## 9. Testing
 
@@ -363,8 +368,10 @@ Two test layers:
 - **`make unit`** runs plain-gjs unit tests for Shell-free logic: Notes names,
   Markdown edits, metadata, file store and service, the panic catalog and
   the camera switch (on in-memory GSettings backends or a fake, never the
-  real settings), the Claude usage parser and service, and the Btop tab's parsers,
-  sampler (over a fake `/proc` and `/sys`) and polling lifecycle.
+  real settings), the Claude usage parser and service, the Btop tab's
+  parsers, sampler (over a fake `/proc` and `/sys`) and polling lifecycle,
+  and the Kill Process tab's parsers, safety rules and kill steps over a
+  fake `/proc` whose `kill` only records its arguments.
   Each run gets a private `TMPDIR` and `XDG_DATA_HOME`, so trashed test files
   never reach the real Trash.
 - **`make test`** (`tools/headless-test/run.sh`) starts a **fully isolated
@@ -402,6 +409,11 @@ input through Clutter virtual devices and cover:
 - **Claude:** rows and wording from a private `CLAUDE_CONFIG_DIR`, live
   updates while shown, "Unknown" offline, nothing watched while collapsed,
   a fresh read on reopening.
+- **Kill Process:** protected rows (GNOME Shell, its parent, D-Bus);
+  a `sleep` the test started killed through the two-step UI (SIGTERM),
+  one that ignores SIGTERM ended by "Force quit" (SIGKILL); a reused
+  process id refused; no reading while hidden. Only processes the test
+  spawned are ever clicked.
 - **Settings window:** open, raise instead of duplicating, focus.
 - **GNOME's calendar and notification menu:** 📅 by pointer and keyboard,
   Super+V over the open island, one modal grab at a time, the menu above
