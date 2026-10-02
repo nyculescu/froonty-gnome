@@ -10,6 +10,11 @@
   Markdown markers are hidden except on the line you are editing, so the
   formatting buttons' results show at once.
 
+### Changed
+- Notes: paler note surfaces (yellow, green, pink, purple, blue, gray), so
+  the text is easier to read. Tab dots and colour swatches keep the
+  stronger shades that tell the colours apart.
+
 ## 0.4.0-rc0 (2026-10-02)
 
 First release candidate of 0.4.0, for GNOME Shell 50 on Ubuntu 26.04

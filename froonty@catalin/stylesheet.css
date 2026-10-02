@@ -374,8 +374,8 @@
 }
 
 /* Note colours (features/notes/colors.js). Pastel approximations in the
-   spirit of Windows Sticky Notes; used by tab dots, swatches and the
-   editor surface. */
+   spirit of Windows Sticky Notes; used by tab dots and swatches (and
+   charcoal's editor surface; the light ones get paler surfaces below). */
 
 .froonty-note-color-yellow { background-color: #fff3a8; }
 .froonty-note-color-green { background-color: #cdefc4; }
@@ -384,6 +384,16 @@
 .froonty-note-color-blue { background-color: #cfe4ff; }
 .froonty-note-color-gray { background-color: #e4e4e4; }
 .froonty-note-color-charcoal { background-color: #3b3b3b; }
+
+/* The note's writing surface: paler than its dot and swatch, so the text
+   reads easily (user request 2026-10-02). Dots and swatches keep the
+   stronger shades above, which tell the colours apart on the dark island. */
+.froonty-notes-scroll.froonty-note-color-yellow { background-color: #fffae0; }
+.froonty-notes-scroll.froonty-note-color-green { background-color: #eaf7e6; }
+.froonty-notes-scroll.froonty-note-color-pink { background-color: #fdebf3; }
+.froonty-notes-scroll.froonty-note-color-purple { background-color: #f2ecfd; }
+.froonty-notes-scroll.froonty-note-color-blue { background-color: #e9f2ff; }
+.froonty-notes-scroll.froonty-note-color-gray { background-color: #f3f3f3; }
 
 /* Light notes: dark text. Charcoal keeps the default white text. */
 .froonty-notes-scroll .froonty-notes-editor,
