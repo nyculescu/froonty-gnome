@@ -4,7 +4,8 @@
 // window (panic/prefs.js), which cannot load each other's modules.
 //
 // Adding a panic button: an entry here, a factory in registry.js.
-// Titles take the caller's gettext, since each side has its own.
+// Titles (and the optional description Settings shows under a title) take
+// the caller's gettext, since each side has its own.
 
 export const MAX_PANIC_BUTTONS = 5;
 
@@ -25,6 +26,18 @@ export const PANIC_BUTTONS = [
         id: 'claude-session',
         icon: 'froonty-claude-symbolic',
         title: _ => _('Claude session usage'),
+    },
+    {
+        // GNOME's Camera Access switch; only the camera portal enforces it,
+        // so the title and description say whom it stops
+        // (panic/cameraAccess.js).
+        id: 'block-camera',
+        icon: 'camera-disabled-symbolic',
+        title: _ => _('Block camera for apps that ask GNOME'),
+        description: _ => _('Turns off Camera Access, as Settings → Privacy & Security → ' +
+            'Cameras does. Apps that ask GNOME for the camera (mostly Flatpak apps) are ' +
+            'refused. Apps that open the camera directly, as apps that are not sandboxed ' +
+            'can, are not blocked, and a camera already in use stays on.'),
     },
 ];
 

@@ -64,7 +64,8 @@
 }
 
 /* Panic bar: up to 5 quick actions. Checked = the panic action is on
-   (e.g. muted), shown in red; insensitive = no such device right now. */
+   (e.g. muted), shown in red; insensitive = no such device right now,
+   or a setting an administrator has locked (block camera). */
 .froonty-panic-bar {
     spacing: 4px;
 }

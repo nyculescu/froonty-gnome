@@ -43,6 +43,16 @@ out of the packed extension.
   - Settings → Clipboard: entries to keep (default 50), how long a password
     is listed, password recognition, the password apps, and the tab's size. The extension's description now declares
     clipboard access, as the review guidelines require.
+- **Panic button "Block camera for apps that ask GNOME"** (not in the bar
+  by default; add it in Settings → Panic buttons). It turns GNOME's own
+  Camera Access switch off and on again, the one in Settings → Privacy &
+  Security → Cameras. It shows red while camera access is off, and follows
+  that switch when it is changed elsewhere.
+  - It blocks apps that ask GNOME for the camera (mostly Flatpak apps).
+  - It is not a hardware switch. Apps that open the camera directly
+    (GNOME notes that apps that are not sandboxed can) are not blocked, and
+    a camera already in use stays on. Settings describes this under the
+    button's name.
 
 ### Changed
 - Feature tab icons are 25% larger (20 px).

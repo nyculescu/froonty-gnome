@@ -232,6 +232,7 @@ Consequences:
 | `Gio.Settings` (own schema; `org.gnome.desktop.interface clock-format`) | Settings |
 | `Atk.StateType.EXPANDED` | Accessibility |
 | `Gvc` streams (`change_is_muted`, `notify::is-muted`), through the Shell's mixer | Panic buttons: mute microphone / sound |
+| `Gio.Settings` `org.gnome.desktop.privacy` `disable-camera` (`changed::`, `writable-changed::`): GNOME Settings' Camera Access switch, enforced by xdg-desktop-portal's camera portal only | Panic button: block camera for apps that ask GNOME ([features/panic-buttons.md](features/panic-buttons.md) §4) |
 | `Gio.File` async I/O, `Gio.FileMonitor` | Notes: Markdown files, folder watching; Claude: Claude Code's config file |
 | `Gio.NetworkMonitor` (`network-changed`, `notify::connectivity`, `notify::network-available`) | Claude: "Unknown" while offline, from NetworkManager's own check |
 | `Soup` 3 (`Session.send_and_read_async`) | Claude: livenerf's README and chart from `raw.githubusercontent.com` |
@@ -318,6 +319,7 @@ Two St/Clutter rules also shaped the island:
 | Keybinding | 1, for the whole time the extension is enabled | `disable()` |
 | Top bar icon | 1, only while the island is hidden | `_syncIsland()` / `disable()` |
 | Mixer connections | Per panic button: 2 on the Shell's mixer + 1 on its current stream | `PanicBar.destroy()` |
+| GNOME privacy settings | Block-camera panic button only: one `org.gnome.desktop.privacy` `Gio.Settings` per button, with 2 handlers (`changed::disable-camera`, `writable-changed::disable-camera`) | `PanicBar.destroy()` (`CameraAccess.destroy()`) |
 | Ctrl+Alt+Tab group | 1 | `Island.destroy()` |
 | Timers / GLib sources | **No periodic timers.** One-shot only: the hover-open delay while the pointer rests on the collapsed pill (`HoverOpen`); a 10 s give-up timeout while a requested settings window has not appeared (`SettingsWindow.destroy()`); Notes' 0.8 s autosave while there are unsaved edits (`NotesService.stop()` flushes and removes it); the Clipboard tab's hidden password expiry (`clipboard-password-minutes`), only while one is listed (`ClipboardRecorder.destroy()`). **One periodic timer**, only while the Btop tab is on screen: every `sysmon-interval` seconds (1-10, default 2), `timeout_add_seconds` so GLib can batch its wakeups (`SysmonService.setActive(false)`); plus a 5 s give-up timeout per `nvidia-smi` run. At most one pending `BEFORE_REDRAW` later (cover recompute), removed in `PanelClock.restore()`. The clock ticks come from the top bar's own WallClock, so Froonty owns none | `ClockService.stop()` |
 | File watching | Notes: one inotify folder monitor (`Gio.FileMonitor`), only while the Notes tab has been opened. Claude: one monitor on Claude Code's config file while the Claude tab is on screen, and one more while the island is open with the Claude session panic button | `NotesService.stop()`; `ClaudeService.setActive(false)` |
@@ -332,8 +334,9 @@ Two St/Clutter rules also shaped the island:
 Two test layers:
 
 - **`make unit`** runs plain-gjs unit tests for Shell-free logic: Notes names,
-  Markdown edits, metadata, file store and service, the panic catalog,
-  the Claude usage parser and service, and the Btop tab's parsers,
+  Markdown edits, metadata, file store and service, the panic catalog and
+  the camera switch (on in-memory GSettings backends or a fake, never the
+  real settings), the Claude usage parser and service, and the Btop tab's parsers,
   sampler (over a fake `/proc` and `/sys`) and polling lifecycle.
   Each run gets a private `TMPDIR` and `XDG_DATA_HOME`, so trashed test files
   never reach the real Trash.
@@ -362,7 +365,9 @@ input through Clutter virtual devices and cover:
 - **Hub:** the tab column and its tooltips; lazy feature creation and
   activation, tested with a fake feature.
 - **Panic buttons:** real mute and unmute, following changes made elsewhere,
-  and the settings rules.
+  and the settings rules. Block camera: click and keyboard toggle GNOME's
+  `disable-camera` in the private keyfile backend (checked to be private
+  first), changes made elsewhere, and no handler left after removal.
 - **Notes:**
   - create, type, autosave, formatting, rename, Trash, colours, tabs;
   - long-note scrolling and line wrap;
