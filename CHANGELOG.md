@@ -19,6 +19,22 @@
     (GNOME notes that apps that are not sandboxed can) are not blocked, and
     a camera already in use stays on. Settings describes this under the
     button's name.
+- **GNOME's calendar and notifications, from the island.** The pill covers
+  GNOME's clock, so its menu (notifications, the calendar, events, world
+  clocks, weather) and its unread dot were out of reach. Both are back,
+  and nothing of them is reimplemented:
+  - **📅** in the open island, left of ⚙️ (or Tab to it, Enter), opens
+    GNOME's own menu under the pill; the island closes. GNOME's `Super+V`
+    works too, also while the island is open. Escape closes the menu.
+  - **Unread dot:** while GNOME's clock would show its dot, the pill
+    shows it after the time, and 📅 carries it. GNOME's rules decide
+    (seen once its list is shown; hidden under Do Not Disturb). Froonty
+    never dismisses or removes a notification.
+  - **Banners** that arrive while the island is open wait and show when
+    it closes, as they do under GNOME's own open menu, instead of showing
+    underneath the island and counting as seen.
+  - Only one of the two is open at a time: opening the island closes
+    GNOME's menu, and the menu opening closes the island.
 
 ### Changed
 - Notes: paler note surfaces (yellow, green, pink, purple, blue, gray), so
@@ -51,8 +67,9 @@ out of the packed extension.
   - Screenshots (Print, Shift+Print, Alt+Print) are on the clipboard in
     GNOME, so they show up in the history too.
   - Settings → Clipboard: entries to keep (default 50), how long a password
-    is listed, password recognition, the password apps, and the tab's size. The extension's description now declares
-    clipboard access, as the review guidelines require.
+    is listed, password recognition, the password apps, and the tab's
+    size. The extension's description now declares clipboard access, as
+    the review guidelines require.
 ### Changed
 - Feature tab icons are 25% larger (20 px).
 

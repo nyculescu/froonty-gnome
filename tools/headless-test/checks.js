@@ -1675,10 +1675,11 @@ async function testSettingsButton(outDir) {
         `windows=${settingsWindows().length} focus=${global.display.focus_window?.get_title()}`);
     await closeSettingsWindows();
 
-    // Keyboard: Tab from the focused pill reaches ⚙️, Enter activates it.
+    // Keyboard: Tab from the focused pill reaches ⚙️ (after the tabs and
+    // 📅), Enter activates it.
     island().expand();
     await sleep(animationWait());
-    for (let i = 0; i < 6 && global.stage.key_focus !== gear; i++)
+    for (let i = 0; i < 8 && global.stage.key_focus !== gear; i++)
         await pressKeys(Clutter.KEY_Tab);
     check('Tab reaches ⚙️', global.stage.key_focus === gear,
         `focus=${global.stage.key_focus}`);
@@ -2212,6 +2213,267 @@ async function testStartup() {
         strip() !== null && launcherName() === null && !clockVisible(), state());
 }
 
+// ---------------------------------------------------------------- calendar menu
+//
+// GNOME's own calendar and notification menu, which the island covers
+// (docs/features/calendar.md): 📅 in the hub, Super+V, one modal grab at a
+// time, the unread dot, banners held while expanded, and the handlers on
+// GNOME's date menu across disable/enable. A self-contained block.
+
+const dateMenuButton = () => Main.panel.statusArea.dateMenu;
+const calendarMenuOpen = () => dateMenuButton().menu.isOpen;
+// GNOME's own unread-notifications dot, next to the transparent clock.
+const gnomeUnreadDot = () => dateMenuButton()._indicator.visible;
+const pillUnreadDot = () => island()._collapsedView._unreadDot.visible;
+const focusInCalendarMenu = () =>
+    dateMenuButton().menu.actor.contains(global.stage.key_focus);
+// Handlers on a GJS (non-GObject) signal emitter, such as a PopupMenu.
+const jsHandlerCount = (emitter, signal) =>
+    emitter._signalConnectionsByName?.[signal]?.length ?? 0;
+const isEllipsized = label => label.clutter_text.get_layout().is_ellipsized();
+
+async function closeCalendarMenu() {
+    if (calendarMenuOpen())
+        Main.panel.closeCalendar();
+    await sleep(animationWait());
+}
+
+async function testCalendarMenu(outDir) {
+    const MessageTray = await import('resource:///org/gnome/shell/ui/messageTray.js');
+    const tray = Main.messageTray;
+    const menu = dateMenuButton().menu;
+    const monitor = Main.layoutManager.primaryMonitor;
+    const away = [monitor.x + 60, monitor.y + monitor.height / 2];
+    const modalBefore = Main.modalCount;
+    const state = () => `menu=${calendarMenuOpen()} expanded=${island()?.expanded} ` +
+        `modal=${Main.modalCount} (before ${modalBefore}) focus=${global.stage.key_focus} ` +
+        `bannersHeld=${tray._bannerBlocked}`;
+
+    // 📅 in the hub header.
+    island().expand();
+    await sleep(animationWait());
+    let hub = island()._hub;
+    const button = hub.calendarButton;
+    const [b, g, bar] = [button, hub.settingsButton, hub._panicBar.actor].map(boxOf);
+    check('calendar: 📅 sits left of ⚙️ in the hub header, clear of the panic bar',
+        button?.mapped && b.x2 <= g.x1 && Math.abs(b.y1 + b.y2 - g.y1 - g.y2) <= 2 && bar.x2 <= b.x1,
+        `📅=[${b.x1},${b.y1} - ${b.x2},${b.y2}] ⚙️=[${g.x1},${g.y1}] panic bar ends at ${bar.x2}`);
+    check('calendar: GNOME\'s banners are held while the island is expanded',
+        tray._bannerBlocked === true, state());
+    await movePointerTo((b.x1 + b.x2) / 2, (b.y1 + b.y2) / 2);
+    await sleep(SETTLE_MS);
+    const tip = hub._tooltip.actor;
+    check('calendar: hovering 📅 names it',
+        tip.visible && tip.text === 'Calendar and notifications', `visible=${tip.visible} text=${tip.text}`);
+
+    // A click: GNOME's menu opens above the island, which collapses.
+    await clickActor(button);
+    const uiChildren = Main.layoutManager.uiGroup.get_children();
+    check('calendar: GNOME\'s menu is raised above the island as it opens',
+        uiChildren.indexOf(menu.actor) > uiChildren.indexOf(strip()),
+        `menu ${uiChildren.indexOf(menu.actor)}, island ${uiChildren.indexOf(strip())}`);
+    await sleep(animationWait());
+    check('calendar: clicking 📅 opens GNOME\'s calendar and notification menu',
+        calendarMenuOpen() && menu.actor.visible, state());
+    check('calendar: the island collapses and releases its grab; only the menu holds one',
+        !island().expanded && !island()._grabHelper.grabbed && !strip().reactive &&
+        Main.modalCount === modalBefore + 1, state());
+    check('calendar: the keyboard focus moves into the menu', focusInCalendarMenu(), state());
+    const m = boxOf(menu.actor);
+    const [pcx] = pillCenter();
+    const clock = boxOf(dateMenuButton().container);
+    check('calendar: the menu hangs below the clock under the pill',
+        m.x1 < pcx && pcx < m.x2 && m.y1 >= clock.y2 - 1,
+        `menu=[${m.x1},${m.y1} - ${m.x2},${m.y2}] clock bottom=${clock.y2} pill center x=${pcx}`);
+    const hit = global.stage.get_actor_at_pos(Clutter.PickMode.REACTIVE, pcx, m.y1 + 40);
+    check('calendar: the menu is on top where it meets the island (picking finds the menu)',
+        menu.actor.contains(hit), `${hit}`);
+    await screenshotTop(outDir, 'calendar-menu', 640);
+
+    // Usable: GNOME's own calendar takes clicks.
+    const calendar = dateMenuButton()._calendar;
+    const month = calendar._selectedDate.getMonth();
+    await clickActor(calendar._forwardButton);
+    check('calendar: the menu takes clicks (GNOME\'s calendar shows the next month)',
+        calendar._selectedDate.getMonth() === (month + 1) % 12 && calendarMenuOpen(),
+        `month ${month} -> ${calendar._selectedDate.getMonth()}`);
+
+    await pressKeys(Clutter.KEY_Escape);
+    await sleep(animationWait());
+    check('calendar: Escape closes it and releases its grab',
+        !calendarMenuOpen() && !island().expanded && Main.modalCount === modalBefore &&
+        !tray._bannerBlocked, state());
+
+    // Keyboard only: Tab to 📅, Enter.
+    island().expand();
+    await sleep(animationWait());
+    for (let i = 0; i < 8 && global.stage.key_focus !== button; i++)
+        await pressKeys(Clutter.KEY_Tab);
+    check('calendar: Tab reaches 📅', global.stage.key_focus === button, state());
+    await pressKeys(Clutter.KEY_Return);
+    await sleep(animationWait());
+    check('calendar: Enter on 📅 opens the menu, focus inside, island collapsed',
+        calendarMenuOpen() && focusInCalendarMenu() && !island().expanded &&
+        Main.modalCount === modalBefore + 1, state());
+    await pressKeys(Clutter.KEY_Escape);
+    await sleep(animationWait());
+
+    // GNOME's own shortcut over the expanded island, and back.
+    island().expand();
+    await sleep(animationWait());
+    await pressKeys(Clutter.KEY_Super_L, Clutter.KEY_v);
+    await sleep(animationWait());
+    check('calendar: Super+V over the expanded island opens the menu and collapses the island',
+        calendarMenuOpen() && focusInCalendarMenu() && !island().expanded &&
+        Main.modalCount === modalBefore + 1, state());
+    check('calendar: banners stay held while GNOME\'s menu is open', tray._bannerBlocked === true, state());
+    await pressKeys(Clutter.KEY_Super_L, Clutter.KEY_Alt_L, Clutter.KEY_i);
+    await sleep(animationWait());
+    check('calendar: the island\'s shortcut over the open menu closes it and expands the island',
+        !calendarMenuOpen() && island().expanded && Main.modalCount === modalBefore + 1, state());
+    await pressKeys(Clutter.KEY_Escape);
+    await sleep(animationWait());
+    check('calendar: then no grab is left and banners are free',
+        !island().expanded && !calendarMenuOpen() && Main.modalCount === modalBefore &&
+        !tray._bannerBlocked, state());
+
+    // Resting on the pill must not open the island over an open menu.
+    settings().set_int('hover-open-delay', 350);
+    await movePointerTo(...pillCenter());
+    await pressKeys(Clutter.KEY_Super_L, Clutter.KEY_v);
+    await sleep(800);
+    check('calendar: hover-open does not take over from an open menu',
+        calendarMenuOpen() && !island().expanded, state());
+    await movePointerTo(...away);
+    settings().set_int('hover-open-delay', 0);
+    await closeCalendarMenu();
+
+    // The unread dot. Showing GNOME's list marks every notification seen
+    // (GNOME's rule), which gives a clean start.
+    island()._calendarMenu.open();
+    await sleep(animationWait());
+    await closeCalendarMenu();
+    check('calendar: no dot without unseen notifications', !gnomeUnreadDot() && !pillUnreadDot(), state());
+
+    // The test's own source. LOW urgency gets no banner, so GNOME counts it
+    // as unseen at once.
+    const source = new MessageTray.Source({title: 'Froonty test', iconName: 'dialog-information-symbolic'});
+    tray.add(source);
+    const notify = (title, urgency) => {
+        const n = new MessageTray.Notification({source, title, body: 'Froonty headless test', urgency});
+        source.addNotification(n);
+        return n;
+    };
+    const unseen = notify('Unseen', MessageTray.Urgency.LOW);
+    await sleep(2 * SETTLE_MS);
+    const view = island()._collapsedView;
+    check('calendar: an unseen notification puts GNOME\'s dot on the pill (and in its name)',
+        gnomeUnreadDot() && pillUnreadDot() && view._unreadPad.visible &&
+        pill().accessible_name.endsWith(', unread notifications'),
+        `gnome=${gnomeUnreadDot()} pill=${pillUnreadDot()} name="${pill().accessible_name}"`);
+    const covers = pillCoversClock();
+    check('calendar: the pill still covers the clock, which GNOME\'s dot widens', covers.ok, covers.detail);
+    check('calendar: the time keeps its room next to the dot', !isEllipsized(view._timeLabel));
+    await screenshotTop(outDir, 'collapsed-unread');
+    settings().set_boolean('show-date', true);
+    await sleep(2 * SETTLE_MS);
+    check('calendar: so do date and time together',
+        !isEllipsized(view._timeLabel) && !isEllipsized(view._dateLabel),
+        `"${view._dateLabel.text}" "${view._timeLabel.text}" pill width ${pill().width}`);
+    await screenshotTop(outDir, 'collapsed-unread-date');
+    settings().reset('show-date');
+    await sleep(SETTLE_MS);
+
+    island().expand();
+    await sleep(animationWait());
+    hub = island()._hub;
+    check('calendar: 📅 carries the dot in the expanded island',
+        hub._unreadBadge.visible && hub._unreadBadge.mapped);
+    await screenshotTop(outDir, 'hub-unread');
+    island().collapse();
+    await sleep(animationWait());
+
+    // Default session mode only: when Do Not Disturb ends, Ubuntu Dock
+    // (Ubuntu mode) logs TypeErrors of its own ("remoteModel is undefined":
+    // its NotificationsMonitor emits 'state-changed' before DockManager
+    // has made the model again), which run.sh would count against the run.
+    const dock = Main.extensionManager.lookup('ubuntu-dock@ubuntu.com');
+    if (dock?.state !== ExtensionState.ACTIVE) {
+        const notifications = new Gio.Settings({schema_id: 'org.gnome.desktop.notifications'});
+        notifications.set_boolean('show-banners', false);
+        await sleep(SETTLE_MS);
+        check('calendar: Do Not Disturb hides the dot, as on GNOME\'s clock',
+            !gnomeUnreadDot() && !pillUnreadDot());
+        notifications.reset('show-banners');
+        await sleep(SETTLE_MS);
+        check('calendar: the dot is back when Do Not Disturb ends', gnomeUnreadDot() && pillUnreadDot());
+    }
+
+    island().expand();
+    await sleep(animationWait());
+    await clickActor(island()._hub.calendarButton);
+    await sleep(animationWait());
+    check('calendar: GNOME\'s list marks it seen, the dot goes; the notification stays',
+        calendarMenuOpen() && !gnomeUnreadDot() && !pillUnreadDot() &&
+        !island()._hub._unreadBadge.visible && source.notifications.includes(unseen),
+        `${state()} kept=${source.notifications.includes(unseen)}`);
+    await closeCalendarMenu();
+
+    // A banner while expanded waits in GNOME's queue, unseen, and shows
+    // once the island collapses. (Why: the island, chrome added after the
+    // message tray, is drawn above GNOME's banners.)
+    const stack = Main.layoutManager.uiGroup.get_children();
+    check('calendar: the island is drawn above GNOME\'s banners (why they are held)',
+        stack.indexOf(strip()) > stack.indexOf(tray) && stack.indexOf(tray) >= 0,
+        `island ${stack.indexOf(strip())}, message tray ${stack.indexOf(tray)}`);
+    island().expand();
+    await sleep(animationWait());
+    const banner = notify('Banner', MessageTray.Urgency.NORMAL);
+    await sleep(SETTLE_MS);
+    check('calendar: a banner waits while the island is expanded (not shown under it, not marked seen)',
+        !tray.visible && !banner.acknowledged && tray.queueCount >= 1,
+        `trayVisible=${tray.visible} seen=${banner.acknowledged} queue=${tray.queueCount}`);
+    island().collapse();
+    await sleep(animationWait() + MessageTray.ANIMATION_TIME);
+    check('calendar: the banner shows once the island collapses',
+        tray.visible && tray._notification === banner && banner.acknowledged,
+        `trayVisible=${tray.visible} shown=${tray._notification?.title} seen=${banner.acknowledged}`);
+    await screenshotTop(outDir, 'banner-after-collapse', 200);
+
+    // Only the test removes its own notifications.
+    source.destroy();
+    await sleep(animationWait());
+    check('calendar: no dot once the test\'s notifications are gone', !gnomeUnreadDot() && !pillUnreadDot());
+
+    // Disable while expanded: banners free, Froonty's handlers on the date
+    // menu gone; enable connects them again, once.
+    const handlerCounts = () => ({
+        unread: countHandlers(dateMenuButton()._indicator, 'notify::visible'),
+        opened: jsHandlerCount(menu, 'open-state-changed'),
+    });
+    const enabled = handlerCounts();
+    island().expand();
+    await sleep(animationWait());
+    const held = tray._bannerBlocked;
+    await setExtensionEnabled(false);
+    const disabled = handlerCounts();
+    check('calendar: disable while expanded frees banners and drops the date menu handlers',
+        held && !tray._bannerBlocked && Main.modalCount === modalBefore &&
+        disabled.unread === enabled.unread - 1 && disabled.opened === enabled.opened - 1,
+        `held=${held} ${state()} enabled=${JSON.stringify(enabled)} disabled=${JSON.stringify(disabled)}`);
+    await setExtensionEnabled(true);
+    await sleep(SETTLE_MS);
+    check('calendar: enable connects them again, once',
+        JSON.stringify(handlerCounts()) === JSON.stringify(enabled), JSON.stringify(handlerCounts()));
+
+    // Leave the island as found: its hub shown once (later checks measure
+    // the hub's actors, which have no size before they are first shown).
+    island().expand();
+    await sleep(animationWait());
+    island().collapse();
+    await sleep(animationWait());
+}
+
 export async function runAll(outDir) {
     results.length = 0;
     // Pointer-driven checks move the pointer over the pill; keep hover-open
@@ -2229,6 +2491,7 @@ export async function runAll(outDir) {
         await testLauncher();
         await testStartup();
         await testSettingsButton(outDir);
+        await testCalendarMenu(outDir);
         await testHub(outDir);
         await testNotes(outDir);
         await testNotesTabsAndColors(outDir);

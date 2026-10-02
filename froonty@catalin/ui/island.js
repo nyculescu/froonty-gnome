@@ -22,6 +22,7 @@ import * as GrabHelper from 'resource:///org/gnome/shell/ui/grabHelper.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 import {FEATURES} from '../features/registry.js';
+import {CalendarMenu} from '../shell/dateMenu.js';
 import {crossfade, showOnly} from './animations.js';
 import {addIslandChrome, removeIslandChrome} from './chrome.js';
 import {CollapsedView} from './collapsedView.js';
@@ -58,6 +59,9 @@ export class Island {
         this._expanded = false;
         this._themeContext = St.ThemeContext.get_for_stage(global.stage);
         this._geometry = new IslandGeometry(settings, panelClock, this._themeContext);
+        // GNOME's own calendar and notification menu: the clock the pill
+        // covers would open it.
+        this._calendarMenu = new CalendarMenu();
 
         this._buildActors();
         addIslandChrome(this._strip, this._pill, () => this.expand());
@@ -79,6 +83,7 @@ export class Island {
 
         this._connectSignals();
         this._updateContent();
+        this._updateUnread();
         this._syncGeometry();
     }
 
@@ -93,6 +98,9 @@ export class Island {
 
         this._clock.disconnectObject(this);
         this._panelClock.disconnectObject(this);
+        // Also lets banners show again if the island held them back.
+        this._calendarMenu.disconnectObject(this);
+        this._calendarMenu.destroy();
         this._settings.disconnectObject(this);
         Main.layoutManager.disconnectObject(this);
         Main.layoutManager.panelBox.disconnectObject(this);
@@ -128,6 +136,11 @@ export class Island {
     expand() {
         if (this._expanded)
             return;
+
+        // One at a time, like GNOME's own top bar menus: GNOME's calendar
+        // menu opens where the island expands, with a modal grab of its
+        // own. (Its opening collapses the island; see _connectSignals.)
+        this._calendarMenu.close();
 
         // Clutter only emits events on reactive actors, so the grab owner
         // must be reactive for GrabHelper to see Escape and outside clicks.
@@ -166,6 +179,14 @@ export class Island {
         this._openSettingsAction();
     }
 
+    // GNOME's menu opens first, above the island, and takes the keyboard
+    // focus; its 'opened' signal then collapses the island, as for Super+V.
+    // Should it not open (e.g. another extension hid the clock), the
+    // island simply stays open.
+    _openCalendar() {
+        this._calendarMenu.open();
+    }
+
     _buildActors() {
         this._strip = new St.Widget({
             name: 'froontyStrip',
@@ -200,6 +221,8 @@ export class Island {
         };
         this._hub = new Hub(ctx, FEATURES, {
             openSettings: () => this._openSettings(),
+            openCalendar: this._calendarMenu.available
+                ? () => this._openCalendar() : null,
         });
         content.add_child(this._collapsedView.actor);
         content.add_child(this._hub.actor);
@@ -219,6 +242,12 @@ export class Island {
         this._clock.connectObject('changed', () => this._updateContent(), this);
         this._panelClock.connectObject('cover-changed',
             () => this._onCoverChanged(), this);
+        // GNOME's calendar menu opening, by any means (📅, Super+V),
+        // collapses the island, which releases its grab under the menu's.
+        this._calendarMenu.connectObject(
+            'opened', () => this.collapse(),
+            'unread-changed', () => this._updateUnread(),
+            this);
         this._hub.connectObject('size-changed', () => this._onHubSizeChanged(), this);
 
         for (const key of GEOMETRY_KEYS) {
@@ -248,6 +277,15 @@ export class Island {
 
     _updateContent() {
         this._collapsedView.update(this._clock.snapshot());
+        this._pill.accessible_name = this._collapsedView.accessibleText;
+    }
+
+    // GNOME's clock, under the pill, would show its unread-notifications
+    // dot: the pill shows one instead, and so does 📅 in the hub.
+    _updateUnread() {
+        const unread = this._calendarMenu.hasUnread;
+        this._collapsedView.setUnread(unread);
+        this._hub.setUnread(unread);
         this._pill.accessible_name = this._collapsedView.accessibleText;
     }
 
@@ -338,6 +376,8 @@ export class Island {
 
         if (expanded)
             this._hoverOpen.cancel();
+        // The expanded island covers the place where GNOME shows banners.
+        this._calendarMenu.holdBanners(expanded);
         this._hub.setShown(expanded);
         this._animate();
     }
