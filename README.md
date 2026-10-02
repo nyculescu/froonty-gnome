@@ -31,9 +31,17 @@ feature has a design note in [docs/features/](docs/features/).
     the island grows taller when they need the room.
   - The panic bar is centered at the top, with ⚙️ (settings) on the right.
 - **Panic buttons.** Up to 5 quick actions, chosen in Settings. Available
-  now: **Mute microphone** and **Mute sound**, through GNOME's own audio
-  mixer, and **Claude session usage**. That one shows the session's
-  percentage, large, over a faint Claude Spark, and a click opens the Claude tab.
+  now:
+  - **Mute microphone** and **Mute sound**, through GNOME's own audio
+    mixer.
+  - **Claude session usage** shows the session's percentage, large, over a
+    faint Claude Spark. A click opens the Claude tab.
+  - **Block camera for apps that ask GNOME** turns off GNOME's own Camera
+    Access switch (Settings → Privacy & Security → Cameras), and turns it
+    back on. Apps that ask GNOME for the camera (mostly Flatpak apps) are
+    refused. It is not a hardware switch: apps that open the camera
+    directly are not blocked, and a camera already in use stays on
+    ([details](docs/features/panic-buttons.md#4-block-camera-for-apps-that-ask-gnome)).
 - **Clock** tab: weekday, time and date.
 - **Notes** tab: plain Markdown files in `~/.local/share/froonty/notes`.
   - Autosave, colours in the style of Sticky Notes, and a formatting bar.
@@ -103,7 +111,8 @@ froonty@catalin/             the extension (this directory is what gets installe
 │   │                        livenerf's Opus 5.5 row, fetched from GitHub
 │   ├── sysmon/              Btop tab (system monitor): /proc and /sys, nvidia-smi
 │   └── clipboard/           clipboard history: recorder, store, tab
-├── panic/                   panic button catalog, factories, mute buttons, prefs
+├── panic/                   panic button catalog, factories, buttons (mute,
+│                            Claude session, block camera), prefs
 ├── core/                    shared by features: emitter.js, tooltip.js
 ├── services/clock.js        clock ticks from the top bar's GnomeDesktop.WallClock
 └── shell/                   adapters over GNOME Shell APIs

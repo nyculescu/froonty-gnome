@@ -7,6 +7,7 @@
 import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 
 import {AudioMuteButton} from './audioMute.js';
+import {CameraBlockButton} from './camera.js';
 import {ClaudeSessionButton} from './claudeSession.js';
 import {byId} from './catalog.js';
 
@@ -14,6 +15,7 @@ const FACTORIES = {
     'mute-microphone': title => new AudioMuteButton('input', title),
     'mute-sound': title => new AudioMuteButton('output', title),
     'claude-session': (title, actions) => new ClaudeSessionButton(title, actions),
+    'block-camera': title => new CameraBlockButton(title),
 };
 
 /**

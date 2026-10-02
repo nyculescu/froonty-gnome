@@ -83,6 +83,11 @@ function availableRow(id, full, onAdd) {
 function entryRow(id) {
     const entry = byId(id);
     const row = new Adw.ActionRow({title: entry.title(_)});
+    // What a button does when its title cannot say it all (no markup).
+    if (entry.description) {
+        row.use_markup = false;
+        row.subtitle = entry.description(_);
+    }
     row.add_prefix(new Gtk.Image({icon_name: entry.icon}));
     return row;
 }

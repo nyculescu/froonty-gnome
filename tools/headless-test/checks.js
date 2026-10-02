@@ -1954,6 +1954,101 @@ async function testPanic(outDir) {
     await sleep(animationWait());
 }
 
+// ---------------------------------------------------------------- panic: block camera
+// GNOME's Camera Access switch (org.gnome.desktop.privacy disable-camera).
+// Needs no sound server. Writes GNOME's privacy settings, so it runs only
+// against run.sh's private keyfile backend.
+
+const CAMERA_TITLE = 'Block camera for apps that ask GNOME';
+
+// run.sh's keyfile lives in the work dir: $WORK/config/glib-2.0/settings.
+function privacyIsIsolated(workDir) {
+    const backend = GObject.type_name(Gio.SettingsBackend.get_default().constructor.$gtype);
+    const config = GLib.get_user_config_dir();
+    const keyfile = GLib.build_filenamev([config, 'glib-2.0', 'settings', 'keyfile']);
+    const isolated = backend === 'GKeyfileSettingsBackend' &&
+        GLib.getenv('GSETTINGS_BACKEND') === 'keyfile' &&
+        config === GLib.build_filenamev([workDir, 'config']) &&
+        GLib.file_test(keyfile, GLib.FileTest.EXISTS);
+    return [isolated, `backend=${backend} config=${config}`];
+}
+
+async function testPanicCamera(outDir) {
+    const [isolated, where] = privacyIsIsolated(outDir);
+    check('panic camera: GNOME\'s privacy settings are the private test copy', isolated, where);
+    if (!isolated)
+        return;
+
+    const s = settings();
+    const privacy = new Gio.Settings({schema_id: 'org.gnome.desktop.privacy'});
+    privacy.reset('disable-camera');
+    s.set_strv('panic-buttons', ['block-camera']);
+    island().expand();
+    await sleep(animationWait());
+    const bar = () => island()._hub._panicBar;
+    const [camera] = bar()._buttons;
+    const icon = () => camera?.actor.child.icon_name;
+    check('panic camera: the bar shows "Block camera for apps that ask GNOME"',
+        bar()._buttons.length === 1 && camera.actor.accessible_name === CAMERA_TITLE,
+        bar()._buttons.map(b => b.actor.accessible_name).join(','));
+    check('panic camera: camera allowed: not checked, usable, webcam icon',
+        !camera.actor.checked && camera.actor.reactive && icon() === 'camera-web-symbolic',
+        `checked=${camera.actor.checked} reactive=${camera.actor.reactive} icon=${icon()}`);
+
+    const b = boxOf(camera.actor);
+    await movePointerTo((b.x1 + b.x2) / 2, (b.y1 + b.y2) / 2);
+    await sleep(SETTLE_MS);
+    const tip = island()._hub._tooltip.actor;
+    check('panic camera: hovering shows its name below it',
+        tip.visible && tip.text === CAMERA_TITLE && boxOf(tip).y1 >= b.y2 - 1,
+        `visible=${tip.visible} text=${tip.text}`);
+    await screenshotTop(outDir, 'panic-camera-tooltip');
+
+    await clickActor(camera.actor);
+    check('panic camera: a click turns GNOME\'s Camera Access off',
+        await waitFor(() => privacy.get_boolean('disable-camera')) && camera.actor.checked &&
+        icon() === 'camera-disabled-symbolic',
+        `disable-camera=${privacy.get_boolean('disable-camera')} checked=${camera.actor.checked} icon=${icon()}`);
+    await movePointerTo(...pillCenter());
+    await screenshotTop(outDir, 'panic-camera-blocked', 120);
+
+    // Keyboard: Tab to the button, Space turns camera access back on.
+    for (let i = 0; i < 10 && global.stage.key_focus !== camera.actor; i++)
+        await pressKeys(Clutter.KEY_Tab);
+    check('panic camera: Tab reaches the button', global.stage.key_focus === camera.actor,
+        `focus=${global.stage.key_focus}`);
+    await pressKeys(Clutter.KEY_space);
+    check('panic camera: Space turns Camera Access back on',
+        await waitFor(() => !privacy.get_boolean('disable-camera')) && !camera.actor.checked);
+
+    // As GNOME Settings → Privacy & Security → Cameras would.
+    privacy.set_boolean('disable-camera', true);
+    check('panic camera: a change made elsewhere checks the button',
+        await waitFor(() => camera.actor.checked && icon() === 'camera-disabled-symbolic'));
+    privacy.set_boolean('disable-camera', false);
+    check('panic camera: and unchecks it', await waitFor(() => !camera.actor.checked));
+
+    // Removing the button lets go of GNOME's privacy settings. The counts
+    // before prove the probe sees the button's own handlers.
+    const own = camera._access._settings;
+    const counts = () => [countHandlers(own, 'changed'), countHandlers(own, 'writable-changed')];
+    const before = counts();
+    s.set_strv('panic-buttons', ['mute-sound']);
+    await sleep(SETTLE_MS);
+    const after = counts();
+    check('panic camera: removed from the bar, it leaves no handler behind',
+        bar()._buttons.length === 1 && before.every(n => n > 0) && after.every(n => n === 0),
+        `before=${before} after=${after}`);
+    privacy.set_boolean('disable-camera', true); // a leaked handler would log errors
+    await sleep(SETTLE_MS);
+
+    privacy.reset('disable-camera');
+    s.reset('panic-buttons');
+    await sleep(SETTLE_MS);
+    island().collapse();
+    await sleep(animationWait());
+}
+
 // ---------------------------------------------------------------- hover open
 
 async function movePointerTo(x, y) {
@@ -2100,6 +2195,7 @@ export async function runAll(outDir) {
         await testKeyboard();
         await testHubLayout(outDir);
         await testPanic(outDir);
+        await testPanicCamera(outDir);
         await testHoverOpen();
         await testLauncher();
         await testStartup();
