@@ -1,6 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.4.0-rc0 (2026-10-02)
+
+First release candidate of 0.4.0, for GNOME Shell 50 on Ubuntu 26.04
+(Wayland). It builds on 0.3.0-rc1. The Clipboard tab is new work, so it
+opens 0.4.0. The Clipboard tab is off by default; the ZeroTier tab stays
+out of the packed extension.
 
 ### Added
 - **Clipboard tab** (off by default). It keeps a history of what you copy

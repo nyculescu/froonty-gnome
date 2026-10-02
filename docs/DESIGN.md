@@ -401,6 +401,10 @@ Release candidate 0.3.0-rc1 (no Shexli findings: the clock follows the top
 bar's WallClock, helpers are widget subclasses): **202/202** in both
 session modes, plus 136 unit tests.
 
+Release candidate 0.4.0-rc0 (the Clipboard tab with hidden passwords and
+paste as plain text, larger tab icons, the Btop scroll fix): **213/213**
+in both session modes, plus 159 unit tests.
+
 The Ubuntu run found a **GNOME Shell 46 race** in `ui/extensionSystem.js`:
 
 - `enable/disableExtension()` write two keys, and each write starts an async
