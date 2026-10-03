@@ -3991,6 +3991,263 @@ async function testHubLayout(outDir) {
     await sleep(animationWait());
 }
 
+// ---------------------------------------------------------------- resize grip
+
+const resizeGrip = () => island()._resizeGrip;
+
+function gripCenter() {
+    const b = boxOf(resizeGrip().grip);
+    return [(b.x1 + b.x2) / 2, (b.y1 + b.y2) / 2];
+}
+
+// Press on the grip, move through `path` (offsets from the press), and
+// release unless told not to; `during` runs before the release.
+async function dragGrip(path, {release = true, during = null} = {}) {
+    const [x, y] = gripCenter();
+    pointer.notify_absolute_motion(now(), x, y);
+    await sleep(50);
+    pointer.notify_button(now(), Clutter.BUTTON_PRIMARY, Clutter.ButtonState.PRESSED);
+    await sleep(30);
+    for (const [dx, dy] of path) {
+        pointer.notify_absolute_motion(now(), x + dx, y + dy);
+        // eslint-disable-next-line no-await-in-loop
+        await sleep(40);
+    }
+    await sleep(SETTLE_MS);
+    const result = await during?.();
+    if (release) {
+        pointer.notify_button(now(), Clutter.BUTTON_PRIMARY, Clutter.ButtonState.RELEASED);
+        await sleep(SETTLE_MS);
+    }
+    return result;
+}
+
+// The open tab's keys on the grip; Notes' (sizes the user can set).
+async function testResizeGrip(outDir) {
+    const s = settings();
+    const {clampAxis} = await import(`file://${extension().path}/ui/hubResize.js`);
+    const keys = {width: 'notes-width', height: 'notes-height'};
+    const read = () => ({width: s.get_int(keys.width), height: s.get_int(keys.height)});
+    const userSet = () => Object.values(keys).filter(k => s.get_user_value(k) !== null);
+    const fmt = size => `${size.width}x${size.height}`;
+    const sc = scale();
+    const monitor = Main.layoutManager.primaryMonitor;
+    const modalBefore = Main.modalCount;
+    const previousTab = island()._hub.activeFeature?.id;
+    const lastTabWasSet = s.get_user_value('hub-last-tab') !== null;
+
+    check('resize grip: hidden while the island is closed', !resizeGrip().grip.visible);
+    island().expand();
+    await sleep(animationWait());
+    island()._hub.select('notes');
+    await sleep(animationWait());
+    const grip = resizeGrip().grip;
+    const corner = boxOf(pill());
+    const g = boxOf(grip);
+    check('resize grip: in the open island\'s bottom-right corner on a tab whose size can be set',
+        grip.mapped && grip.opacity === 255 && Math.abs(g.x2 - corner.x2) <= 1 &&
+        Math.abs(g.y2 - corner.y2) <= 1 && grip.get_cursor_type() === Clutter.CursorType.SE_RESIZE,
+        `grip=[${g.x1},${g.y1} - ${g.x2},${g.y2}] island=[${corner.x1},${corner.y1} - ${corner.x2},${corner.y2}] ` +
+        `cursor=${grip.get_cursor_type()}`);
+    const picked = global.stage.get_actor_at_pos(Clutter.PickMode.REACTIVE, ...gripCenter());
+    check('resize grip: the pointer finds it there', picked === grip, `${picked}`);
+
+    await movePointerTo(...gripCenter());
+    await sleep(SETTLE_MS);
+    const tip = resizeGrip()._tip;
+    const t = boxOf(tip);
+    check('resize grip: hovering it shows "Drag to resize, double-click to reset" above it, inside the island',
+        tip.visible && tip.text === 'Drag to resize, double-click to reset' &&
+        t.y2 <= g.y1 && t.x2 <= corner.x2 && t.x1 >= corner.x1 && t.y1 >= corner.y1,
+        `visible=${tip.visible} tip=[${t.x1},${t.y1} - ${t.x2},${t.y2}]`);
+    const shot = await screenshotTop(outDir, 'resize-grip', Math.ceil(corner.y2 - monitor.y + 24));
+    check('resize grip: screenshot of the grip and its tooltip', true, `note: ${shot}`);
+    check('resize grip: hovering writes nothing', userSet().length === 0, userSet().join(','));
+
+    // A drag: live, centred, written once on release.
+    const before = read();
+    const limits = resizeGrip()._limits(keys);
+    const shown = {width: clampAxis(before.width, limits.width), height: clampAxis(before.height, limits.height)};
+    const [w0, h0] = pill().get_transformed_size();
+    let live = null;
+    await dragGrip([[10, 10], [20, 25], [30, 40]], {
+        during: () => {
+            const [w, h] = pill().get_transformed_size();
+            const [cx] = pillCenter();
+            live = {w, h, cx, keys: read(), eased: Boolean(pill().get_transition('width') ||
+                pill().get_transition('height')), tipShown: tip.visible};
+        },
+    });
+    check('resize grip: dragging resizes the island live, centred, without animation',
+        live && live.w === w0 + 60 * sc && live.h === h0 + 40 * sc && !live.eased &&
+        Math.abs(live.cx - (monitor.x + monitor.width / 2)) <= 1 && !live.tipShown,
+        `${w0}x${h0} -> ${live?.w}x${live?.h} centre=${live?.cx} eased=${live?.eased}`);
+    check('resize grip: nothing is written while dragging',
+        live && fmt(live.keys) === fmt(before), `${fmt(before)} -> ${live && fmt(live.keys)}`);
+    const after = read();
+    check('resize grip: the release writes both keys (logical px, as Settings → Size shows)',
+        after.width === shown.width + 60 && after.height === shown.height + 40,
+        `${fmt(before)} (shown ${fmt(shown)}) -> ${fmt(after)}`);
+    await sleep(animationWait());
+    const [w2, h2] = pill().get_transformed_size();
+    check('resize grip: the island stays at the dragged size; still open, still grabbed',
+        w2 === live?.w && h2 === live?.h && island().expanded &&
+        Main.modalCount === modalBefore + 1 && global.stage.get_grab_actor() === strip(),
+        `${w2}x${h2} expanded=${island().expanded} modal=${Main.modalCount} grab=${global.stage.get_grab_actor()}`);
+
+    // Clamped: the schema maximum and the work area; the hub's needs and
+    // the schema minimum.
+    const area = Main.layoutManager.getWorkAreaForMonitor(Main.layoutManager.primaryIndex);
+    let [gx, gy] = gripCenter();
+    await dragGrip([[monitor.x + monitor.width - 2 - gx, area.y + area.height - 2 - gy]]);
+    const most = {width: clampAxis(1e6, limits.width), height: clampAxis(1e6, limits.height)};
+    const big = boxOf(pill());
+    check('resize grip: at most the schema maximum, within the work area',
+        fmt(read()) === fmt(most) && most.width <= limits.width.max && most.height <= limits.height.max &&
+        big.y2 <= area.y + area.height && big.x1 >= area.x && big.x2 <= area.x + area.width,
+        `${fmt(read())}, expected ${fmt(most)}; island=[${big.x1},${big.y1} - ${big.x2},${big.y2}]`);
+    [gx, gy] = gripCenter();
+    await dragGrip([[-gx + monitor.x + 2, -gy + monitor.y + 2]]);
+    const least = {width: clampAxis(-1e6, limits.width), height: clampAxis(-1e6, limits.height)};
+    const needs = island()._hubNeeds();
+    const small = boxOf(pill());
+    const lastTab = boxOf(island()._hub._tabColumn.get_children().at(-1));
+    check('resize grip: never below the schema minimum nor what the hub needs; every tab still fits',
+        fmt(read()) === fmt(least) && least.width >= limits.width.min && least.height >= limits.height.min &&
+        least.width * sc >= needs.width - sc && least.height * sc >= needs.height - sc &&
+        small.x2 - small.x1 >= needs.width && small.y2 - small.y1 >= needs.height && lastTab.y2 <= small.y2,
+        `${fmt(read())}, expected ${fmt(least)}; needs ${needs.width}x${needs.height}; ` +
+        `island ${small.x2 - small.x1}x${small.y2 - small.y1}`);
+
+    // A double-click resets both keys; a single click changes nothing.
+    await clickAt(...gripCenter());
+    check('resize grip: a single click writes nothing and keeps the island open',
+        fmt(read()) === fmt(least) && island().expanded);
+    await sleep(600);
+    const [dx, dy] = gripCenter();
+    for (let i = 0; i < 2; i++) {
+        pointer.notify_button(now(), Clutter.BUTTON_PRIMARY, Clutter.ButtonState.PRESSED);
+        // eslint-disable-next-line no-await-in-loop
+        await sleep(30);
+        pointer.notify_button(now(), Clutter.BUTTON_PRIMARY, Clutter.ButtonState.RELEASED);
+        // eslint-disable-next-line no-await-in-loop
+        await sleep(60);
+    }
+    await sleep(animationWait());
+    check('resize grip: a double-click resets both keys to their defaults; the island follows',
+        userSet().length === 0 && island().expanded &&
+        pill().get_transformed_size()[0] === Math.max(s.get_int(keys.width) * sc, needs.width),
+        `${userSet().join(',')} at ${dx},${dy}; width ${pill().get_transformed_size()[0]}`);
+
+    // Escape during a drag cancels it; the island stays open.
+    const [w3, h3] = pill().get_transformed_size();
+    await dragGrip([[25, 25]], {
+        during: async () => {
+            await pressKeys(Clutter.KEY_Escape);
+        },
+    });
+    await sleep(SETTLE_MS);
+    const [w4, h4] = pill().get_transformed_size();
+    check('resize grip: Escape cancels a drag: the keys and the size stay, the island stays open',
+        userSet().length === 0 && island().expanded && w4 === w3 && h4 === h3,
+        `${userSet().join(',')} ${w3}x${h3} -> ${w4}x${h4} expanded=${island().expanded}`);
+
+    // The keyboard: the focused grip takes the arrow keys.
+    const base = read();
+    const baseShown = {width: clampAxis(base.width, limits.width), height: clampAxis(base.height, limits.height)};
+    grip.grab_key_focus();
+    await pressKeys(Clutter.KEY_Right);
+    await pressKeys(Clutter.KEY_Shift_L, Clutter.KEY_Down);
+    await sleep(animationWait());
+    await screenshotTop(outDir, 'resize-grip-focus', Math.ceil(boxOf(pill()).y2 - monitor.y + 24));
+    await pressKeys(Clutter.KEY_Return);
+    await sleep(animationWait());
+    check('resize grip: focused, Right widens by 10 and Shift+Down lengthens by 50; Enter does not close',
+        read().width === baseShown.width + 10 && read().height === baseShown.height + 50 &&
+        island().expanded && pill().get_transformed_size()[0] === (baseShown.width + 10) * sc,
+        `${fmt(base)} -> ${fmt(read())} expanded=${island().expanded}`);
+
+    // Each tab keeps its own size.
+    const hub = island()._hub;
+    const other = ['calendar', 'notifications'].find(id => hub._entries.has(id));
+    const otherKeys = hub._entries.get(other).feature.hubSizeKeys;
+    hub.select(other);
+    await sleep(animationWait());
+    const [ow] = pill().get_transformed_size();
+    hub.select('notes');
+    await sleep(animationWait());
+    const [nw] = pill().get_transformed_size();
+    check('resize grip: another tab keeps its own size; back on Notes, Notes\' size',
+        s.get_user_value(otherKeys.width) === null &&
+        ow === Math.max(s.get_int(otherKeys.width) * sc, island()._hubNeeds().width) &&
+        nw === Math.max(s.get_int(keys.width) * sc, island()._hubNeeds().width),
+        `${other}=${ow} notes=${nw}`);
+
+    // None on a tab of a fixed size.
+    const fixed = [...hub._entries.values()].map(e => e.feature)
+        .sort((a, b) => (b.id === 'zerotier') - (a.id === 'zerotier'))
+        .find(f => !f.hubSizeKeys);
+    if (fixed) {
+        hub.select(fixed.id);
+        await sleep(animationWait());
+        check(`resize grip: none on a tab of a fixed size (${fixed.title})`,
+            !grip.visible && !grip.has_key_focus() && global.stage.key_focus === pill(),
+            `visible=${grip.visible} focus=${global.stage.key_focus}`);
+        hub.select('notes');
+        await sleep(animationWait());
+        check('resize grip: back on a tab whose size can be set, it is back', grip.visible && grip.mapped);
+    }
+
+    island().collapse();
+    await sleep(animationWait());
+    check('resize grip: hidden again once the island closes; the grab is released',
+        !grip.visible && Main.modalCount === modalBefore && global.stage.get_grab_actor() === null,
+        `visible=${grip.visible} modal=${Main.modalCount}`);
+    s.reset(keys.width);
+    s.reset(keys.height);
+    await sleep(SETTLE_MS);
+
+    // Turned off mid-drag (as at a screen lock): the grab and the actors go,
+    // the keys stay, and the Shell is as before.
+    check('resize grip: disable succeeds', await setExtensionEnabled(false), stateName());
+    const baseline = shellFootprint();
+    await setExtensionEnabled(true);
+    island().expand();
+    await sleep(animationWait());
+    island()._hub.select('notes');
+    await sleep(animationWait());
+    const [w5] = pill().get_transformed_size();
+    let midDrag = 0;
+    await dragGrip([[20, 20], [40, 30]], {
+        release: false,
+        during: () => (midDrag = pill().get_transformed_size()[0]),
+    });
+    const disabled = await setExtensionEnabled(false);
+    const grabAfter = global.stage.get_grab_actor();
+    pointer.notify_button(now(), Clutter.BUTTON_PRIMARY, Clutter.ButtonState.RELEASED);
+    await sleep(SETTLE_MS);
+    const footprint = shellFootprint();
+    const isOurs = actor => /froonty/i.test(actor);
+    const scrub = f => ({
+        ...f,
+        uiGroupChildren: f.uiGroupChildren.filter(isOurs),
+        trackedChrome: f.trackedChrome.filter(isOurs),
+    });
+    check('resize grip: disabled mid-drag: no grab left, the keys unchanged, the footprint as before',
+        disabled && midDrag === w5 + 80 * sc && grabAfter === null && userSet().length === 0 &&
+        JSON.stringify(scrub(footprint)) === JSON.stringify(scrub(baseline)),
+        `disabled=${disabled} ${w5} -> ${midDrag} grab=${grabAfter} keys=${userSet().join(',')} ` +
+        `${footprintDiff(scrub(baseline), scrub(footprint))}`);
+    check('resize grip: re-enable succeeds', await setExtensionEnabled(true), stateName());
+    await sleep(SETTLE_MS);
+
+    if (previousTab)
+        island()._hub.select(previousTab);
+    if (!lastTabWasSet)
+        s.reset('hub-last-tab');
+    await movePointerTo(monitor.x + 60, monitor.y + monitor.height / 2);
+}
+
 // ---------------------------------------------------------------- panic buttons
 
 async function waitFor(predicate, timeoutMs = 5000) {
@@ -8522,6 +8779,7 @@ async function testPublicBuild() {
 const ONLY_TESTS = {
     testClaudeAttention, testClaudeAttentionWindows, testNotifications, testCalendar,
     testNotes, testMedia, testBreak, testHub, testLifecycle, testPublicBuild,
+    testResizeGrip,
 };
 
 export async function runAll(outDir) {
@@ -8557,6 +8815,7 @@ export async function runAll(outDir) {
         await testHubLayout(outDir);
         await testPanic(outDir);
         await testHubWithoutPanicButtons();
+        await testResizeGrip(outDir);
         // The camera panic button is switched off for now (panic/catalog.js).
         // await testPanicCamera(outDir);
         await testHoverOpen();
