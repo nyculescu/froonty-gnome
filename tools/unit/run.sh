@@ -2,10 +2,13 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Runs every tools/unit/*.test.js with plain gjs (no GNOME Shell needed).
 #
-# Isolation: each run gets its own temporary root for TMPDIR and
-# XDG_DATA_HOME, so temporary folders and trashed test files (Gio puts
-# them in $XDG_DATA_HOME/Trash when on the home file system) never reach
-# the real ~/.local/share/Trash. The root is deleted afterwards.
+# Isolation: each run gets its own temporary root for TMPDIR and the XDG
+# data, config, cache and runtime folders, so temporary folders and
+# trashed test files (Gio puts them in $XDG_DATA_HOME/Trash when on the
+# home file system) never reach the real ~/.local/share/Trash, and no test
+# can touch the real ~/.config/systemd/user or Froonty's real folders. The
+# root is deleted afterwards. Then the public build's leak-guard tests
+# (tools/pack-public/test_pack_public.py) run too.
 #
 # GTK tests (*.gtk.test.js: pages of the settings window) get a display of
 # their own: a private Broadway server (GTK's HTML5 backend, from GTK's
@@ -25,9 +28,13 @@ mkdir -p "$CACHE"
 ROOT=$(mktemp -d -p "$CACHE" froonty-unit.XXXXXX)
 broadway_pid=
 trap '[[ -n "$broadway_pid" ]] && kill "$broadway_pid" 2>/dev/null; rm -rf "$ROOT"' EXIT
-mkdir -p "$ROOT/tmp" "$ROOT/data" "$ROOT/claude"
+mkdir -p "$ROOT/tmp" "$ROOT/data" "$ROOT/config" "$ROOT/cache" "$ROOT/claude"
+mkdir -m 700 "$ROOT/runtime"
 export TMPDIR=$ROOT/tmp
 export XDG_DATA_HOME=$ROOT/data
+export XDG_CONFIG_HOME=$ROOT/config
+export XDG_CACHE_HOME=$ROOT/cache
+export XDG_RUNTIME_DIR=$ROOT/runtime
 # Claude Code's config folder: a private one, so a default
 # claudeSettingsFile() can never reach the real ~/.claude.
 export CLAUDE_CONFIG_DIR=$ROOT/claude
@@ -41,7 +48,7 @@ start_broadway() {
         echo "FAIL $BROADWAYD not found (GTK's libgtk-4-bin): the GTK tests need it"
         return 1
     fi
-    mkdir -m 700 "$ROOT/runtime"
+    mkdir -p -m 700 "$ROOT/runtime"
     XDG_RUNTIME_DIR=$ROOT/runtime "$BROADWAYD" :0 >"$ROOT/broadway.log" 2>&1 &
     broadway_pid=$!
     for _ in $(seq 50); do
@@ -64,4 +71,6 @@ for t in "$HERE"/*.test.js; do
         "$GJS" -m "$t" || status=1
     fi
 done
+echo "== test_pack_public.py"
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest -q "$HERE/../pack-public/test_pack_public.py" || status=1
 exit $status

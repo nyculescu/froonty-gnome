@@ -31,6 +31,7 @@ import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 
 import {Emitter} from '../../core/emitter.js';
+import {stopProcess} from '../../core/subprocess.js';
 import {PowerMonitor} from './power.js';
 
 Gio._promisify(Gio.File.prototype, 'enumerate_children_async');
@@ -48,10 +49,8 @@ export const HANDLED = 'claude-low-power-handled';
 export const MIN_INTERVAL_MS = 60 * 1000;
 // A run takes 2-3 s; one that hangs (e.g. no network) is stopped.
 const TIMEOUT_S = 30;
-const SIGTERM = 15;
-// How long a stopped run gets to end on SIGTERM before SIGKILL.
-const KILL_GRACE_S = 5;
-const SIGKILL = 9;
+// Names the run in stopProcess's warning.
+const LABEL = "Claude Code's /usage";
 
 // Folders whose extensions/ may hold Claude Code's VS Code extension.
 const EDITOR_DIRS = ['.vscode', '.vscode-insiders'];
@@ -148,24 +147,11 @@ async function isExecutable(path) {
     }
 }
 
-// SIGTERM, then SIGKILL if `proc` still runs KILL_GRACE_S later, so a hung
-// run cannot keep the refresher waiting.
-function stopProcess(proc) {
-    proc.send_signal(SIGTERM);
-    GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, KILL_GRACE_S, () => {
-        if (proc.get_identifier() !== null) {
-            console.warn(`Froonty: Claude Code's /usage ignored SIGTERM; killing it`);
-            proc.send_signal(SIGKILL);
-        }
-        return GLib.SOURCE_REMOVE;
-    });
-}
-
 /**
  * Runs Claude Code's /usage and waits for it, at most TIMEOUT_S. Stopped
  * with SIGTERM (Claude Code then ends cleanly, its cache file intact) on
  * timeout or when `cancellable` is cancelled, and with SIGKILL if it is
- * still there KILL_GRACE_S later.
+ * still there a few seconds later (core/subprocess.js).
  *
  * @returns {Promise<boolean>} whether it succeeded
  */
@@ -180,14 +166,14 @@ export async function runUsage(binary, cancellable) {
     let timeout = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, TIMEOUT_S, () => {
         console.warn(`Froonty: Claude Code's /usage did not finish in ${TIMEOUT_S} s`);
         timeout = 0;
-        stopProcess(proc);
+        stopProcess(proc, LABEL);
         return GLib.SOURCE_REMOVE;
     });
     try {
         await proc.wait_async(cancellable);
         return proc.get_successful();
     } catch (e) {
-        stopProcess(proc);
+        stopProcess(proc, LABEL);
         throw e;
     } finally {
         if (timeout)

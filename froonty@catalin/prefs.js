@@ -30,6 +30,7 @@ const CLOCK_FORMATS = ['system', '24h', '12h'];
 // Tabs, in display order. The window opens on the first one.
 const GENERAL_PAGE = 'general';
 const APPEARANCE_PAGE = 'appearance';
+const PREFS_PAGE_KEY = 'prefs-page';
 
 export default class FroontyPreferences extends ExtensionPreferences {
     fillPreferencesWindow(window) {
@@ -41,22 +42,48 @@ export default class FroontyPreferences extends ExtensionPreferences {
 
         // With more than one page, Adw.PreferencesWindow shows them as tabs
         // (a view switcher in the header bar).
-        window.add(this._generalPage(settings));
-        window.add(this._appearancePage(settings));
-        window.add(panicPage(settings));
-        // Feature pages in the hub's tab order (features/registry.js).
-        window.add(calendarPage(settings, window));
-        window.add(notificationsPage(settings));
-        window.add(mediaPage(settings));
-        window.add(notesPage(settings));
-        window.add(claudePage(settings));
-        window.add(sysmonPage(settings));
-        window.add(clipboardPage(settings));
-        window.add(killProcessPage(settings));
-        addLocalPrefs(window, settings);
+        const names = new Set();
+        for (const page of [
+            this._generalPage(settings),
+            this._appearancePage(settings),
+            panicPage(settings),
+            // Feature pages in the hub's tab order (features/registry.js).
+            calendarPage(settings, window),
+            notificationsPage(settings),
+            mediaPage(settings),
+            notesPage(settings),
+            claudePage(settings),
+            sysmonPage(settings),
+            clipboardPage(settings),
+            killProcessPage(settings),
+        ]) {
+            window.add(page);
+            names.add(page.name);
+        }
+        for (const name of addLocalPrefs(window, settings) ?? [])
+            names.add(name);
         window.visible_page_name = GENERAL_PAGE;
         // The All notes page (a subpage), when the island asked for it.
         attachAllNotes(window, settings);
+        this._followPrefsPage(window, settings, names);
+    }
+
+    // A tab's "Open Settings" button names the page to show (prefs-page),
+    // also while the window is already open; the key is emptied after.
+    _followPrefsPage(window, settings, names) {
+        const show = () => {
+            const name = settings.get_string(PREFS_PAGE_KEY);
+            if (names.has(name))
+                window.visible_page_name = name;
+            if (name)
+                settings.reset(PREFS_PAGE_KEY);
+        };
+        show();
+        const id = settings.connect(`changed::${PREFS_PAGE_KEY}`, show);
+        window.connect('close-request', () => {
+            settings.disconnect(id);
+            return false;
+        });
     }
 
     _generalPage(settings) {

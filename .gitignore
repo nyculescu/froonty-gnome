@@ -6,3 +6,6 @@ docs/local/
 
 # Logo artwork (kept out of the repository)
 logo/
+
+# Python bytecode (tools/pack-public tests)
+__pycache__/

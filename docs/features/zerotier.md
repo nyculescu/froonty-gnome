@@ -73,4 +73,6 @@ on 2026-10-01:
   `disable()` does through the hub.
 - The settings page imports no Clutter, Meta, St or Shell.
 - To publish: drop the ZeroTier lines from `tools/pack-public.sh` and
-  `tools/pack-public/`.
+  `tools/pack-public/` (the stubs, `strip-local-schema.py`'s prefixes and
+  `check_zip.py`'s list), and the `local:begin zerotier` / `local:end
+  zerotier` markers around its rules in `stylesheet.css`.

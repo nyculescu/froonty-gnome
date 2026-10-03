@@ -75,6 +75,14 @@ export function acquireRecorder(settings) {
     return shared;
 }
 
+/**
+ * The recorder if one exists, else null. Never creates one, so it never
+ * starts recording (the Writing tab's "From clipboard").
+ */
+export function peekRecorder() {
+    return shared;
+}
+
 export function releaseRecorder() {
     if (--users > 0)
         return;

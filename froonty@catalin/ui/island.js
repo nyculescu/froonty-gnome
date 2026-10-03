@@ -309,6 +309,12 @@ export class Island {
             memory: this._memory,
             // The extension's version-name (Media's User-Agent).
             version: this._version,
+            // Opens the settings window, on `page` (a tab's name) if given.
+            openSettings: page => {
+                if (page)
+                    this._settings.set_string('prefs-page', page);
+                this._openSettings('settings');
+            },
         };
         this._ctx = ctx;
         this._hub = new Hub(ctx, FEATURES, {

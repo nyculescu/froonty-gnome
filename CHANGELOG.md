@@ -153,6 +153,53 @@
 - **Panic button "Pause all media"** (not in the bar by default). Pauses
   every player that is playing; a second click plays again the ones it
   paused.
+- **Writing tab** (working-tree installs only, off by default; `make pack`
+  leaves it out). Paraphrase, Fix grammar, Shorten, Formal, Casual and
+  Summarise, on text you type or paste, or the Clipboard tab's current
+  entry (never a hidden password). The result is plain text; Copy puts it
+  on the clipboard. Text is sent only on a click, and the line above the
+  box always says where it goes. No paid API keys.
+  - **Engines**, each switched on in Settings → Writing (one switched off
+    is not in the tab at all): your own **Claude Code** on your Claude
+    plan, with every tool, MCP server, skill, hook and settings file off
+    and API-billing sign-ins refused; **LanguageTool**'s free public
+    service, grammar and spelling only, at most 10 texts a minute;
+    **Ollama** on this computer. While a request runs, the engine cannot
+    be switched (the line above the box keeps naming where the text went),
+    and switching its engine off in Settings stops it.
+  - **Why an engine is not ready:** Claude Code not found; LanguageTool
+    offline; Ollama not installed, not running (with the right way to
+    start yours: `systemctl` only when it has a system service, else
+    `ollama serve`), no model chosen, or model not downloaded. Checked
+    again when the tab is shown, a setting changes, or the network comes
+    back while it is shown.
+  - **Passwords:** text that holds the password the Clipboard tab is
+    hiding (compared in memory; also when pasted with Ctrl+V or a middle
+    click: a passphrase, a long API key, a hex token), or that looks like
+    a password or key, never goes to Claude Code or LanguageTool.
+  - **Long texts:** time limits grow with the text (Claude Code 90 s plus
+    8-15 ms per character, Ollama 3 min plus 60 ms per character); the
+    busy line says when a long text can take minutes; Ollama's reply
+    shows as it is written, and Cancel or a timeout keeps what came. The
+    text box scrolls with the caret, and typing in it leaves the result,
+    and a selection in it, alone.
+  - **Fixed addresses:** LanguageTool's public service and Ollama on
+    127.0.0.1. The variables that move them are read only under the
+    tests, so a stale one cannot send text elsewhere.
+  - **Settings → Writing:** each engine's status, how to set it up by
+    hand, **Set up…** for Ollama (Ollama's official archive from GitHub,
+    SHA-256 checked, installed for you only, a user service on 127.0.0.1,
+    no administrator password), **Download model…**, **Remove…**, and
+    **Remove everything Froonty set up for Writing…**, which undoes all of
+    it after listing it. Ollama's **Model** list reads "Choose a model"
+    until one is picked, and picking one, even the only one, saves it.
+    LanguageTool's wait message names the limit that applies (10 texts or
+    60 KB a minute). See
+    [docs/features/writing.md](docs/features/writing.md).
+- **`make pack` leak guard.** The public build is checked for any trace of
+  the working-tree-only tabs (files, settings keys, CSS, addresses); the
+  zip is deleted and the build fails if one is found. Their CSS now sits
+  between `local:begin`/`local:end` markers.
 - **Notes: rendered Markdown.** Notes are drawn formatted while staying
   plain Markdown files. Headings are larger, bold is bold, italic is
   italic, struck text is struck, code is monospace, links are underlined,

@@ -9,13 +9,15 @@ Status: **0.4.0-rc0**, a release candidate. See [CHANGELOG.md](CHANGELOG.md).
 - No background subprocesses. The polling timers are the Btop (system
   monitor) and Kill Process tabs', each running only while its tab is on
   screen; the Media tab's display tick (it reads nothing) runs only while
-  the tab is on screen and a song plays. The published extension
-  package omits the working-tree-only ZeroTier controls; `make install`
+  the tab is on screen and a song plays. The published extension package
+  omits the working-tree-only ZeroTier and Writing tabs; `make install`
   includes them. Froonty also makes one direct network request by
   default: the Claude tab's livenerf row fetches two public files from
   GitHub, at most once an hour while the tab is open. Two Media options,
   off by default, use the internet: covers a player gives as a web
-  address, and lyrics from lrclib.net.
+  address, and lyrics from lrclib.net. In local builds only, the Writing
+  tab (off by default) runs your Claude Code or calls LanguageTool or a
+  local Ollama when you click one of its actions.
 - GJS and native GNOME Shell APIs only.
 
 See [docs/DESIGN.md](docs/DESIGN.md) for the GNOME Shell API analysis (written for 46; see the note there), the list
@@ -177,6 +179,9 @@ feature has a design note in [docs/features/](docs/features/).
   network is doing, with Start/Stop. Networks are managed in ZeroTier
   itself. Turned off on the first start when ZeroTier is not installed;
   see [docs/features/zerotier.md](docs/features/zerotier.md).
+- **Writing** tab (working-tree installs only, off by default):
+  Paraphrase, Fix grammar, Shorten, Formal, Casual and Summarise, with the
+  engines you switch on; see [Working-tree only](#working-tree-only-make-install).
 - **Always reachable.** With "Show island" off, a puzzle-piece icon in the
   top bar (and the shortcut) opens the settings.
 - **Start at login**, or not. With it off, Froonty waits after login behind
@@ -245,7 +250,7 @@ docs/local/                  local notes and build rules (not in git)
 
 ```sh
 make install    # compiles schemas, copies into ~/.local/share/gnome-shell/extensions
-make pack       # builds a public archive without local-only ZeroTier controls
+make pack       # builds a public archive without the local-only ZeroTier and Writing tabs
 ```
 
 `make install` copies rather than links, so Froonty starts at login even
@@ -253,6 +258,11 @@ when the working tree is on a drive that is mounted later. Run it again
 after each change.
 
 GNOME Shell only discovers new extensions at startup: log out and back in.
+
+`make pack` stages a copy without the local-only tabs (their code, their
+`zerotier-*`/`writing-*` settings, their CSS between `local:begin` and
+`local:end` markers) and checks the zip (`tools/pack-public/check_zip.py`):
+any trace of them deletes the zip and fails the build.
 
 Then run:
 
@@ -312,6 +322,8 @@ its tabs:
 - **Claude:** enable.
 - **Kill Process:** enable, refresh interval, what is never killed, size.
 - **ZeroTier:** enable, allow reading ZeroTier's status.
+- **Writing:** the tab, each engine's switch, status and set-up steps,
+  Set up… and Remove for Ollama, Remove everything, size.
 
 The keys behind it:
 
@@ -349,7 +361,53 @@ The keys behind it:
 | `claude-enabled` | `true` | Show the Claude tab |
 | `zerotier-enabled` | `true` | Show the ZeroTier tab |
 | `zerotier-install-checked` | `false` | ZeroTier's installation was checked on the first start (internal) |
+| `writing-enabled` | `false` | Show the Writing tab (local builds) |
+| `writing-claude-code-enabled` / `writing-languagetool-enabled` / `writing-ollama-enabled` | `false` | Offer that engine in the Writing tab; off, it is not in the tab at all |
+| `writing-engine` | `claude-code` | Engine chosen last in the tab |
+| `writing-claude-code-model` | `haiku` | `haiku` or `sonnet` (low effort) |
+| `writing-languagetool-variants` | `en-US,de-DE` | LanguageTool's preferred language variants |
+| `writing-ollama-model` | `''` | The local Ollama model |
+| `writing-width` / `writing-height` | 460 / 540 | The island's size on the Writing tab |
+| `prefs-page` | `''` | The settings tab to show next (internal; "Open Settings → Writing") |
 | `hub-last-tab`, `notes-last` | | Remembered selections (internal) |
+
+## Working-tree only (`make install`)
+
+Two tabs are in local builds only, until they are ready to publish:
+
+- **ZeroTier**: see [docs/features/zerotier.md](docs/features/zerotier.md).
+- **Writing** (off by default): Paraphrase, Fix grammar, Shorten, Formal,
+  Casual and Summarise, on text you type or paste, or the Clipboard tab's
+  current entry. The result is plain text; Copy puts it on the clipboard.
+  Text is sent only when you click an action, and the line above the box
+  always says where it goes. No paid API keys. Details:
+  [docs/features/writing.md](docs/features/writing.md).
+
+  Turn it on in Settings → Writing, then switch on the engines you want
+  (an engine switched off is not in the tab at all):
+
+  | Engine | Text goes to | Set up |
+  |---|---|---|
+  | Claude Code | Anthropic, through your own Claude Code, on your Claude plan (counts toward its usage limits) | A Pro, Max, Team or Enterprise plan; Claude Code (VS Code's extension, or `curl -fsSL https://claude.ai/install.sh \| bash`); `claude auth login`; Check again. Every run has all of Claude Code's tools, MCP servers, skills, hooks and settings files off; API-billing sign-ins are refused |
+  | LanguageTool | languagetool.org's free public service; grammar and spelling only | Nothing: no account, no key. At most 10 texts a minute |
+  | Ollama | nowhere: a model on this computer | **Set up…** installs Ollama for you only (GitHub's official archive, SHA-256 checked, a user service on 127.0.0.1, no administrator password), or install it yourself (`curl -fsSL https://ollama.com/install.sh \| sh`, as administrator); then **Download model…** |
+
+  The tab says why an engine is not ready (Claude Code not found;
+  LanguageTool offline; Ollama not installed, not running, no model chosen
+  or model not downloaded), and notices the network coming back while it
+  is shown. With an Ollama you installed yourself, pick the model in
+  Settings → Writing → Ollama → **Model** ("Choose a model" until you do).
+  Text that holds the password the Clipboard tab is hiding (also when
+  pasted with Ctrl+V), or that looks like a password or key, never goes to
+  Claude Code or LanguageTool. Long texts get longer time limits, and
+  Ollama's reply shows as it is written; Cancel keeps what came.
+
+  **Remove…** (Ollama) undoes exactly what Froonty set up: its own Ollama,
+  service and folder, or only the models it downloaded into yours. **Remove
+  everything Froonty set up for Writing…** also deletes Claude Code's
+  records of Froonty's working folder, Froonty's Writing folders and every
+  Writing setting, after listing them. Claude Code, an Ollama you installed
+  and models you downloaded yourself stay.
 
 ## License and provenance
 

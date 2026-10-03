@@ -36,6 +36,11 @@
       <summary>Hub tab selected last</summary>
       <description>The feature id shown when the island expands (see features/registry.js).</description>
     </key>
+    <key name="prefs-page" type="s">
+      <default>''</default>
+      <summary>Internal: the settings tab to show next</summary>
+      <description>Set by a tab's "Open Settings" button; the settings window shows that tab and empties this key.</description>
+    </key>
 
     <!-- Settings window (shell/settingsWindow.js, prefs.js) -->
     <key name="settings-window-view" type="s">
@@ -408,6 +413,69 @@
       <default>440</default>
       <summary>Kill Process island height</summary>
       <description>In logical pixels, while the Kill Process tab is shown.</description>
+    </key>
+
+    <!-- local-only: the Writing tab (docs/features/writing.md); tools/pack-public strips the writing-* keys and this comment -->
+    <key name="writing-enabled" type="b">
+      <default>false</default>
+      <summary>Show the Writing tab</summary>
+      <description>Paraphrase, fix grammar, shorten, change the tone of, or summarise text with the engines switched on below. Text leaves the computer only on a click of one of these actions, and only to the engine named above the text box. Off by default.</description>
+    </key>
+    <key name="writing-engine" type="s">
+      <choices>
+        <choice value="claude-code"/>
+        <choice value="languagetool"/>
+        <choice value="ollama"/>
+      </choices>
+      <default>'claude-code'</default>
+      <summary>Writing: engine chosen last in the tab</summary>
+      <description>When it is switched off, the first engine switched on is used.</description>
+    </key>
+    <key name="writing-claude-code-enabled" type="b">
+      <default>false</default>
+      <summary>Writing: offer Claude Code</summary>
+      <description>Your own Claude Code, run headless with every tool, MCP server, skill, hook and settings file off, on your Claude plan (Pro, Max, Team or Enterprise); API billing is refused. Counts toward your plan's usage limits. Off: it is not shown in the tab.</description>
+    </key>
+    <key name="writing-claude-code-model" type="s">
+      <choices>
+        <choice value="haiku"/>
+        <choice value="sonnet"/>
+      </choices>
+      <default>'haiku'</default>
+      <summary>Writing: Claude model</summary>
+      <description>"haiku" (the lightest on your plan's usage) or "sonnet" (with low effort).</description>
+    </key>
+    <key name="writing-languagetool-enabled" type="b">
+      <default>false</default>
+      <summary>Writing: offer LanguageTool</summary>
+      <description>Fix grammar sends the text to LanguageTool's free public service (api.languagetool.org): no account, no key, at most 20 KB per text, and at most 10 texts a minute from Froonty. Off: it is not shown in the tab.</description>
+    </key>
+    <key name="writing-languagetool-variants" type="s">
+      <default>'en-US,de-DE'</default>
+      <summary>Writing: LanguageTool's preferred language variants</summary>
+      <description>Comma-separated, such as en-GB or pt-BR: which variant LanguageTool assumes when it detects the language. An invalid value is not sent.</description>
+    </key>
+    <key name="writing-ollama-enabled" type="b">
+      <default>false</default>
+      <summary>Writing: offer Ollama</summary>
+      <description>A model running on this computer through Ollama (127.0.0.1 only); the text never leaves the computer. Off: it is not shown in the tab.</description>
+    </key>
+    <key name="writing-ollama-model" type="s">
+      <default>''</default>
+      <summary>Writing: Ollama model</summary>
+      <description>A model downloaded in Ollama, such as llama3.2:3b. Ollama's cloud models are never used.</description>
+    </key>
+    <key name="writing-width" type="i">
+      <range min="360" max="960"/>
+      <default>460</default>
+      <summary>Writing island width</summary>
+      <description>In logical pixels, while the Writing tab is shown.</description>
+    </key>
+    <key name="writing-height" type="i">
+      <range min="320" max="720"/>
+      <default>540</default>
+      <summary>Writing island height</summary>
+      <description>In logical pixels, while the Writing tab is shown.</description>
     </key>
 
     <!-- Clock -->

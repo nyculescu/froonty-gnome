@@ -147,6 +147,20 @@ export FROONTY_LIVENERF_DIR=$WORK/livenerf
 # its arguments and, when the checks left one, puts a new cache in place.
 # Set always, so the Shell under test never finds the real Claude Code.
 export FROONTY_CLAUDE_CODE=$WORK/fake-claude
+# The Writing tab (working-tree only): every address and command it could
+# reach is a fake or refused until the checks point it at their own local
+# server. FROONTY_HEADLESS_TEST makes a missing one an error, so nothing
+# can fall back to the real LanguageTool, Ollama, GitHub or systemd.
+# A paid API key in the environment must be removed before Claude Code runs.
+export FROONTY_HEADLESS_TEST=1
+export ANTHROPIC_API_KEY=sk-froonty-test-not-a-key
+export FROONTY_LANGUAGETOOL_URL=http://127.0.0.1:1/v2/check
+export FROONTY_OLLAMA_URL=http://127.0.0.1:1
+export FROONTY_OLLAMA_RELEASE_API=http://127.0.0.1:1/repos/ollama/ollama/releases/latest
+export FROONTY_SYSTEMCTL=$WORK/fake-systemctl
+# Stands in for /usr, /etc and /lib when the Writing tab looks for an Ollama
+# of the user's own (empty: none installed), so the host's does not count.
+export FROONTY_OLLAMA_SYSTEM_ROOT=$WORK/system-root
 export WAYLAND_DISPLAY=wayland-froonty-test
 # D-Bus activated GTK apps (the prefs window) inherit this environment;
 # an X11 host session may force GDK_BACKEND=x11 and load X11-only modules.
@@ -159,7 +173,7 @@ unset CLAUDE_CODE_ENTRYPOINT CLAUDE_PID CLAUDE_CODE_SESSION_ID CLAUDE_PROJECT_DI
 mkdir -p "$XDG_DATA_HOME/gnome-shell/extensions" "$XDG_CONFIG_HOME/glib-2.0/settings" \
     "$XDG_CACHE_HOME" "$XDG_STATE_HOME" "$XDG_DATA_HOME/applications"
 mkdir -m 700 "$XDG_RUNTIME_DIR"
-mkdir -p "$CLAUDE_CONFIG_DIR"
+mkdir -p "$CLAUDE_CONFIG_DIR" "$FROONTY_OLLAMA_SYSTEM_ROOT"
 # Apps the attention bar's checks pose as: the Claude app (its desktop id,
 # so it shadows a real one in /usr/share) and a web browser. When GNOME
 # opens one (a click on its notification), /bin/true is all that runs.
@@ -189,11 +203,45 @@ NoDisplay=true
 EOF
 cat >"$FROONTY_CLAUDE_CODE" <<'EOF'
 #!/bin/sh
+# The Writing tab's calls (before the Claude tab's /usage log, which they
+# must not touch): --version, auth status, project purge, and a run.
+W="$CLAUDE_CONFIG_DIR/writing"
+case "$1" in
+--version) echo "2.1.287 (Claude Code)"; exit 0 ;;
+auth)
+    mkdir -p "$W"; echo "$*" >>"$W/auth.log"
+    if [ -f "$W/auth.json" ]; then cat "$W/auth.json"
+    else echo '{"loggedIn":true,"authMethod":"claude.ai","apiProvider":"firstParty","subscriptionType":"max"}'; fi
+    exit "$(cat "$W/auth.exit" 2>/dev/null || echo 0)" ;;
+project)
+    mkdir -p "$W"; echo "$*" >>"$W/purge.log"
+    echo "No Claude Code project state found"; exit 1 ;;
+esac
+for arg in "$@"; do
+    if [ "$arg" = "--output-format=json" ]; then
+        mkdir -p "$W"
+        for a in "$@"; do printf '%s\0' "$a"; done >"$W/run.argv"
+        pwd >"$W/run.cwd"
+        env >"$W/run.env"
+        echo $$ >"$W/run.pid"
+        [ -f "$W/hang" ] && exec sleep 300
+        cat >"$W/run.stdin"
+        if [ -f "$W/reply.json" ]; then cat "$W/reply.json"
+        else echo '{"type":"result","subtype":"success","is_error":false,"result":"Fake rewrite."}'; fi
+        exit 0
+    fi
+done
 echo "$*" >>"$CLAUDE_CONFIG_DIR/runs.log"
 [ -f "$CLAUDE_CONFIG_DIR/next.json" ] && mv "$CLAUDE_CONFIG_DIR/next.json" "$CLAUDE_CONFIG_DIR/.claude.json"
 exit 0
 EOF
 chmod +x "$FROONTY_CLAUDE_CODE"
+cat >"$FROONTY_SYSTEMCTL" <<'EOF'
+#!/bin/sh
+echo "$*" >>"$CLAUDE_CONFIG_DIR/systemctl.log"
+exit 0
+EOF
+chmod +x "$FROONTY_SYSTEMCTL"
 
 # Media tab: apps for the fake players (fake-mpris.js) to name, one music
 # player and one browser, never shown in the app grid.

@@ -22,6 +22,7 @@ import St from 'gi://St';
 
 import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 
+import {keepCursorVisible} from '../../core/textScroll.js';
 import {ColorPicker} from './colorPicker.js';
 import {COLOR_IDS} from './colors.js';
 import {FormatBar} from './formatBar.js';
@@ -371,33 +372,6 @@ export class NotesView {
     }
 
     _keepCursorVisible() {
-        const text = this._entry.clutter_text;
-        let [ok, x, y, lineHeight] = text.position_to_coords(text.cursor_position);
-        if (!ok)
-            return;
-        // Those coordinates are relative to the text, which sits inside the
-        // entry's padding; the adjustments scroll the box holding the entry.
-        // Ignoring the offset left the last line under the bottom edge.
-        x += this._entry.x + text.x;
-        y += this._entry.y + text.y;
-
-        // Horizontally too, when lines do not wrap (a small margin keeps the
-        // caret off the very edge).
-        const h = this._scroll.hadjustment;
-        const margin = lineHeight;
-        if (x < h.value)
-            h.value = Math.max(0, x - margin);
-        else if (x + margin > h.value + h.page_size)
-            h.value = x + margin - h.page_size;
-
-        // Vertically, keep the cursor line a gap away from the rounded top and
-        // bottom edges. The gap is the entry's bottom padding (stylesheet),
-        // so the last line can always scroll that far up.
-        const gap = this._entry.peek_theme_node()?.get_padding(St.Side.BOTTOM) ?? 0;
-        const v = this._scroll.vadjustment;
-        if (y - gap < v.value)
-            v.value = Math.max(0, y - gap);
-        else if (y + lineHeight + gap > v.value + v.page_size)
-            v.value = y + lineHeight + gap - v.page_size;
+        keepCursorVisible(this._entry, this._scroll);
     }
 }

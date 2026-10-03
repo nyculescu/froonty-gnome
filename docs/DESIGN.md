@@ -81,16 +81,34 @@ What changed for Froonty, and how it adapts:
   the tab is on screen and the card is awake), the Kill Process tab's
   `/usr/bin/kill -s TERM|KILL <pid>` (GJS, GLib and the Shell cannot
   signal another process; once per confirmed click, fixed path and
-  arguments, no shell) and the working-tree-only
-  ZeroTier integration. Its status reads use the installed CLI; explicit actions
-  (Start/Stop, allowing status access) use fixed `pkexec` arguments. It is omitted, along with its setting, from
-  `make pack` output. The Claude tab's livenerf row is the only direct
-  network access by default: it GETs two public files from GitHub while
-  the tab is on screen, at most once an hour
-  ([features/claude.md](features/claude.md)). The Media tab has two
-  opt-in uses, both off by default and declared in the extension's
-  description: covers a player gives as a web address, and lyrics from
-  lrclib.net ([features/media.md](features/media.md#network-and-privacy)).
+  arguments, no shell) and two working-tree-only integrations, left out
+  of `make pack` with their settings and CSS (the build fails if any of
+  it reaches the zip):
+  - ZeroTier. Its status reads use the installed CLI; explicit actions
+    (Start/Stop, allowing status access) use fixed `pkexec` arguments.
+  - The Writing tab ([features/writing.md](features/writing.md)), only on
+    a click of one of its actions: one `claude -p` of the user's own
+    Claude Code with every tool, MCP server, skill, hook and settings
+    file off (fixed argv, text on stdin, no shell, SIGTERM on Cancel,
+    timeout or disable), or one HTTPS POST to LanguageTool's public
+    service, or HTTP to Ollama on 127.0.0.1. If Froonty installed Ollama
+    and it is stopped, `systemctl --user start froonty-ollama.service`
+    runs first; Ollama then runs until logout or Stop. Set-up and removal
+    run only in the settings window, on a click. Besides clicks, only
+    readiness checks when the tab comes on screen, when a Writing setting
+    changes, or when the network goes on or off line while it is shown:
+    Ollama's `/api/version` and `/api/tags` on 127.0.0.1 (2 s), and
+    nothing sent anywhere else. Its addresses are fixed (LanguageTool's
+    public service, Ollama on 127.0.0.1); the variables that move them are
+    read only under the tests.
+
+  The Claude tab's livenerf row is the only direct network access by
+  default: it GETs two public files from GitHub while the tab is on
+  screen, at most once an hour ([features/claude.md](features/claude.md)).
+  The Media tab has two opt-in uses, both off by default and declared in
+  the extension's description: covers a player gives as a web address,
+  and lyrics from lrclib.net
+  ([features/media.md](features/media.md#network-and-privacy)).
   The Claude attention bar spawns nothing: after the user's Set up, Claude
   Code (not the Shell) runs Froonty's GJS hook script, which writes one
   small file per waiting session under `$XDG_RUNTIME_DIR/froonty`, and a
@@ -289,6 +307,8 @@ Consequences:
 | `Gio.File` async I/O, `Gio.FileMonitor` | Notes: Markdown files, folder watching; Claude: Claude Code's config file; the attention bar: a directory monitor on its state folder |
 | `Gio.NetworkMonitor` (`network-changed`, `notify::connectivity`, `notify::network-available`) | Claude: "Unknown" while offline, from NetworkManager's own check |
 | `Soup` 3 (`Session.send_and_read_async`) | Claude: livenerf's README and chart from `raw.githubusercontent.com` |
+| `Soup` 3 (`Session.send_async` and a streamed body; `form_encode_hash`; `Soup.Server` in the tests) | Writing (local builds): LanguageTool's form POST, Ollama's streamed NDJSON, the set-up's download |
+| `Gio.SubprocessLauncher` (working folder, environment, stdin) | Writing (local builds): `claude -p` in a private folder, with paid-billing variables removed |
 | `PangoCairo` | Claude: the labels of livenerf's chart, drawn on an `St.DrawingArea` |
 | `Meta.KeyBindingFlags`, `Shell.ActionMode` | Keybinding |
 | `global.compositor.get_laters()`, `Meta.LaterType.BEFORE_REDRAW` | Work after a layout pass, before the next frame: the clock cover's bounds (`shell/dateMenu.js`), the Kill Process list's rows after a scroll |
@@ -451,18 +471,18 @@ Two St/Clutter rules also shaped the island:
 | Mixer connections | Per panic button: 2 on the Shell's mixer + 1 on its current stream | `PanicBar.destroy()` |
 | GNOME privacy settings | Block-camera panic button only: one `org.gnome.desktop.privacy` `Gio.Settings` per button, with 2 handlers (`changed::disable-camera`, `writable-changed::disable-camera`) | `PanicBar.destroy()` (`CameraAccess.destroy()`) |
 | Ctrl+Alt+Tab group | 1 | `Island.destroy()` |
-| Timers / GLib sources | **No periodic timer while the island is closed.** One-shot only: the hover-open delay while the pointer rests on the collapsed pill (`HoverOpen`); a 10 s give-up timeout while a requested settings window has not appeared (`SettingsWindow.destroy()`); Notes' 0.8 s autosave while there are unsaved edits (`NotesService.stop()` flushes and removes it); the Clipboard tab's hidden password expiry (`clipboard-password-minutes`), only while one is listed (`ClipboardRecorder.destroy()`). **Two periodic timers**, each only while its tab is on screen: the Btop tab's, every `sysmon-interval` seconds (1-10, default 2), and the Kill Process tab's, every `killprocess-interval` seconds (1-10, default 3), both `timeout_add_seconds` so GLib can batch their wakeups (`SysmonService.setActive(false)`, `KillProcessService.setActive(false)`); plus a 5 s give-up timeout per `nvidia-smi` or `kill` run, and the Kill Process tab's one-shot early reading (0.5 s after it comes on screen or a signal is sent, then each second while a killed process is still listed). At most one pending `BEFORE_REDRAW` later (cover recompute), removed in `PanelClock.restore()`; and at most one in the Kill Process list, which fills its rows after a scroll or a new height (never queued while the tab is hidden; removed when it is hidden or its view destroyed). While a Kill Process reading is in flight, at most one idle (`PRIORITY_DEFAULT_IDLE`) at a time between its batches of reads, removed when the reading is cancelled (`KillProcessService.setActive(false)`); the interval's readings are spaced at least ten times as long as the previous one took. The clock ticks come from the top bar's own WallClock, so Froonty owns none | `ClockService.stop()` |
+| Timers / GLib sources | **No periodic timer while the island is closed.** One-shot only: the hover-open delay while the pointer rests on the collapsed pill (`HoverOpen`); a 10 s give-up timeout while a requested settings window has not appeared (`SettingsWindow.destroy()`); Notes' 0.8 s autosave while there are unsaved edits (`NotesService.stop()` flushes and removes it); the Clipboard tab's hidden password expiry (`clipboard-password-minutes`), only while one is listed (`ClipboardRecorder.destroy()`); the Writing tab's per-request timeouts while a request runs (Claude Code 90 s plus 8-15 ms per character, `claude auth status` 10 s, Ollama 180 s plus 60 ms per character overall) and, when it starts Froonty's own Ollama, a chain of 500 ms one-shots for at most 15 s until it answers (all removed when the request ends or `WritingService.stop()` cancels it). **Two periodic timers**, each only while its tab is on screen: the Btop tab's, every `sysmon-interval` seconds (1-10, default 2), and the Kill Process tab's, every `killprocess-interval` seconds (1-10, default 3), both `timeout_add_seconds` so GLib can batch their wakeups (`SysmonService.setActive(false)`, `KillProcessService.setActive(false)`); plus a 5 s give-up timeout per `nvidia-smi` or `kill` run, and the Kill Process tab's one-shot early reading (0.5 s after it comes on screen or a signal is sent, then each second while a killed process is still listed). At most one pending `BEFORE_REDRAW` later (cover recompute), removed in `PanelClock.restore()`; and at most one in the Kill Process list, which fills its rows after a scroll or a new height (never queued while the tab is hidden; removed when it is hidden or its view destroyed). While a Kill Process reading is in flight, at most one idle (`PRIORITY_DEFAULT_IDLE`) at a time between its batches of reads, removed when the reading is cancelled (`KillProcessService.setActive(false)`); the interval's readings are spaced at least ten times as long as the previous one took. The clock ticks come from the top bar's own WallClock, so Froonty owns none | `ClockService.stop()` |
 | File watching | Notes: one inotify folder monitor (`Gio.FileMonitor`), only while the Notes tab has been opened. Claude: one monitor on Claude Code's config file while the Claude tab is on screen, and one more while the island is open with the Claude session panic button. Attention bar: one folder monitor (`WATCH_MOVES`) on `$XDG_RUNTIME_DIR/froonty/claude-attention`, while the island exists and the bar is on; per state file event one read of at most 4 KiB; per recorded session one `/proc/<pid>/stat` read on arrival, on each move of the focus to another window while an entry with a known app shows, and on each collapse | `NotesService.stop()`; `ClaudeService.setActive(false)`; `AttentionService.stop()` |
 | Attention bar | Signals: message tray `notify::visible`, overview `showing` / `hidden` (adapter, for its life); `org.gnome.desktop.notifications` `changed::show-banners`; 3 settings; tray `source-added` / `source-removed` plus 4 per followed source (the Claude app, browsers) and 3 per followed notification, while those are followed (the Notifications tab's store, with a `filter`; other sources get none); `global.display` `notify::focus-window` only while a shown entry has a known app. One Ctrl+Alt+Tab group, listed only while the bar is mapped. No timer, no process. Disk: the `0700` folder and at most one `0600` file of 4 KiB per waiting session, on tmpfs; kept through a screen lock (what waits survives it), removed by any other disable and when the island or the bar is turned off | `Island.destroy()` (`_stopAttention()`, which also removes the folder unless the screen is locking); turning the bar off also removes the folder |
 | Notes: All notes button | 1 `St.Button` in the hub header (with the Notes view; shown only on the Notes tab); its tooltip handler | `NotesView.destroy()`, then `HubHeader.removeActions()` |
 | Notes: label menu | Only while open: 1 modal grab (POPUP action mode), 1 `uiGroup` child, 1 focus group, 1 `Main.sessionMode` `updated` handler, 1 `system-modal-opened` handler, 1 `labels-changed` and 1 `changed` handler on the Notes service. Label writes only on user action, rename or create | Destroyed on close, tab switch, collapse, `NotesView.destroy()` (disable, lock, Notes off), `Island.destroy()` (backstop), or its tab going away |
 | Settings window (separate process), All notes page | While the page is shown: one folder monitor, up to 8 reads in flight; while its editor has unsaved text, one 0.8 s one-shot timer. The process exits 2 s after its window closes | Page `hidden` and the window's `close-request` |
 | Clipboard | Clipboard tab enabled (off by default): one `owner-changed` connection on `global.display.get_selection()`, one settings connection, and one read per copy (`St.Clipboard`); history and images under `~/.local/share/froonty/clipboard` (0700/0600) | `releaseRecorder()` (extension `disable()`, tab turned off) |
-| Network monitor | Claude: three connections on the shared `Gio.NetworkMonitor` (`network-changed`, `notify::connectivity`, `notify::network-available`) per active reader: the tab while on screen, the panic button while the island is open | `ClaudeService.setActive(false)` |
+| Network monitor | Claude: three connections on the shared `Gio.NetworkMonitor` (`network-changed`, `notify::connectivity`, `notify::network-available`) per active reader: the tab while on screen, the panic button while the island is open. Writing (local builds): the same three while its tab is on screen | `ClaudeService.setActive(false)`; `WritingService.setActive(false)` and `stop()` |
 | Calendar tab | Nothing at module load or enable but a one-time probe (GIRepository's typelib list). The service, when the tab is first selected: 4 settings handlers (2 Froonty keys, 2 `org.gnome.desktop.calendar`). Once the tab has been shown, until disable: 1 `ESourceRegistry`, 1 `SourceRegistryWatcher` (3 handlers), 1 registry handler, 1 `ECal.Client` per visible calendar (1 handler each). From the first time the tab shows a month until another month or zone (or disable): 1 EDS view per visible calendar (4 handlers each), kept and paused while the tab is not on screen, so opening and closing the island makes **no** EDS call. Each view's `start()` is a **synchronous D-Bus call** to evolution-calendar-factory (libecal offers no other; about 0.3 ms with local calendars), once per calendar and month shown; the months a fast wheel passes through (within 250 ms) get none. Views are never `stop()`ped (also synchronous): they are let go, and libecal disposes of them asynchronously once collected. One asynchronous `get_objects_for_uid` per repeating event (its moved occurrences, which views do not deliver), one `get_timezone` per calendar and unknown zone. Timers: none periodic; one idle to coalesce redraws, one idle shared by every view's expansion (3 ms of work per turn; a series is expanded in slices from a moved start, features/calendar.md §B.6), only while on screen and there is work; a one-shot 250 ms quiet period after a month change; while a calendar loads, redraws at most every 200 ms (a one-shot timeout in place of the idle). libecal, libedataserver, libical(-glib) and libcamel stay mapped once loaded | `CalendarService.stop()` (views let go, in-flight answers cancelled, late views let go, idles and timer removed); `setActive(false)` pauses |
-| Network requests | Claude tab, livenerf row: one `Soup.Session`, made on the first fetch; two GETs (about 28 kB) per visit while online, at most once an hour. Media: none by default; with its options on, one `Soup.Session` (made on the first such request) for web covers (while shown) and lrclib.net (while the lyrics are open) | `LivenerfService.stop()` (aborts the session); Media `Fetcher.destroy()` from `MediaService.stop()` |
+| Network requests | Claude tab, livenerf row: one `Soup.Session`, made on the first fetch; two GETs (about 28 kB) per visit while online, at most once an hour. Writing tab (local builds): one session per engine, made on first use; one LanguageTool POST per click (20 s timeout, at most 10 a minute), Ollama on 127.0.0.1 (a 2 s probe when the tab is shown, a 120 s per-read cap, and an overall cap of 180 s plus 60 ms per character per request). Media: none by default; with its options on, one `Soup.Session` (made on the first such request) for web covers (while shown) and lrclib.net (while the lyrics are open) | `LivenerfService.stop()` (aborts the session); `WritingService.stop()` (cancels the request in flight, aborts the sessions); Media `Fetcher.destroy()` from `MediaService.stop()` |
 | File reads | Btop tab, per interval while on screen: `/proc/stat`, `/proc/cpuinfo`, `/proc/meminfo`, `/proc/net/dev`, `/proc/self/mounts`, the CPU's package temperature, a few sysfs files per GPU, and one temperature per core only while the threads are unfolded. Sections that are off are not read. Kill Process tab, per interval while on screen: one listing of `/proc` (with owners), `/proc/stat`, and `/proc/<pid>/stat` for each of the user's processes (256 on the development machine; it also gives the thread count), 32 at a time with a pause between batches so frames are drawn in between; `/proc/<pid>/cmdline` once per process; a handful of small reads (the process, and GNOME Shell's parents) right before each signal | `SysmonService.setActive(false)`, `KillProcessService.setActive(false)` cancel a reading in flight |
-| Subprocesses / D-Bus proxies | Btop tab: one `nvidia-smi` per interval while the tab is on screen and an NVIDIA card is awake (about 40 ms). Kill Process tab: one `/usr/bin/kill` per confirmed kill or "Force quit" click, never otherwise. Otherwise 0 of Froonty's own. Outside the Shell, after the user's Set up, Claude Code runs Froonty's GJS hook (about 38 ms, 33 MB) per qualifying Notification, Stop and StopFailure, and `sh` (about 1.2 ms) per prompt, model step and session end. The Claude tab reads GIO's process-wide `Gio.NetworkMonitor`, whose NetworkManager backend keeps GIO's own proxy for the life of the Shell | — |
+| Subprocesses / D-Bus proxies | Btop tab: one `nvidia-smi` per interval while the tab is on screen and an NVIDIA card is awake (about 40 ms). Kill Process tab: one `/usr/bin/kill` per confirmed kill or "Force quit" click, never otherwise. Writing tab (local builds): one `claude -p` per action click (a time limit of 90 s, plus 8 ms per character with Haiku or 15 ms with Sonnet; never started once the click is cancelled), `claude auth status` before the first one each time the tab is shown (10 s), and `systemctl --user start froonty-ollama.service` when Froonty's own Ollama is needed and stopped. Otherwise 0 of Froonty's own. Outside the Shell, after the user's Set up, Claude Code runs Froonty's GJS hook (about 38 ms, 33 MB) per qualifying Notification, Stop and StopFailure, and `sh` (about 1.2 ms) per prompt, model step and session end. The Claude tab reads GIO's process-wide `Gio.NetworkMonitor`, whose NetworkManager backend keeps GIO's own proxy for the life of the Shell | — |
 | Media service | One per Shell while held: by the pill (`media-enabled` and `media-show-in-pill` or `media-track-notice`; by default whenever the island exists), the Media tab while on screen, the "Pause all media" button while the island is open. It holds one `NameOwnerChanged` subscription, at most 16 players × 2 proxies (`g-properties-changed` ×2, `g-signal` ×1), one coalescing idle at most, and one-shots: discovery deadline 1 s, gap 1.5 s, chosen-player grace 5 s, cover grace 1.5 s, new-song debounce 0.5 s, pill notice 3 s, seek hold 1 s, stuck-position check 3 s, Up next check 1.5 s, the next lyric line. **Periodic:** the display tick, at most once a second, only while the tab is on screen and the song plays with a length and a position. Position reads only for the shown song while the tab is on screen. One decoded cover kept (plus up to 8 web covers). Volume row: 2 mixer and 2 stream connections while the tab is on screen. Bars: Clutter eases only while playing, shown, and animations are on | `releaseMedia()` → `MediaService.stop()` → `MprisWatcher.stop()`; the tab's `setActive(false)` |
 | Memory kept across `disable()` | `ctx.memory.media`: `{chosen, followed, latestPlayed}` (strings) | Shell exit |
 
@@ -491,8 +511,14 @@ Two test layers:
   calendar and makes no synchronous call but one `ClientView.start()`),
   its expansion scheduler, and its EDS views over the real libecal with
   a fake calendar (when `gir1.2-ecal-2.0` is installed).
-  Each run gets a private `TMPDIR` and `XDG_DATA_HOME`, so trashed test files
-  never reach the real Trash.
+  The Writing tab (local builds) is tested against fakes only: a fake
+  `claude`, a local `Soup.Server` for LanguageTool, Ollama and GitHub, a
+  fake `systemctl`, and tiny archives (hostile ones too) for Ollama's
+  set-up and removal. Then `tools/pack-public/test_pack_public.py` checks
+  the public build's leak guard.
+  Each run gets a private `TMPDIR` and XDG data, config, cache and runtime
+  folders, so trashed test files never reach the real Trash and no test
+  touches the real `~/.config/systemd/user` or Froonty's own folders.
 - **`make test`** (`tools/headless-test/run.sh`) starts a **fully isolated
   headless GNOME Shell 46**, once in the default session mode and once in
   Ubuntu's (with the Yaru theme, Ubuntu Dock, DING, AppIndicators and Tiling
@@ -595,6 +621,19 @@ input through Clutter virtual devices and cover:
   a local fake), the volume row, "Pause all media", and 25 cycles with
   music playing. `make unit` runs the MPRIS client against fakes on a
   private dbus-daemon.
+- **Writing** (local builds; [features/writing.md](features/writing.md) §8):
+  off by default; the empty state and its "Open Settings → Writing"
+  (the window opens on that page); a Claude Code rewrite through a fake
+  `claude` with the exact argv, the private folder, no API key and the
+  text on stdin; hostile text; errors; an API-billing sign-in refused;
+  Cancel and a disable stopping a hanging run; From clipboard and the
+  hidden password; LanguageTool and Ollama against a `Soup.Server` inside
+  the Shell under test; engines switched off leaving the tab. Every
+  address and command it could reach is a fake or refused. After its
+  review (`testWritingFixes`): back online while shown, Ollama's
+  not-ready reasons, the caret after a long Ctrl+V paste, a result's
+  selection kept while typing, the hidden password pasted into a sentence
+  refused, and no engine switch mid-run.
 - **Kill Process:** protected rows (GNOME Shell, its parent, D-Bus);
   a `sleep` the test started killed through the two-step UI (SIGTERM),
   one that ignores SIGTERM ended by "Force quit" (SIGKILL); a reused

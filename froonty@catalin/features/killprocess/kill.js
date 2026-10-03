@@ -11,7 +11,7 @@
 
 import {isValidPid} from './rules.js';
 
-// Fixed system locations only (as features/zerotier/cli.js).
+// Fixed system locations only (as the ZeroTier tab does).
 export const KILL_PATHS = ['/usr/bin/kill', '/bin/kill'];
 // SIGTERM asks a process to quit; SIGKILL ends it ("Force quit").
 export const SIGNALS = ['TERM', 'KILL'];

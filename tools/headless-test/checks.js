@@ -11,6 +11,7 @@ import GObject from 'gi://GObject';
 import Gio from 'gi://Gio';
 import GdkPixbuf from 'gi://GdkPixbuf';
 import Shell from 'gi://Shell';
+import Soup from 'gi://Soup?version=3.0';
 import St from 'gi://St';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
@@ -1982,6 +1983,542 @@ async function testClipboard(outDir) {
     await sleep(SETTLE_MS);
     check('clipboard: turning it off stops listening to copies',
         countHandlers(selection, 'owner-changed') === before && !tabButton('clipboard'));
+}
+
+// ---------------------------------------------------------------- writing
+
+// The Writing tab (working-tree only, docs/features/writing.md). run.sh's
+// fake Claude Code records each run under $CLAUDE_CONFIG_DIR/writing; a
+// local Soup.Server in this Shell stands in for LanguageTool and Ollama.
+// Nothing reaches a real service.
+
+const writingEntry = () => island()?._hub._entries.get('writing') ?? null;
+const writingPath = name => GLib.build_filenamev([claudeDir(), 'writing', name]);
+
+function readWriting(name) {
+    try {
+        return new TextDecoder().decode(GLib.file_get_contents(writingPath(name))[1]);
+    } catch (e) {
+        return null;
+    }
+}
+
+function removeWriting(...names) {
+    for (const name of names)
+        GLib.unlink(writingPath(name));
+}
+
+function processAlive(pid) {
+    try {
+        const stat = new TextDecoder().decode(GLib.file_get_contents(`/proc/${pid}/stat`)[1]);
+        return !/\) Z /.test(stat);
+    } catch (e) {
+        return false;
+    }
+}
+
+function writingServer() {
+    const fake = {requests: [], ltStatus: 200};
+    const answer = path => {
+        switch (path) {
+        case '/v2/check':
+            return fake.ltStatus === 200
+                ? [200, 'application/json', JSON.stringify({matches: [{offset: 0, length: 3,
+                    message: 'Possible spelling mistake found.', replacements: [{value: 'the'}],
+                    context: {text: 'teh cat', offset: 0, length: 3}}]})]
+                : [fake.ltStatus, 'text/plain', 'Too many requests'];
+        case '/api/version':
+            return [200, 'application/json', '{"version":"0.35.1"}'];
+        case '/api/tags':
+            return [200, 'application/json', JSON.stringify({models: [
+                {name: 'llama3.2:3b', size: 2019393189, digest: 'a'.repeat(64)},
+                {name: 'x:cloud', remote_host: 'https://ollama.com:443', remote_model: 'x'}]})];
+        case '/api/show':
+            return [200, 'application/json', '{"capabilities":["completion"]}'];
+        case '/api/chat':
+            return [200, 'application/x-ndjson', [
+                {message: {role: 'assistant', content: 'Rewritten '}, done: false},
+                {message: {role: 'assistant', content: 'locally.'}, done: false},
+                {message: {role: 'assistant', content: ''}, done: true}]
+                .map(o => JSON.stringify(o)).join('\n')];
+        default:
+            return [404, 'application/json', '{"error":"not found"}'];
+        }
+    };
+    fake.server = new Soup.Server({});
+    fake.server.add_handler(null, (_server, message, path) => {
+        const bytes = message.get_request_body().flatten().get_data() ?? new Uint8Array();
+        fake.requests.push({method: message.get_method(), path, body: new TextDecoder().decode(bytes)});
+        const [status, type, text] = answer(path);
+        message.set_status(status, null);
+        message.set_response(type, Soup.MemoryUse.COPY, new TextEncoder().encode(text));
+    });
+    fake.server.listen_local(0, Soup.ServerListenOptions.IPV4_ONLY);
+    fake.url = fake.server.get_uris()[0].to_string().replace(/\/$/, '');
+    return fake;
+}
+
+const shownActions = view => view._actionsBox.get_children().flatMap(row => row.get_children())
+    .map(button => [...view._actionButtons].find(([, b]) => b === button)?.[0]);
+
+async function testWriting(outDir) {
+    let s = settings();
+    const fake = writingServer();
+    const urls = ['FROONTY_LANGUAGETOOL_URL', 'FROONTY_OLLAMA_URL'].map(name => [name, GLib.getenv(name)]);
+    GLib.setenv('FROONTY_LANGUAGETOOL_URL', `${fake.url}/v2/check`, true);
+    GLib.setenv('FROONTY_OLLAMA_URL', fake.url, true);
+    try {
+        check('writing: off by default, so no tab and nothing run',
+            !s.get_boolean('writing-enabled') && !tabButton('writing') &&
+            readWriting('run.argv') === null && readWriting('auth.log') === null);
+
+        // No engine switched on: the tab says so and links to its settings.
+        s.set_boolean('writing-enabled', true);
+        await sleep(SETTLE_MS);
+        island().expand();
+        await sleep(animationWait());
+        await clickActor(tabButton('writing'));
+        await sleep(animationWait());
+        let {view, service} = writingEntry();
+        service.network = new FakeNetwork();
+        check('writing: with no engine on, the tab says so',
+            view._empty.visible && !view._main.visible &&
+            view._emptyLabel.text === 'No writing engine is turned on.', view._emptyLabel.text);
+        const [w, h] = pill().get_transformed_size();
+        check('writing: the tab opens at its configured size',
+            w === 460 * scale() && h === 540 * scale(), `${w}x${h}`);
+        await screenshotTop(outDir, 'writing-empty', 560);
+        await clickActor(view._settingsButton);
+        const window = await waitForSettingsWindow();
+        const emptied = await waitFor(() => s.get_string('prefs-page') === '', 8000);
+        check('writing: "Open Settings → Writing" opens the settings on that page and empties the key',
+            window !== null && emptied && !island().expanded,
+            `window=${window !== null} prefs-page=${s.get_string('prefs-page')}`);
+        if (window) {
+            await sleep(1500);
+            const stream = Gio.File.new_for_path(GLib.build_filenamev([outDir, 'writing-settings.png']))
+                .replace(null, false, Gio.FileCreateFlags.NONE, null);
+            await new Shell.Screenshot().screenshot(false, stream);
+            stream.close(null);
+        }
+        await closeSettingsWindows();
+
+        // Claude Code only.
+        s.set_boolean('writing-claude-code-enabled', true);
+        island().expand();
+        await sleep(animationWait());
+        check('writing: Claude Code alone: no engine choice, and where the text goes',
+            await waitFor(() => view._main.visible) && view._engineButtons.size === 1 &&
+            !view._engineRow.visible &&
+            view._destination.text === 'Sends to Anthropic, through your Claude Code (Haiku · your plan\'s usage)',
+            view._destination.text);
+        check('writing: Claude Code offers all six actions',
+            shownActions(view).join(',') === 'paraphrase,grammar,shorten,formal,casual,summarise',
+            shownActions(view).join(','));
+
+        stClipboard().set_text(CLIPBOARD, 'Clipboard before');
+        view._input.text = 'Their going to the libary tomorow.';
+        await sleep(SETTLE_MS);
+        await clickActor(view._actionButtons.get('paraphrase'));
+        check('writing: a Claude rewrite is shown, as plain text',
+            await waitFor(() => service.state === 'done') && view._result.text === 'Fake rewrite.' &&
+            view._resultTools.visible && view._copyButton.mapped,
+            `${service.state} ${JSON.stringify(service.error)}`);
+        const {claudeArgv} = await import(`file://${extension().path}/features/writing/engines/claudeCode.js`);
+        const expected = JSON.stringify(claudeArgv(GLib.getenv('FROONTY_CLAUDE_CODE'), 'paraphrase', 'haiku').slice(1));
+        const argv = () => JSON.stringify(readWriting('run.argv')?.split('\0').slice(0, -1) ?? null);
+        check('writing: Claude Code runs with the fixed argv: every tool, MCP server, hook and settings file off',
+            argv() === expected && expected.includes('"--tools="') && expected.includes('"--safe-mode"'),
+            argv().slice(0, 300));
+        const runtimeDir = GLib.build_filenamev([GLib.get_user_runtime_dir(), 'froonty-writing']);
+        check('writing: it runs in Froonty\'s private working folder',
+            readWriting('run.cwd')?.trim() === runtimeDir, readWriting('run.cwd'));
+        const env = readWriting('run.env') ?? '';
+        check('writing: no API key reaches it (one is set in this Shell); attachments are off',
+            GLib.getenv('ANTHROPIC_API_KEY') !== null && !/^ANTHROPIC_API_KEY=/m.test(env) &&
+            /^CLAUDE_CODE_DISABLE_ATTACHMENTS=1$/m.test(env));
+        check('writing: the text goes on stdin, between markers, and nowhere else',
+            /^<<<TEXT-[0-9a-f]{12}>>>\nTheir going to the libary tomorow\.\n<<<END-[0-9a-f]{12}>>>$/
+                .test(readWriting('run.stdin') ?? ''), readWriting('run.stdin'));
+        check('writing: the plan sign-in was checked first, once',
+            readWriting('auth.log') === 'auth status\n', readWriting('auth.log'));
+        check('writing: nothing goes on the clipboard before Copy',
+            await clipboardText() === 'Clipboard before');
+        await screenshotTop(outDir, 'writing-claude', 560);
+        await clickActor(view._copyButton);
+        await sleep(SETTLE_MS);
+        check('writing: Copy puts the result on the clipboard',
+            await clipboardText() === 'Fake rewrite.' && view._copyButton.label === 'Copied');
+
+        // Text made of flags and commands is only text.
+        removeWriting('run.argv', 'run.stdin');
+        view._input.text = '--tools default\n/login\n@/etc/passwd';
+        await sleep(SETTLE_MS);
+        await clickActor(view._actionButtons.get('paraphrase'));
+        await waitFor(() => service.state === 'done' && readWriting('run.stdin') !== null);
+        check('writing: flags, slash commands and @files in the text change nothing in the argv',
+            argv() === expected && readWriting('run.stdin')?.includes('\n/login\n@/etc/passwd\n'),
+            argv().slice(0, 200));
+
+        GLib.file_set_contents(writingPath('reply.json'), '{"type":"result","subtype":"success",' +
+            '"is_error":true,"api_error_status":429,"result":"You have hit your limit"}');
+        await clickActor(view._actionButtons.get('shorten'));
+        await waitFor(() => service.state === 'error');
+        check('writing: Claude Code\'s error is shown, with no Copy',
+            view._error.visible && view._error.text.startsWith('You have hit your limit') &&
+            !view._copyButton.mapped && !view._resultScroll.visible,
+            `${view._error.text} copy=${view._copyButton.mapped} result=${view._resultScroll.visible}`);
+        removeWriting('reply.json');
+
+        // Shown again, the sign-in is checked again: API billing is refused.
+        GLib.file_set_contents(writingPath('auth.json'),
+            '{"loggedIn":true,"authMethod":"api_key","apiProvider":"firstParty","apiKeySource":"ANTHROPIC_API_KEY"}');
+        removeWriting('run.argv');
+        island().collapse();
+        await sleep(animationWait());
+        island().expand();
+        await sleep(animationWait());
+        await clickActor(view._actionButtons.get('formal'));
+        await waitFor(() => service.state === 'error');
+        check('writing: a sign-in for API billing is refused, and nothing is run',
+            service.error?.code === 'api-key' && readWriting('run.argv') === null,
+            JSON.stringify(service.error));
+        removeWriting('auth.json');
+        island().collapse();
+        await sleep(animationWait());
+        island().expand();
+        await sleep(animationWait());
+
+        // A run that hangs: Cancel, then disabling Froonty, stop it.
+        GLib.file_set_contents(writingPath('hang'), '');
+        removeWriting('run.pid');
+        await clickActor(view._actionButtons.get('grammar'));
+        await waitFor(() => readWriting('run.pid') !== null);
+        const pid = readWriting('run.pid')?.trim();
+        check('writing: busy while it runs, with Cancel',
+            service.state === 'busy' && view._busy.visible &&
+            view._busyLabel.text === 'Rewriting with Claude Code…', view._busyLabel.text);
+        await screenshotTop(outDir, 'writing-busy', 560);
+        await clickActor(view._cancelButton);
+        check('writing: Cancel stops Claude Code within 2 s and the tab is idle',
+            Boolean(pid) && await waitFor(() => !processAlive(pid), 2000) && service.state === 'idle' &&
+            !view._busy.visible, `pid=${pid} alive=${processAlive(pid)} ${service.state}`);
+        removeWriting('run.pid');
+        await clickActor(view._actionButtons.get('grammar'));
+        await waitFor(() => readWriting('run.pid') !== null);
+        const pid2 = readWriting('run.pid')?.trim();
+        await setExtensionEnabled(false);
+        const stopped = await waitFor(() => !processAlive(pid2), 2000);
+        await setExtensionEnabled(true);
+        check('writing: disabling Froonty (a screen lock does) stops a run in flight',
+            Boolean(pid2) && stopped, `pid=${pid2}`);
+        removeWriting('hang');
+
+        s = settings();
+        island().expand();
+        await sleep(animationWait());
+        ({view, service} = writingEntry());
+        service.network = new FakeNetwork();
+        service.setActive(true);
+        await sleep(SETTLE_MS);
+
+        // From clipboard: text only, never the hidden password.
+        s.set_boolean('clipboard-enabled', true);
+        await sleep(SETTLE_MS);
+        check('writing: "From clipboard" is there while the Clipboard tab is on',
+            view._clipboardButton.visible);
+        stClipboard().set_text(CLIPBOARD, 'Kx9vR2mQpL4wTz8!');
+        await sleep(SETTLE_MS);
+        view._input.text = '';
+        await clickActor(view._clipboardButton);
+        check('writing: a hidden password on the clipboard is never offered',
+            view._input.text === '' &&
+            view._notice.text === 'The clipboard holds a hidden password; it is never offered here.',
+            view._notice.text);
+        stClipboard().set_text(CLIPBOARD, 'Copied for rewriting');
+        await sleep(SETTLE_MS);
+        await clickActor(view._clipboardButton);
+        check('writing: copied text goes into the box',
+            view._input.text === 'Copied for rewriting' && service.input === 'Copied for rewriting');
+        s.reset('clipboard-enabled');
+        await sleep(SETTLE_MS);
+
+        // LanguageTool.
+        s.set_boolean('writing-languagetool-enabled', true);
+        await waitFor(() => view._engineButtons.size === 2 && service.availabilityOf('languagetool').ready);
+        await clickActor(view._engineButtons.get('languagetool'));
+        await sleep(SETTLE_MS);
+        view._input.text = 'teh cat';
+        await sleep(SETTLE_MS);
+        check('writing: LanguageTool offers Fix grammar only, and says where the text goes',
+            service.engine.id === 'languagetool' && shownActions(view).join(',') === 'grammar' &&
+            view._destination.text === 'Sends to LanguageTool (languagetool.org): grammar and spelling only',
+            `${shownActions(view)} ${view._destination.text}`);
+        await clickActor(view._actionButtons.get('grammar'));
+        await waitFor(() => service.state === 'done');
+        const checks = fake.requests.filter(r => r.path === '/v2/check');
+        const form = checks.length ? Soup.form_decode(checks[0].body) : {};
+        check('writing: LanguageTool gets one form POST: text, language=auto, preferred variants',
+            checks.length === 1 && checks[0].method === 'POST' && form.text === 'teh cat' &&
+            form.language === 'auto' && form.preferredVariants === 'en-US,de-DE', JSON.stringify(form));
+        check('writing: its correction, the change, and the link to languagetool.org',
+            view._result.text === 'the cat' &&
+            view._changes.text === '1 change\n“teh” → “the”: Possible spelling mistake found.' &&
+            view._attribution.visible && view._attribution.label === 'Checked by LanguageTool · languagetool.org',
+            view._changes.text);
+        await screenshotTop(outDir, 'writing-languagetool', 560);
+        fake.ltStatus = 429;
+        await clickActor(view._actionButtons.get('grammar'));
+        await waitFor(() => service.state === 'error');
+        check('writing: LanguageTool\'s limit is explained',
+            service.error?.code === 'rate-limited' &&
+            view._error.text.startsWith('LanguageTool\'s free service is busy'), view._error.text);
+
+        // Ollama.
+        s.set_string('writing-ollama-model', 'llama3.2:3b');
+        s.set_boolean('writing-ollama-enabled', true);
+        await waitFor(() => view._engineButtons.size === 3 && service.availabilityOf('ollama').ready);
+        await clickActor(view._engineButtons.get('ollama'));
+        await sleep(SETTLE_MS);
+        view._input.text = 'Make this shorter please, it is far too long.';
+        await sleep(SETTLE_MS);
+        check('writing: Ollama says the text stays on this computer',
+            view._destination.text === 'Stays on this computer: Ollama, llama3.2:3b', view._destination.text);
+        await clickActor(view._actionButtons.get('shorten'));
+        await waitFor(() => service.state === 'done');
+        const chat = fake.requests.find(r => r.path === '/api/chat');
+        const body = chat ? JSON.parse(chat.body) : {};
+        check('writing: Ollama gets the system prompt and the text, and streams the rewrite back',
+            body.stream === true && body.model === 'llama3.2:3b' &&
+            body.messages?.map(m => m.role).join(',') === 'system,user' &&
+            body.messages[1].content.includes('Make this shorter please') &&
+            view._result.text === 'Rewritten locally.', `${view._result.text} ${chat?.body.slice(0, 120)}`);
+        s.set_string('writing-ollama-model', 'x:cloud');
+        await waitFor(() => !service.availabilityOf('ollama').ready);
+        check('writing: an Ollama cloud model is never ready',
+            service.availabilityOf('ollama').reason === 'model not downloaded' &&
+            view._engineButtons.get('ollama').has_style_pseudo_class('insensitive'),
+            JSON.stringify(service.availabilityOf('ollama')));
+        await screenshotTop(outDir, 'writing-engines', 560);
+
+        // Engines switched off leave the tab.
+        s.set_boolean('writing-languagetool-enabled', false);
+        await waitFor(() => view._engineButtons.size === 2);
+        check('writing: an engine switched off is not in the tab at all',
+            !view._engineButtons.has('languagetool') && view._engineButtons.has('ollama'));
+        s.set_boolean('writing-ollama-enabled', false);
+        s.set_boolean('writing-claude-code-enabled', false);
+        check('writing: with every engine off, the tab says so again',
+            await waitFor(() => view._empty.visible) &&
+            view._emptyLabel.text === 'No writing engine is turned on.', view._emptyLabel.text);
+
+        await clickActor(tabButton('clock'));
+        await sleep(animationWait());
+        island().collapse();
+        await sleep(animationWait());
+        for (const key of s.settings_schema.list_keys().filter(k => k.startsWith('writing-')))
+            s.reset(key);
+        await sleep(SETTLE_MS);
+        check('writing: turning the tab off removes it, its service and its handlers',
+            !tabButton('writing') && !island()._hub._entries.has('writing') &&
+            countHandlers(s, 'changed::writing-engine') === 0 &&
+            countHandlers(s, 'changed::writing-ollama-model') === 0,
+            `${countHandlers(s, 'changed::writing-engine')} ${countHandlers(s, 'changed::writing-ollama-model')}`);
+    } finally {
+        for (const [name, value] of urls)
+            GLib.setenv(name, value ?? '', true);
+        fake.server.disconnect();
+        removeWriting('hang');
+    }
+}
+
+// The Writing tab after its review: readiness follows the network while
+// the tab is shown, Ollama's reasons, the caret after a long paste, a
+// result's selection kept while typing, the Clipboard tab's hidden
+// password pasted with Ctrl+V, and the engine buttons while a request runs.
+// The same fakes as testWriting; FROONTY_OLLAMA_SYSTEM_ROOT (run.sh) is an
+// empty folder standing in for /usr, /etc and /lib.
+
+const caretInView = view => {
+    const text = view._input.clutter_text;
+    const [ok, , y, lineHeight] = text.position_to_coords(text.cursor_position);
+    const top = y + view._input.y + text.y;
+    const v = view._inputScroll.vadjustment;
+    return {ok: ok && top >= v.value && top + lineHeight <= v.value + v.page_size,
+        detail: `caret ${Math.round(top)}-${Math.round(top + lineHeight)}, page ` +
+            `${Math.round(v.value)}-${Math.round(v.value + v.page_size)} of ${Math.round(v.upper)}`};
+};
+
+async function reshowWriting() {
+    island().collapse();
+    await sleep(animationWait());
+    island().expand();
+    await sleep(animationWait());
+}
+
+async function testWritingFixes(outDir) {
+    const s = settings();
+    const fake = writingServer();
+    const saved = ['FROONTY_LANGUAGETOOL_URL', 'FROONTY_OLLAMA_URL'].map(name => [name, GLib.getenv(name)]);
+    const systemRoot = GLib.getenv('FROONTY_OLLAMA_SYSTEM_ROOT');
+    const fakeOllama = GLib.build_filenamev([systemRoot ?? '/nonexistent', 'usr', 'bin', 'ollama']);
+    GLib.setenv('FROONTY_LANGUAGETOOL_URL', `${fake.url}/v2/check`, true);
+    GLib.setenv('FROONTY_OLLAMA_URL', 'http://127.0.0.1:1', true);
+    try {
+        // LanguageTool alone, the tab opened while the network is local only
+        // (as right after a resume, before Wi-Fi is back).
+        s.set_boolean('writing-enabled', true);
+        s.set_boolean('writing-languagetool-enabled', true);
+        await sleep(SETTLE_MS);
+        island().expand();
+        await sleep(animationWait());
+        await clickActor(tabButton('writing'));
+        await sleep(animationWait());
+        const {view, service} = writingEntry();
+        const network = new FakeNetwork();
+        network.set(true, Gio.NetworkConnectivity.LOCAL);
+        service.network = network;
+        service.setActive(true);
+        check('writing fixes: offline, LanguageTool alone: the tab says why',
+            await waitFor(() => view._empty.visible) &&
+            view._emptyLabel.text === 'None of your writing engines is ready: LanguageTool: offline.',
+            view._emptyLabel.text);
+        const watching = network.handlers.size;
+        network.set(true, Gio.NetworkConnectivity.FULL);
+        check('writing fixes: back online while the tab is shown, it comes back by itself',
+            watching === 3 && await waitFor(() => view._main.visible) &&
+            service.availabilityOf('languagetool').ready,
+            `handlers=${watching} empty=${view._empty.visible}`);
+        island().collapse();
+        await sleep(animationWait());
+        check('writing fixes: collapsed, the network is not watched', network.handlers.size === 0,
+            `${network.handlers.size}`);
+
+        // Ollama alone: not installed, not running, no model chosen.
+        s.set_boolean('writing-languagetool-enabled', false);
+        s.set_boolean('writing-ollama-enabled', true);
+        island().expand();
+        await sleep(animationWait());
+        check('writing fixes: no Ollama on this computer: "not installed", not "not running"',
+            await waitFor(() => view._emptyLabel.text ===
+                'None of your writing engines is ready: Ollama: not installed.'), view._emptyLabel.text);
+        GLib.mkdir_with_parents(GLib.path_get_dirname(fakeOllama), 0o755);
+        GLib.file_set_contents(fakeOllama, '#!/bin/sh\nexit 0\n');
+        await reshowWriting();
+        check('writing fixes: an Ollama of yours that is stopped: "not running"',
+            await waitFor(() => view._emptyLabel.text ===
+                'None of your writing engines is ready: Ollama: not running.'), view._emptyLabel.text);
+        GLib.setenv('FROONTY_OLLAMA_URL', fake.url, true);
+        await reshowWriting();
+        check('writing fixes: Ollama running, no model chosen: says so',
+            await waitFor(() => view._emptyLabel.text ===
+                'None of your writing engines is ready: Ollama: no model chosen.'), view._emptyLabel.text);
+        s.set_string('writing-ollama-model', 'llama3.2:3b');
+        await waitFor(() => view._main.visible && service.availabilityOf('ollama').ready);
+
+        // A long paste (40 lines, Ctrl+V) and typing on: the caret stays in view.
+        const lines = Array.from({length: 40}, (_, i) =>
+            `Line ${i + 1}: some words to fill the box, so that it has to scroll.`);
+        stClipboard().set_text(CLIPBOARD, lines.join('\n'));
+        await sleep(SETTLE_MS);
+        view._input.text = '';
+        view._input.clutter_text.grab_key_focus();
+        await pressKeys(Clutter.KEY_Control_L, Clutter.KEY_v);
+        await waitFor(() => service.input.length > 2000, 3000);
+        await sleep(SETTLE_MS);
+        let caret = caretInView(view);
+        check('writing fixes: after pasting 40 lines, the caret is in view',
+            service.input.split('\n').length === 40 && caret.ok &&
+            view._inputScroll.vadjustment.value > 0, caret.detail);
+        await typeText('!');
+        caret = caretInView(view);
+        check('writing fixes: typing on at the end, the caret stays in view',
+            service.input.endsWith('scroll.!') && caret.ok, caret.detail);
+        await screenshotTop(outDir, 'writing-long-paste', 560);
+
+        // A result's selection survives typing in the box and a refresh.
+        view._input.text = 'Make this shorter please, it is far too long.';
+        await sleep(SETTLE_MS);
+        await clickActor(view._actionButtons.get('shorten'));
+        await waitFor(() => service.state === 'done');
+        const resultText = view._result.clutter_text;
+        let replaced = 0;
+        const replacedId = resultText.connect('text-changed', () => replaced++);
+        resultText.set_selection(0, 9);
+        view._input.clutter_text.grab_key_focus();
+        await typeText(' ok');
+        service.emit('changed');
+        await sleep(SETTLE_MS);
+        const selected = resultText.get_selection();
+        resultText.disconnect(replacedId);
+        check('writing fixes: typing in the box keeps the result and its selection',
+            view._result.text === 'Rewritten locally.' && selected === 'Rewritten' && replaced === 0,
+            `selection=${JSON.stringify(selected)} replaced=${replaced}`);
+
+        // The Clipboard tab's hidden password, pasted with Ctrl+V inside a
+        // sentence (which on its own does not look like a password).
+        s.set_boolean('clipboard-enabled', true);
+        s.set_boolean('writing-claude-code-enabled', true);
+        await waitFor(() => view._engineButtons.size === 2 && service.availabilityOf('claude-code').ready);
+        await clickActor(view._engineButtons.get('claude-code'));
+        await sleep(SETTLE_MS);
+        stClipboard().set_text(CLIPBOARD, 'Kx9vR2mQpL4wTz8!');
+        await waitFor(() => service._peekRecorder()?.password?.text === 'Kx9vR2mQpL4wTz8!', 3000);
+        view._input.text = 'Here is the key ';
+        view._input.clutter_text.grab_key_focus();
+        view._input.clutter_text.set_cursor_position(-1);
+        await pressKeys(Clutter.KEY_Control_L, Clutter.KEY_v);
+        await typeText(' for you');
+        removeWriting('run.argv');
+        await clickActor(view._actionButtons.get('paraphrase'));
+        await sleep(SETTLE_MS);
+        check('writing fixes: the hidden password pasted into a sentence never reaches Claude Code',
+            service.input === 'Here is the key Kx9vR2mQpL4wTz8! for you' &&
+            service.error?.code === 'password' && readWriting('run.argv') === null &&
+            view._error.text.startsWith('This text contains the password the Clipboard tab is hiding'),
+            `${JSON.stringify(service.input)} ${JSON.stringify(service.error)}`);
+        s.reset('clipboard-enabled');
+        await sleep(SETTLE_MS);
+
+        // While a request runs: no engine switch; its engine switched off stops it.
+        GLib.file_set_contents(writingPath('hang'), '');
+        removeWriting('run.pid');
+        view._input.text = 'Their going to the libary tomorow.';
+        await sleep(SETTLE_MS);
+        const destination = view._destination.text;
+        await clickActor(view._actionButtons.get('paraphrase'));
+        await waitFor(() => readWriting('run.pid') !== null);
+        const pid = readWriting('run.pid')?.trim();
+        await clickActor(view._engineButtons.get('ollama'));
+        check('writing fixes: while Claude Code runs, the other engine cannot be chosen',
+            service.state === 'busy' && service.engine.id === 'claude-code' &&
+            !view._engineButtons.get('ollama').reactive && view._destination.text === destination,
+            `${service.engine.id} ${view._destination.text}`);
+        s.set_boolean('writing-claude-code-enabled', false);
+        check('writing fixes: switching its engine off in Settings stops the run',
+            Boolean(pid) && await waitFor(() => !processAlive(pid), 2000) && service.state === 'idle' &&
+            service.error?.code === 'cancelled', `pid=${pid} ${service.state}`);
+        removeWriting('hang');
+        await screenshotTop(outDir, 'writing-fixes', 560);
+
+        await clickActor(tabButton('clock'));
+        await sleep(animationWait());
+        island().collapse();
+        await sleep(animationWait());
+        for (const key of s.settings_schema.list_keys().filter(k => k.startsWith('writing-')))
+            s.reset(key);
+        await sleep(SETTLE_MS);
+        check('writing fixes: turning the tab off leaves no handlers on the network monitor',
+            !island()._hub._entries.has('writing') && network.handlers.size === 0,
+            `${network.handlers.size}`);
+    } finally {
+        for (const [name, value] of saved)
+            GLib.setenv(name, value ?? '', true);
+        GLib.unlink(fakeOllama);
+        fake.server.disconnect();
+        removeWriting('hang');
+        s.reset('clipboard-enabled');
+    }
 }
 
 // ---------------------------------------------------------------- kill process
@@ -7477,6 +8014,8 @@ export async function runAll(outDir) {
         await testLabelMenuLifecycle();
         await testClaude(outDir);
         await testClipboard(outDir);
+        await testWriting(outDir);
+        await testWritingFixes(outDir);
         await testKillProcess(outDir);
         await testCalendar(outDir);
         await testSettings(outDir);
