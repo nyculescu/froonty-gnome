@@ -104,37 +104,42 @@ class Items {
     constructor(menu, pointerMoved) {
         this._menu = menu;
         this._pointerMoved = pointerMoved;
+        // The items added here, in order (PopupMenuBase lists them only
+        // through a private method).
+        this._items = [];
     }
 
     /**
      * @returns {{item: object, setChecked: Function, readonly checked: boolean}}
      */
     addToggle(text, checked, onToggled) {
-        const item = new ToggleItem(text, checked, onToggled, this._pointerMoved);
-        this._menu.addMenuItem(item);
-        return item;
+        return this._add(new ToggleItem(text, checked, onToggled, this._pointerMoved));
     }
 
     addAction(text, onActivate) {
-        const item = new ActionItem(text, onActivate, this._pointerMoved);
-        this._menu.addMenuItem(item);
-        return item;
+        return this._add(new ActionItem(text, onActivate, this._pointerMoved));
     }
 
     /** A muted line that is not an item (not focusable). */
     addHint(text) {
         const item = new PopupMenu.PopupMenuItem(text, {reactive: false, can_focus: false});
         item.add_style_class_name('froonty-menu-hint');
-        this._menu.addMenuItem(item);
-        return item;
+        return this._add(item);
     }
 
     removeAll() {
         this._menu.removeAll();
+        this._items = [];
     }
 
     get items() {
-        return this._menu._getMenuItems();
+        return [...this._items];
+    }
+
+    _add(item) {
+        this._menu.addMenuItem(item);
+        this._items.push(item);
+        return item;
     }
 }
 
@@ -155,7 +160,7 @@ export class ContextMenu extends Items {
             return Clutter.EVENT_PROPAGATE;
         });
         this._onClosed = onClosed;
-        this._destroyed = false;
+        this._actor = menu.actor;
         if (styleClass)
             menu.actor.add_style_class_name(styleClass);
         Main.uiGroup.add_child(menu.actor);
@@ -165,24 +170,23 @@ export class ContextMenu extends Items {
         this._manager = new PopupMenu.PopupMenuManager(source);
         this._manager.addMenu(menu);
         // Closed (Escape, a click outside, close()): gone.
-        menu.connect('menu-closed', () => this.destroy());
+        this._closedId = menu.connect('menu-closed', () => this.destroy());
     }
 
     get isOpen() {
-        return !this._destroyed && this._menu.isOpen;
+        return this._menu?.isOpen ?? false;
     }
 
     /** The menu's actor (a BoxPointer), for tests and positioning checks. */
     get actor() {
-        return this._menu.actor;
+        return this._actor;
     }
 
     /** A muted title line (plain text, not markup). */
     addTitle(text) {
         const item = new PopupMenu.PopupMenuItem(text, {reactive: false, can_focus: false});
         item.add_style_class_name('froonty-menu-title');
-        this._menu.addMenuItem(item);
-        return item;
+        return this._add(item);
     }
 
     /**
@@ -196,8 +200,7 @@ export class ContextMenu extends Items {
      * @returns {{entry: St.Entry}}
      */
     addEntry({hint, onChanged = null, onActivate = null, onDown = null}) {
-        const item = new EntryItem(hint);
-        this._menu.addMenuItem(item);
+        const item = this._add(new EntryItem(hint));
         const text = item.entry.clutter_text;
         text.connect('text-changed', () => onChanged?.(item.entry.text));
         text.connect('activate', () => onActivate?.(item.entry.text));
@@ -212,8 +215,7 @@ export class ContextMenu extends Items {
 
     /** A section whose items can be replaced as a group. */
     addSection() {
-        const section = new PopupMenu.PopupMenuSection();
-        this._menu.addMenuItem(section);
+        const section = this._add(new PopupMenu.PopupMenuSection());
         return new Items(section, this._pointerMoved);
     }
 
@@ -222,19 +224,21 @@ export class ContextMenu extends Items {
     }
 
     close() {
-        if (!this._destroyed)
-            this._menu.close(BoxPointer.PopupAnimation.FULL);
+        this._menu?.close(BoxPointer.PopupAnimation.FULL);
     }
 
-    // Idempotent. onClosed runs once, first. The menu's destroy() closes
-    // it, which pops the modal grab (Main.popModal restores the focus);
-    // destroying its actor removes it from the manager, the focus manager
-    // and uiGroup.
+    // Idempotent: the menu is let go first. onClosed runs once, first. The
+    // menu's destroy() closes it, which pops the modal grab (Main.popModal
+    // restores the focus) and would emit 'menu-closed' again, so that
+    // handler goes before; destroying its actor removes it from the
+    // manager, the focus manager and uiGroup.
     destroy() {
-        if (this._destroyed)
+        const menu = this._menu;
+        if (!menu)
             return;
-        this._destroyed = true;
+        this._menu = null;
+        menu.disconnect(this._closedId);
         this._onClosed?.();
-        this._menu.destroy();
+        menu.destroy();
     }
 }
