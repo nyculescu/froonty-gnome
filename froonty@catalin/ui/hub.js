@@ -13,6 +13,9 @@
 //       dot, as on the tab of a feature that asks for it: unreadDot),
 //       [a] the active feature's own buttons (view.headerActions), ⚙️
 //
+// Every tab can be turned off. With none on, the header stays and the
+// content says so, with a button that opens Settings.
+//
 // The island is at least wide enough (minWidth) that the centred panic bar
 // stays clear of the tab column and of the header's buttons.
 //
@@ -29,6 +32,7 @@ import Clutter from 'gi://Clutter';
 import St from 'gi://St';
 
 import {EventEmitter} from 'resource:///org/gnome/shell/misc/signals.js';
+import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 
 import {Tooltip} from '../core/tooltip.js';
 import {HubHeader} from './hubHeader.js';
@@ -79,7 +83,7 @@ export class Hub extends EventEmitter {
         this.actor.destroy();
     }
 
-    /** Descriptor of the active feature. */
+    /** Descriptor of the active feature; null while no tab is on. */
     get activeFeature() {
         return this._entries.get(this._activeId)?.feature ?? null;
     }
@@ -271,6 +275,8 @@ export class Hub extends EventEmitter {
             x_expand: true,
             y_expand: true,
         });
+        this._empty = this._buildEmptyNotice(openSettings);
+        this._content.add_child(this._empty);
         right.add_child(this._header.actor);
         right.add_child(this._content);
         main.add_child(right);
@@ -339,14 +345,53 @@ export class Hub extends EventEmitter {
         });
         // A single tab is not a choice; keep the column out of the way.
         this._tabColumn.visible = enabled.length > 1;
+        // No tab on: the header stays, and the content says so.
+        this._empty.visible = enabled.length === 0;
         // More or fewer tabs may need another island height (minHeight).
         this.emit('size-changed');
 
         if (!this._entries.has(this._activeId)) {
             this._activeId = null;
+            // The tab shown last; if it is gone or off (the Clock tab, which
+            // is no more), the first one that is on.
             const last = this._settings.get_string(LAST_TAB_KEY);
-            this.select(this._entries.has(last) ? last : enabled[0].id);
+            if (enabled.length)
+                this.select(this._entries.has(last) ? last : enabled[0].id);
+            else
+                this._header.showActions(null);
         }
+    }
+
+    // What the content shows while every tab is off: a short notice and
+    // the way back to them.
+    _buildEmptyNotice(openSettings) {
+        const box = new St.BoxLayout({
+            style_class: 'froonty-hub-empty',
+            orientation: Clutter.Orientation.VERTICAL,
+            x_align: Clutter.ActorAlign.CENTER,
+            y_align: Clutter.ActorAlign.CENTER,
+            visible: false,
+        });
+        box.add_child(new St.Label({
+            style_class: 'froonty-hub-empty-title',
+            text: _('No tabs are on'),
+            x_align: Clutter.ActorAlign.CENTER,
+        }));
+        box.add_child(new St.Label({
+            style_class: 'froonty-hub-empty-body',
+            text: _('Each tab has a switch on its page in Settings.'),
+            x_align: Clutter.ActorAlign.CENTER,
+        }));
+        this.emptySettingsButton = new St.Button({
+            style_class: 'froonty-hub-empty-button',
+            label: _('Open Settings'),
+            x_align: Clutter.ActorAlign.CENTER,
+            can_focus: true,
+            track_hover: true,
+        });
+        this.emptySettingsButton.connect('clicked', () => openSettings());
+        box.add_child(this.emptySettingsButton);
+        return box;
     }
 
     _addEntry(feature) {

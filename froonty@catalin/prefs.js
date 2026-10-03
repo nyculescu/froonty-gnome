@@ -162,8 +162,13 @@ export default class FroontyPreferences extends ExtensionPreferences {
         });
         group.add(spinRow(settings, 'collapsed-width', _('Collapsed width (minimum)')));
         group.add(spinRow(settings, 'collapsed-height', _('Collapsed height (minimum)')));
-        group.add(spinRow(settings, 'expanded-width', _('Expanded width')));
-        group.add(spinRow(settings, 'expanded-height', _('Expanded height')));
+        // Each tab has a size of its own, on its page.
+        for (const [key, title] of [['expanded-width', _('Expanded width')],
+            ['expanded-height', _('Expanded height')]]) {
+            const row = spinRow(settings, key, title);
+            row.subtitle = _('While no tab is on');
+            group.add(row);
+        }
         group.add(spinRow(settings, 'corner-radius', _('Corner radius')));
         return group;
     }

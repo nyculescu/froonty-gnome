@@ -294,13 +294,17 @@ async function testPointer(outDir) {
     check('click on pill expands', island().expanded);
     check('the clock follows the top bar\'s WallClock (no clock of its own to dispose)',
         extension().stateObj._clock?._wallClock === Main.panel.statusArea.dateMenu._clock);
-    // expanded-height is a minimum: the island grows to show every tab.
+    // The first open shows the first tab (hub-last-tab's default, the
+    // Calendar tab), at its size. The height is a minimum: the island grows
+    // to show every tab.
     const tabs = island()._hub._tabColumn.get_children().map(boxOf);
-    check('expanded size matches settings (wider if the top row needs it), tall enough for every tab',
-        isOpenWidth(w, s.get_int('expanded-width')) &&
-        h >= s.get_int('expanded-height') * scale() && tabs.at(-1).y2 <= boxOf(pill()).y2 &&
-        (h === s.get_int('expanded-height') * scale() || h - (tabs.at(-1).y2 - boxOf(pill()).y1) <= 16 * scale()),
-        `${w}x${h}`);
+    const size = island()._geometry.expandedSize(island()._hub.activeFeature);
+    check('expanded: the first tab (Calendar) at its size, tall enough for every tab',
+        island()._hub.activeFeature?.id === firstTabId() && firstTabId() === s.get_string('hub-last-tab') &&
+        isOpenWidth(w, size.width / scale()) &&
+        h >= size.height && tabs.at(-1).y2 <= boxOf(pill()).y2 &&
+        (h === size.height || h - (tabs.at(-1).y2 - boxOf(pill()).y1) <= 16 * scale()),
+        `${w}x${h} tab=${island()._hub.activeFeature?.id}`);
     check('expanded island holds one modal grab', Main.modalCount === modalBefore + 1,
         `modalCount ${modalBefore} -> ${Main.modalCount}`);
     check('expanded pill has key focus', global.stage.key_focus === pill());
@@ -440,6 +444,10 @@ function makeFakeFeature(log) {
 
 const tabButton = id => island()._hub._entries.get(id)?.button;
 
+// The first tab that is on, in registry order: the one the hub falls back
+// to, and "another tab" for the checks (the Calendar tab by default).
+const firstTabId = () => island()._hub._features
+    .find(f => !f.enabledKey || settings().get_boolean(f.enabledKey))?.id ?? null;
 
 // The island's padding and border, left and right (stage px).
 function islandFrame() {
@@ -483,8 +491,14 @@ async function testHub(outDir) {
     for (const feature of wasOn)
         settings().set_boolean(feature.enabledKey, false);
     await sleep(SETTLE_MS);
-    check('hub: a single feature hides the tab row', !hub._tabColumn.visible);
+    check('hub: every tab can be off: no tab, no column, the notice instead',
+        !hub._tabColumn.visible && hub._tabColumn.get_n_children() === 0 && hub._entries.size === 0 &&
+        hub.activeFeature === null && hub._empty.visible);
     settings().reset('notes-enabled');
+    await sleep(SETTLE_MS);
+    check('hub: a single feature hides the tab row (and the notice goes)',
+        !hub._tabColumn.visible && hub.activeFeature?.id === 'notes' && !hub._empty.visible);
+    settings().reset('notifications-enabled');
     await sleep(SETTLE_MS);
     check('hub: enabling a feature adds its tab',
         hub._tabColumn.visible && hub._tabColumn.get_n_children() === 2);
@@ -499,17 +513,18 @@ async function testHub(outDir) {
     const names = hub._tabColumn.get_children()
         .map(b => b.accessible_name.replace(/, unread notifications$/, ''));
     const expected = (await expectedTabs()).map(f => f.title);
-    check(`hub: tabs follow the registry order (${expected.join(', ')}); Calendar right after Clock`,
-        names.join(',') === expected.join(',') && names[0] === 'Clock' && names[1] === 'Calendar',
+    check(`hub: tabs follow the registry order (${expected.join(', ')}); Calendar first, no Clock tab`,
+        names.join(',') === expected.join(',') && names[0] === 'Calendar' && !names.includes('Clock'),
         names.join(','));
-    check('hub: clock is the active tab', hub.activeFeature?.id === 'clock');
-    check('hub: tab icons are 20 px (25% over other icon buttons)',
-        tabButton('clock').child.get_width() === 20 * scale() &&
-        hub.settingsButton.child.get_width() === 16 * scale(),
-        `${tabButton('clock').child.get_width()} / ${hub.settingsButton.child.get_width()}`);
+    check('hub: the tab shown before stays shown as the others come back',
+        hub.activeFeature?.id === 'notes', hub.activeFeature?.id);
 
     island().expand();
     await sleep(animationWait());
+    check('hub: tab icons are 20 px (25% over other icon buttons)',
+        tabButton('calendar').child.get_width() === 20 * scale() &&
+        hub.settingsButton.child.get_width() === 16 * scale(),
+        `${tabButton('calendar').child.get_width()} / ${hub.settingsButton.child.get_width()}`);
     await clickActor(tabButton('zerotier'));
     await sleep(animationWait());
     const zeroTierView = hub._entries.get('zerotier')?.view;
@@ -567,7 +582,7 @@ async function testHub(outDir) {
     settings().reset('sysmon-width');
     settings().reset('sysmon-cores-expanded');
     await sleep(animationWait());
-    await clickActor(tabButton('clock'));
+    await clickActor(tabButton(firstTabId()));
     await sleep(animationWait());
     check('sysmon: another tab stops the polling', sysmon?.service.polling === false);
     await clickActor(tabButton('sysmon'));
@@ -577,7 +592,7 @@ async function testHub(outDir) {
     check('sysmon: collapsing the island stops the polling', sysmon?.service.polling === false);
     island().expand();
     await sleep(animationWait());
-    await clickActor(tabButton('clock'));
+    await clickActor(tabButton(firstTabId()));
     await sleep(animationWait());
     island().collapse();
     await sleep(animationWait());
@@ -634,11 +649,11 @@ async function testHub(outDir) {
         check('hub: collapse/expand deactivates and reactivates the service',
             log.join(',') === 'start,view,active,inactive,active', log.join(','));
 
-        await clickActor(tabButton('clock'));
+        await clickActor(tabButton(firstTabId()));
         await sleep(animationWait());
         const [cw] = pill().get_transformed_size();
-        check('hub: switching away deactivates the service and resizes back',
-            log.at(-1) === 'inactive' && isOpenWidth(cw, settings().get_int('expanded-width')),
+        check('hub: switching away deactivates the service and resizes to the other tab',
+            log.at(-1) === 'inactive' && isOpenWidth(cw, tabWidth()),
             `${log.join(',')} width=${cw}`);
         check('hub: another tab hides the feature\'s header button',
             !log.action.mapped && !log.actionDestroyed);
@@ -658,7 +673,21 @@ async function testHub(outDir) {
         await setExtensionEnabled(true);
     }
     check('hub: a remembered tab that no longer exists falls back to the first',
-        island()._hub.activeFeature?.id === 'clock');
+        island()._hub.activeFeature?.id === firstTabId(), island()._hub.activeFeature?.id);
+
+    // The Clock tab is gone: a "clock" remembered from before opens the
+    // first tab that is on, which is remembered instead.
+    settings().set_string('hub-last-tab', 'clock');
+    await setExtensionEnabled(false);
+    await setExtensionEnabled(true);
+    island().expand();
+    await sleep(animationWait());
+    check('hub: a remembered "clock" (the removed Clock tab) opens the first tab, remembered instead',
+        island()._hub.activeFeature?.id === firstTabId() && firstTabId() === 'calendar' &&
+        settings().get_string('hub-last-tab') === 'calendar' && !island()._hub._empty.visible,
+        `${island()._hub.activeFeature?.id} last=${settings().get_string('hub-last-tab')}`);
+    island().collapse();
+    await sleep(animationWait());
 }
 
 // ---------------------------------------------------------------- notes
@@ -828,9 +857,9 @@ async function testNotes(outDir) {
     settings().set_boolean('notes-enabled', false);
     await sleep(animationWait());
     const [cw] = pill().get_transformed_size();
-    check('notes: disabling removes the tab, stops the service, resizes back',
+    check('notes: disabling removes the tab, stops the service, resizes to the first tab',
         !hub()._entries.has('notes') && service._monitor === null &&
-        isOpenWidth(cw, settings().get_int('expanded-width')), `width=${cw}`);
+        hub().activeFeature?.id === firstTabId() && isOpenWidth(cw, tabWidth()), `width=${cw}`);
     settings().reset('notes-enabled');
     island().collapse();
     await sleep(animationWait());
@@ -1357,11 +1386,11 @@ async function testNotesHeader(outDir) {
     const modalBefore = Main.modalCount;
     island().expand();
     await sleep(animationWait());
-    await clickActor(tabButton('clock'));
+    await clickActor(tabButton(firstTabId()));
     await sleep(animationWait());
     const {view, service} = hub()._entries.get('notes');
     const button = view._allNotes.actor;
-    check('notes header: "All notes" is not shown on the Clock tab', !button.mapped);
+    check('notes header: "All notes" is not shown on another tab', !button.mapped);
     await clickActor(tabButton('notes'));
     await sleep(animationWait());
     const [cal, btn, gear] = [hub().calendarButton, button, hub().settingsButton].map(boxOf);
@@ -2013,7 +2042,7 @@ async function testClipboard(outDir) {
         Gio.File.new_for_path(GLib.build_filenamev([GLib.get_user_data_dir(), 'froonty',
             'clipboard', 'history.json'])).query_exists(null));
 
-    await clickActor(tabButton('clock'));
+    await clickActor(tabButton(firstTabId()));
     await sleep(animationWait());
     island().collapse();
     await sleep(animationWait());
@@ -2350,7 +2379,7 @@ async function testWriting(outDir) {
             await waitFor(() => view._empty.visible) &&
             view._emptyLabel.text === 'No writing engine is turned on.', view._emptyLabel.text);
 
-        await clickActor(tabButton('clock'));
+        await clickActor(tabButton(firstTabId()));
         await sleep(animationWait());
         island().collapse();
         await sleep(animationWait());
@@ -2539,7 +2568,7 @@ async function testWritingFixes(outDir) {
         removeWriting('hang');
         await screenshotTop(outDir, 'writing-fixes', 560);
 
-        await clickActor(tabButton('clock'));
+        await clickActor(tabButton(firstTabId()));
         await sleep(animationWait());
         island().collapse();
         await sleep(animationWait());
@@ -3410,7 +3439,7 @@ async function testKillProcess(outDir) {
             return setActive.call(this, active);
         };
 
-        await clickActor(tabButton('clock'));
+        await clickActor(tabButton(firstTabId()));
         await sleep(animationWait());
         check('kill process: another tab stops the reading, and clears the filter',
             service.polling === false && view._filter.text === '');
@@ -3427,7 +3456,7 @@ async function testKillProcess(outDir) {
         delete view.setActive;
         island().expand();
         await sleep(animationWait());
-        await clickActor(tabButton('clock'));
+        await clickActor(tabButton(firstTabId()));
         await sleep(animationWait());
         island().collapse();
         await sleep(animationWait());
@@ -3602,7 +3631,7 @@ async function testClaude(outDir) {
 
     await testClaudeFreshness(view, service, button);
 
-    await clickActor(tabButton('clock'));
+    await clickActor(tabButton(firstTabId()));
     await sleep(animationWait());
     await clickActor(button.actor);
     await sleep(animationWait());
@@ -3623,7 +3652,7 @@ async function testClaude(outDir) {
     await sleep(SETTLE_MS);
     check('claude: turning the tab off removes it and stops watching',
         !hub()._entries.has('claude') && service._monitor === null && network.handlers.size === 0 &&
-        hub().activeFeature?.id === 'clock');
+        hub().activeFeature?.id === firstTabId());
     settings().reset('claude-enabled');
     settings().reset('panic-buttons');
     await sleep(SETTLE_MS);
@@ -3928,7 +3957,7 @@ async function testLifecycle(outDir) {
 
     check('re-enable succeeds', await setExtensionEnabled(true), stateName());
     await sleep(SETTLE_MS);
-    island()._hub.select('clock');
+    island()._hub.select(firstTabId());
     settings().reset('hub-last-tab');
     if (breaks) {
         settings().reset('break-enabled');
@@ -4429,7 +4458,8 @@ async function testCalendarMenu(outDir) {
         !calendarMenuOpen() && !island().expanded && Main.modalCount === modalBefore &&
         !tray._bannerBlocked, state());
     check('calendar: the key focus is back where it was before the island opened, not on the hidden pill',
-        global.stage.key_focus === focusBefore && !strip().contains(global.stage.key_focus),
+        global.stage.key_focus === focusBefore &&
+        !(global.stage.key_focus && strip().contains(global.stage.key_focus)),
         `${state()} before=${focusBefore}`);
 
     // Pressed again where the clock is (the collapsed pill covers it), as
@@ -4766,6 +4796,110 @@ async function testDatePill(outDir) {
     await sleep(SETTLE_MS);
 }
 
+// ---------------------------------------------------------------- empty hub
+//
+// Every tab can be off: the open island keeps its header (the date pill,
+// the panic bar, ⚙️) and says so in the content, with a button to the
+// settings; a tab turned back on shows at once.
+
+async function testEmptyHub(outDir) {
+    const s = settings();
+    const {FEATURES} = await import(`file://${extension().path}/features/registry.js`);
+    const wasOn = FEATURES.filter(f => f.enabledKey && s.get_boolean(f.enabledKey));
+    const modalBefore = Main.modalCount;
+    const width = () => s.get_int('expanded-width');
+    const height = () => s.get_int('expanded-height') * scale();
+    for (const feature of wasOn)
+        s.set_boolean(feature.enabledKey, false);
+    await sleep(SETTLE_MS);
+    try {
+        island().expand();
+        await sleep(animationWait());
+        const hub = island()._hub;
+        const notice = hub._empty;
+        const [w, h] = pill().get_transformed_size();
+        const content = boxOf(hub._content);
+        const n = boxOf(notice);
+        check('empty hub: with every tab off the island opens: no tab, no column, a notice centred in the content',
+            island().expanded && hub.activeFeature === null && hub._entries.size === 0 &&
+            !hub._tabColumn.visible && notice.mapped &&
+            n.x1 >= content.x1 - 0.5 && n.x2 <= content.x2 + 0.5 && n.y1 >= content.y1 - 0.5 &&
+            n.y2 <= content.y2 + 0.5 && Math.abs((n.x1 + n.x2) - (content.x1 + content.x2)) <= 2 &&
+            Math.abs((n.y1 + n.y2) - (content.y1 + content.y2)) <= 2,
+            `notice=${JSON.stringify(n)} content=${JSON.stringify(content)}`);
+        const [title, body] = notice.get_children();
+        check('empty hub: it says so, with a button to the settings',
+            title.text === 'No tabs are on' && body.mapped && hub.emptySettingsButton.mapped &&
+            hub.emptySettingsButton.label === 'Open Settings' && !isEllipsized(body), `${title.text} / ${body.text}`);
+        const parts = [hub.calendarButton, hub._panicBar.actor, hub.settingsButton, title, body,
+            hub.emptySettingsButton];
+        check('empty hub: the header stays (the date pill, the panic bar, ⚙️); nothing is of zero size',
+            parts.every(actor => actor.mapped && actor.width > 0 && actor.height > 0) &&
+            hub._panicBar.actor.get_n_children() === 2 && boxOf(hub._panicBar.actor).x2 <= boxOf(hub.calendarButton).x1,
+            parts.map(actor => `${describeActor(actor)} ${actor.width}x${actor.height}`).join(', '));
+        check('empty hub: expanded-width × expanded-height (wider if the top row needs it)',
+            isOpenWidth(w, width()) && h === height(), `${w}x${h}`);
+        const path = await screenshotTop(outDir, 'hub-empty', 200);
+        check('empty hub: screenshot', true, `note: ${path}`);
+
+        await pressKeys(Clutter.KEY_Escape);
+        await sleep(animationWait());
+        check('empty hub: Escape closes it, no grab left', !island().expanded && Main.modalCount === modalBefore);
+
+        island().expand();
+        await sleep(animationWait());
+        for (let i = 0; i < 8 && global.stage.key_focus !== hub.emptySettingsButton; i++)
+            await pressKeys(Clutter.KEY_Tab);
+        check('empty hub: Tab reaches "Open Settings"', global.stage.key_focus === hub.emptySettingsButton,
+            `${global.stage.key_focus}`);
+        await clickActor(hub.emptySettingsButton);
+        const window = await waitForSettingsWindow();
+        check('empty hub: "Open Settings" closes the island and opens the settings window',
+            window !== null && !island().expanded && Main.modalCount === modalBefore);
+        await closeSettingsWindows();
+
+        s.set_boolean('notes-enabled', true);
+        await sleep(SETTLE_MS);
+        island().expand();
+        await sleep(animationWait());
+        check('empty hub: a tab turned back on shows at once, without the notice',
+            hub.activeFeature?.id === 'notes' && hub._entries.get('notes')?.view?.actor.mapped &&
+            !notice.visible && !hub._tabColumn.visible);
+        s.set_boolean('notes-enabled', false);
+        await sleep(animationWait());
+        const [w2, h2] = pill().get_transformed_size();
+        check('empty hub: the last tab turned off in the open island: the notice, at the empty size',
+            island().expanded && notice.mapped && hub.activeFeature === null &&
+            isOpenWidth(w2, width()) && h2 === height(), `${w2}x${h2}`);
+        s.set_boolean('notifications-enabled', true);
+        s.set_boolean('notes-enabled', true);
+        await sleep(animationWait());
+        check('empty hub: two tabs on: the column is back',
+            hub._tabColumn.visible && hub._tabColumn.get_n_children() === 2 && !notice.visible &&
+            hub.activeFeature !== null);
+        island().collapse();
+        await sleep(animationWait());
+    } finally {
+        for (const feature of wasOn) {
+            if (s.get_default_value(feature.enabledKey).unpack())
+                s.reset(feature.enabledKey);
+            else
+                s.set_boolean(feature.enabledKey, true);
+        }
+        await sleep(SETTLE_MS);
+        if (island().expanded) {
+            island().collapse();
+            await sleep(animationWait());
+        }
+        island()._hub.select(firstTabId());
+        s.reset('hub-last-tab');
+        await sleep(SETTLE_MS);
+    }
+    check('empty hub: every tab is back, the first one shown',
+        island()._hub._entries.size === (await expectedTabs()).length &&
+        island()._hub.activeFeature?.id === firstTabId());
+}
+
 // ---------------------------------------------------------------- notifications tab
 
 // The Notifications tab lists GNOME's own notifications. These checks
@@ -4864,12 +4998,13 @@ async function testNotifications(outDir) {
     notify(mail, 'Long body', {seconds: 900, body: Array.from({length: 40},
         (_, i) => `word${i}`).join(' ')});
 
-    // On by default, after Clock (and a Calendar tab, if there is one).
+    // On by default, after the Calendar tab, if there is one: first or
+    // second.
     let hub = island()._hub;
     const order = hub._tabColumn.get_children()
         .map(button => [...hub._entries].find(([, e]) => e.button === button)?.[0]);
-    const expectedPlace = order.indexOf('clock') + (order[order.indexOf('clock') + 1] === 'calendar' ? 2 : 1);
-    check('notifications: on by default, its tab right after Clock (and Calendar)',
+    const expectedPlace = order[0] === 'calendar' ? 1 : 0;
+    check('notifications: on by default, its tab right after Calendar',
         s.get_default_value('notifications-enabled').unpack() === true &&
         s.get_boolean('notifications-enabled') && order.indexOf('notifications') === expectedPlace,
         order.join(','));
@@ -4957,7 +5092,7 @@ async function testNotifications(outDir) {
     await collapse();
     const collapsed = counts(mail, older);
     await expand();
-    await clickActor(tabButton('clock'));
+    await clickActor(tabButton(firstTabId()));
     await sleep(animationWait());
     const otherTab = counts(mail, older);
     check('notifications: one handler on the tray, each source and each notification while on screen; none collapsed or on another tab',
@@ -5023,12 +5158,12 @@ async function testNotifications(outDir) {
         `dot before=${dotBefore} seen=${unseen.acknowledged} log=${JSON.stringify(destroyed)}`);
 
     // Another tab on screen: a LOW one lights the tab's dot (GNOME's rule).
-    await clickActor(tabButton('clock'));
+    await clickActor(tabButton(firstTabId()));
     await sleep(animationWait());
     const low = notify(mail, 'Low while open');
     await sleep(SETTLE_MS);
     const entry = notificationsEntry();
-    check('notifications: a LOW one arriving with Clock on screen lights the tab\'s dot and the date pill\'s; the tab says so',
+    check('notifications: a LOW one arriving with another tab on screen lights the tab\'s dot and the date pill\'s; the tab says so',
         entry.dot.visible && entry.dot.mapped && island()._hub._header.unreadBadge.visible &&
         entry.button.accessible_name.endsWith(', unread notifications') && !low.acknowledged,
         `tab dot=${entry.dot.visible} name="${entry.button.accessible_name}"`);
@@ -5218,7 +5353,7 @@ async function testNotifications(outDir) {
     for (let i = 0; i < 5; i++) {
         await collapse();
         await expand();
-        island()._hub.select('clock');
+        island()._hub.select(firstTabId());
         await sleep(SETTLE_MS);
         island()._hub.select('notifications');
         await sleep(SETTLE_MS);
@@ -5254,14 +5389,14 @@ async function testNotifications(outDir) {
             source.destroy(Reason.SOURCE_CLOSED);
     }
     s.set_int('hover-open-delay', 0);
-    island()._hub.select('clock');
+    island()._hub.select(firstTabId());
     s.reset('hub-last-tab');
     s.reset('claude-attention-app');
     s.reset('claude-attention-browsers');
     await sleep(SETTLE_MS);
     hub = island()._hub;
-    check('notifications: the test\'s sources are gone, Clock is shown again',
-        sources.every(source => !alive(source)) && hub.activeFeature?.id === 'clock');
+    check('notifications: the test\'s sources are gone, the first tab is shown again',
+        sources.every(source => !alive(source)) && hub.activeFeature?.id === firstTabId());
 }
 
 // A real notification over D-Bus, through GNOME's own daemon (the
@@ -5688,11 +5823,11 @@ async function testNotificationSafeguards(outDir) {
             inQueue && lowBefore.acknowledged && !queued.acknowledged &&
             notificationRow('Held: normal')?._part('new').visible && !gnomeUnreadDot(),
             `inQueue=${inQueue} low=${lowBefore.acknowledged} queued=${queued.acknowledged} gnome=${gnomeUnreadDot()}`);
-        await clickActor(tabButton('clock'));
+        await clickActor(tabButton(firstTabId()));
         await sleep(animationWait());
         const lowAfter = notify('Held: low after');
         await sleep(SETTLE_MS);
-        check('notifications safeguards: then, with Clock on screen, a LOW one lights the tab\'s, the date pill\'s and GNOME\'s dot',
+        check('notifications safeguards: then, with another tab on screen, a LOW one lights the tab\'s, the date pill\'s and GNOME\'s dot',
             !lowAfter.acknowledged && notificationsEntry().dot.visible && island()._hub._header.unreadBadge.visible &&
             gnomeUnreadDot(), `tab=${notificationsEntry().dot.visible} gnome=${gnomeUnreadDot()} queue=${tray.queueCount}`);
         await collapse();
@@ -5714,12 +5849,12 @@ async function testNotificationSafeguards(outDir) {
         }
         island().collapse();
         await sleep(animationWait());
-        island()._hub.select('clock');
+        island()._hub.select(firstTabId());
         s.reset('hub-last-tab');
         await sleep(SETTLE_MS);
     }
-    check('notifications safeguards: the test\'s notifications are gone, Clock is shown again, no banner is up',
-        sources.every(source => !alive(source)) && island()._hub.activeFeature?.id === 'clock' &&
+    check('notifications safeguards: the test\'s notifications are gone, the first tab is shown again, no banner is up',
+        sources.every(source => !alive(source)) && island()._hub.activeFeature?.id === firstTabId() &&
         tray.queueCount === 0);
 }
 
@@ -6052,9 +6187,9 @@ async function openCalendarTab() {
 async function calendarSteps(outDir, work, eds, libs, detectProvider, desktop) {
     const s = settings();
     const {ECal, ICalGLib} = libs;
-    check('calendar: on by default (the first start found the bindings), right after Clock',
+    check('calendar: on by default (the first start found the bindings), the first tab',
         s.get_boolean('calendar-enabled') && s.get_boolean('calendar-eds-checked') &&
-        island()._hub._tabColumn.get_children().indexOf(tabButton('calendar')) === 1);
+        island()._hub._tabColumn.get_children().indexOf(tabButton('calendar')) === 0);
     s.set_string('calendar-granularity', 'month');
 
     // Over the built-in calendars only: what EDS keeps on disk, to compare
@@ -7481,7 +7616,7 @@ async function leaveMediaTab() {
         island().expand();
         await sleep(animationWait());
     }
-    await clickActor(tabButton('clock'));
+    await clickActor(tabButton(firstTabId()));
     await sleep(animationWait());
     island().collapse();
     await sleep(animationWait());
@@ -7533,9 +7668,10 @@ async function testMedia(outDir) {
     try {
         // H1
         const names = island()._hub._tabColumn.get_children().map(b => b.accessible_name);
-        check('media: the Media tab is there by default, after Clock',
+        const published = names.filter(name => ['Calendar', 'Notifications', 'Notes'].includes(name));
+        check('media: the Media tab is there by default, after the published tabs',
             s.get_boolean('media-enabled') && tabButton('media')?.accessible_name === 'Media' &&
-            names[0] === 'Clock' && names[1] === 'Media', names.join(','));
+            names.indexOf('Media') === published.length, names.join(','));
         island().expand();
         await sleep(animationWait());
         await movePointerTo(...(() => {
@@ -7873,13 +8009,13 @@ async function testMediaPill(outDir) {
         await waitFor(() => !acc.peekText, 4000);
 
         // H21: a click opens the Media tab
-        s.set_string('hub-last-tab', 'clock');
+        s.set_string('hub-last-tab', firstTabId());
         await sleep(SETTLE_MS);
         await clickAt(...pillCenter());
         await sleep(animationWait());
         check('media: a click on the pill with music opens the Media tab',
             island().expanded && island()._hub.activeFeature?.id === 'media');
-        await clickActor(tabButton('clock'));
+        await clickActor(tabButton(firstTabId()));
         await sleep(animationWait());
         island().collapse();
         await sleep(animationWait());
@@ -7888,7 +8024,7 @@ async function testMediaPill(outDir) {
         await clickAt(...pillCenter());
         await sleep(animationWait());
         check('media: with media-pill-opens-tab off, the last tab opens',
-            island().expanded && island()._hub.activeFeature?.id === 'clock');
+            island().expanded && island()._hub.activeFeature?.id === firstTabId());
         s.reset('media-pill-opens-tab');
         island().collapse();
         await sleep(animationWait());
@@ -7995,7 +8131,7 @@ async function testMediaPill(outDir) {
         strip()?.show();
         for (const key of ['media-pill-opens-tab', 'media-remote-art'])
             s.reset(key);
-        s.set_string('hub-last-tab', 'clock');
+        s.set_string('hub-last-tab', firstTabId());
         await sleep(animationWait());
     }
 }
@@ -8378,7 +8514,7 @@ async function testBreak(outDir) {
             `enable=${wellbeing.get_boolean('enable')} saved=${s.get_string('break-gnome-saved')}`);
 
         // Another tab, so the pill's click has to come back to Break.
-        await clickActor(tabButton('clock'));
+        await clickActor(tabButton(firstTabId()));
         island().collapse();
         await sleep(animationWait());
 
@@ -8658,30 +8794,35 @@ async function testBreak(outDir) {
 }
 
 // The public build (FROONTY_EXTENSION_DIR=an unzipped `make pack`, run
-// with FROONTY_TEST_ONLY=testPublicBuild): its four tabs and two panic
-// buttons only, each tab opens, and enable/disable leaves the Shell as
-// it was.
+// with FROONTY_TEST_ONLY=testPublicBuild): its three tabs and two panic
+// buttons only, the header's date pill, each tab opens, and
+// enable/disable leaves the Shell as it was.
 async function testPublicBuild() {
     const hub = island()._hub;
     const names = hub._tabColumn.get_children()
         .map(b => b.accessible_name.replace(/, unread notifications$/, ''));
-    check('public build: the tabs are Clock, Calendar, Notifications and Notes',
-        names.join(',') === 'Clock,Calendar,Notifications,Notes', names.join(','));
+    check('public build: the tabs are Calendar, Notifications and Notes (no Clock tab)',
+        names.join(',') === 'Calendar,Notifications,Notes' &&
+        !GLib.file_test(`${extension().path}/features/clock`, GLib.FileTest.EXISTS), names.join(','));
     check('public build: the panic bar has the two mute buttons',
         hub._panicBar.actor.get_n_children() === 2, `${hub._panicBar.actor.get_n_children()}`);
     check('public build: no bar under the pill', island()._pillBars.size === 0);
     island().expand();
     await sleep(animationWait());
+    const now = island()._clock.snapshot();
+    check('public build: the header\'s date pill shows the date and the time',
+        hub.calendarButton?.mapped && hub._header._dateLabel.text === now.date &&
+        hub._header._timeLabel.text === now.time, `${hub._header._dateLabel?.text} ${hub._header._timeLabel?.text}`);
     const opened = [];
-    for (const id of ['clock', 'calendar', 'notifications', 'notes']) {
+    for (const id of ['calendar', 'notifications', 'notes']) {
         hub.select(id);
         // eslint-disable-next-line no-await-in-loop
         await sleep(SETTLE_MS);
         if (hub.activeFeature?.id === id && hub._entries.get(id)?.view)
             opened.push(id);
     }
-    check('public build: every tab opens', opened.length === 4, opened.join(','));
-    hub.select('clock');
+    check('public build: every tab opens', opened.length === 3, opened.join(','));
+    hub.select('calendar');
     island().collapse();
     await sleep(animationWait());
 
@@ -8721,7 +8862,7 @@ async function testPublicBuild() {
 const ONLY_TESTS = {
     testClaudeAttention, testClaudeAttentionWindows, testNotifications, testCalendar,
     testNotes, testMedia, testBreak, testHub, testLifecycle, testPublicBuild,
-    testPointer, testHubLayout, testDatePill, testCalendarMenu,
+    testPointer, testHubLayout, testDatePill, testCalendarMenu, testEmptyHub,
 };
 
 export async function runAll(outDir) {
@@ -8771,6 +8912,7 @@ export async function runAll(outDir) {
         await testClaudeAttentionWindows(outDir);
         await testClaudeAttentionIsland();
         await testHub(outDir);
+        await testEmptyHub(outDir);
         await testNotes(outDir);
         await testNotesTabsAndColors(outDir);
         await testNotesHeader(outDir);

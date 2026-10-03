@@ -32,9 +32,9 @@
 
     <!-- Hub -->
     <key name="hub-last-tab" type="s">
-      <default>'clock'</default>
+      <default>'calendar'</default>
       <summary>Hub tab selected last</summary>
-      <description>The feature id shown when the island expands (see features/registry.js).</description>
+      <description>The feature id shown when the island expands (see features/registry.js). When that tab is gone or turned off, the first tab that is on.</description>
     </key>
     <key name="prefs-page" type="s">
       <default>''</default>
@@ -643,12 +643,13 @@
       <range min="200" max="960"/>
       <default>360</default>
       <summary>Expanded island width</summary>
+      <description>The open island's width while no tab is on (each tab has a size of its own). It grows when the top row needs the room.</description>
     </key>
     <key name="expanded-height" type="i">
       <range min="80" max="720"/>
       <default>140</default>
       <summary>Expanded island height</summary>
-      <description>Minimum. The island grows to show every feature tab in its column.</description>
+      <description>The open island's height while no tab is on (each tab has a size of its own).</description>
     </key>
     <key name="corner-radius" type="i">
       <range min="0" max="64"/>
