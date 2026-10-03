@@ -28,6 +28,7 @@
 import Clutter from 'gi://Clutter';
 import St from 'gi://St';
 
+import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 import {EventEmitter} from 'resource:///org/gnome/shell/misc/signals.js';
 
 import {Tooltip} from '../core/tooltip.js';

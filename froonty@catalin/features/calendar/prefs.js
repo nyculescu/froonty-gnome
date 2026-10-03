@@ -182,7 +182,8 @@ function calendarsGroup(settings, cleanups) {
             syncPlaceholder(_('GNOME’s calendar service did not answer: %s').format(e.message));
     });
 
-    // The registry and its D-Bus connection go with the window.
+    // The adapter's handlers and calendar connections go with the window;
+    // the source registry stays for the process (eds.js).
     cleanups.push(() => {
         destroyed = true;
         cancellable.cancel();

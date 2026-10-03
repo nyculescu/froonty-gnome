@@ -6,9 +6,9 @@
 //   .froonty-labels.json   {"version": 1,
 //                           "labels": {"Plan": ["q4", "work"]}}
 //
-// A file of its own, not .froonty.json: Froonty builds that do not know
-// labels rewrite .froonty.json and would drop them, while they never touch
-// this file. The .md files stay plain Markdown.
+// A file of its own, not .froonty.json (tab order and colours): either
+// is rewritten without touching the other. The .md files stay plain
+// Markdown.
 //
 // A label's identity ignores case but not accents ("Work" = "work",
 // "café" ≠ "cafe"); the first spelling in the file wins. Entries for notes

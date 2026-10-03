@@ -177,7 +177,7 @@
     icon-size: 16px;
 }
 
-/* Feature tabs: 25% larger than other icon buttons (user request). */
+/* Feature tabs: 25% larger than other icon buttons. */
 .froonty-tab StIcon {
     icon-size: 20px;
 }
@@ -519,7 +519,7 @@
 .froonty-note-color-charcoal { background-color: #3b3b3b; }
 
 /* The note's writing surface: paler than its swatch, so the text reads
-   easily (user request 2026-10-02). Swatches keep the stronger shades
+   easily. Swatches keep the stronger shades
    above, which tell the colours apart on the dark island. */
 .froonty-notes-scroll.froonty-note-color-yellow { background-color: #fffae0; }
 .froonty-notes-scroll.froonty-note-color-green { background-color: #eaf7e6; }

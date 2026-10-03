@@ -63,7 +63,7 @@ export default class FroontyExtension extends Extension {
         // One-time checks of features (e.g. a tab whose app is not
         // installed starts off); each remembers that it ran.
         for (const feature of FEATURES) {
-            feature.setup?.(this._settings)?.catch?.(e =>
+            feature.setup?.(this._settings).catch(e =>
                 console.warn(`Froonty: ${feature.id} setup failed: ${e.message}`));
         }
 
