@@ -18,7 +18,7 @@
 //
 // The panic bar is centred on the island. On an island too narrow for
 // that (a narrow tab beside the header's date pill and buttons) it moves
-// left just enough to stay clear of the header's buttons (PanicLayout);
+// left just enough to stay clear of the header's buttons (HubLayout);
 // the island is only made wider (minWidth) when the bar does not fit
 // between the tab column and those buttons at all.
 //
@@ -53,17 +53,26 @@ const PANIC_GAP = 8;
 // the header's buttons, moved left until it is not, but never closer than
 // PANIC_GAP to the tab column (Hub.minWidth makes room for both). Mirrored
 // right to left.
-const PanicLayout = GObject.registerClass(
-class PanicLayout extends Clutter.BinLayout {
-    /** @param {Function} span → [left, right]: px kept free at each side */
-    _init(span) {
+// The hub's own layout: everything stacked (BinLayout), then the panic bar
+// placed in the same pass, once the tab column and the header's buttons
+// have their widths: no second layout pass, whatever changes width (a tab
+// turned on, the date pill's text).
+const HubLayout = GObject.registerClass(
+class HubLayout extends Clutter.BinLayout {
+    /**
+     * @param {Function} bar → the panic bar's actor, or null
+     * @param {Function} span → [left, right]: px kept free at each side
+     */
+    _init(bar, span) {
         super._init();
+        this._bar = bar;
         this._span = span;
     }
 
     vfunc_allocate(container, box) {
-        const bar = container.get_first_child();
-        if (!bar)
+        super.vfunc_allocate(container, box);
+        const bar = this._bar();
+        if (!bar?.visible)
             return;
         const [, width] = bar.get_preferred_width(-1);
         const [, height] = bar.get_preferred_height(width);
@@ -71,8 +80,8 @@ class PanicLayout extends Clutter.BinLayout {
         if (container.get_text_direction() === Clutter.TextDirection.RTL)
             [start, end] = [end, start];
         const room = box.get_width();
-        const x = Math.round(Math.max(start, Math.min((room - width) / 2, room - end - width)));
-        bar.allocate(new Clutter.ActorBox({x1: x, y1: 0, x2: x + width, y2: height}));
+        const x = box.x1 + Math.round(Math.max(start, Math.min((room - width) / 2, room - end - width)));
+        bar.allocate(new Clutter.ActorBox({x1: x, y1: box.y1, x2: x + width, y2: box.y1 + height}));
     }
 });
 
@@ -256,7 +265,7 @@ export class Hub extends EventEmitter {
         // Main layout plus an overlay layer (fixed positions, click-through)
         // for the tab tooltips.
         this.actor = new St.Widget({
-            layout_manager: new Clutter.BinLayout(),
+            layout_manager: new HubLayout(() => this._panicBar?.actor ?? null, () => this._panicSpan()),
             x_expand: true,
             y_expand: true,
             // Catches clicks on empty parts of the hub so they do not bubble
@@ -322,8 +331,7 @@ export class Hub extends EventEmitter {
 
         // Panic bar: centred across the island (not just the column right of
         // the tabs), on the header row, as far as the header's buttons let
-        // it (PanicLayout). Its layer is click-through; only the buttons
-        // take input.
+        // it (HubLayout, which places it). Only its buttons take input.
         this._panicBar = new PanicBar(this._settings, this._tooltip, {
             settings: this._settings,
             ctx: this._ctx,
@@ -333,29 +341,6 @@ export class Hub extends EventEmitter {
                 return this._activeId === id;
             },
         });
-        const panicLayer = new St.Widget({
-            style_class: 'froonty-panic-layer',
-            layout_manager: new PanicLayout(() => this._panicSpan()),
-            x_expand: true,
-            y_expand: true,
-        });
-        panicLayer.add_child(this._panicBar.actor);
-        // The layer is laid out after the tab column and the header (later
-        // siblings), but only when its own box changes: when they change
-        // width (a tab's buttons, the pill's text), it places the bar
-        // again in the same pass.
-        // Only when a width changed: a relayout queued on every allocation
-        // would never let the island settle.
-        let widths = '';
-        for (const actor of [this._tabColumn, this._header.end]) {
-            actor.connect('notify::allocation', () => {
-                const now = `${this._tabColumn.width}x${this._header.end.width}`;
-                if (now === widths)
-                    return;
-                widths = now;
-                panicLayer.queue_relayout();
-            });
-        }
         // The panic bar and the header's buttons change width with the
         // settings and the active tab; once laid out, the island follows
         // if the room they need changed (as for minHeight).
@@ -372,7 +357,7 @@ export class Hub extends EventEmitter {
         overlay.add_child(this._tooltip.actor);
 
         this.actor.add_child(main);
-        this.actor.add_child(panicLayer);
+        this.actor.add_child(this._panicBar.actor);
         this.actor.add_child(overlay);
     }
 
