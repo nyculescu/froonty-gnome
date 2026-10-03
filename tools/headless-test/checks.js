@@ -189,7 +189,7 @@ function shellFootprint() {
             // The Claude attention bar: a banner or the overview hides it.
             trayVisible: countHandlers(Main.messageTray, 'notify::visible'),
             overviewShowing: jsHandlerCount(Main.overview, 'showing'),
-            overviewHidden: jsHandlerCount(Main.overview, 'hidden'),
+            overviewHidden: jsHandlerCount(Main.overview, 'hidden') - appGridHidden(),
         },
         handlers: {
             monitorsChanged: countHandlers(Main.layoutManager, 'monitors-changed'),
@@ -4349,6 +4349,11 @@ const focusInCalendarMenu = () =>
 // Handlers on a GJS (non-GObject) signal emitter, such as a PopupMenu.
 const jsHandlerCount = (emitter, signal) =>
     emitter._signalConnectionsByName?.[signal]?.length ?? 0;
+// GNOME Shell's app grid connects one overview 'hidden' handler of its own
+// (`() => this.goToPage(0)`, ui/appDisplay.js) once, from deferred work
+// that may run in the middle of a footprint comparison: not Froonty's.
+const appGridHidden = () => Object.values(Main.overview._signalConnections ?? {})
+    .filter(c => c.name === 'hidden' && /\bthis\.goToPage\(0\)/.test(String(c.callback))).length;
 const isEllipsized = label => label.clutter_text.get_layout().is_ellipsized();
 
 async function closeCalendarMenu() {
