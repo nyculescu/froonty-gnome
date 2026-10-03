@@ -324,6 +324,12 @@
   more room than its width, so the centred panic bar never overlaps them.
 
 ### Fixed
+- Notes: Bold (and Italic, Strikethrough, Code) on a selection of several
+  lines wraps each line on its own, so every line shows bold; it used to
+  put one pair of markers around the whole selection, which Froonty did
+  not render. Bold, italic and struck text written over a line break
+  inside a paragraph (`**line 1` then `line 2**`) now shows formatted, as
+  in other Markdown apps.
 - Claude tab: **Set up** and **Remove** for the status line no longer
   rewrite a `~/.claude/settings.json` that is a symbolic link (as dotfiles
   managers make it) in place, truncated and then written. The file the

@@ -47,6 +47,11 @@ Status: **implemented (v1)**. Decisions made 2026-09-28:
   it). Link is an action, not a toggle. Wrap uses the same look. A bare
   cursor inside `**hi**` counts as bold, and Bold then unwraps the span
   instead of inserting `****`. Markers pair left to right within one line.
+  Over a selection of several lines, Bold, Italic, Strikethrough and Code
+  wrap each line's text on its own (`**line 1**`, `**line 2**`), skipping
+  blank lines and the spaces around a line; on lines all wrapped already
+  they unwrap them. A Markdown span cannot hold a blank line, and per line
+  it reads the same in every Markdown app.
 
 **Rendered Markdown** (second iteration, 2026-10-02, user request: "render
 Markdown so that I can use the edit buttons"):
@@ -55,7 +60,9 @@ Markdown so that I can use the edit buttons"):
   Markdown in its file, as in Obsidian's live preview.
   - Headings are bold and larger (`#`, `##`, `###`).
   - `**bold**` is bold, `_italic_`/`*italic*` is italic, and `~~struck~~`
-    is struck through.
+    is struck through, also over a line break inside a paragraph
+    (`**line 1` then `line 2**`), as in CommonMark; a blank line, a
+    heading, a list item, a quote or a code block ends the paragraph.
   - `` `code` `` and fenced blocks are monospace, code spans on a light
     grey background.
   - Links show their label underlined.

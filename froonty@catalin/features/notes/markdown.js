@@ -12,6 +12,8 @@
 export function toggleWrap(state, marker) {
     const {chars, start, end} = normalize(state);
     const m = [...marker];
+    if (chars.slice(start, end).includes('\n'))
+        return toggleWrapLines(chars, start, end, m);
     const wrap = findWrap(chars, start, end, m);
     if (wrap) {
         const {open, close} = wrap;
@@ -36,7 +38,12 @@ export function toggleWrap(state, marker) {
  */
 export function isWrapped(state, marker) {
     const {chars, start, end} = normalize(state);
-    return findWrap(chars, start, end, [...marker]) !== null;
+    const m = [...marker];
+    if (chars.slice(start, end).includes('\n')) {
+        const segments = lineSegments(chars, start, end);
+        return segments.length > 0 && segments.every(segment => segmentWrap(chars, segment, m) !== null);
+    }
+    return findWrap(chars, start, end, m) !== null;
 }
 
 /**
@@ -111,6 +118,87 @@ function lineBounds(chars, at) {
 // The marker pair toggleWrap() removes, as the positions of the opening and
 // closing marker, or null. Markers pair up left to right within a line, so
 // the "**" between "**a** and **b**" does not count as enclosing.
+// A selection over several lines: each line's selected text, without the
+// spaces around it, is wrapped (or unwrapped) on its own, as a Markdown
+// span cannot hold a blank line and reads the same in every app this way.
+// Blank lines are left alone. All wrapped already: unwrapped; else the
+// lines not wrapped yet are wrapped. The selection then covers the lines'
+// text, inside their markers.
+function toggleWrapLines(chars, start, end, m) {
+    const segments = lineSegments(chars, start, end);
+    if (segments.length === 0)
+        return result(chars, start, end);
+    const wraps = segments.map(segment => segmentWrap(chars, segment, m));
+    const unwrap = wraps.every(Boolean);
+    const removed = new Set();
+    const inserted = new Map(); // index -> marker inserted before that character
+    segments.forEach(([a, b], i) => {
+        if (unwrap) {
+            for (const at of [wraps[i].open, wraps[i].close]) {
+                for (let k = 0; k < m.length; k++)
+                    removed.add(at + k);
+            }
+        } else if (!wraps[i]) {
+            inserted.set(a, (inserted.get(a) ?? 0) + 1);
+            inserted.set(b, (inserted.get(b) ?? 0) + 1);
+        }
+    });
+    const text = [];
+    // Output position of original position p (before what is inserted at p
+    // when `before`, after it otherwise).
+    const out = new Array(chars.length + 1);
+    for (let i = 0; i <= chars.length; i++) {
+        out[i] = [text.length];
+        text.push(...Array(inserted.get(i) ?? 0).fill(m).flat());
+        out[i].push(text.length);
+        if (i < chars.length && !removed.has(i))
+            text.push(chars[i]);
+    }
+    const [first] = segments[0];
+    const [, last] = segments.at(-1);
+    if (unwrap) {
+        const firstWrap = wraps[0];
+        const lastWrap = wraps.at(-1);
+        const from = Math.max(first, firstWrap.open + m.length);
+        const to = Math.min(last, lastWrap.close);
+        return result(text, out[from][1], out[to][0]);
+    }
+    return result(text, out[first][1], out[last][0]);
+}
+
+// The markers wrapping a line's selected text, also when the selection
+// takes in only one of them (it starts inside the first line's markers
+// and ends inside the last's after toggleWrapLines()).
+function segmentWrap(chars, [a, b], m) {
+    const n = m.length;
+    if (b - a > n && startsWith(chars, m, a))
+        a += n;
+    if (b - a > n && startsWith(chars, m, b - n))
+        b -= n;
+    return findWrap(chars, a, b, m);
+}
+
+// [start, end) of the selected text on each line the selection touches,
+// without the spaces around it; blank parts are left out.
+function lineSegments(chars, start, end) {
+    const segments = [];
+    let a = start;
+    while (a <= end) {
+        let b = a;
+        while (b < end && chars[b] !== '\n')
+            b++;
+        let [s, e] = [a, b];
+        while (s < e && /\s/.test(chars[s]))
+            s++;
+        while (e > s && /\s/.test(chars[e - 1]))
+            e--;
+        if (e > s)
+            segments.push([s, e]);
+        a = b + 1;
+    }
+    return segments;
+}
+
 function findWrap(chars, start, end, m) {
     const n = m.length;
     if (end - start >= 2 * n && startsWith(chars, m, start) && startsWith(chars, m, end - n))

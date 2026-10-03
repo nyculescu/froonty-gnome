@@ -42,6 +42,9 @@ export function markdownSpans(text, activeLine = -1) {
     const spans = [];
     let offset = 0;
     let inFence = false;
+    // Plain lines (no heading, quote, list item or code), for emphasis
+    // that runs across a line break: {offset, line, active, claimed}.
+    const lines = [];
     text.split('\n').forEach((line, index) => {
         const active = index === activeLine;
         const marker = (start, end) => {
@@ -61,26 +64,102 @@ export function markdownSpans(text, activeLine = -1) {
         } else if (inFence) {
             span(0, line.length, 'fence');
         } else {
-            lineSpans(line, {marker, span});
+            const plain = lineSpans(line, {marker, span});
+            if (plain)
+                lines.push({index, offset, line, active, claimed: plain.claimed});
         }
+        if (lines.at(-1)?.index !== index)
+            lines.push(null); // a paragraph ends here
         offset += line.length + 1;
     });
+    crossLineSpans(lines, spans);
     return spans;
 }
 
+// Markers a line leaves unpaired, for crossLineSpans(): the same rules as
+// INLINE (no space inside the markers, single ones not inside a word).
+const CROSS = [
+    {marker: '**', style: 'bold'},
+    {marker: '__', style: 'bold'},
+    {marker: '~~', style: 'strike'},
+    {marker: '*', style: 'italic', word: /[\w*]/},
+    {marker: '_', style: 'italic', word: /[\w_]/},
+];
+
+/**
+ * Emphasis over several lines of one paragraph, as in CommonMark: an
+ * opening marker a line left unpaired closes at the first unpaired closing
+ * one on a later line of the same paragraph (a blank line, a heading, a
+ * list item, a quote or a code block ends the paragraph).
+ */
+function crossLineSpans(lines, spans) {
+    const paragraphs = [];
+    let current = [];
+    for (const line of [...lines, null]) {
+        if (line) {
+            current.push(line);
+        } else {
+            if (current.length > 1)
+                paragraphs.push(current);
+            current = [];
+        }
+    }
+    for (const paragraph of paragraphs) {
+        for (const {marker, style, word} of CROSS) {
+            const n = marker.length;
+            const free = []; // {line, at, opens, closes}
+            for (const line of paragraph) {
+                for (let at = line.line.indexOf(marker); at >= 0; at = line.line.indexOf(marker, at + n)) {
+                    if (line.claimed.slice(at, at + n).some(Boolean))
+                        continue;
+                    // A longer run ("***", "____") is not this marker.
+                    if (line.line[at - 1] === marker[0] || line.line[at + n] === marker[0])
+                        continue;
+                    const before = line.line[at - 1] ?? ' ';
+                    const after = line.line[at + n] ?? ' ';
+                    const opens = /\S/.test(after) && !(word && word.test(before));
+                    const closes = /\S/.test(before) && !(word && word.test(after));
+                    free.push({line, at, opens, closes});
+                }
+            }
+            for (let i = 0; i < free.length; i++) {
+                const open = free[i];
+                if (!open.opens || open.used)
+                    continue;
+                const close = free.slice(i + 1).find(c => !c.used && c.closes && c.line !== open.line);
+                if (!close)
+                    continue;
+                open.used = close.used = true;
+                const mark = (line, at) => spans.push({
+                    start: line.offset + at, end: line.offset + at + n, style: line.active ? 'marker' : 'hidden',
+                });
+                mark(open.line, open.at);
+                mark(close.line, close.at);
+                spans.push({start: open.line.offset + open.at + n, end: close.line.offset + close.at, style});
+                for (const c of [open, close])
+                    c.line.claimed.fill(true, c.at, c.at + n);
+            }
+        }
+    }
+}
+
+// Returns {claimed} (inlineSpans') for a plain line, else null.
 function lineSpans(line, {marker, span}) {
     let rest = 0;
+    let plain = line.trim() !== '';
     const heading = HEADING.exec(line);
     if (heading) {
         marker(0, heading[0].length);
         span(heading[0].length, line.length, `h${heading[1].length}`);
         rest = heading[0].length;
+        plain = false;
     }
     const quote = !heading && QUOTE.exec(line);
     if (quote) {
         span(0, quote[0].length, 'marker');
         span(quote[0].length, line.length, 'quote');
         rest = quote[0].length;
+        plain = false;
     }
     const check = !heading && !quote && CHECK.exec(line);
     if (check) {
@@ -89,14 +168,17 @@ function lineSpans(line, {marker, span}) {
         if (check[2] !== ' ')
             span(check[0].length, line.length, 'done');
         rest = check[0].length;
+        plain = false;
     } else if (!heading && !quote) {
         const list = BULLET.exec(line) ?? NUMBERED.exec(line);
         if (list) {
             span(list[1].length, list[0].length, 'marker');
             rest = list[0].length;
+            plain = false;
         }
     }
-    inlineSpans(line, rest, {marker, span});
+    const claimed = inlineSpans(line, rest, {marker, span});
+    return plain ? {claimed} : null;
 }
 
 function inlineSpans(line, from, {marker, span}) {
@@ -142,6 +224,7 @@ function inlineSpans(line, from, {marker, span}) {
             }
         }
     }
+    return claimed;
 }
 
 /** The line (from 0) holding character position `position` (code points). */

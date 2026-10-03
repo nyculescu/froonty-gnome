@@ -121,4 +121,19 @@ test('link: wraps the selection and selects the URL', () => {
     eq(Md.insertLink(s('', 0)), s('[link](https://)', 7, 15));
 });
 
+test('markdown: bold over several lines wraps each line, and unwraps them again', () => {
+    const text = 'test line 1\ntest line 2';
+    const bold = Md.toggleWrap({text, start: 0, end: text.length}, '**');
+    eq(bold.text, '**test line 1**\n**test line 2**');
+    eq(Md.isWrapped(bold, '**'), true, 'the new selection reads as bold');
+    eq(Md.toggleWrap(bold, '**').text, text);
+});
+
+test('markdown: a multi-line wrap skips blank lines and the spaces around a line, and keeps wrapped lines', () => {
+    const text = 'a\n\n  b c \nd';
+    eq(Md.toggleWrap({text, start: 0, end: text.length}, '_').text, '_a_\n\n  _b c_ \n_d_');
+    const mixed = 'x **one**\ntwo y';
+    eq(Md.toggleWrap({text: mixed, start: 2, end: 13}, '**').text, 'x **one**\n**two** y');
+});
+
 await done();

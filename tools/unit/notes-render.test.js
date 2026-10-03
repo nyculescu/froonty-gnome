@@ -70,4 +70,25 @@ test('Pango attributes land on the right bytes after accented text', () => {
         [[3, 5], [6, 8]]);
 });
 
+const styled = (text, active = -1) => markdownSpans(text, active)
+    .filter(span => !['hidden', 'marker'].includes(span.style))
+    .map(span => `${span.style}:${text.slice(span.start, span.end)}`);
+
+test('render: emphasis runs over a line break within a paragraph, as in CommonMark', () => {
+    eq(styled('**test line 1\ntest line 1**'), ['bold:test line 1\ntest line 1']);
+    eq(styled('*one\ntwo*'), ['italic:one\ntwo']);
+    eq(styled('**a** and **b\nc** end'), ['bold:a', 'bold:b\nc']);
+    const spans = markdownSpans('**x\ny**', 1);
+    eq(spans.filter(s => s.style === 'hidden').map(s => s.start), [0], 'the first line\'s marker hidden');
+    eq(spans.filter(s => s.style === 'marker').map(s => s.start), [5], 'the edited line\'s marker shown');
+});
+
+test('render: no emphasis across a blank line, a heading, a list item, spaced markers or snake_case', () => {
+    eq(styled('**a\n\nb**'), []);
+    eq(styled('# **head\nnot**'), ['h1:**head']);
+    eq(styled('**x\n- y**'), []);
+    eq(styled('a ** b\nc ** d'), []);
+    eq(styled('snake_case\nother_name'), []);
+});
+
 await done();
