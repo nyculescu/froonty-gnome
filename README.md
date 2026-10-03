@@ -302,6 +302,7 @@ froonty@catalin/             the extension (this directory is what gets installe
 ├── panic/                   panic button catalog, factories, buttons (mute,
 │                            Claude session, block camera, pause media,
 │                            sit/stand), prefs
+├── prefs/rows.js            settings rows the settings tabs share
 ├── core/                    shared by features: emitter.js, tooltip.js,
 │                            privateFile.js
 ├── services/clock.js        clock ticks from the top bar's GnomeDesktop.WallClock

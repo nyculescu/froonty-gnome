@@ -3,7 +3,6 @@
 // process, GTK 4 and libadwaita).
 
 import Adw from 'gi://Adw';
-import Gio from 'gi://Gio';
 import Gtk from 'gi://Gtk';
 
 import {
@@ -19,6 +18,7 @@ import {notesPage} from './features/notes/prefs.js';
 import {notificationsPage} from './features/notifications/prefs.js';
 import {addLocalIconPaths, addLocalPrefs} from './features/localPrefs.js';
 import {panicPage} from './panic/prefs.js';
+import {spinRow, switchRow} from './prefs/rows.js';
 
 const CLOCK_FORMATS = ['system', '24h', '12h'];
 
@@ -179,20 +179,4 @@ export default class FroontyPreferences extends ExtensionPreferences {
 function acceleratorLabel(accelerator) {
     const [ok, key, mods] = Gtk.accelerator_parse(accelerator);
     return ok ? Gtk.accelerator_get_label(key, mods) : accelerator;
-}
-
-function switchRow(settings, key, title, subtitle = '') {
-    const row = new Adw.SwitchRow({title, subtitle});
-    settings.bind(key, row, 'active', Gio.SettingsBindFlags.DEFAULT);
-    return row;
-}
-
-// Spin bounds are read from the schema's <range>, so they are defined once.
-function spinRow(settings, key, title, step = 1) {
-    const [, [lower, upper]] = settings.settings_schema.get_key(key)
-        .get_range().recursiveUnpack();
-    const row = Adw.SpinRow.new_with_range(lower, upper, step);
-    row.title = title;
-    settings.bind(key, row, 'value', Gio.SettingsBindFlags.DEFAULT);
-    return row;
 }
