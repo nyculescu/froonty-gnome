@@ -5,11 +5,11 @@
 // GnomeDesktop.WallClock (shell/dateMenu.js). It wakes up only on minute
 // boundaries (or seconds, if the user enabled clock-show-seconds) and
 // re-fires immediately when the wall clock jumps, e.g. after suspend/resume
-// or a timezone change. Froonty therefore owns no timer of its own.
+// or a timezone change. Only if the top bar has no such clock (a changed
+// Shell) does Froonty time minutes itself, with a timeout stop() removes.
 
 import GLib from 'gi://GLib';
 import Gio from 'gi://Gio';
-import GnomeDesktop from 'gi://GnomeDesktop';
 import Shell from 'gi://Shell';
 
 import {EventEmitter} from 'resource:///org/gnome/shell/misc/signals.js';
@@ -19,7 +19,7 @@ import {topBarWallClock} from '../shell/dateMenu.js';
 const INTERFACE_SCHEMA = 'org.gnome.desktop.interface';
 
 // Shell.util_translate_time_string() looks strings up in GNOME Shell's own
-// translation catalog, so these must match msgids used by GNOME Shell 46
+// translation catalog, so these must match msgids GNOME Shell uses
 // (ui/dateMenu.js, "calendar heading" context). Froonty gets localized date
 // layouts without shipping translations.
 const pgettextKey = (context, msgid) => `${context}\u0004${msgid}`;
@@ -39,20 +39,23 @@ export class ClockService extends EventEmitter {
         super();
         this._settings = settings;
         this._wallClock = null;
+        this._minuteId = 0;
         this._interfaceSettings = null;
     }
 
     start() {
-        if (this._wallClock)
+        if (this._interfaceSettings)
             return;
 
-        // Only if the top bar has none (a changed Shell): then a clock of
-        // its own, left to the garbage collector after stop().
-        this._wallClock = topBarWallClock() ?? new GnomeDesktop.WallClock();
-        this._wallClock.connectObject(
-            'notify::clock', () => this.emit('changed'),
-            'notify::timezone', () => this.emit('changed'),
-            this);
+        this._wallClock = topBarWallClock();
+        if (this._wallClock) {
+            this._wallClock.connectObject(
+                'notify::clock', () => this.emit('changed'),
+                'notify::timezone', () => this.emit('changed'),
+                this);
+        } else {
+            this._armMinute();
+        }
 
         this._interfaceSettings = new Gio.Settings({schema_id: INTERFACE_SCHEMA});
         this._interfaceSettings.connectObject(
@@ -65,7 +68,7 @@ export class ClockService extends EventEmitter {
     }
 
     stop() {
-        if (!this._wallClock)
+        if (!this._interfaceSettings)
             return;
 
         this._settings.disconnectObject(this);
@@ -73,8 +76,24 @@ export class ClockService extends EventEmitter {
         this._interfaceSettings = null;
 
         // The top bar's clock is GNOME's; it is only let go of here.
-        this._wallClock.disconnectObject(this);
+        this._wallClock?.disconnectObject(this);
         this._wallClock = null;
+        if (this._minuteId) {
+            GLib.source_remove(this._minuteId);
+            this._minuteId = 0;
+        }
+    }
+
+    // Without the top bar's clock: once at the next minute, then again.
+    _armMinute() {
+        const seconds = GLib.DateTime.new_now_local().get_seconds();
+        this._minuteId = GLib.timeout_add(GLib.PRIORITY_DEFAULT,
+            Math.max(1, Math.ceil((60 - seconds) * 1000)), () => {
+                this._minuteId = 0;
+                this.emit('changed');
+                this._armMinute();
+                return GLib.SOURCE_REMOVE;
+            });
     }
 
     /**

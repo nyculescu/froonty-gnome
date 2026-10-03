@@ -192,7 +192,7 @@ strip   St.Widget #froontyStrip, BinLayout, full monitor width, reactive only wh
  └ column  St.BoxLayout #froontyColumn .froonty-column, vertical, as wide as the strip, non-reactive
     ├ pill  St.Button #froontyPill (click + Enter/Space + a11y), clip_to_allocation, centered
     │  └ content  BinLayout: CollapsedView | Hub (cross-faded)
-    └ bar   the Claude attention bar (ui/attentionBar.js), centered; only
+    └ bar   the Claude attention bar (features/claude/attentionBar.js), centered; only
             while that feature is on, shown only while the island is
             collapsed and a Claude session waits
 ```

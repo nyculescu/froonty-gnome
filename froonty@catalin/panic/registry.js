@@ -7,19 +7,16 @@
 import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 
 import {AudioMuteButton} from './audioMute.js';
-import {CameraBlockButton} from './camera.js';
-import {ClaudeSessionButton} from './claudeSession.js';
-import {PauseMediaButton} from './pauseMedia.js';
-import {SitStandButton} from './sitStand.js';
 import {byId} from './catalog.js';
+import {LOCAL_FACTORIES} from './localFactories.js';
 
 const FACTORIES = {
     'mute-microphone': title => new AudioMuteButton('input', title),
     'mute-sound': title => new AudioMuteButton('output', title),
-    'claude-session': (title, actions) => new ClaudeSessionButton(title, actions),
-    'block-camera': title => new CameraBlockButton(title),
-    'pause-media': (title, actions) => new PauseMediaButton(title, actions),
-    'sit-stand': (title, actions) => new SitStandButton(title, actions),
+    // The camera button is switched off for now (localCatalog.js); offering
+    // it again also takes its factory here: a CameraBlockButton, of
+    // camera.js, for 'block-camera'.
+    ...LOCAL_FACTORIES,
 };
 
 /**

@@ -5,6 +5,7 @@ temporary folder. Run: python3 -m unittest tools/pack-public/test_pack_public.py
 """
 
 import importlib.util
+import json
 import os
 import shutil
 import subprocess
@@ -43,6 +44,8 @@ class CheckZipTest(unittest.TestCase):
             "extension.js": b"export default class {}",
             "features/localFeatures.js": stub("localFeatures.js"),
             "features/localPrefs.js": stub("localPrefs.js"),
+            "panic/localCatalog.js": stub("localCatalog.js"),
+            "panic/localFactories.js": stub("localFactories.js"),
             "stylesheet.css": b".froonty-pill {}\n",
         }
         files.update(replace or {})
@@ -120,6 +123,11 @@ class StripCssTest(unittest.TestCase):
             strip_local_css.strip(".a {}\n", ["writing"])
 
 
+def archive_text(path, name):
+    with zipfile.ZipFile(path) as archive:
+        return archive.read(name).decode()
+
+
 class PackTest(unittest.TestCase):
     def test_pack_public(self):
         out = tempfile.mkdtemp()
@@ -135,7 +143,18 @@ class PackTest(unittest.TestCase):
             names = archive.namelist()
             schema = archive.read("schemas/org.gnome.shell.extensions.froonty.gschema.xml")
             css = archive.read("stylesheet.css")
-        self.assertFalse([n for n in names if n.startswith(("features/writing", "features/zerotier"))])
+        self.assertFalse([n for n in names if n.startswith((
+            "features/writing", "features/zerotier", "features/media", "features/claude",
+            "features/sysmon", "features/clipboard", "features/killprocess", "features/break"))])
+        self.assertIn("features/notes/index.js", names)
+        self.assertIn("features/calendar/index.js", names)
+        self.assertIn("LICENSE", names)
+        self.assertNotIn("panic/camera.js", names)
+        metadata = json.loads(archive_text(path, "metadata.json"))
+        self.assertNotIn("gettext-domain", metadata)
+        self.assertNotIn("Clipboard", metadata["description"])
+        self.assertNotIn(b'name="claude-', schema)
+        self.assertNotIn(b"froonty-media-", css)
         self.assertNotIn(b'name="writing-', schema)
         self.assertNotIn(b'name="zerotier-', schema)
         self.assertNotIn(b"local-only", schema)

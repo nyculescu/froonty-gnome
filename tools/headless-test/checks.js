@@ -6387,7 +6387,7 @@ Gio._promisify(Gio.Subprocess.prototype, 'communicate_utf8_async');
 
 const ATTENTION_VARS = ['CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_PID', 'CLAUDE_CODE_SESSION_ID',
     'CLAUDE_PROJECT_DIR', 'CHROME_DESKTOP'];
-const attention = () => island()?._attention ?? null;
+const attention = () => island()?._pillBars?.get('claude')?.attention ?? null;
 const attentionBar = () => attention()?.bar ?? null;
 const attentionDir = () => Gio.File.new_for_path(GLib.build_filenamev(
     [GLib.get_user_runtime_dir(), 'froonty', 'claude-attention']));

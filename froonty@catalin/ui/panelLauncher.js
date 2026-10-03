@@ -19,7 +19,7 @@ export class PanelLauncher {
     constructor(title, onActivate) {
         // No menu: a plain button in the top bar's right box.
         this._button = new PanelMenu.Button(0.5, title, true);
-        // Puzzle piece: the usual symbol for an extension (user request).
+        // Puzzle piece: the usual symbol for an extension.
         this._button.add_child(new St.Icon({
             icon_name: 'application-x-addon-symbolic',
             style_class: 'system-status-icon',

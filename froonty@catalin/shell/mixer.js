@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Adapter: GNOME Shell's shared audio mixer (Gvc.MixerControl).
 //
-// SHELL API (exported, not formally stable), GNOME Shell 46:
+// SHELL API (exported, not formally stable), GNOME Shell 50:
 //   ui/status/volume.js  getMixerControl()  the singleton behind the Quick
 //                                           Settings volume and microphone
 //                                           sliders, already connected to the

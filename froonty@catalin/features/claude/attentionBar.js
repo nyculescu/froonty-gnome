@@ -18,8 +18,8 @@ import St from 'gi://St';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import {gettext as _, ngettext} from 'resource:///org/gnome/shell/extensions/extension.js';
 
-import {placeText} from '../features/claude/attention.js';
-import {sparkIcon} from '../features/claude/icon.js';
+import {placeText} from './attention.js';
+import {sparkIcon} from './icon.js';
 
 const FADE_MS = 150;
 

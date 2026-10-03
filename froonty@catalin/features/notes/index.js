@@ -14,8 +14,7 @@ export default {
     },
     icon: 'document-edit-symbolic',
     enabledKey: 'notes-enabled',
-    // Settings → Notes → Size. Defaults 428x319 (user request 2026-09-28:
-    // 25% narrower and 25% taller than 570x255).
+    // Settings → Notes → Size.
     hubSizeKeys: {width: 'notes-width', height: 'notes-height'},
     createService: ctx => new NotesService(ctx),
     createView: (ctx, service) => new NotesView(ctx, service),

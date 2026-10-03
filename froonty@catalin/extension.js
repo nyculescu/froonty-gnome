@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Froonty: a Dynamic-Island-style entry point for GNOME Shell 46.
+// Froonty: a Dynamic-Island-style entry point for GNOME Shell.
 //
 // Lifecycle: nothing is created before enable(), and disable() tears down
-// everything enable() created. GNOME Shell 46 calls disable() on every screen
+// everything enable() created. GNOME Shell calls disable() on every screen
 // lock and enable() on unlock (session-modes defaults to ["user"]), so this
 // path runs often, not just when the user toggles the extension.
 
@@ -12,10 +12,6 @@ import Shell from 'gi://Shell';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import {Extension, gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 
-import {acquireBreakService, releaseBreakService} from './features/break/shared.js';
-import {NotificationTakeover} from './features/break/takeover.js';
-import {acquireShared, releaseShared} from './features/claude/refresher.js';
-import {acquireRecorder, releaseRecorder} from './features/clipboard/shared.js';
 import {FEATURES} from './features/registry.js';
 import {ClockService} from './services/clock.js';
 import {PanelClock} from './shell/dateMenu.js';
@@ -55,10 +51,14 @@ export default class FroontyExtension extends Extension {
         this._settings.connectObject(
             'changed::island-enabled', () => this._syncIsland(),
             'changed::hide-panel-clock', () => this._syncPanelClock(),
-            'changed::claude-enabled', () => this._syncClaudeRefresher(),
-            'changed::clipboard-enabled', () => this._syncClipboardRecorder(),
-            'changed::break-enabled', () => this._syncBreakService(),
             this);
+        // Work a feature does while it is enabled, not only once its tab
+        // has been opened (the Clipboard tab's recording, for one).
+        this._backgrounds = new Set();
+        for (const feature of FEATURES.filter(f => f.background)) {
+            this._settings.connectObject(`changed::${feature.enabledKey}`,
+                () => this._syncBackground(feature), this);
+        }
 
         // One-time checks of features (e.g. a tab whose app is not
         // installed starts off); each remembers that it ran.
@@ -67,35 +67,24 @@ export default class FroontyExtension extends Extension {
                 console.warn(`Froonty: ${feature.id} setup failed: ${e.message}`));
         }
 
-        // "Remind me in the island": GNOME's break notifications are off
-        // while the island shows the reminders (features/break/takeover.js).
-        this._takeover = new NotificationTakeover(this._settings);
+        // Parts of features that live as long as the extension and follow
+        // whether the island is shown (the Break tab's reminders).
+        this._parts = FEATURES.filter(f => f.createExtensionPart)
+            .map(f => f.createExtensionPart(this._settings));
         this._syncIsland();
-        this._holdsClaudeRefresher = false;
-        this._syncClaudeRefresher();
-        this._holdsClipboardRecorder = false;
-        this._syncClipboardRecorder();
-        this._holdsBreakService = false;
-        this._syncBreakService();
+        for (const feature of FEATURES.filter(f => f.background))
+            this._syncBackground(feature);
     }
 
     disable() {
-        // Under the lock screen GNOME's break notifications stay off: they
-        // would show on the lock screen and flicker on every unlock. Any
-        // other disable gives them back (DESIGN.md §2, principle 5).
         const locked = this._isSessionLocked();
-        this._takeover.destroy({restore: !locked});
-        this._takeover = null;
+        for (const part of this._parts)
+            part.destroy({locked});
+        this._parts = null;
         this._settings.disconnectObject(this);
-        if (this._holdsClaudeRefresher)
-            releaseShared();
-        this._holdsClaudeRefresher = false;
-        if (this._holdsClipboardRecorder)
-            releaseRecorder();
-        this._holdsClipboardRecorder = false;
-        if (this._holdsBreakService)
-            releaseBreakService();
-        this._holdsBreakService = false;
+        for (const feature of FEATURES.filter(f => this._backgrounds.has(f.id)))
+            feature.background.release();
+        this._backgrounds = null;
         Main.wm.removeKeybinding(TOGGLE_SHORTCUT_KEY);
         this._destroyIsland();
         this._launcher?.destroy();
@@ -107,44 +96,17 @@ export default class FroontyExtension extends Extension {
         this._settings = null;
     }
 
-    // Low power switches "Ask Claude Code for fresh usage" off and on
-    // (features/claude/refresher.js) as long as the Claude tab is enabled,
-    // not only once its tab has been opened.
-    _syncClaudeRefresher() {
-        const want = this._settings.get_boolean('claude-enabled');
-        if (want === this._holdsClaudeRefresher)
+    _syncBackground(feature) {
+        const want = this._settings.get_boolean(feature.enabledKey);
+        if (want === this._backgrounds.has(feature.id))
             return;
-        this._holdsClaudeRefresher = want;
-        if (want)
-            acquireShared(this._settings);
-        else
-            releaseShared();
-    }
-
-    // Clipboard history records copies as long as the Clipboard tab is
-    // enabled, not only once its tab has been opened (or while it is shown).
-    _syncClipboardRecorder() {
-        const want = this._settings.get_boolean('clipboard-enabled');
-        if (want === this._holdsClipboardRecorder)
-            return;
-        this._holdsClipboardRecorder = want;
-        if (want)
-            acquireRecorder(this._settings);
-        else
-            releaseRecorder();
-    }
-
-    // The Break tab tracks breaks and posture as long as it is enabled,
-    // not only once its tab has been opened.
-    _syncBreakService() {
-        const want = this._settings.get_boolean('break-enabled');
-        if (want === this._holdsBreakService)
-            return;
-        this._holdsBreakService = want;
-        if (want)
-            acquireBreakService(this._settings);
-        else
-            releaseBreakService();
+        if (want) {
+            this._backgrounds.add(feature.id);
+            feature.background.acquire(this._settings);
+        } else {
+            this._backgrounds.delete(feature.id);
+            feature.background.release();
+        }
     }
 
     // Extensions are disabled on the session mode's 'updated' after
@@ -180,9 +142,8 @@ export default class FroontyExtension extends Extension {
                 ? new PanelLauncher(_('Froonty settings'), () => this._settingsWindow.open())
                 : new PanelLauncher(_('Start Froonty'), () => this._start());
         }
-        // Without the island (waiting at login, "Show island" off), GNOME
-        // reminds.
-        this._takeover.sync({pillShown: this._island !== null});
+        for (const part of this._parts)
+            part.sync?.({pillShown: this._island !== null});
     }
 
     _createIsland() {

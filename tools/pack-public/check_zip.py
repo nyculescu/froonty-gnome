@@ -13,8 +13,14 @@ import os
 import sys
 import zipfile
 
-LOCAL_DIRS = ("features/writing/", "features/zerotier/")
-STUBS = ("features/localFeatures.js", "features/localPrefs.js")
+LOCAL_DIRS = (
+    "features/writing/", "features/zerotier/", "features/media/", "features/claude/",
+    "features/sysmon/", "features/clipboard/", "features/killprocess/", "features/break/",
+)
+STUBS = (
+    "features/localFeatures.js", "features/localPrefs.js",
+    "panic/localCatalog.js", "panic/localFactories.js",
+)
 REQUIRED = ("metadata.json", "extension.js")
 BANNED = (
     b"features/writing",
@@ -27,6 +33,22 @@ BANNED = (
     b"FROONTY_OLLAMA",
     b"zerotier-enabled",
     b"froonty-zerotier",
+    b"features/media",
+    b"features/claude",
+    b"features/sysmon",
+    b"features/clipboard",
+    b"features/killprocess",
+    b"features/break",
+    b"media-enabled",
+    b"claude-enabled",
+    b"claude-attention",
+    b"sysmon-enabled",
+    b"clipboard-enabled",
+    b"killprocess-enabled",
+    b"break-enabled",
+    b"froonty-claude-symbolic",
+    b"froonty-btop-symbolic",
+    b"statusline",
 )
 
 

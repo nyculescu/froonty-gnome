@@ -53,7 +53,11 @@ export function calendarPage(settings, window) {
 
     const group = new Adw.PreferencesGroup({
         title: _('Calendar'),
-        description: _('Events from the calendars GNOME knows: accounts in Settings → Online Accounts (Google, Microsoft 365, Nextcloud, …) and calendars added in GNOME Calendar or Evolution. Read-only: Froonty never adds, changes or removes events. Needs gir1.2-ecal-2.0; Microsoft 365 and Exchange calendars also need Evolution Data Server’s EWS backends (evolution-ews-core).'),
+        description: _('Events from the calendars GNOME knows: accounts in Settings → Online Accounts (Google, ' +
+            'Microsoft 365, Nextcloud, …) and calendars added in GNOME Calendar or Evolution. ' +
+            'Read-only: Froonty never adds, changes or removes events. Needs gir1.2-ecal-2.0; ' +
+            'Microsoft 365 and Exchange calendars also need Evolution Data Server’s EWS backends ' +
+            '(evolution-ews-core).'),
     });
     const enabled = new Adw.SwitchRow({title: _('Show the Calendar tab')});
     settings.bind('calendar-enabled', enabled, 'active', Gio.SettingsBindFlags.DEFAULT);

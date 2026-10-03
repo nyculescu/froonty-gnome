@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Froonty preferences (runs in the separate org.gnome.Shell.Extensions
-// process, GTK 4 + libadwaita 1.5 on Ubuntu 24.04).
+// process, GTK 4 and libadwaita).
 
 import Adw from 'gi://Adw';
 import Gio from 'gi://Gio';
@@ -13,17 +13,11 @@ import {
 
 // Feature settings tabs, after the general ones. (Imported here, not via
 // features/registry.js: that loads Shell-side modules this process cannot.)
-import {addIconPath as addBreakIconPath, breakPage} from './features/break/prefs.js';
 import {calendarPage} from './features/calendar/prefs.js';
-import {addIconPath, claudePage} from './features/claude/prefs.js';
-import {clipboardPage} from './features/clipboard/prefs.js';
-import {killProcessPage} from './features/killprocess/prefs.js';
 import {attachAllNotes} from './features/notes/allNotesPage.js';
-import {mediaPage} from './features/media/prefs.js';
 import {notesPage} from './features/notes/prefs.js';
 import {notificationsPage} from './features/notifications/prefs.js';
-import {sysmonPage} from './features/sysmon/prefs.js';
-import {addLocalPrefs} from './features/localPrefs.js';
+import {addLocalIconPaths, addLocalPrefs} from './features/localPrefs.js';
 import {panicPage} from './panic/prefs.js';
 
 const CLOCK_FORMATS = ['system', '24h', '12h'];
@@ -38,10 +32,9 @@ export default class FroontyPreferences extends ExtensionPreferences {
         const settings = this.getSettings();
         // Keep the settings object alive as long as the window.
         window._settings = settings;
-        // Bundled icons used in feature tabs and preferences (the Break
-        // tab's also by the Panic buttons page).
-        addIconPath();
-        addBreakIconPath();
+        // Bundled icons used in feature tabs and preferences (some also by
+        // the Panic buttons page).
+        addLocalIconPaths();
 
         // With more than one page, Adw.PreferencesWindow shows them as tabs
         // (a view switcher in the header bar).
@@ -53,18 +46,12 @@ export default class FroontyPreferences extends ExtensionPreferences {
             // Feature pages in the hub's tab order (features/registry.js).
             calendarPage(settings, window),
             notificationsPage(settings),
-            mediaPage(settings),
             notesPage(settings),
-            claudePage(settings),
-            sysmonPage(settings),
-            clipboardPage(settings),
-            killProcessPage(settings),
-            breakPage(settings),
         ]) {
             window.add(page);
             names.add(page.name);
         }
-        for (const name of addLocalPrefs(window, settings) ?? [])
+        for (const name of addLocalPrefs(window, settings))
             names.add(name);
         window.visible_page_name = GENERAL_PAGE;
         // The All notes page (a subpage), when the island asked for it.

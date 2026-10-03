@@ -7,11 +7,12 @@ import Gio from 'gi://Gio';
 import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 
 import {acquireBreakService, releaseBreakService} from './shared.js';
+import {NotificationTakeover} from './takeover.js';
 import {BreakView} from './view.js';
 
 // The tab's hold on the shared service; the extension holds it too while
-// the tab is enabled (extension.js), so tracking does not wait for the tab
-// to be opened.
+// the tab is enabled (background below), so tracking does not wait for the
+// tab to be opened.
 class BreakHandle {
     constructor(settings) {
         this._settings = settings;
@@ -47,5 +48,20 @@ export default {
     pillCue: {
         acquire: settings => acquireBreakService(settings).cue,
         release: () => releaseBreakService(),
+    },
+    // Tracks breaks and posture as long as the tab is enabled.
+    background: {
+        acquire: settings => acquireBreakService(settings),
+        release: () => releaseBreakService(),
+    },
+    // "Remind me in the island": GNOME's break notifications are off while
+    // the island shows the reminders (takeover.js). Under the lock screen
+    // they stay off: they would show there and flicker on every unlock.
+    createExtensionPart: settings => {
+        const takeover = new NotificationTakeover(settings);
+        return {
+            sync: state => takeover.sync(state),
+            destroy: ({locked}) => takeover.destroy({restore: !locked}),
+        };
     },
 };

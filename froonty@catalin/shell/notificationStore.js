@@ -2,7 +2,7 @@
 // GNOME's notifications, as GNOME's message tray holds them, for the
 // Notifications tab (docs/features/notifications.md).
 //
-// PRIVATE / INTERNAL API (DESIGN.md §6.3). This is the only code in
+// PRIVATE / INTERNAL API. This is the only code in
 // Froonty that reads or writes GNOME's notification objects (ui/
 // messageTray.js, verified against GNOME Shell 50.1):
 //

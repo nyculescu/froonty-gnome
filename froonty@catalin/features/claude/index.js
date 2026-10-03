@@ -3,6 +3,8 @@
 
 import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 
+import {AttentionHost} from './attentionHost.js';
+import {acquireShared, releaseShared} from './refresher.js';
 import {sparkIcon} from './icon.js';
 import {LivenerfService} from './livenerfService.js';
 import {ClaudeService} from './service.js';
@@ -28,4 +30,14 @@ export default {
         settings: ctx.settings,
     }),
     createView: (ctx, service) => new ClaudeView(ctx, service),
+    // Low power switches "Ask Claude Code for fresh usage" off and on
+    // (refresher.js) as long as the Claude tab is enabled, not only once
+    // its tab has been opened.
+    background: {
+        acquire: settings => acquireShared(settings),
+        release: () => releaseShared(),
+    },
+    // "When Claude needs you": the bar under the collapsed pill, on its own
+    // switch (claude-attention-enabled), whether the tab is shown or not.
+    pillBar: island => new AttentionHost(island),
 };

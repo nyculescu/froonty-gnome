@@ -21,13 +21,21 @@ trap 'rm -rf "$STAGING_ROOT"' EXIT
 cp -a "$ROOT/$UUID" "$STAGED"
 cp "$ROOT/tools/pack-public/localFeatures.js" "$STAGED/features/localFeatures.js"
 cp "$ROOT/tools/pack-public/localPrefs.js" "$STAGED/features/localPrefs.js"
+cp "$ROOT/tools/pack-public/localCatalog.js" "$STAGED/panic/localCatalog.js"
+cp "$ROOT/tools/pack-public/localFactories.js" "$STAGED/panic/localFactories.js"
 rm -rf "$STAGED/features/zerotier" "$STAGED/features/writing"
 python3 "$ROOT/tools/pack-public/strip-local-schema.py" \
     "$STAGED/schemas/org.gnome.shell.extensions.froonty.gschema.xml"
 python3 "$ROOT/tools/pack-public/strip_local_css.py" "$STAGED/stylesheet.css" zerotier writing
+# Only what extension.js and prefs.js reach, and only their settings keys
+# and CSS; the description says what this build has.
+python3 "$ROOT/tools/pack-public/prune.py" "$STAGED"
+python3 "$ROOT/tools/pack-public/describe.py" "$STAGED/metadata.json" \
+    "$ROOT/tools/pack-public/description.txt"
+cp "$ROOT/LICENSE" "$STAGED/LICENSE"
 "$GLIB_COMPILE_SCHEMAS" --strict "$STAGED/schemas"
 
-extra_sources=()
+extra_sources=(--extra-source=LICENSE)
 for source in "$@"; do
     extra_sources+=("--extra-source=$source")
 done

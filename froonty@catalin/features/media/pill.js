@@ -13,7 +13,7 @@
 // Two-finger swipes on the pill change song (media-gestures).
 //
 // The island's pill accessory interface: leading, trailing, showing,
-// peekText, accessibleText, tabId, setPillShown(), handleScroll(),
+// peekText, accessibleText, tabId, opensTab, setPillShown(), handleScroll(),
 // destroy(), signal 'changed'. Holds the shared Media service while it
 // exists.
 
@@ -37,6 +37,12 @@ export class MediaPillAccessory extends Emitter {
      * @param {object} ctx feature context {settings, memory}
      * @param {object} island {pill}: the pill, for its colour behind the art
      */
+    /** Whether a click on the pill showing music opens the Media tab. */
+    get opensTab() {
+        return (this.showing || this.peekText !== null) &&
+            this._settings.get_boolean('media-pill-opens-tab');
+    }
+
     constructor(ctx, {pill}) {
         super();
         this._settings = ctx.settings;

@@ -3,7 +3,7 @@
 // (docs/features/notifications.md). The feature reaches it as
 // ctx.notifications and never imports this file.
 //
-// PRIVATE / INTERNAL API (DESIGN.md §6.3). Verified against GNOME Shell
+// PRIVATE / INTERNAL API. Verified against GNOME Shell
 // 50.1:
 //
 //   Main.messageTray                    MessageTray (ui/main.js)

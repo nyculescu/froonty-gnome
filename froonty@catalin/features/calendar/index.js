@@ -48,7 +48,7 @@ export default {
         return _('Calendar');
     },
     // A getter: no GObject is created when the module loads, before
-    // enable() (extensions.gnome.org review guidelines).
+    // enable().
     get icon() {
         return calendarIcon();
     },

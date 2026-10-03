@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// The hub: content of the expanded island. It hosts features (see
-// docs/local/ideas.md) and contains no feature logic of its own:
+// The hub: content of the expanded island. It hosts features
+// (features/registry.js) and contains no feature logic of its own:
 //
 //   ┌─────┬────────────────────────────────────┐
 //   │ tab │      [panic][panic]…        📅 [a] ⚙️ │  panic bar (max 5), centered

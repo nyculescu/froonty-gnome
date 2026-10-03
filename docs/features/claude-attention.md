@@ -265,7 +265,7 @@ shell/
 ├── messageTray.js       the Notifications tab's adapter: createStore({filter})
 └── notificationStore.js the Notifications tab's store: `filter`, and
                          describe()'s `appId` (section 9)
-ui/attentionBar.js       the St bar
+features/claude/attentionBar.js  the St bar
 ```
 
 **`AttentionService`** (`start()` / `stop()` with the island):

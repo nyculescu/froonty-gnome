@@ -2,7 +2,7 @@
 // Opens Froonty's settings window, or raises it when it is already open.
 //
 // The window is run by GNOME Shell's separate preferences service
-// (org.gnome.Shell.Extensions, a public D-Bus API; GNOME Shell 46 behavior):
+// (org.gnome.Shell.Extensions, a public D-Bus API; GNOME Shell 50 behavior):
 //
 //   - A second OpenExtensionPrefs call while a window is open fails with
 //     "Already showing a prefs dialog" instead of raising it.

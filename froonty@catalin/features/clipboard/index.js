@@ -37,4 +37,10 @@ export default {
     hubSizeKeys: {width: 'clipboard-width', height: 'clipboard-height'},
     createService: ctx => new ClipboardHandle(ctx.settings),
     createView: (ctx, handle) => new ClipboardView(ctx, handle.recorder),
+    // Records copies as long as the tab is enabled, not only once its tab
+    // has been opened (or while it is shown).
+    background: {
+        acquire: settings => acquireRecorder(settings),
+        release: () => releaseRecorder(),
+    },
 };

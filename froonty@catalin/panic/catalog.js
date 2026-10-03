@@ -3,9 +3,13 @@
 // Pure data, shared by the Shell side (panic/registry.js) and the settings
 // window (panic/prefs.js), which cannot load each other's modules.
 //
-// Adding a panic button: an entry here, a factory in registry.js.
+// Adding a panic button: an entry here, a factory in registry.js (for a
+// working-tree feature's button: localCatalog.js and localFactories.js,
+// which the public build replaces with empty ones).
 // Titles (and the optional description Settings shows under a title) take
 // the caller's gettext, since each side has its own.
+
+import {LOCAL_PANIC_BUTTONS} from './localCatalog.js';
 
 export const MAX_PANIC_BUTTONS = 5;
 
@@ -20,45 +24,7 @@ export const PANIC_BUTTONS = [
         icon: 'audio-volume-muted-symbolic',
         title: _ => _('Mute sound'),
     },
-    {
-        // Not an action: Claude's session usage at a glance; a click opens
-        // the Claude tab. The icon is bundled (features/claude/icons).
-        id: 'claude-session',
-        icon: 'froonty-claude-symbolic',
-        title: _ => _('Claude session usage'),
-    },
-    // The camera button is switched off for now; its code stays in
-    // panic/camera.js and panic/cameraAccess.js. Uncomment to offer it again
-    // (docs/features/panic-buttons.md §4).
-    // {
-    //     // GNOME's Camera Access switch; only the camera portal enforces it,
-    //     // so the title and description say whom it stops
-    //     // (panic/cameraAccess.js).
-    //     id: 'block-camera',
-    //     icon: 'camera-disabled-symbolic',
-    //     title: _ => _('Block camera for apps that ask GNOME'),
-    //     description: _ => _('Turns off Camera Access, as Settings → Privacy & Security → ' +
-    //         'Cameras does. Apps that ask GNOME for the camera (mostly Flatpak apps) are ' +
-    //         'refused. Apps that open the camera directly, as apps that are not sandboxed ' +
-    //         'can, are not blocked, and a camera already in use stays on.'),
-    // },
-    {
-        // Every MPRIS player that plays; a second click resumes the ones it
-        // paused (panic/pauseMedia.js, docs/features/media.md).
-        id: 'pause-media',
-        icon: 'media-playback-pause-symbolic',
-        title: _ => _('Pause all media'),
-        description: _ => _('Pauses every player that is playing. Click again to resume the ones it paused.'),
-    },
-    {
-        // The Break tab's sit/stand tracker (features/break); the icon is
-        // bundled there (features/break/icons).
-        id: 'sit-stand',
-        icon: 'froonty-stand-symbolic',
-        title: _ => _('Sitting or standing'),
-        description: _ => _('Switches the Break tab’s sit/stand tracker. Needs the Break tab ' +
-            'with sit/stand turned on.'),
-    },
+    ...LOCAL_PANIC_BUTTONS,
 ];
 
 /**

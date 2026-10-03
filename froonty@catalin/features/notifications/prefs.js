@@ -19,7 +19,13 @@ export function notificationsPage(settings) {
 
     const group = new Adw.PreferencesGroup({
         title: _('Notifications'),
-        description: _('GNOME’s own notifications, newest first, urgent ones on top. Click one to open it, as in GNOME’s list (for an app that gave it no “open” action, GNOME then opens the app and removes all of that app’s notifications, as its own list does); × dismisses it; Clear all (after a confirmation) dismisses them all. Froonty keeps no copy and never removes one on its own. Opening this tab on purpose marks what it lists as seen, as GNOME’s list does, which clears the unread dot; opening it by hover alone does not. Per-app rules and Do Not Disturb are GNOME’s (Settings → Notifications).'),
+        description: _('GNOME’s own notifications, newest first, urgent ones on top. Click one to open it, as in' +
+            ' GNOME’s list (for an app that gave it no “open” action, GNOME then opens the app and ' +
+            'removes all of that app’s notifications, as its own list does); × dismisses it; Clear ' +
+            'all (after a confirmation) dismisses them all. Froonty keeps no copy and never removes ' +
+            'one on its own. Opening this tab on purpose marks what it lists as seen, as GNOME’s list' +
+            ' does, which clears the unread dot; opening it by hover alone does not. Per-app rules ' +
+            'and Do Not Disturb are GNOME’s (Settings → Notifications).'),
     });
     group.add(switchRow(settings, 'notifications-enabled', _('Show the Notifications tab')));
     page.add(group);
