@@ -4729,11 +4729,14 @@ async function testDatePill(outDir) {
     s.set_string('clock-format', 'system');
     iface.set_string('clock-format', '12h');
     await sleep(SETTLE_MS);
-    const system12 = await waitFor(() => matches() && /[AP]M/.test(header._timeLabel.text), 2000);
+    // GNOME's setting reaches the clock service through GSettings; give
+    // a loaded session time.
+    const system12 = await waitFor(() => matches() && /[AP]M/.test(header._timeLabel.text), 5000);
     iface.set_string('clock-format', '24h');
     await sleep(SETTLE_MS);
     check('date pill: "Follow system" follows GNOME\'s 12/24-hour setting',
-        system12 && await waitFor(() => matches() && !/[AP]M/.test(header._timeLabel.text), 2000), shown());
+        system12 && await waitFor(() => matches() && !/[AP]M/.test(header._timeLabel.text), 5000),
+        `${shown()} (12-hour shown: ${system12})`);
     iface.reset('clock-format');
     s.reset('clock-format');
     await sleep(SETTLE_MS);
@@ -8827,6 +8830,12 @@ async function testPublicBuild() {
     await sleep(animationWait());
 
     check('public build: disable succeeds', await setExtensionEnabled(false), stateName());
+    // GNOME's app grid connects to the overview's 'hidden' once, from work
+    // it defers for up to 20 s after the session starts (appDisplay.js,
+    // Main.initializeDeferredWork): wait for it, or the cycles below
+    // would count it as Froonty's whenever they run past that moment.
+    const appDisplay = Main.overview._overview?._controls?._appDisplay;
+    await waitFor(() => !appDisplay || appDisplay._overviewHiddenId !== 0, 30000);
     const baseline = shellFootprint();
     const failures = [];
     for (let i = 0; i < 10; i++) {
