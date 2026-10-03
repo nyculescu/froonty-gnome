@@ -8522,8 +8522,12 @@ export async function runAll(outDir) {
     if (only) {
         try {
             testLoaded();
-            // A banner from the session's start would hide what is checked.
+            // A banner from the session's start would hide what is checked;
+            // the session starts in the overview, where a window mapping
+            // leaves GNOME a 'hidden' handler until it closes.
             await waitFor(() => !Main.messageTray.visible, 15000);
+            Main.overview.hide();
+            await waitFor(() => !Main.overview.visible && !Main.overview.animationInProgress, 5000);
             for (const name of only.split(','))
                 // eslint-disable-next-line no-await-in-loop
                 await ONLY_TESTS[name](outDir);
