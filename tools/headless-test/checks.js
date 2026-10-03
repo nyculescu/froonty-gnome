@@ -8450,10 +8450,67 @@ async function testBreak(outDir) {
     }
 }
 
+// The public build (FROONTY_EXTENSION_DIR=an unzipped `make pack`, run
+// with FROONTY_TEST_ONLY=testPublicBuild): its four tabs and two panic
+// buttons only, each tab opens, and enable/disable leaves the Shell as
+// it was.
+async function testPublicBuild() {
+    const hub = island()._hub;
+    const names = hub._tabColumn.get_children()
+        .map(b => b.accessible_name.replace(/, unread notifications$/, ''));
+    check('public build: the tabs are Clock, Calendar, Notifications and Notes',
+        names.join(',') === 'Clock,Calendar,Notifications,Notes', names.join(','));
+    check('public build: the panic bar has the two mute buttons',
+        hub._panicBar.actor.get_n_children() === 2, `${hub._panicBar.actor.get_n_children()}`);
+    check('public build: no bar under the pill', island()._pillBars.size === 0);
+    island().expand();
+    await sleep(animationWait());
+    const opened = [];
+    for (const id of ['clock', 'calendar', 'notifications', 'notes']) {
+        hub.select(id);
+        // eslint-disable-next-line no-await-in-loop
+        await sleep(SETTLE_MS);
+        if (hub.activeFeature?.id === id && hub._entries.get(id)?.view)
+            opened.push(id);
+    }
+    check('public build: every tab opens', opened.length === 4, opened.join(','));
+    hub.select('clock');
+    island().collapse();
+    await sleep(animationWait());
+
+    check('public build: disable succeeds', await setExtensionEnabled(false), stateName());
+    const baseline = shellFootprint();
+    const failures = [];
+    for (let i = 0; i < 10; i++) {
+        // eslint-disable-next-line no-await-in-loop
+        if (!await setExtensionEnabled(true))
+            failures.push(`enable #${i}: ${stateName()}`);
+        if (i % 2 === 0) {
+            island()?.expand();
+            // eslint-disable-next-line no-await-in-loop
+            await sleep(40);
+        }
+        // eslint-disable-next-line no-await-in-loop
+        if (!await setExtensionEnabled(false))
+            failures.push(`disable #${i}: ${stateName()}`);
+    }
+    check('public build: 10 enable/disable cycles', failures.length === 0, failures.join('; '));
+    const after = shellFootprint();
+    const isOurs = actor => /froonty/i.test(actor);
+    const scrub = footprint => ({
+        ...footprint,
+        uiGroupChildren: footprint.uiGroupChildren.filter(isOurs),
+        trackedChrome: footprint.trackedChrome.filter(isOurs),
+    });
+    check('public build: shell footprint identical after the cycles',
+        JSON.stringify(scrub(after)) === JSON.stringify(scrub(baseline)), footprintDiff(baseline, after));
+    check('public build: re-enable succeeds', await setExtensionEnabled(true), stateName());
+}
+
 // FROONTY_TEST_ONLY=testA,testB runs only those checks (while debugging).
 const ONLY_TESTS = {
     testClaudeAttention, testClaudeAttentionWindows, testNotifications, testCalendar,
-    testNotes, testMedia, testBreak, testHub, testLifecycle,
+    testNotes, testMedia, testBreak, testHub, testLifecycle, testPublicBuild,
 };
 
 export async function runAll(outDir) {

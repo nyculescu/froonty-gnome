@@ -254,7 +254,9 @@ printf '[Desktop Entry]\nType=Application\nName=Test Browser\nExec=true\nNoDispl
 # Shell under test never goes online; the checks point it at a fake.
 export FROONTY_LRCLIB_URL=http://127.0.0.1:9/api/get
 
-ln -s "$REPO/$UUID" "$XDG_DATA_HOME/gnome-shell/extensions/$UUID"
+# FROONTY_EXTENSION_DIR: another build of the extension, e.g. an unzipped
+# `make pack` (with its schemas compiled), instead of the working tree's.
+ln -s "${FROONTY_EXTENSION_DIR:-$REPO/$UUID}" "$XDG_DATA_HOME/gnome-shell/extensions/$UUID"
 ln -s "$HERE/$HELPER" "$XDG_DATA_HOME/gnome-shell/extensions/$HELPER"
 
 cat >"$XDG_CONFIG_HOME/glib-2.0/settings/keyfile" <<EOF

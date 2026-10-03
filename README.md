@@ -6,12 +6,15 @@ facilities GNOME Shell already has. It does not reimplement them.
 
 Status: **0.4.0-rc0**, a release candidate. See [CHANGELOG.md](CHANGELOG.md).
 
-- No background subprocesses. The polling timers are the Btop (system
-  monitor) and Kill Process tabs', each running only while its tab is on
-  screen; the Media tab's display tick (it reads nothing) runs only while
-  the tab is on screen and a song plays. The published extension package
-  omits the working-tree-only ZeroTier and Writing tabs; `make install`
-  includes them. Froonty also makes one direct network request by
+- The published extension package (`make pack`, extensions.gnome.org)
+  has the first submission's tabs only: Clock, Calendar, Notifications
+  and Notes, with the mute panic buttons. Media, Claude, Btop, Clipboard,
+  Kill Process and Break follow in later versions; ZeroTier and Writing
+  stay working-tree only. `make install` includes them all.
+- The polling timers are the Btop (system monitor) and Kill Process
+  tabs', each running only while its tab is on screen; the Media tab's
+  display tick (it reads nothing) runs only while the tab is on screen
+  and a song plays. Froonty also makes one direct network request by
   default: the Claude tab's livenerf row fetches two public files from
   GitHub, at most once an hour while the tab is open. Two Media options,
   off by default, use the internet: covers a player gives as a web
@@ -280,7 +283,7 @@ docs/local/                  local notes and build rules (not in git)
 
 ```sh
 make install    # compiles schemas, copies into ~/.local/share/gnome-shell/extensions
-make pack       # builds a public archive without the local-only ZeroTier and Writing tabs
+make pack       # builds the public archive: the first submission's tabs only
 ```
 
 `make install` copies rather than links, so Froonty starts at login even
@@ -289,10 +292,17 @@ after each change.
 
 GNOME Shell only discovers new extensions at startup: log out and back in.
 
-`make pack` stages a copy without the local-only tabs (their code, their
-`zerotier-*`/`writing-*` settings, their CSS between `local:begin` and
-`local:end` markers) and checks the zip (`tools/pack-public/check_zip.py`):
-any trace of them deletes the zip and fails the build.
+`make pack` stages a copy with empty stubs for `features/localFeatures.js`,
+`features/localPrefs.js`, `panic/localCatalog.js` and
+`panic/localFactories.js`, then keeps only the modules `extension.js` and
+`prefs.js` still reach, the remaining features' settings keys and CSS
+(`tools/pack-public/prune.py`), and the public description
+(`tools/pack-public/description.txt`). It checks the zip
+(`tools/pack-public/check_zip.py`): any trace of a left-out tab deletes
+the zip and fails the build. A feature goes public by moving its import
+from `localFeatures.js` to `features/registry.js` (and its settings tab
+from `localPrefs.js` to `prefs.js`), and out of the lists in
+`tools/pack-public/prune.py` and `check_zip.py`.
 
 Then run:
 
