@@ -229,6 +229,10 @@ export class ClaudeService extends Emitter {
         this._file = this._fileFor();
         this._statusFile = this._statusFileFor();
         this._monitor = this._monitorFile(this._file);
+        // The status line's folder is Froonty's own (statusline.py makes the
+        // same one, 0700). Made here if missing: GLib's inotify backend
+        // looks for a missing folder every 4 s, which would be polling.
+        GLib.mkdir_with_parents(this._statusFile.get_parent().get_path(), 0o700);
         this._statusMonitor = this._monitorFile(this._statusFile);
     }
 

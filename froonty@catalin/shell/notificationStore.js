@@ -69,13 +69,18 @@ export class NotificationStore extends Emitter {
      *   MessageTray.NotificationDestroyedReason.DISMISSED
      * @param {Function} [values.waitingForBanner] (notification) → whether
      *   it waits in GNOME's banner queue (its banner will mark it seen)
+     * @param {object} [options]
+     * @param {?Function} options.filter source → whether to follow it; a
+     *   source it turns down gets no handler at all (the Claude attention
+     *   bar follows only the Claude app and web browsers)
      */
-    constructor(tray, {critical, dismissed, waitingForBanner = () => false}) {
+    constructor(tray, {critical, dismissed, waitingForBanner = () => false}, {filter = null} = {}) {
         super();
         this._tray = tray;
         this._critical = critical;
         this._dismissed = dismissed;
         this._waitingForBanner = waitingForBanner;
+        this._filter = filter;
         this._watching = false;
         this._trayIds = [];
         /** @type {Map<object, number[]>} source → its handler ids */
@@ -179,6 +184,8 @@ export class NotificationStore extends Emitter {
             return null;
         return {
             appName: entry.source.title || null,
+            // The source's app (FdoNotificationDaemonSource only).
+            appId: entry.source.app?.get_id?.() ?? null,
             appIcon: entry.source.icon ?? null,
             title: notification.title ?? '',
             body: notification.body ?? '',
@@ -315,7 +322,7 @@ export class NotificationStore extends Emitter {
     }
 
     _addSource(source) {
-        if (this._sources.has(source))
+        if (this._sources.has(source) || (this._filter && !this._filter(source)))
             return;
         this._sources.set(source, [
             source.connect('notification-added', (_source, notification) => {

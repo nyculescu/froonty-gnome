@@ -857,4 +857,21 @@ test('service: showing it asks the refresher with the cache\'s own time; hiding 
     eq(changes, 1, 'stopped: disconnected from the refresher');
 });
 
+test('service: the status line\'s missing folder is made, so GLib never looks for it every 4 s', async () => {
+    const dir = Gio.File.new_for_path(GLib.dir_make_tmp('froonty-claude-XXXXXX'));
+    const statusDir = dir.get_child('cache').get_child('froonty');
+    const service = new ClaudeService({file: () => dir.get_child('.claude.json'),
+        statusFile: () => statusDir.get_child('claude-status-line.json'), network: new FakeNetwork()});
+    service.start();
+    ok(!statusDir.query_exists(null), 'nothing made before the tab is shown');
+    service.setActive(true);
+    ok(statusDir.query_exists(null), 'made when it is watched');
+    const mode = statusDir.query_info('unix::mode', Gio.FileQueryInfoFlags.NONE, null)
+        .get_attribute_uint32('unix::mode') & 0o777;
+    eq(mode, 0o700);
+    await service.refresh();
+    service.setActive(false);
+    service.stop();
+});
+
 await done();

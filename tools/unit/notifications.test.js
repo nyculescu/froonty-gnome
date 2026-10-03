@@ -546,6 +546,7 @@ test('store: describe() gives plain fields; no app name gives null; at most 3 ac
     ok(desc.appIcon === mail.icon && desc.icon === n.gicon && desc.time.equal(time));
     eq({...desc, appIcon: 'checked', icon: 'checked', time: 'checked'}, {
         appName: 'Mail',
+        appId: null,
         appIcon: 'checked',
         title: 'Hello',
         body: '<b>Hi</b>',
@@ -559,6 +560,47 @@ test('store: describe() gives plain fields; no app name gives null; at most 3 ac
     eq(MAX_ACTIONS, 3);
     const other = store.describe(quiet);
     eq([other.appName, other.unseen, other.actions], [null, false, []]);
+    store.unwatch();
+});
+
+// The Claude attention bar (docs/features/claude-attention.md §9) makes a
+// store of its own that follows only the Claude app's and web browsers'
+// sources, and tells them apart by the source's app.
+const CLAUDE_APP = 'com.anthropic.Claude.desktop';
+const withApp = (source, id) => Object.assign(source, {app: {get_id: () => id}});
+const SOURCE_SIGNALS = ['notification-added', 'notification-removed', 'notify::title', 'notify::icon'];
+
+test('store: a filter leaves every other source without a single handler', () => {
+    const tray = new FakeTray();
+    const claude = withApp(makeSource(tray, 'Claude'), CLAUDE_APP);
+    const mail = makeSource(tray, 'Mail');
+    const store = new NotificationStore(tray, {critical: CRITICAL, dismissed: DISMISSED},
+        {filter: source => source.app?.get_id() === CLAUDE_APP});
+    store.watch();
+    const ask = notify(claude, {title: 'Froonty', body: 'Allow Claude to run the tests?'});
+    const hello = notify(mail, {title: 'Hello'});
+    eq(titles(store), ['Froonty']);
+    ok(!store.has(hello) && !store.dismiss(hello) && !store.activate(hello), 'not listed, never touched');
+    eq(SOURCE_SIGNALS.map(signal => handlers(mail, signal)), [0, 0, 0, 0]);
+    eq(handlers(hello, 'notify'), 0);
+    eq(SOURCE_SIGNALS.map(signal => handlers(claude, signal)), [1, 1, 1, 1]);
+    const files = makeSource(tray, 'Files');
+    eq(SOURCE_SIGNALS.map(signal => handlers(files, signal)), [0, 0, 0, 0], 'added later: none either');
+    ok(store.dismiss(ask));
+    eq(titles(store), []);
+    store.unwatch();
+    eq(SOURCE_SIGNALS.map(signal => handlers(mail, signal)), [0, 0, 0, 0]);
+});
+
+test('store: describe() gives the source\'s app id, or null without an app', () => {
+    const tray = new FakeTray();
+    const claude = withApp(makeSource(tray, 'Claude'), CLAUDE_APP);
+    const plain = makeSource(tray, 'notify-send');
+    const fromApp = notify(claude, {title: 'Froonty'});
+    const fromNoApp = notify(plain, {title: 'Plain'});
+    const store = makeStore(tray);
+    store.watch();
+    eq([store.describe(fromApp).appId, store.describe(fromNoApp).appId], [CLAUDE_APP, null]);
     store.unwatch();
 });
 

@@ -3,6 +3,36 @@
 ## Unreleased
 
 ### Added
+- **When Claude needs you** (Settings → Claude; the bar is on by
+  default, the Claude Code part after a click on **Set up**). A slim bar
+  under the collapsed pill while a Claude session waits for you: "Claude
+  needs your permission", "needs your input", "is waiting for your input",
+  "stopped with an error" or "finished", with the project and the app,
+  e.g. "Froonty · Visual Studio Code"; "+2" when more wait.
+  - A click brings that window to the front; × (or Delete) hides it.
+    Ctrl+Alt+Tab reaches it.
+  - Claude Code (terminal, VS Code, the Claude app's Code tab): **Set up**
+    adds Froonty's hooks to Claude Code's `settings.json`, next to any of
+    your own; **Remove** takes exactly those out again. Claude Code then
+    runs a small GJS script shipped with Froonty that writes one file per
+    waiting session under `$XDG_RUNTIME_DIR/froonty` (never what Claude
+    said), and clears it with a one-line command on your next prompt or
+    Claude's next step. Needs Claude Code 2.1.233 or later.
+  - The Claude app's own notifications show on the bar too, and go when
+    the app closes them (once you have seen the session). Browser
+    notifications that mention claude.ai can be added (off by default).
+  - Hidden while the island is open, while a GNOME banner shows, in the
+    overview and under Do Not Disturb. Not shown while you are already
+    looking at that window, except a terminal's permission or question:
+    a terminal's tabs are invisible to Froonty, and Claude Code asks only
+    once nobody has typed into it for a while. Focusing that window clears
+    it; when Froonty cannot tell which of an app's windows it is (several
+    terminal windows, tmux), going to any of that app's windows clears a
+    permission or a question.
+  - What waits survives a screen lock; turning Froonty or the island off
+    removes it, and Claude Code's hooks then record nothing.
+  - Nothing is polled and Froonty starts no process: one folder watch,
+    and a few signals.
 - **Calendar tab**, right after Clock: the events of every calendar GNOME
   knows, read-only and live. Google, Microsoft 365, Nextcloud and other
   accounts come from Settings → Online Accounts; iCloud and any CalDAV or
@@ -123,6 +153,19 @@
 - Notes: paler note surfaces (yellow, green, pink, purple, blue, gray), so
   the text is easier to read. Tab dots and colour swatches keep the
   stronger shades that tell the colours apart.
+
+### Fixed
+- Claude tab: **Set up** and **Remove** for the status line no longer
+  rewrite a `~/.claude/settings.json` that is a symbolic link (as dotfiles
+  managers make it) in place, truncated and then written. The file the
+  link names is now replaced whole and the link stays. A settings file
+  with more than one hard link is left alone, with the reason in the row,
+  and a change Claude Code saved between Froonty's read and write is no
+  longer overwritten ("try again").
+- Claude tab: while it was on screen without Froonty's status line set up,
+  GLib looked for the status line's missing folder every 4 s (its inotify
+  backend's rescan of missing paths). Froonty now makes that folder of its
+  own (`~/.cache/froonty`, 0700) before watching it.
 
 ## 0.4.0-rc0 (2026-10-02)
 

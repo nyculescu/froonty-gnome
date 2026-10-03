@@ -41,8 +41,11 @@ export function gnomeNotifications() {
     if (!tray)
         return null;
     return {
-        /** @returns {NotificationStore} not watching until watch() */
-        createStore: () => new NotificationStore(tray, {
+        /**
+         * @param {object} [options] {filter}: see NotificationStore
+         * @returns {NotificationStore} not watching until watch()
+         */
+        createStore: options => new NotificationStore(tray, {
             critical: MessageTray.Urgency.CRITICAL,
             dismissed: MessageTray.NotificationDestroyedReason.DISMISSED,
             // Its banner will mark it seen (messageTray.js
@@ -51,7 +54,7 @@ export function gnomeNotifications() {
                 const queue = tray._notificationQueue;
                 return Array.isArray(queue) && queue.includes(notification);
             },
-        }),
+        }, options),
         plainText,
         /** @param {?GLib.DateTime} datetime */
         timeAgo: datetime => datetime ? formatTimeSpan(datetime) : '',

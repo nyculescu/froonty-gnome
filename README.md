@@ -108,6 +108,18 @@ feature has a design note in [docs/features/](docs/features/).
     measured change once livenerf publishes one. These are the tab's only
     network requests: livenerf's README and chart, from GitHub, at most
     once an hour while the tab is open.
+- **When Claude needs you:** a slim bar under the collapsed pill while a
+  Claude session waits for you, e.g. "Claude needs your permission ·
+  Froonty · Visual Studio Code". A click brings that window up; × hides it.
+  - From Claude Code (terminal, VS Code, the Claude app's Code tab) through
+    its hooks, after Settings → Claude → "Claude Code hooks" → **Set up**:
+    a permission, a question, an error, a finished reply.
+  - From the Claude app's own notifications, and (off by default)
+    browser notifications that mention claude.ai.
+  - Nothing is polled: Claude Code runs Froonty's small GJS script, which
+    writes one file per waiting session under `$XDG_RUNTIME_DIR/froonty`,
+    and Froonty watches that folder. Nothing Claude said is written down.
+    See [docs/features/claude-attention.md](docs/features/claude-attention.md).
 - **Btop** tab, a system monitor: the CPU (model, clock, temperature,
   load, and each thread's load and temperature in a fold-out), each
   graphics card (load, temperature, power, memory), RAM and cache, root,
@@ -164,6 +176,7 @@ froonty@catalin/             the extension (this directory is what gets installe
 │   ├── collapsedView.js     collapsed content (time, optional date, unread dot)
 │   ├── hub.js               expanded content: tab column, panic bar, 📅, ⚙️
 │   ├── panicBar.js          up to 5 panic buttons
+│   ├── attentionBar.js      the "Claude needs you" bar under the pill
 │   ├── hoverOpen.js         opens the island after hovering it
 │   └── panelLauncher.js     top bar icon while the island is not shown
 ├── features/                hub tabs, one folder each (registry.js lists them)
@@ -173,7 +186,8 @@ froonty@catalin/             the extension (this directory is what gets installe
 │   ├── notifications/       GNOME's own notifications (through ctx.notifications)
 │   ├── notes/               Markdown notes: store, service, tabs, editor, prefs
 │   ├── claude/              Claude plan usage, read from Claude Code's config;
-│   │                        livenerf's Opus 5.5 row, fetched from GitHub
+│   │                        livenerf's Opus 5.5 row, fetched from GitHub;
+│   │                        the attention bar's hook script, set-up and model
 │   ├── sysmon/              Btop tab (system monitor): /proc and /sys, nvidia-smi
 │   ├── clipboard/           clipboard history: recorder, store, tab
 │   └── killprocess/         Kill Process tab: your processes from /proc, kill(1)
@@ -186,6 +200,7 @@ froonty@catalin/             the extension (this directory is what gets installe
     ├── messageTray.js       GNOME's notifications for the Notifications tab
     ├── notificationStore.js the only code reading or writing them (Shell-free)
     ├── mixer.js             the Shell's shared audio mixer
+    ├── claudeAttention.js   the attention bar's apps, windows, focus, banners
     └── settingsWindow.js    opens or raises the settings window
 third_party/livenerf/        git submodule: the benchmark behind the Claude
                              tab's Opus 5.5 row (not installed or packed)

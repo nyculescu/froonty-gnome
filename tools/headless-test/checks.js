@@ -42,7 +42,9 @@ const island = () => extension()?.stateObj?._island ?? null;
 const settings = () => extension()?.stateObj?._settings ?? null;
 const strip = () => Main.layoutManager.uiGroup.get_children()
     .find(actor => actor.name === 'froontyStrip') ?? null;
-const pill = () => strip()?.get_first_child() ?? null;
+// The pill is the first child of the strip's column (the attention bar
+// comes after it).
+const pill = () => island()?._pill ?? null;
 const scale = () => St.ThemeContext.get_for_stage(global.stage).scale_factor;
 const animationWait = () =>
     (settings()?.get_int('animation-duration') ?? 250) + 2 * SETTLE_MS;
@@ -177,6 +179,10 @@ function shellFootprint() {
         trayHandlers: {
             sourceAdded: countHandlers(Main.messageTray, 'source-added'),
             sourceRemoved: countHandlers(Main.messageTray, 'source-removed'),
+            // The Claude attention bar: a banner or the overview hides it.
+            trayVisible: countHandlers(Main.messageTray, 'notify::visible'),
+            overviewShowing: jsHandlerCount(Main.overview, 'showing'),
+            overviewHidden: jsHandlerCount(Main.overview, 'hidden'),
         },
         handlers: {
             monitorsChanged: countHandlers(Main.layoutManager, 'monitors-changed'),
@@ -3412,6 +3418,12 @@ async function testNotifications(outDir) {
     const monitor = Main.layoutManager.primaryMonitor;
     const away = [monitor.x + 60, monitor.y + monitor.height / 2];
     const modalBefore = Main.modalCount;
+    // The Claude attention bar's own store (the Claude app's notifications)
+    // holds a tray handler for as long as Froonty runs; it is off here, so
+    // the handler counts below are the tab's alone (testClaudeAttention
+    // checks that store).
+    s.set_boolean('claude-attention-app', false);
+    s.set_boolean('claude-attention-browsers', false);
     // Every destruction of the test's notifications, [title, reason], and
     // every activation: Froonty's acts show up here, and nothing else may.
     const destroyed = [];
@@ -3871,6 +3883,8 @@ async function testNotifications(outDir) {
     s.set_int('hover-open-delay', 0);
     island()._hub.select('clock');
     s.reset('hub-last-tab');
+    s.reset('claude-attention-app');
+    s.reset('claude-attention-browsers');
     await sleep(SETTLE_MS);
     hub = island()._hub;
     check('notifications: the test\'s sources are gone, Clock is shown again',
@@ -5188,6 +5202,735 @@ async function testCalendarLifecycle() {
     // run with the Calendar tab.
 }
 
+// ---------------------------------------------------------------- Claude attention bar
+// "When Claude needs you" (docs/features/claude-attention.md): Froonty's
+// real hook script run as Claude Code runs it, state files written the way
+// it writes them, and real GNOME notifications posing as the Claude app or
+// a web browser (desktop files run.sh installs). Claude Code itself is
+// never run. A self-contained block.
+
+Gio._promisify(Gio.Subprocess.prototype, 'communicate_utf8_async');
+
+const ATTENTION_VARS = ['CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_PID', 'CLAUDE_CODE_SESSION_ID',
+    'CLAUDE_PROJECT_DIR', 'CHROME_DESKTOP'];
+const attention = () => island()?._attention ?? null;
+const attentionBar = () => attention()?.bar ?? null;
+const attentionDir = () => Gio.File.new_for_path(GLib.build_filenamev(
+    [GLib.get_user_runtime_dir(), 'froonty', 'claude-attention']));
+const stateThere = session => attentionDir().get_child(`${session}.json`).query_exists(null);
+const barShown = () => Boolean(attentionBar()?.actor.mapped && attentionBar().actor.opacity === 255);
+const barHidden = () => !attentionBar()?.actor.mapped;
+const barState = () => `shown=${barShown()} mapped=${attentionBar()?.actor.mapped} ` +
+    `opacity=${attentionBar()?.actor.opacity} text="${attentionBar()?._text.text}" ` +
+    `place="${attentionBar()?._place.text}" more="${attentionBar()?._more.text}" ` +
+    `entries=${JSON.stringify(attention()?.service.entries.map(e => `${e.id}=${e.kind}`))} ` +
+    `tray=${Main.messageTray.visible} overview=${Main.overview.visible}`;
+
+// A command with none of a Claude Code session's variables but `env`.
+async function runAttentionCommand(argv, env = {}, input = '') {
+    const launcher = new Gio.SubprocessLauncher({
+        flags: Gio.SubprocessFlags.STDIN_PIPE | Gio.SubprocessFlags.STDOUT_PIPE |
+            Gio.SubprocessFlags.STDERR_PIPE,
+    });
+    for (const name of ATTENTION_VARS)
+        launcher.unsetenv(name);
+    for (const [name, value] of Object.entries(env))
+        launcher.setenv(name, String(value), true);
+    const proc = launcher.spawnv(argv);
+    const [stdout, stderr] = await proc.communicate_utf8_async(input, null);
+    return {status: proc.get_if_exited() ? proc.get_exit_status() : -1, stdout, stderr};
+}
+
+function procStart(pid) {
+    const [, bytes] = GLib.file_get_contents(`/proc/${pid}/stat`);
+    const text = new TextDecoder().decode(bytes);
+    return Number(text.slice(text.lastIndexOf(')') + 1).trim().split(/\s+/)[19]);
+}
+
+// As the hook script writes it: a new file renamed into the folder.
+async function writeAttention(session, {kind = 'permission', at = Date.now(), entrypoint = 'claude-vscode',
+    project = 'Alpha', pids, desktop = null}) {
+    const {serializeEntry} = await import(`file://${extension().path}/features/claude/attention.js`);
+    const dir = attentionDir();
+    const temp = dir.get_parent().get_child(`.claude-attention-${session}.checks.tmp`);
+    temp.replace_contents(serializeEntry({kind, at, session, entrypoint, project, pids, desktop}),
+        null, false, Gio.FileCreateFlags.PRIVATE, null);
+    temp.move(dir.get_child(`${session}.json`), Gio.FileCopyFlags.OVERWRITE, null, null);
+}
+
+// Whether the bar ever shows during `ms`.
+async function everShown(ms) {
+    let shown = false;
+    for (let waited = 0; waited < ms; waited += 50) {
+        shown ||= Boolean(attentionBar()?.actor.visible);
+        await sleep(50);
+    }
+    return shown;
+}
+
+function notificationsCall(method, params, replyType) {
+    return new Promise((resolve, reject) => {
+        Gio.DBus.session.call('org.freedesktop.Notifications', '/org/freedesktop/Notifications',
+            'org.freedesktop.Notifications', method, params,
+            replyType ? new GLib.VariantType(replyType) : null,
+            Gio.DBusCallFlags.NONE, -1, null, (conn, res) => {
+                try {
+                    resolve(conn.call_finish(res));
+                } catch (e) {
+                    reject(e);
+                }
+            });
+    });
+}
+
+// A real freedesktop notification, as an app sends one (async: the Shell
+// is calling itself). With a default action, as Electron apps send them:
+// a click then goes back to the app, and GNOME starts nothing.
+async function sendNotification(appName, desktopEntry, summary, body, urgency) {
+    const reply = await notificationsCall('Notify', new GLib.Variant('(susssasa{sv}i)', [
+        appName, 0, '', summary, body, ['default', 'Open'],
+        {'desktop-entry': new GLib.Variant('s', desktopEntry), 'urgency': new GLib.Variant('y', urgency)},
+        -1]), '(u)');
+    return reply.deepUnpack()[0];
+}
+
+// A screen lock, as far as an extension can tell: GNOME Shell disables
+// extensions at a lock with Main.sessionMode.isLocked already set
+// (ui/sessionMode.js _sync() sets it before 'updated'). The headless Shell
+// has no screen shield to lock for real, so only that flag is set, for as
+// long as Froonty is being disabled.
+async function disableAsAtScreenLock() {
+    const was = Main.sessionMode.isLocked;
+    Main.sessionMode.isLocked = true;
+    try {
+        Main.extensionManager.disableExtension(UUID);
+        await waitForState('INACTIVE');
+    } finally {
+        Main.sessionMode.isLocked = was;
+    }
+    return waitForExtensionManagerQuiet();
+}
+
+async function testClaudeAttention(outDir) {
+    const MessageTray = await import('resource:///org/gnome/shell/ui/messageTray.js');
+    const {CLEAR_COMMAND} = await import(`file://${extension().path}/features/claude/attentionSetup.js`);
+    const hookScript = `${extension().path}/features/claude/attentionHook.js`;
+    const s = settings();
+    const tray = Main.messageTray;
+    const monitor = Main.layoutManager.primaryMonitor;
+    const away = [monitor.x + 60, monitor.y + monitor.height / 2];
+    const children = [];
+    const sources = [];
+    const closed = new Map();
+    for (const key of ['claude-attention-enabled', 'claude-attention-finished', 'claude-attention-app',
+        'claude-attention-browsers'])
+        s.reset(key);
+    const signalId = Gio.DBus.session.signal_subscribe(null, 'org.freedesktop.Notifications',
+        'NotificationClosed', '/org/freedesktop/Notifications', null, Gio.DBusSignalFlags.NONE,
+        (_conn, _sender, _path, _iface, _signal, params) => {
+            const [id, reason] = params.deepUnpack();
+            closed.set(id, reason);
+        });
+    await movePointerTo(...away);
+
+    try {
+        // 1. Where it sits.
+        const column = strip()?.get_first_child();
+        check('attention: the strip holds a column: the pill, then the bar',
+            column?.name === 'froontyColumn' && column.get_n_children() === 2 &&
+            column.get_child_at_index(0) === pill() && pill()?.name === 'froontyPill' &&
+            column.get_child_at_index(1) === attentionBar()?.actor,
+            `${column?.get_children().map(describeActor)}`);
+        check('attention: no bar while nothing waits', barHidden() && !attentionBar()?.actor.visible, barState());
+        const dir = attentionDir();
+        const mode = dir.query_exists(null)
+            ? dir.query_info('unix::mode', Gio.FileQueryInfoFlags.NOFOLLOW_SYMLINKS, null)
+                .get_attribute_uint32('unix::mode') & 0o777 : null;
+        check('attention: its folder exists (0700) in the private runtime folder',
+            mode === 0o700 && dir.get_path().startsWith(`${GLib.getenv('XDG_RUNTIME_DIR')}/`),
+            `${dir.get_path()} mode=${mode?.toString(8)}`);
+        let covers = pillCoversClock();
+        check('attention: the pill still covers the top bar clock', covers.ok, covers.detail);
+
+        // 2. End to end, through the real hook script.
+        const claude = spawnChild(['/usr/bin/sleep', '600']);
+        children.push(claude);
+        await sleep(200);
+        const pids = [[claude.pid, procStart(claude.pid)]];
+        const input = JSON.stringify({session_id: 'froonty-test-1', cwd: '/tmp/Alpha',
+            hook_event_name: 'Notification', message: 'Claude needs your permission to use Bash',
+            notification_type: 'permission_prompt'});
+        const run = await runAttentionCommand(['/usr/bin/gjs', '-m', hookScript, 'notification'],
+            {CLAUDE_CODE_ENTRYPOINT: 'claude-vscode', CLAUDE_PID: claude.pid, CLAUDE_PROJECT_DIR: '/tmp/Alpha'},
+            input);
+        check('attention: the hook script, run as Claude Code runs it, exits 0 and prints nothing',
+            run.status === 0 && run.stdout === '' && run.stderr === '', JSON.stringify(run));
+        const shownInTime = await waitFor(barShown, 1000);
+        check('attention: within a second the bar says what and where',
+            shownInTime && attentionBar()._text.text === 'Claude needs your permission' &&
+            attentionBar()._place.text === 'Alpha · VS Code' && !attentionBar()._more.visible, barState());
+        const p = boxOf(pill());
+        const b = boxOf(attentionBar().actor);
+        check('attention: under the pill, centered on it, on one line',
+            b.y1 >= p.y2 + 6 * scale() - 1 && Math.abs((b.x1 + b.x2) / 2 - (p.x1 + p.x2) / 2) <= 1 &&
+            b.y2 - b.y1 <= 40 * scale() && b.y2 - b.y1 > 0,
+            `bar=[${b.x1},${b.y1} - ${b.x2},${b.y2}] pill=[${p.x1},${p.y1} - ${p.x2},${p.y2}]`);
+        const name = attentionBar()._main.accessible_name;
+        check('attention: its accessible name says both',
+            name.includes('Claude needs your permission') && name.includes('Alpha · VS Code'), name);
+        covers = pillCoversClock();
+        check('attention: with the bar shown, the pill still covers the clock', covers.ok, covers.detail);
+        await screenshotTop(outDir, 'attention-bar', 200);
+
+        // 3. Claude Code's clear command (UserPromptSubmit, PostToolBatch).
+        const clear = await runAttentionCommand(['/bin/sh', '-c', CLEAR_COMMAND],
+            {CLAUDE_CODE_SESSION_ID: 'froonty-test-1'});
+        const cleared = await waitFor(() => !stateThere('froonty-test-1') && barHidden(), 2000);
+        check('attention: the clear command deletes the file and the bar goes',
+            clear.status === 0 && clear.stdout === '' && cleared, `${JSON.stringify(clear)} ${barState()}`);
+
+        // 4. Most urgent first; × and Settings' "Also when Claude finishes".
+        await writeAttention('froonty-test-2', {kind: 'finished', at: Date.now(), pids});
+        await writeAttention('froonty-test-3', {kind: 'permission', at: Date.now() - 60000, pids});
+        await waitFor(() => barShown() && attentionBar()._more.text === '+1', 2000);
+        check('attention: a permission before a newer finished reply, "+1" for it',
+            attentionBar()._text.text === 'Claude needs your permission' && attentionBar()._more.visible &&
+            attentionBar()._more.text === '+1' && attentionBar()._main.accessible_name.endsWith(', 1 more'),
+            barState());
+        await clickActor(attentionBar()._close);
+        await movePointerTo(...away);
+        await waitFor(() => attentionBar()._text.text === 'Claude finished' && !stateThere('froonty-test-3'), 2000);
+        check('attention: × drops it (its file goes) and the next shows',
+            barShown() && attentionBar()._text.text === 'Claude finished' && !stateThere('froonty-test-3') &&
+            stateThere('froonty-test-2') && !attentionBar()._more.visible, barState());
+        s.set_boolean('claude-attention-finished', false);
+        await waitFor(() => barHidden() && !stateThere('froonty-test-2'), 2000);
+        check('attention: "Also when Claude finishes" off hides it and deletes its file',
+            barHidden() && !stateThere('froonty-test-2'), barState());
+        s.reset('claude-attention-finished');
+
+        // 5. A Claude Code that is gone.
+        const gone = spawnChild(['/usr/bin/sleep', '600']);
+        await sleep(200);
+        const goneStart = procStart(gone.pid);
+        gone.proc.force_exit();
+        await waitFor(() => gone.exited, 2000);
+        await writeAttention('froonty-test-4', {pids: [[gone.pid, goneStart]]});
+        const goneShown = await everShown(1000);
+        check('attention: a session whose Claude Code is gone never shows; its file goes',
+            !goneShown && !stateThere('froonty-test-4'), barState());
+
+        // 6. Out of the way of the open island, banners, Do Not Disturb and
+        // the overview.
+        await writeAttention('froonty-test-5', {pids});
+        await waitFor(barShown, 2000);
+        island().expand();
+        check('attention: expanding the island hides the bar at once', !attentionBar().actor.mapped, barState());
+        await sleep(animationWait());
+        check('attention: hidden while the island is open', barHidden(), barState());
+        await screenshotTop(outDir, 'attention-expanded', 520);
+        island().collapse();
+        await waitFor(barShown, animationWait() + 1000);
+        check('attention: back once the island has collapsed', barShown(), barState());
+
+        const source = new MessageTray.Source({title: 'Froonty test', iconName: 'dialog-information-symbolic'});
+        sources.push(source);
+        tray.add(source);
+        source.addNotification(new MessageTray.Notification({source, title: 'Banner',
+            body: 'Froonty headless test', urgency: MessageTray.Urgency.NORMAL}));
+        await waitFor(() => tray.visible, 2000);
+        check('attention: a GNOME banner takes its place', tray.visible && !attentionBar().actor.visible, barState());
+        source.destroy();
+        await waitFor(() => !tray.visible && barShown(), 2000 + MessageTray.ANIMATION_TIME);
+        check('attention: back once the banner has gone', barShown(), barState());
+        // Destroyed: never touched again.
+        sources.length = 0;
+
+        // Default session mode only: when Do Not Disturb ends, Ubuntu Dock
+        // logs TypeErrors of its own (see testCalendarMenu).
+        const dock = Main.extensionManager.lookup('ubuntu-dock@ubuntu.com');
+        if (dock?.state !== ExtensionState.ACTIVE) {
+            const gnomeNotifications = new Gio.Settings({schema_id: 'org.gnome.desktop.notifications'});
+            gnomeNotifications.set_boolean('show-banners', false);
+            await waitFor(barHidden, 1000);
+            check('attention: Do Not Disturb hides it', barHidden(), barState());
+            gnomeNotifications.reset('show-banners');
+            await waitFor(barShown, 1000);
+            check('attention: back when Do Not Disturb ends', barShown(), barState());
+        }
+
+        Main.overview.show();
+        await waitFor(() => Main.overview.visible && !attentionBar().actor.visible, 3000);
+        check('attention: hidden in the overview', !attentionBar().actor.visible, barState());
+        Main.overview.hide();
+        await waitFor(() => !Main.overview.visible && barShown(), 3000);
+        check('attention: back when the overview closes', barShown(), barState());
+        attention().service.dismiss('hook:froonty-test-5');
+        await waitFor(barHidden, 1000);
+
+        // 7. The window it waits in: Froonty's own settings window stands
+        // for VS Code (a process of the chain owns it).
+        extension().stateObj._settingsWindow.open();
+        const window = await waitForSettingsWindow();
+        await waitFor(() => global.display.focus_window === window, 3000);
+        const tracker = Shell.WindowTracker.get_default();
+        const prefsPid = window?.get_pid() ?? 0;
+        const prefsApp = window ? tracker.get_window_app(window) : null;
+        const fromPid = prefsPid > 0 ? tracker.get_app_from_pid(prefsPid) : null;
+        const chain = prefsPid > 1 ? [...pids, [prefsPid, procStart(prefsPid)]] : pids;
+        const windowDetail = `window=${window?.get_title()} pid=${prefsPid} app=${prefsApp?.get_id()} ` +
+            `appFromPid=${fromPid?.get_id() ?? 'none'} focus=${global.display.focus_window?.get_title()}`;
+        global.display.unset_input_focus(global.get_current_time());
+        await sleep(SETTLE_MS);
+        await writeAttention('froonty-test-6', {pids: chain, project: 'Froonty'});
+        await waitFor(barShown, 2000);
+        check('attention: it names the app whose window the session\'s processes own',
+            barShown() && prefsApp && attentionBar()._place.text === `Froonty · ${prefsApp.get_name()}`,
+            `${barState()} ${windowDetail}`);
+        await clickActor(attentionBar()._main);
+        await movePointerTo(...away);
+        await waitFor(() => global.display.focus_window === window && !stateThere('froonty-test-6'), 3000);
+        check('attention: a click brings that window to the front and drops the entry',
+            window && global.display.focus_window === window && !stateThere('froonty-test-6') && barHidden(),
+            `${barState()} ${windowDetail}`);
+        await writeAttention('froonty-test-7', {pids: chain, project: 'Froonty'});
+        const shownWhileLooking = await everShown(1000);
+        check('attention: one arriving while its window has the focus never shows; its file goes',
+            !shownWhileLooking && !stateThere('froonty-test-7'), barState());
+        global.display.unset_input_focus(global.get_current_time());
+        await sleep(SETTLE_MS);
+        await writeAttention('froonty-test-8', {pids: chain, project: 'Froonty'});
+        await waitFor(barShown, 2000);
+        const shownBefore = barShown();
+        if (window)
+            Main.activateWindow(window);
+        await waitFor(() => !stateThere('froonty-test-8') && barHidden(), 2000);
+        check('attention: focusing its window clears it',
+            shownBefore && !stateThere('froonty-test-8') && barHidden(), `before=${shownBefore} ${barState()}`);
+        await closeSettingsWindows();
+
+        // 8. The keyboard: Ctrl+Alt+Tab, Delete, Escape.
+        await writeAttention('froonty-test-9', {pids});
+        await waitFor(barShown, 2000);
+        const item = Main.ctrlAltTabManager._items.find(i => i.root === attentionBar().actor);
+        check('attention: listed by Ctrl+Alt+Tab while it shows', item?.proxy.mapped === true, barState());
+        Main.ctrlAltTabManager.focusGroup(item, global.get_current_time());
+        await sleep(SETTLE_MS);
+        check('attention: Ctrl+Alt+Tab puts the keyboard focus on it',
+            global.stage.key_focus === attentionBar()._main, `focus=${global.stage.key_focus}`);
+        await pressKeys(Clutter.KEY_Delete);
+        await waitFor(() => !stateThere('froonty-test-9') && barHidden(), 2000);
+        check('attention: Delete dismisses it', !stateThere('froonty-test-9') && barHidden(), barState());
+        check('attention: hidden, Ctrl+Alt+Tab does not list it', item && !item.proxy.mapped);
+        await writeAttention('froonty-test-10', {pids});
+        await waitFor(barShown, 2000);
+        Main.ctrlAltTabManager.focusGroup(item, global.get_current_time());
+        await sleep(SETTLE_MS);
+        const focused = global.stage.key_focus === attentionBar()._main;
+        await pressKeys(Clutter.KEY_Escape);
+        check('attention: Escape takes the keyboard focus away, and the bar stays',
+            focused && !(global.stage.key_focus && attentionBar().actor.contains(global.stage.key_focus)) &&
+            barShown() &&
+            stateThere('froonty-test-10'), `focused=${focused} now=${global.stage.key_focus} ${barState()}`);
+        attention().service.dismiss('hook:froonty-test-10');
+        await waitFor(barHidden, 1000);
+
+        // 9. The Claude app's own notifications (GNOME's message tray).
+        await writeAttention('froonty-test-app', {entrypoint: 'claude-desktop', pids});
+        const first = await sendNotification('Claude', 'com.anthropic.Claude', 'Froonty',
+            'Allow Claude to run git push?', 1);
+        // Its banner shows first, then the bar.
+        await waitFor(() => !tray.visible && barShown(), 15000);
+        const appEntries = attention().service.entries;
+        check('attention: the Claude app\'s notification shows with its title',
+            barShown() && attentionBar()._text.text === 'Claude needs your permission' &&
+            attentionBar()._place.text === 'Froonty · Claude', barState());
+        check('attention: its own Claude Code session\'s hook entry stays hidden',
+            appEntries.length === 1 && appEntries[0].origin === 'app' && stateThere('froonty-test-app'), barState());
+        await notificationsCall('CloseNotification', new GLib.Variant('(u)', [first]), null);
+        await waitFor(barHidden, 2000);
+        check('attention: the app closing its notification clears the bar',
+            barHidden() && closed.get(first) === 3, `reason=${closed.get(first)} ${barState()}`);
+
+        const second = await sendNotification('Claude', 'com.anthropic.Claude', 'Froonty',
+            'Allow Claude to run git push?', 0);
+        await waitFor(barShown, 2000);
+        await clickActor(attentionBar()._main);
+        await movePointerTo(...away);
+        await waitFor(() => closed.has(second) && barHidden(), 2000);
+        check('attention: a click opens it as GNOME does, which removes the notification',
+            closed.has(second) && barHidden(), `reason=${closed.get(second)} ${barState()}`);
+
+        const third = await sendNotification('Claude', 'com.anthropic.Claude', 'Froonty',
+            'Allow Claude to run git push?', 0);
+        await waitFor(barShown, 2000);
+        await clickActor(attentionBar()._close);
+        await movePointerTo(...away);
+        await waitFor(() => closed.has(third) && barHidden(), 2000);
+        check('attention: × dismisses it in GNOME too (closed as dismissed, reason 2)',
+            closed.get(third) === 2 && barHidden(), `reason=${closed.get(third)} ${barState()}`);
+
+        s.set_boolean('claude-attention-app', false);
+        await waitFor(barShown, 2000);
+        check('attention: "Sessions in the Claude app" off: its hook entry shows instead',
+            barShown() && attention().service.entries[0]?.id === 'hook:froonty-test-app' &&
+            attentionBar()._place.text === 'Alpha · Claude', barState());
+        s.reset('claude-attention-app');
+        await waitFor(barHidden, 2000);
+        check('attention: back on, hidden again', barHidden(), barState());
+        attentionDir().get_child('froonty-test-app.json').delete(null);
+
+        // 10. Browsers (off by default).
+        const browser = await sendNotification('Test Browser', 'froonty-test-browser', 'Claude',
+            'Claude responded · claude.ai', 0);
+        const browserShown = await everShown(800);
+        check('attention: a browser\'s claude.ai notification is ignored by default', !browserShown, barState());
+        s.set_boolean('claude-attention-browsers', true);
+        await waitFor(barShown, 2000);
+        check('attention: with browsers on, it shows',
+            barShown() && attentionBar()._text.text === 'Claude needs your attention' &&
+            attentionBar()._place.text === 'Test Browser', barState());
+        const other = await sendNotification('Test Browser', 'froonty-test-browser', 'Claude Dupont',
+            'lunch?', 0);
+        await sleep(300);
+        check('attention: a browser notification not about claude.ai is not',
+            attention().service.entries.length === 1, barState());
+        for (const id of [browser, other])
+            await notificationsCall('CloseNotification', new GLib.Variant('(u)', [id]), null);
+        s.reset('claude-attention-browsers');
+        await waitFor(barHidden, 2000);
+
+        // 11. Turning the bar off.
+        const handlerCounts = () => ({
+            focus: countHandlers(global.display, 'notify::focus-window'),
+            trayVisible: countHandlers(tray, 'notify::visible'),
+            sourceAdded: countHandlers(tray, 'source-added'),
+        });
+        s.set_boolean('claude-attention-enabled', false);
+        await waitFor(() => !attentionDir().query_exists(null), 2000);
+        const off = handlerCounts();
+        check('attention: off, its folder is gone, and so is the bar',
+            !attentionDir().query_exists(null) && attention() === null &&
+            strip().get_first_child().get_n_children() === 1, `exists=${attentionDir().query_exists(null)}`);
+        const offRun = await runAttentionCommand(['/usr/bin/gjs', '-m', hookScript, 'notification'],
+            {CLAUDE_CODE_ENTRYPOINT: 'claude-vscode', CLAUDE_PID: claude.pid}, input);
+        check('attention: off, the hook script records nothing and exits 0',
+            offRun.status === 0 && offRun.stdout === '' && !attentionDir().get_parent().get_child('claude-attention').query_exists(null),
+            JSON.stringify(offRun));
+        s.reset('claude-attention-enabled');
+        await sleep(SETTLE_MS);
+        // An entry whose app is known: the focus is watched while it shows.
+        await writeAttention('froonty-test-11', {pids, desktop: 'froonty-test-browser.desktop'});
+        await waitFor(barShown, 2000);
+        const on = handlerCounts();
+        check('attention: on again, it works, and holds its handlers (focus watched while an app waits)',
+            barShown() && attentionBar()._place.text === 'Alpha · Test Browser' &&
+            on.focus === off.focus + 1 && on.trayVisible > off.trayVisible && on.sourceAdded > off.sourceAdded,
+            `off=${JSON.stringify(off)} on=${JSON.stringify(on)} ${barState()}`);
+        s.set_boolean('claude-attention-enabled', false);
+        await waitFor(() => !attentionDir().query_exists(null), 2000);
+        check('attention: off again, every handler is back to where it was, the files gone',
+            JSON.stringify(handlerCounts()) === JSON.stringify(off) && !attentionDir().query_exists(null),
+            `off=${JSON.stringify(off)} now=${JSON.stringify(handlerCounts())}`);
+        s.reset('claude-attention-enabled');
+        await sleep(SETTLE_MS);
+        check('attention: back on, the folder is back', attentionDir().query_exists(null) && attention() !== null);
+
+        // 12. A screen lock (disable, enable) keeps what waits. A plain
+        // disable does not: testClaudeAttentionIsland.
+        await writeAttention('froonty-test-12', {pids});
+        await waitFor(barShown, 2000);
+        const enabledCounts = {
+            ...handlerCounts(),
+            overview: jsHandlerCount(Main.overview, 'showing'),
+        };
+        await disableAsAtScreenLock();
+        await sleep(SETTLE_MS);
+        const kept = stateThere('froonty-test-12');
+        await setExtensionEnabled(true);
+        await waitFor(barShown, 3000);
+        const afterCounts = {...handlerCounts(), overview: jsHandlerCount(Main.overview, 'showing')};
+        check('attention: across a screen lock (disable, enable), what waits is kept and shows again, handlers once',
+            kept && barShown() && attention().service.entries[0]?.id === 'hook:froonty-test-12' &&
+            JSON.stringify(afterCounts) === JSON.stringify(enabledCounts),
+            `kept=${kept} before=${JSON.stringify(enabledCounts)} after=${JSON.stringify(afterCounts)} ${barState()}`);
+    } finally {
+        Gio.DBus.session.signal_unsubscribe(signalId);
+        for (const source of sources)
+            source.destroy();
+        for (const key of ['claude-attention-enabled', 'claude-attention-finished', 'claude-attention-app',
+            'claude-attention-browsers'])
+            s.reset(key);
+        await sleep(SETTLE_MS);
+        for (const session of ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', 'app']) {
+            try {
+                attentionDir().get_child(`froonty-test-${session}.json`).delete(null);
+            } catch {}
+        }
+        for (const child of children) {
+            if (!child.exited)
+                child.proc.force_exit();
+        }
+        await closeSettingsWindows();
+        await movePointerTo(...away);
+        // Leave the island as found: its hub shown once (disable/enable
+        // above made a new one; later checks measure the hub's actors,
+        // which have no size before they are first shown).
+        island().expand();
+        await sleep(animationWait());
+        island().collapse();
+        await sleep(animationWait());
+    }
+}
+
+// A terminal (or VS Code) with several windows: testWindows.js, one GTK
+// process whose windows GNOME Shell counts as one app's
+// (org.froonty.TestWindows, a desktop file run.sh installs). Which window a
+// session waits in, what shows on arrival, and what a focus change clears.
+async function testClaudeAttentionWindows(outDir) {
+    const here = GLib.path_get_dirname(Gio.File.new_for_uri(import.meta.url).get_path());
+    const TITLES = ['main.js - Alpha - Test Windows', 'catalin@host: ~/src/Froonty', '✳ Claude Code'];
+    const APP_ID = 'org.froonty.TestWindows.desktop';
+    const s = settings();
+    const children = [];
+    const sessions = [];
+    const write = async (session, options) => {
+        sessions.push(session);
+        await writeAttention(session, options);
+    };
+    const focusOn = async window => {
+        Main.activateWindow(window);
+        await waitFor(() => global.display.focus_window === window, 3000);
+        await sleep(SETTLE_MS);
+        return global.display.focus_window === window;
+    };
+    const ids = () => attention()?.service.entries.map(e => e.id.replace('hook:froonty-test-', '')).sort() ?? [];
+    for (const key of ['claude-attention-enabled', 'claude-attention-finished', 'claude-attention-app'])
+        s.reset(key);
+    await movePointerTo(Main.layoutManager.primaryMonitor.x + 60, Main.layoutManager.primaryMonitor.y + 400);
+
+    try {
+        const windows = spawnChild(['/usr/bin/gjs', '-m', `${here}/testWindows.js`, ...TITLES]);
+        const claude = spawnChild(['/usr/bin/sleep', '600']);
+        children.push(windows, claude);
+        const app = () => Shell.AppSystem.get_default().lookup_app(APP_ID);
+        await waitFor(() => app()?.get_windows().length === TITLES.length, 15000);
+        const [alpha, shell, claudeWindow] = TITLES.map(t => app()?.get_windows().find(w => w.get_title() === t));
+        check('attention windows: a test app with three windows, one app for GNOME Shell',
+            alpha && shell && claudeWindow,
+            `windows=${app()?.get_windows().map(w => w.get_title())} exited=${windows.exited}`);
+        if (!(alpha && shell && claudeWindow))
+            return;
+        const chain = [[claude.pid, procStart(claude.pid)], [windows.pid, procStart(windows.pid)]];
+
+        // Which window: through the real ClaudeDesktop.resolve().
+        const desktop = attention().desktop;
+        const resolved = project => desktop.resolve({pids: chain, desktop: null, project});
+        const a = resolved('Alpha');
+        check('attention windows: the one window whose title names the project is known for sure',
+            a?.appId === APP_ID && a.appName === 'Test Windows' && a.window === alpha && a.exact === true,
+            `appId=${a?.appId} window=${a?.window?.get_title()} exact=${a?.exact}`);
+        const f = resolved('Froonty');
+        check('attention windows: a title that only contains the project (a shell\'s) is a guess, not for sure',
+            f?.window === shell && f.exact === false, `window=${f?.window?.get_title()} exact=${f?.exact}`);
+        const g = resolved('Gamma');
+        check('attention windows: no title names it: the most recent window, not for sure',
+            g?.window === app().get_windows()[0] && g.exact === false,
+            `window=${g?.window?.get_title()} exact=${g?.exact}`);
+
+        // 1. The user types in another window of the terminal (a shell
+        // whose title holds the project folder): what Claude Code says
+        // in its own window shows.
+        await focusOn(shell);
+        await write('froonty-test-30', {kind: 'permission', entrypoint: 'cli', project: 'Froonty', pids: chain});
+        await write('froonty-test-31', {kind: 'finished', entrypoint: 'cli', project: 'Froonty', pids: chain});
+        await write('froonty-test-32', {kind: 'waiting', entrypoint: 'cli', project: 'Froonty', pids: chain});
+        await waitFor(() => ids().length === 3, 2000);
+        await sleep(300);
+        check('attention windows: a permission, a finished reply and an idle prompt show while another window of the terminal has the focus',
+            JSON.stringify(ids()) === '["30","31","32"]' && barShown() &&
+            attentionBar()._text.text === 'Claude needs your permission' &&
+            attentionBar()._place.text === 'Froonty · Test Windows' && attentionBar()._more.text === '+2' &&
+            ['30', '31', '32'].every(n => stateThere(`froonty-test-${n}`)),
+            `focus=${global.display.focus_window?.get_title()} ${barState()}`);
+        await screenshotTop(outDir, 'attention-windows', 200);
+
+        // 2. The user goes to another window of that app (its own is not
+        // known for sure): a permission clears, the rest stays.
+        await focusOn(alpha);
+        await waitFor(() => !stateThere('froonty-test-30'), 2000);
+        await sleep(300);
+        check('attention windows: focusing any window of its app clears a permission whose window is not known for sure, and only that',
+            !stateThere('froonty-test-30') && JSON.stringify(ids()) === '["31","32"]' &&
+            stateThere('froonty-test-31') && stateThere('froonty-test-32'),
+            `focus=${global.display.focus_window?.get_title()} ${barState()}`);
+        for (const n of ['31', '32'])
+            attention().service.dismiss(`hook:froonty-test-${n}`);
+        await waitFor(barHidden, 1000);
+
+        // 3. Its own window, known for sure, has the focus: a terminal's
+        // permission still shows (its tab may not be on screen); a finished
+        // reply does not, nor VS Code's permission.
+        await write('froonty-test-33', {kind: 'permission', entrypoint: 'cli', project: 'Alpha', pids: chain});
+        await write('froonty-test-34', {kind: 'finished', entrypoint: 'cli', project: 'Alpha', pids: chain});
+        await write('froonty-test-35', {kind: 'permission', entrypoint: 'claude-vscode', project: 'Alpha', pids: chain});
+        await waitFor(() => !stateThere('froonty-test-34') && !stateThere('froonty-test-35') && ids().length === 1, 2000);
+        await sleep(300);
+        check('attention windows: its own window focused: a terminal permission shows, a finished reply and VS Code\'s permission do not',
+            JSON.stringify(ids()) === '["33"]' && barShown() && stateThere('froonty-test-33') &&
+            !stateThere('froonty-test-34') && !stateThere('froonty-test-35'),
+            `focus=${global.display.focus_window?.get_title()} ${barState()}`);
+
+        // 4. A Claude Code that crashed while its entry shows: found on
+        // the next focus change. Focusing another window of the app than
+        // the one known for sure leaves a permission there.
+        const doomed = spawnChild(['/usr/bin/sleep', '600']);
+        children.push(doomed);
+        await sleep(200);
+        await write('froonty-test-36', {kind: 'finished', entrypoint: 'cli', project: 'Gamma',
+            pids: [[doomed.pid, procStart(doomed.pid)], [windows.pid, procStart(windows.pid)]]});
+        await waitFor(() => ids().length === 2, 2000);
+        const both = JSON.stringify(ids()) === '["33","36"]';
+        doomed.proc.force_exit();
+        await waitFor(() => doomed.exited, 2000);
+        await focusOn(claudeWindow);
+        await waitFor(() => !stateThere('froonty-test-36'), 2000);
+        await sleep(300);
+        check('attention windows: a focus change finds a crashed Claude Code; its entry and file go',
+            both && !stateThere('froonty-test-36') && !ids().includes('36'), `both=${both} ${barState()}`);
+        check('attention windows: focusing another window than its own (known for sure) leaves a permission',
+            stateThere('froonty-test-33') && JSON.stringify(ids()) === '["33"]', barState());
+        await focusOn(alpha);
+        await waitFor(() => !stateThere('froonty-test-33') && barHidden(), 2000);
+        check('attention windows: focusing its own window clears it',
+            !stateThere('froonty-test-33') && barHidden(), barState());
+    } finally {
+        for (const child of children) {
+            if (!child.exited)
+                child.proc.force_exit();
+        }
+        await sleep(SETTLE_MS);
+        for (const session of sessions) {
+            try {
+                attentionDir().get_child(`${session}.json`).delete(null);
+            } catch {}
+        }
+        await waitFor(barHidden, 1000);
+    }
+}
+
+// The island's side: a collapse cut short by a geometry change, a crash
+// found when the island collapses, and Froonty turned off (not a lock).
+async function testClaudeAttentionIsland() {
+    const s = settings();
+    const children = [];
+    const hookScript = `${extension().path}/features/claude/attentionHook.js`;
+    for (const key of ['claude-attention-enabled', 'claude-attention-finished', 'claude-attention-app'])
+        s.reset(key);
+    await movePointerTo(Main.layoutManager.primaryMonitor.x + 60, Main.layoutManager.primaryMonitor.y + 400);
+    try {
+        const claude = spawnChild(['/usr/bin/sleep', '600']);
+        children.push(claude);
+        await sleep(200);
+        const pids = [[claude.pid, procStart(claude.pid)]];
+
+        // 1. Collapsing, and the geometry changes (a monitor, the panel,
+        // the scale, a size or radius setting): the collapse is cut short
+        // and never completes; the bar still comes back.
+        s.set_int('animation-duration', 1500);
+        await writeAttention('froonty-test-40', {pids});
+        await waitFor(barShown, 2000);
+        island().expand();
+        await sleep(animationWait());
+        island().collapse();
+        await sleep(400);
+        const midway = Boolean(pill().get_transition('height')) && !attentionBar().actor.visible;
+        s.set_int('corner-radius', s.get_int('corner-radius') === 10 ? 12 : 10);
+        await waitFor(barShown, 3000);
+        check('attention: a geometry change cutting a collapse short still brings the bar back',
+            midway && barShown() && !pill().get_transition('height'), `midway=${midway} ${barState()}`);
+        s.reset('corner-radius');
+        s.reset('animation-duration');
+        attention().service.dismiss('hook:froonty-test-40');
+        await waitFor(barHidden, 1000);
+
+        // 2. A Claude Code that crashed while its entry shows (no app, so
+        // no focus is followed): found when the island collapses.
+        const doomed = spawnChild(['/usr/bin/sleep', '600']);
+        children.push(doomed);
+        await sleep(200);
+        await writeAttention('froonty-test-41', {kind: 'input', pids: [[doomed.pid, procStart(doomed.pid)]]});
+        const shown = await waitFor(barShown, 2000);
+        doomed.proc.force_exit();
+        await waitFor(() => doomed.exited, 2000);
+        await sleep(SETTLE_MS);
+        const stillThere = stateThere('froonty-test-41');
+        island().expand();
+        await sleep(animationWait());
+        island().collapse();
+        await waitFor(() => !stateThere('froonty-test-41') && barHidden(), animationWait() + 2000);
+        await sleep(SETTLE_MS);
+        check('attention: a collapse of the island finds a crashed Claude Code; its entry and file go',
+            shown && stillThere && !stateThere('froonty-test-41') && barHidden() &&
+            attention().service.entries.length === 0,
+            `shown=${shown} stillThere=${stillThere} ${barState()}`);
+
+        // 3. Froonty turned off (not a screen lock): the folder goes, so
+        // Claude Code's hooks record nothing; on again, nothing from before.
+        const input = JSON.stringify({session_id: 'froonty-test-42', hook_event_name: 'Notification',
+            notification_type: 'permission_prompt'});
+        await writeAttention('froonty-test-43', {pids});
+        await waitFor(barShown, 2000);
+        await setExtensionEnabled(false);
+        const gone = await waitFor(() => !attentionDir().query_exists(null), 3000);
+        const offRun = await runAttentionCommand(['/usr/bin/gjs', '-m', hookScript, 'notification'],
+            {CLAUDE_CODE_ENTRYPOINT: 'cli', CLAUDE_PID: claude.pid}, input);
+        check('attention: Froonty turned off removes its folder, so the hook script records nothing',
+            gone && offRun.status === 0 && offRun.stdout === '' && !attentionDir().query_exists(null),
+            `gone=${gone} run=${JSON.stringify(offRun)}`);
+        await setExtensionEnabled(true);
+        await waitFor(() => attentionDir().query_exists(null) && attention() !== null, 3000);
+        await sleep(500);
+        check('attention: on again, the folder is back and nothing from before shows',
+            attentionDir().query_exists(null) && attention()?.service.entries.length === 0 && barHidden() &&
+            !stateThere('froonty-test-43'), barState());
+
+        // The island turned off ("Show island"): the same.
+        await writeAttention('froonty-test-44', {pids});
+        await waitFor(barShown, 2000);
+        s.set_boolean('island-enabled', false);
+        const islandGone = await waitFor(() => !attentionDir().query_exists(null), 3000);
+        s.reset('island-enabled');
+        await waitFor(() => attention() !== null && attentionDir().query_exists(null), 3000);
+        await sleep(SETTLE_MS);
+        check('attention: the island turned off removes the folder too; back on, it is made again',
+            islandGone && attentionDir().query_exists(null) && !stateThere('froonty-test-44'),
+            `islandGone=${islandGone} ${barState()}`);
+    } finally {
+        s.reset('corner-radius');
+        s.reset('animation-duration');
+        s.reset('island-enabled');
+        for (const child of children) {
+            if (!child.exited)
+                child.proc.force_exit();
+        }
+        await sleep(SETTLE_MS);
+        for (const session of ['40', '41', '42', '43', '44']) {
+            try {
+                attentionDir().get_child(`froonty-test-${session}.json`).delete(null);
+            } catch {}
+        }
+        // Leave the island as found: its hub shown once (see
+        // testClaudeAttention).
+        if (island()) {
+            island().expand();
+            await sleep(animationWait());
+            island().collapse();
+            await sleep(animationWait());
+        }
+    }
+}
+
 export async function runAll(outDir) {
     results.length = 0;
     // Pointer-driven checks move the pointer over the pill; keep hover-open
@@ -5209,6 +5952,9 @@ export async function runAll(outDir) {
         await testCalendarMenu(outDir);
         await testNotifications(outDir);
         await testNotificationSafeguards(outDir);
+        await testClaudeAttention(outDir);
+        await testClaudeAttentionWindows(outDir);
+        await testClaudeAttentionIsland();
         await testHub(outDir);
         await testNotes(outDir);
         await testNotesTabsAndColors(outDir);

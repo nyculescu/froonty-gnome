@@ -152,10 +152,41 @@ export WAYLAND_DISPLAY=wayland-froonty-test
 # an X11 host session may force GDK_BACKEND=x11 and load X11-only modules.
 export GDK_BACKEND=wayland
 unset DISPLAY GTK_MODULES
+# The Claude attention bar's checks run its hook script as Claude Code
+# would; when this harness itself runs inside Claude Code (or VS Code),
+# none of that session's variables may leak into them.
+unset CLAUDE_CODE_ENTRYPOINT CLAUDE_PID CLAUDE_CODE_SESSION_ID CLAUDE_PROJECT_DIR CHROME_DESKTOP VSCODE_PID
 mkdir -p "$XDG_DATA_HOME/gnome-shell/extensions" "$XDG_CONFIG_HOME/glib-2.0/settings" \
-    "$XDG_CACHE_HOME" "$XDG_STATE_HOME"
+    "$XDG_CACHE_HOME" "$XDG_STATE_HOME" "$XDG_DATA_HOME/applications"
 mkdir -m 700 "$XDG_RUNTIME_DIR"
 mkdir -p "$CLAUDE_CONFIG_DIR"
+# Apps the attention bar's checks pose as: the Claude app (its desktop id,
+# so it shadows a real one in /usr/share) and a web browser. When GNOME
+# opens one (a click on its notification), /bin/true is all that runs.
+cat >"$XDG_DATA_HOME/applications/com.anthropic.Claude.desktop" <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=Claude
+Exec=/bin/true
+NoDisplay=true
+EOF
+cat >"$XDG_DATA_HOME/applications/froonty-test-browser.desktop" <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=Test Browser
+Exec=/bin/true
+Categories=Network;WebBrowser;
+NoDisplay=true
+EOF
+# A terminal or VS Code with several windows: testWindows.js, a GTK app
+# with this id, which the checks start themselves.
+cat >"$XDG_DATA_HOME/applications/org.froonty.TestWindows.desktop" <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=Test Windows
+Exec=/bin/true
+NoDisplay=true
+EOF
 cat >"$FROONTY_CLAUDE_CODE" <<'EOF'
 #!/bin/sh
 echo "$*" >>"$CLAUDE_CONFIG_DIR/runs.log"

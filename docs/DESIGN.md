@@ -82,13 +82,21 @@ What changed for Froonty, and how it adapts:
   `make pack` output. The Claude tab's livenerf row is the only direct
   network access: it GETs two public files from GitHub while the tab is on
   screen, at most once an hour ([features/claude.md](features/claude.md)).
+  The Claude attention bar spawns nothing: after the user's Set up, Claude
+  Code (not the Shell) runs Froonty's GJS hook script, which writes one
+  small file per waiting session under `$XDG_RUNTIME_DIR/froonty`, and a
+  one-line `sh` clear command
+  ([features/claude-attention.md](features/claude-attention.md)).
 4. Every private Shell API is listed in section 6 and isolated in `shell/`.
 5. `disable()` undoes everything `enable()` did. GNOME Shell 46 calls
    `disable()` on every screen lock (default `session-modes` is `["user"]`,
    `ui/extensionSystem.js:440`), so this path runs many times a day.
    The one exception is the "started" state behind `start-at-login`: it is
    kept on the extension object, which lives as long as the Shell process,
-   so a screen unlock does not undo a manual start.
+   so a screen unlock does not undo a manual start. The Claude attention
+   bar's state folder is kept through a screen lock only (what waits
+   survives it), told apart by `Main.sessionMode.isLocked`; any other
+   disable removes it, so Claude Code's hooks record nothing.
 
 ## 3. NexNotch review
 
@@ -129,9 +137,13 @@ Options considered:
 The actor tree (`ui/island.js`) is:
 
 ```
-strip  St.Widget, full monitor width, reactive only while expanded
- └ pill  St.Button (click + Enter/Space + a11y), clip_to_allocation
-    └ content  BinLayout: CollapsedView | Hub (cross-faded)
+strip   St.Widget #froontyStrip, BinLayout, full monitor width, reactive only while expanded
+ └ column  St.BoxLayout #froontyColumn .froonty-column, vertical, as wide as the strip, non-reactive
+    ├ pill  St.Button #froontyPill (click + Enter/Space + a11y), clip_to_allocation, centered
+    │  └ content  BinLayout: CollapsedView | Hub (cross-faded)
+    └ bar   the Claude attention bar (ui/attentionBar.js), centered; only
+            while that feature is on, shown only while the island is
+            collapsed and a Claude session waits
 ```
 
 The hub (`ui/hub.js`) is the expanded content:
@@ -149,8 +161,9 @@ hub     BinLayout, reactive (stops clicks from reaching the pill)
 - `Main.layoutManager.trackChrome(pill, {affectsInputRegion: true})` means only
   the pill takes input on X11. On Wayland the strip is click-through while
   collapsed because it is non-reactive.
-- The strip's `BinLayout` keeps the pill centered while its width is eased,
-  so no JavaScript runs per frame.
+- The column fills the strip's width and centers the pill while its width
+  is eased, so no JavaScript runs per frame. A hidden attention bar takes
+  no room, so the pill sits where it always did.
 - Sizes are logical pixels multiplied by `St.ThemeContext.scale_factor`, which
   is 1 on Wayland's logical layout. `border-radius` is CSS; St clamps an
   oversized radius to half the shorter side. As a result the collapsed pill is
@@ -260,9 +273,9 @@ Consequences:
 | `Atk.StateType.EXPANDED` | Accessibility |
 | `Gvc` streams (`change_is_muted`, `notify::is-muted`), through the Shell's mixer | Panic buttons: mute microphone / sound |
 | `Gio.Settings` `org.gnome.desktop.privacy` `disable-camera` (`changed::`, `writable-changed::`): GNOME Settings' Camera Access switch, enforced by xdg-desktop-portal's camera portal only | Panic button: block camera for apps that ask GNOME ([features/panic-buttons.md](features/panic-buttons.md) §4) |
-| `Gio.Settings` `org.gnome.desktop.notifications` `show-banners` (`changed::`, `writable-changed::`; inverted, it is GNOME's Do Not Disturb, the key Quick Settings' toggle is bound to) | Notifications tab: shows Do Not Disturb, and its toggle writes it on a click ([features/notifications.md](features/notifications.md)) |
+| `Gio.Settings` `org.gnome.desktop.notifications` `show-banners` (`changed::`, `writable-changed::`; inverted, it is GNOME's Do Not Disturb, the key Quick Settings' toggle is bound to) | Notifications tab: shows Do Not Disturb, and its toggle writes it on a click ([features/notifications.md](features/notifications.md)). The Claude attention bar hides under it (`changed::show-banners`) |
 | `Pango.parse_markup` | Notifications tab: a notification's text without its markup, after GNOME's `fixMarkup` |
-| `Gio.File` async I/O, `Gio.FileMonitor` | Notes: Markdown files, folder watching; Claude: Claude Code's config file |
+| `Gio.File` async I/O, `Gio.FileMonitor` | Notes: Markdown files, folder watching; Claude: Claude Code's config file; the attention bar: a directory monitor on its state folder |
 | `Gio.NetworkMonitor` (`network-changed`, `notify::connectivity`, `notify::network-available`) | Claude: "Unknown" while offline, from NetworkManager's own check |
 | `Soup` 3 (`Session.send_and_read_async`) | Claude: livenerf's README and chart from `raw.githubusercontent.com` |
 | `PangoCairo` | Claude: the labels of livenerf's chart, drawn on an `St.DrawingArea` |
@@ -292,6 +305,8 @@ Consequences:
 | `Main.panel.addToStatusArea`, `PanelMenu.Button` (top bar icon while the island is hidden) | `ui/panel.js:935`, `ui/panelMenu.js` |
 | `getMixerControl()`: the shared Gvc mixer behind Quick Settings' volume sliders (through `shell/mixer.js`) | `ui/status/volume.js:24` |
 | `org.gnome.Shell.Extensions.OpenExtensionPrefs` (public D-Bus API of the prefs service); `global.display` `window-created`, `Meta.Window` `shown` / `get_wm_class()`; `Main.activateWindow` | `Shell/Extensions/js/extensionsService.js`, `ui/main.js:878` |
+| Attention bar: `Shell.WindowTracker.get_app_from_pid` / `get_window_app`, `Shell.AppSystem.lookup_app`, `Shell.App.get_windows` / `get_name` / `get_id` / `get_app_info`, `global.display` `notify::focus-window` / `focus_window` / `focus_default_window`, `Main.activateWindow`, `Main.overview` `visible` / `showing` / `hidden` | `shell/claudeAttention.js`, `ui/attentionBar.js` (50.1) |
+| `Main.sessionMode.isLocked`: set from the new mode before `updated`, on which the extension system disables extensions at a lock (`ui/sessionMode.js` `_sync()`, `ui/extensionSystem.js` `_sessionUpdated()`, 50.1) | `shell/claudeAttention.js` `screenLocked()`: the island keeps the attention bar's state folder through a screen lock only |
 
 ### 6.3 Private / internal (isolated in `shell/`)
 
@@ -303,12 +318,14 @@ Consequences:
 | `Main.panel.statusArea.dateMenu.menu` (`isOpen`, signal `open-state-changed`) | Collapse the island whenever GNOME's menu opens (📅, Super+V); one modal at a time | `shell/dateMenu.js` `CalendarMenu` |
 | `Main.panel.statusArea.dateMenu._indicator` (`MessagesIndicator`, its `visible`) | Show GNOME's unread-notifications dot on the pill that covers the clock, with GNOME's own rules | `shell/dateMenu.js` `CalendarMenu` |
 | `Main.messageTray.bannerAlignment` / `bannerBlocked` (public setter) | Hold banners back while the expanded island covers their place, as the panel does for an open menu there | `shell/dateMenu.js` `CalendarMenu.holdBanners()` |
-| `Main.messageTray` `getSources()`, signals `source-added` / `source-removed` (`ui/messageTray.js` 697-701, 887-901 in 50.1) | Notifications tab: GNOME's own notifications, followed only while the tab is on screen | `shell/messageTray.js`, `shell/notificationStore.js` |
+| `Main.messageTray` `getSources()`, signals `source-added` / `source-removed` (`ui/messageTray.js` 697-701, 887-901 in 50.1) | Notifications tab: GNOME's own notifications, followed only while the tab is on screen. The Claude attention bar: the Claude app's (and, if asked for, web browsers') notifications, through a store of its own with a `filter`, so other sources get no handler at all | `shell/messageTray.js`, `shell/notificationStore.js` |
 | `MessageTray.Source`: `notifications`, `title`, `icon`, signals `notification-added` / `notification-removed` (emitted from inside the notification's `destroy`) | Notifications tab: each app's notifications, its name and icon | `shell/notificationStore.js` |
 | `MessageTray.Notification`: `title`, `body`, `use-body-markup`, `gicon`, `datetime`, `urgency`, `acknowledged` (read, and written only on a deliberate act in the tab), `actions[].label`; signals `notify`, `action-added`, `action-removed`; `activate()`, `actions[i].activate()`, `destroy(DISMISSED)` (only on the user's click) | Notifications tab: rows, and the exact calls GNOME's own list makes (`ui/messageList.js` 726-758) | `shell/notificationStore.js` |
 | `Main.messageTray._notificationQueue` (private field, read only: `includes()`) | Notifications tab: never mark seen a notification still waiting for its banner. GNOME's dot counts unseen minus queued, and while banners are held it does not drop seen ones from the queue (`_updateState()` returns first), so one marked seen there would be subtracted twice and a later unseen one would light no dot. Without the field, every listed one is marked seen (that lag comes back) | `shell/messageTray.js` (passed to the store as `waitingForBanner`) |
 | `MessageTray.Urgency` (`CRITICAL`), `MessageTray.NotificationDestroyedReason` (`DISMISSED`) | Notifications tab: urgent first; dismiss as GNOME's close button does | `shell/messageTray.js` (read when a store is made) |
 | `misc/util.js` `fixMarkup`, `misc/dateUtils.js` `formatTimeSpan` | Notifications tab: text and "10 minutes ago" exactly as GNOME's list shows them | `shell/messageTray.js` |
+| `Main.messageTray.visible` (`notify::visible`; true while a banner is on screen, `MessageTray._updateState()`) | Hide the Claude attention bar while a banner shows where it is | `shell/claudeAttention.js` `ClaudeDesktop.busy` |
+| A notification source's `app` (`FdoNotificationDaemonSource` only; the window-attention source has none) | The attention bar follows only the Claude app's source, and web browsers' (`WebBrowser` category); `describe()` gives the app's id | `shell/claudeAttention.js` `notificationFilter()`, `shell/notificationStore.js` |
 
 `statusArea.dateMenu` is a role name set by `PANEL_ITEM_IMPLEMENTATIONS`
 (`panel.js:633`). It is widely relied on, but it is not an API contract.
@@ -364,6 +381,11 @@ Two St/Clutter rules also shaped the island:
 | Ubuntu session mode | Ubuntu patches Shell 46 | The tests run the Ubuntu build; `FROONTY_TEST_MODE=ubuntu` runs the Ubuntu session mode |
 | Claude Code changes its private usage cache (`cachedUsageUtilization` in `~/.claude.json`) | Claude tab shows the hint instead of rows, or loses a row | Defensive parser that leaves out what it does not know; unit tests pin the format seen in Claude Code 2.1.280 ([features/claude.md](features/claude.md)) |
 | livenerf rewords its README or redraws its chart differently | The livenerf row loses its chart or reads "could not be read" | Readers that leave out what they do not know; unit tests run them against the `third_party/livenerf` submodule |
+| Claude Code changes its hook events or their fields, or drops the undocumented `worker_permission_prompt` | The attention bar shows less (never wrong text: unknown types are ignored) | Documented events only (except that one, harmless if unknown); unit tests pin the mapping ([features/claude-attention.md](features/claude-attention.md)) |
+| The Claude app rewords or translates its notifications | Its entries read "Claude needs your attention" | One small classifier (`appNotificationKind`), unit-tested; the manual checks note the real wording |
+| VS Code's window title template changes | Several VS Code windows are not told apart: focus does not clear, a click raises the most recent | Documented known gap |
+| Claude Code rewrites `settings.json` from its cached copy | Froonty's hooks disappear | The settings row reads the file again on show and on change; Set up again |
+| Flatpak hosts (sandboxed process ids, private runtime folder) and Flatpak browsers (portal notifications) | No attention entries from them | Not supported; documented |
 
 ## 8. Lifecycle and resource budget
 
@@ -381,19 +403,23 @@ Two St/Clutter rules also shaped the island:
 | GNOME privacy settings | Block-camera panic button only: one `org.gnome.desktop.privacy` `Gio.Settings` per button, with 2 handlers (`changed::disable-camera`, `writable-changed::disable-camera`) | `PanicBar.destroy()` (`CameraAccess.destroy()`) |
 | Ctrl+Alt+Tab group | 1 | `Island.destroy()` |
 | Timers / GLib sources | **No periodic timer while the island is closed.** One-shot only: the hover-open delay while the pointer rests on the collapsed pill (`HoverOpen`); a 10 s give-up timeout while a requested settings window has not appeared (`SettingsWindow.destroy()`); Notes' 0.8 s autosave while there are unsaved edits (`NotesService.stop()` flushes and removes it); the Clipboard tab's hidden password expiry (`clipboard-password-minutes`), only while one is listed (`ClipboardRecorder.destroy()`). **Two periodic timers**, each only while its tab is on screen: the Btop tab's, every `sysmon-interval` seconds (1-10, default 2), and the Kill Process tab's, every `killprocess-interval` seconds (1-10, default 3), both `timeout_add_seconds` so GLib can batch their wakeups (`SysmonService.setActive(false)`, `KillProcessService.setActive(false)`); plus a 5 s give-up timeout per `nvidia-smi` or `kill` run, and the Kill Process tab's one-shot early reading (0.5 s after it comes on screen or a signal is sent, then each second while a killed process is still listed). At most one pending `BEFORE_REDRAW` later (cover recompute), removed in `PanelClock.restore()`; and at most one in the Kill Process list, which fills its rows after a scroll or a new height (never queued while the tab is hidden; removed when it is hidden or its view destroyed). While a Kill Process reading is in flight, at most one idle (`PRIORITY_DEFAULT_IDLE`) at a time between its batches of reads, removed when the reading is cancelled (`KillProcessService.setActive(false)`); the interval's readings are spaced at least ten times as long as the previous one took. The clock ticks come from the top bar's own WallClock, so Froonty owns none | `ClockService.stop()` |
-| File watching | Notes: one inotify folder monitor (`Gio.FileMonitor`), only while the Notes tab has been opened. Claude: one monitor on Claude Code's config file while the Claude tab is on screen, and one more while the island is open with the Claude session panic button | `NotesService.stop()`; `ClaudeService.setActive(false)` |
+| File watching | Notes: one inotify folder monitor (`Gio.FileMonitor`), only while the Notes tab has been opened. Claude: one monitor on Claude Code's config file while the Claude tab is on screen, and one more while the island is open with the Claude session panic button. Attention bar: one folder monitor (`WATCH_MOVES`) on `$XDG_RUNTIME_DIR/froonty/claude-attention`, while the island exists and the bar is on; per state file event one read of at most 4 KiB; per recorded session one `/proc/<pid>/stat` read on arrival, on each move of the focus to another window while an entry with a known app shows, and on each collapse | `NotesService.stop()`; `ClaudeService.setActive(false)`; `AttentionService.stop()` |
+| Attention bar | Signals: message tray `notify::visible`, overview `showing` / `hidden` (adapter, for its life); `org.gnome.desktop.notifications` `changed::show-banners`; 3 settings; tray `source-added` / `source-removed` plus 4 per followed source (the Claude app, browsers) and 3 per followed notification, while those are followed (the Notifications tab's store, with a `filter`; other sources get none); `global.display` `notify::focus-window` only while a shown entry has a known app. One Ctrl+Alt+Tab group, listed only while the bar is mapped. No timer, no process. Disk: the `0700` folder and at most one `0600` file of 4 KiB per waiting session, on tmpfs; kept through a screen lock (what waits survives it), removed by any other disable and when the island or the bar is turned off | `Island.destroy()` (`_stopAttention()`, which also removes the folder unless the screen is locking); turning the bar off also removes the folder |
 | Clipboard | Clipboard tab enabled (off by default): one `owner-changed` connection on `global.display.get_selection()`, one settings connection, and one read per copy (`St.Clipboard`); history and images under `~/.local/share/froonty/clipboard` (0700/0600) | `releaseRecorder()` (extension `disable()`, tab turned off) |
 | Network monitor | Claude: three connections on the shared `Gio.NetworkMonitor` (`network-changed`, `notify::connectivity`, `notify::network-available`) per active reader: the tab while on screen, the panic button while the island is open | `ClaudeService.setActive(false)` |
 | Calendar tab | Nothing at module load or enable but a one-time probe (GIRepository's typelib list). The service, when the tab is first selected: 4 settings handlers (2 Froonty keys, 2 `org.gnome.desktop.calendar`). Once the tab has been shown, until disable: 1 `ESourceRegistry`, 1 `SourceRegistryWatcher` (3 handlers), 1 registry handler, 1 `ECal.Client` per visible calendar (1 handler each). From the first time the tab shows a month until another month or zone (or disable): 1 EDS view per visible calendar (4 handlers each), kept and paused while the tab is not on screen, so opening and closing the island makes **no** EDS call. Each view's `start()` is a **synchronous D-Bus call** to evolution-calendar-factory (libecal offers no other; about 0.3 ms with local calendars), once per calendar and month shown; the months a fast wheel passes through (within 250 ms) get none. Views are never `stop()`ped (also synchronous): they are let go, and libecal disposes of them asynchronously once collected. One asynchronous `get_objects_for_uid` per repeating event (its moved occurrences, which views do not deliver), one `get_timezone` per calendar and unknown zone. Timers: none periodic; one idle to coalesce redraws, one idle shared by every view's expansion (3 ms of work per turn; a series is expanded in slices from a moved start, features/calendar.md §B.6), only while on screen and there is work; a one-shot 250 ms quiet period after a month change; while a calendar loads, redraws at most every 200 ms (a one-shot timeout in place of the idle). libecal, libedataserver, libical(-glib) and libcamel stay mapped once loaded | `CalendarService.stop()` (views let go, in-flight answers cancelled, late views let go, idles and timer removed); `setActive(false)` pauses |
 | Network requests | Claude tab, livenerf row: one `Soup.Session`, made on the first fetch; two GETs (about 28 kB) per visit while online, at most once an hour | `LivenerfService.stop()` (aborts the session) |
 | File reads | Btop tab, per interval while on screen: `/proc/stat`, `/proc/cpuinfo`, `/proc/meminfo`, `/proc/net/dev`, `/proc/self/mounts`, the CPU's package temperature, a few sysfs files per GPU, and one temperature per core only while the threads are unfolded. Sections that are off are not read. Kill Process tab, per interval while on screen: one listing of `/proc` (with owners), `/proc/stat`, and `/proc/<pid>/stat` for each of the user's processes (256 on the development machine; it also gives the thread count), 32 at a time with a pause between batches so frames are drawn in between; `/proc/<pid>/cmdline` once per process; a handful of small reads (the process, and GNOME Shell's parents) right before each signal | `SysmonService.setActive(false)`, `KillProcessService.setActive(false)` cancel a reading in flight |
-| Subprocesses / D-Bus proxies | Btop tab: one `nvidia-smi` per interval while the tab is on screen and an NVIDIA card is awake (about 40 ms). Kill Process tab: one `/usr/bin/kill` per confirmed kill or "Force quit" click, never otherwise. Otherwise 0 of Froonty's own. The Claude tab reads GIO's process-wide `Gio.NetworkMonitor`, whose NetworkManager backend keeps GIO's own proxy for the life of the Shell | — |
+| Subprocesses / D-Bus proxies | Btop tab: one `nvidia-smi` per interval while the tab is on screen and an NVIDIA card is awake (about 40 ms). Kill Process tab: one `/usr/bin/kill` per confirmed kill or "Force quit" click, never otherwise. Otherwise 0 of Froonty's own. Outside the Shell, after the user's Set up, Claude Code runs Froonty's GJS hook (about 38 ms, 33 MB) per qualifying Notification, Stop and StopFailure, and `sh` (about 1.2 ms) per prompt, model step and session end. The Claude tab reads GIO's process-wide `Gio.NetworkMonitor`, whose NetworkManager backend keeps GIO's own proxy for the life of the Shell | — |
 
 ## 9. Testing
 
 Two test layers:
 
-- **`make unit`** runs plain-gjs unit tests for Shell-free logic: the
+- **`make unit`** runs plain-gjs unit tests for Shell-free logic (with a
+  private `CLAUDE_CONFIG_DIR`, so the real `~/.claude` is out of reach):
+  the Claude attention bar's hook script, run as Claude Code runs it, its
+  `settings.json` set-up and its model; the
   Notifications tab's store and service (over GObject fakes of GNOME's
   tray, sources and notifications; a destroyed one throws on any access),
   Notes names,
@@ -458,6 +484,19 @@ input through Clutter virtual devices and cover:
   GNOME's rule for a click without a default action, and the dot while
   banners are held
   ([features/notifications.md](features/notifications.md) §8).
+- **Claude attention bar:** Froonty's real hook script run as Claude Code
+  runs it, and the clear command; the bar's place and wording, order, ×,
+  Delete, Escape and Ctrl+Alt+Tab; hidden while the island is open, under
+  a banner, under Do Not Disturb and in the overview; a session's window
+  found from its processes, raised by a click, and clearing it when
+  focused; a test app with three windows standing for a terminal (which
+  window is known for sure, what shows while another of its windows has
+  the focus, what a focus change clears, a crashed Claude Code found on
+  a focus change and on a collapse); a collapse cut short by a geometry
+  change; real notifications posing as the Claude app and a browser;
+  turning it off and on; a screen lock keeping what waits, and Froonty or
+  the island turned off removing it
+  ([features/claude-attention.md](features/claude-attention.md) §10).
 - **Kill Process:** protected rows (GNOME Shell, its parent, D-Bus);
   a `sleep` the test started killed through the two-step UI (SIGTERM),
   one that ignores SIGTERM ended by "Force quit" (SIGKILL); a reused

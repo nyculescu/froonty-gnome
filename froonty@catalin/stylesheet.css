@@ -52,6 +52,71 @@
     font-weight: bold;
 }
 
+/* The Claude attention bar under the collapsed pill
+   (docs/features/claude-attention.md): the pill's black and hairline,
+   one line, the Spark in Claude's clay. */
+
+.froonty-column {
+    spacing: 6px;
+}
+
+.froonty-attention {
+    background-color: #000000;
+    color: #ffffff;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 14px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+    padding: 0 4px 0 6px;
+    min-height: 28px;
+    max-width: 480px;
+    spacing: 2px;
+}
+
+.froonty-attention-main {
+    padding: 4px 6px;
+    border-radius: 10px;
+}
+
+.froonty-attention-row {
+    spacing: 6px;
+}
+
+.froonty-attention-main:hover,
+.froonty-attention-main:focus,
+.froonty-attention-close:hover,
+.froonty-attention-close:focus {
+    background-color: #1f1f1f;
+}
+
+.froonty-attention-icon {
+    icon-size: 14px;
+    color: #d97757;
+}
+
+.froonty-attention-text {
+    font-weight: bold;
+    font-size: 0.9em;
+}
+
+.froonty-attention-place,
+.froonty-attention-more {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.9em;
+}
+
+.froonty-attention-more {
+    font-feature-settings: "tnum";
+}
+
+.froonty-attention-close {
+    padding: 4px;
+    border-radius: 10px;
+}
+
+.froonty-attention-close StIcon {
+    icon-size: 12px;
+}
+
 /* Hub (expanded island) */
 
 .froonty-hub {

@@ -304,6 +304,12 @@ features/notifications/
 └── prefs.js     Settings → Notifications: show the tab, size
 ```
 
+The Claude attention bar ([claude-attention.md](claude-attention.md) §9)
+makes a store of its own through the same adapter:
+`createStore({filter})` follows only the sources the filter accepts (the
+Claude app's, web browsers'), and `describe()` also gives the source's
+app id (`appId`, null without an app). The tab's store has no filter.
+
 The feature reaches GNOME only through `ctx.notifications` and closes the
 island through `ctx.collapse()` (both from `ui/island.js`); it imports
 nothing from `shell/`. The hub shows the dot on tabs that declare

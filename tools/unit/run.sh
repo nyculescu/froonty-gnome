@@ -18,9 +18,12 @@ CACHE=${XDG_CACHE_HOME:-$HOME/.cache}
 mkdir -p "$CACHE"
 ROOT=$(mktemp -d -p "$CACHE" froonty-unit.XXXXXX)
 trap 'rm -rf "$ROOT"' EXIT
-mkdir -p "$ROOT/tmp" "$ROOT/data"
+mkdir -p "$ROOT/tmp" "$ROOT/data" "$ROOT/claude"
 export TMPDIR=$ROOT/tmp
 export XDG_DATA_HOME=$ROOT/data
+# Claude Code's config folder: a private one, so a default
+# claudeSettingsFile() can never reach the real ~/.claude.
+export CLAUDE_CONFIG_DIR=$ROOT/claude
 export GSETTINGS_BACKEND=memory
 export FROONTY_UNIT_ISOLATED=1
 

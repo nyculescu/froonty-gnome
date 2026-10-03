@@ -5,11 +5,15 @@
 // Actor tree:
 //
 //   strip   St.Widget, non-reactive, spans the monitor width.
-//    │      Centers the pill (also while its width animates) and owns the
-//    │      modal grab. Does not take input, so the top bar below it keeps
-//    │      working.
-//    └ pill St.Button: background, click and Enter/Space activation.
-//       └ content  BinLayout stacking the collapsed view and the hub.
+//    │      Owns the modal grab. Does not take input, so the top bar below
+//    │      it keeps working.
+//    └ column  St.BoxLayout, vertical, as wide as the strip, non-reactive.
+//       │      Centers the pill (also while its width animates).
+//       ├ pill St.Button: background, click and Enter/Space activation.
+//       │  └ content  BinLayout stacking the collapsed view and the hub.
+//       └ bar  the Claude attention bar (ui/attentionBar.js), only while
+//              that feature is on; shown only while the island is
+//              collapsed and something waits.
 
 import Atk from 'gi://Atk';
 import Clutter from 'gi://Clutter';
@@ -21,10 +25,13 @@ import St from 'gi://St';
 import * as GrabHelper from 'resource:///org/gnome/shell/ui/grabHelper.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
+import {AttentionService, removeStateDir} from '../features/claude/attentionService.js';
 import {FEATURES} from '../features/registry.js';
+import {ClaudeDesktop, screenLocked} from '../shell/claudeAttention.js';
 import {CalendarMenu} from '../shell/dateMenu.js';
 import {gnomeNotifications} from '../shell/messageTray.js';
 import {crossfade, showOnly} from './animations.js';
+import {AttentionBar} from './attentionBar.js';
 import {addIslandChrome, removeIslandChrome} from './chrome.js';
 import {CollapsedView} from './collapsedView.js';
 import {IslandGeometry} from './geometry.js';
@@ -62,6 +69,8 @@ export class Island {
         // since a press, or a key or scroll that counts (_isDeliberate).
         this._engaged = false;
         this._themeContext = St.ThemeContext.get_for_stage(global.stage);
+        // "When Claude needs you" (docs/features/claude-attention.md).
+        this._attention = null;
         this._geometry = new IslandGeometry(settings, panelClock, this._themeContext);
         // GNOME's own calendar and notification menu: the clock the pill
         // covers would open it.
@@ -90,6 +99,7 @@ export class Island {
         this._updateContent();
         this._updateUnread();
         this._syncGeometry();
+        this._syncAttentionEnabled();
     }
 
     destroy() {
@@ -101,6 +111,10 @@ export class Island {
         if (wasGrabbed)
             this._grabHelper.ungrab({actor: this._pill});
 
+        // At a screen lock its files stay, so what waits survives it.
+        // Otherwise (Froonty or the island turned off) the folder goes, and
+        // with it Claude Code's hooks stop recording.
+        this._stopAttention({removeState: !screenLocked()});
         this._clock.disconnectObject(this);
         this._panelClock.disconnectObject(this);
         // Also lets banners show again if the island held them back.
@@ -208,8 +222,20 @@ export class Island {
             layout_manager: new Clutter.BinLayout(),
             reactive: false,
         });
+        // The pill and, under it, the attention bar. As wide as the strip,
+        // so the pill stays centered on the monitor; a hidden bar takes no
+        // room.
+        this._column = new St.BoxLayout({
+            name: 'froontyColumn',
+            style_class: 'froonty-column',
+            orientation: Clutter.Orientation.VERTICAL,
+            x_expand: true,
+            reactive: false,
+        });
+        this._strip.add_child(this._column);
 
         this._pill = new St.Button({
+            name: 'froontyPill',
             style_class: 'froonty-pill',
             x_align: Clutter.ActorAlign.CENTER,
             y_align: Clutter.ActorAlign.START,
@@ -217,7 +243,7 @@ export class Island {
             track_hover: true,
             clip_to_allocation: true,
         });
-        this._strip.add_child(this._pill);
+        this._column.add_child(this._pill);
 
         const content = new St.Widget({
             layout_manager: new Clutter.BinLayout(),
@@ -284,6 +310,8 @@ export class Island {
             this._settings.connectObject(`changed::${key}`,
                 () => this._syncGeometry(), this);
         }
+        this._settings.connectObject('changed::claude-attention-enabled',
+            () => this._syncAttentionEnabled(), this);
         // Feature sizes set in Settings resize the open island like a tab
         // switch does (a no-op unless that feature is the one shown).
         for (const {hubSizeKeys} of FEATURES) {
@@ -334,7 +362,9 @@ export class Island {
     }
 
     // Places the strip on the primary monitor and snaps the pill to the
-    // size of its current state, cancelling any running animation.
+    // size of its current state, cancelling any running animation (a
+    // collapse cut short this way never completes, so the attention bar,
+    // hidden while the pill's height animates, is synced here).
     _syncGeometry() {
         const monitor = Main.layoutManager.primaryMonitor;
         if (!monitor)
@@ -353,6 +383,7 @@ export class Island {
         const {width, height} = this._targetSize(this._expanded);
         this._pill.set_size(width, height);
         this._showViewImmediately();
+        this._syncAttention();
     }
 
     // The clock button's size and position change with its content (e.g.
@@ -404,8 +435,11 @@ export class Island {
             this._pill.remove_accessible_state(Atk.StateType.EXPANDED);
         }
 
-        if (expanded)
+        if (expanded) {
             this._hoverOpen.cancel();
+            // Out of the way at once, before the pill grows over its place.
+            this._attention?.bar.hide();
+        }
         this._engaged = expanded && !byHover;
         // The expanded island covers the place where GNOME shows banners.
         this._calendarMenu.holdBanners(expanded);
@@ -465,10 +499,17 @@ export class Island {
             height,
             duration,
             mode: this._expanded ? EXPAND_MODE : COLLAPSE_MODE,
-            // The clock may have changed size meanwhile; see _onCoverChanged.
-            onComplete: () => {
-                if (!this._expanded)
+            // However a collapse ends: done, or cut short by _syncGeometry()
+            // (which then also syncs the attention bar).
+            onStopped: isFinished => {
+                if (this._expanded)
+                    return;
+                // The clock may have changed size meanwhile; see
+                // _onCoverChanged. This also brings the bar back.
+                if (isFinished)
                     this._syncGeometry();
+                // A crashed Claude Code leaves its file behind.
+                this._attention?.service.revalidate();
             },
         });
 
@@ -477,6 +518,83 @@ export class Island {
 
     _showViewImmediately() {
         showOnly(...this._views());
+    }
+
+    // ---------------------------------------------------------- attention bar
+
+    _syncAttentionEnabled() {
+        if (this._settings.get_boolean('claude-attention-enabled')) {
+            this._startAttention();
+        } else if (this._attention) {
+            this._stopAttention({removeState: true});
+        } else {
+            // Off already, e.g. since a previous session: a folder left
+            // behind goes, so the hooks record nothing.
+            removeStateDir();
+        }
+    }
+
+    _startAttention() {
+        if (this._attention)
+            return;
+        const desktop = new ClaudeDesktop();
+        const service = new AttentionService({
+            settings: this._settings,
+            desktop,
+            // GNOME's notifications, through the Notifications tab's
+            // store (shell/messageTray.js), filtered to the Claude app and
+            // web browsers.
+            notifications: gnomeNotifications(),
+        });
+        const bar = new AttentionBar({
+            onActivate: id => service.activate(id),
+            onDismiss: id => service.dismiss(id),
+            animationTime: () => this._settings.get_int('animation-duration'),
+        });
+        this._column.add_child(bar.actor);
+        // Do Not Disturb hides the bar, as it hides banners.
+        const notifications = new Gio.Settings({schema_id: 'org.gnome.desktop.notifications'});
+        this._attention = {desktop, service, bar, notifications};
+
+        // A plain GJS emitter (core/emitter.js): no connectObject().
+        this._attention.serviceId = service.connect('changed',
+            () => this._syncAttention({animate: true}));
+        desktop.connectObject('busy-changed', () => this._syncAttention(), this);
+        notifications.connectObject('changed::show-banners', () => this._syncAttention(), this);
+        service.start();
+        this._syncAttention();
+    }
+
+    _stopAttention({removeState}) {
+        const attention = this._attention;
+        if (!attention)
+            return;
+        this._attention = null;
+        attention.service.disconnect(attention.serviceId);
+        attention.service.stop();
+        if (removeState)
+            attention.service.removeState();
+        attention.desktop.disconnectObject(this);
+        attention.desktop.destroy();
+        attention.notifications.disconnectObject(this);
+        attention.bar.destroy();
+    }
+
+    // Shown while something waits, the island is collapsed (and done
+    // collapsing), no banner or overview is on screen and Do Not Disturb
+    // is off. Fullscreen hides the whole strip.
+    _syncAttention({animate = false} = {}) {
+        const attention = this._attention;
+        if (!attention)
+            return;
+        const [first, ...rest] = attention.service.entries;
+        const show = first !== undefined && !this._expanded &&
+            !this._pill.get_transition('height') && !attention.desktop.busy &&
+            attention.notifications.get_boolean('show-banners');
+        if (show)
+            attention.bar.show(first, rest.length);
+        else
+            attention.bar.hide({animate});
     }
 
     /** @returns {Clutter.Actor[]} [view for current state, other view] */

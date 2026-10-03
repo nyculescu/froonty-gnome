@@ -132,6 +132,28 @@
       <description>Set from the start of a low-power stretch to its end, so turning claude-ask-claude-code back on during it is kept.</description>
     </key>
 
+    <!-- Claude attention bar (docs/features/claude-attention.md) -->
+    <key name="claude-attention-enabled" type="b">
+      <default>true</default>
+      <summary>Show a bar under the island when Claude needs you</summary>
+      <description>A slim bar under the collapsed island while a Claude session waits for you (a permission, a question, a finished reply), from Claude Code's hooks (after Set up in Settings → Claude) and the Claude app's own notifications. Event-driven: nothing is polled. Turning it off removes its folder under $XDG_RUNTIME_DIR/froonty.</description>
+    </key>
+    <key name="claude-attention-finished" type="b">
+      <default>true</default>
+      <summary>Also when Claude finishes</summary>
+      <description>Finished replies (Claude Code's Stop hook, the Claude app's "finished" notification) and replies stopped by an error, unless you are looking at that window.</description>
+    </key>
+    <key name="claude-attention-app" type="b">
+      <default>true</default>
+      <summary>Sessions in the Claude app from its own notifications</summary>
+      <description>On: the Claude app's own notifications stand for its sessions, and Claude Code's hooks from the app are ignored. Off: the hooks are used for them too.</description>
+    </key>
+    <key name="claude-attention-browsers" type="b">
+      <default>false</default>
+      <summary>Browser notifications from claude.ai</summary>
+      <description>Best effort: a notification from a web browser (an app in the WebBrowser category) whose title or text contains "claude.ai".</description>
+    </key>
+
     <!-- Btop feature, the system monitor (docs/features/sysmon.md) -->
     <key name="sysmon-enabled" type="b">
       <default>true</default>
