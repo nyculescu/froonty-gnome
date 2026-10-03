@@ -29,8 +29,10 @@ Status: **implemented (v1)**. Decisions made 2026-09-28:
   line and the note scrolls horizontally; the view follows the cursor both
   ways.
 - Each note has a **colour**, like Windows Sticky Notes: yellow (default),
-  green, pink, purple, blue, gray or charcoal. It tints the editor and the
-  tab dot, and is chosen with the round colour button.
+  green, pink, purple, blue, gray or charcoal. It tints the editor, the
+  round colour button that chooses it, and the All notes button in the hub
+  header. Tabs show no colour dot (2026-10-02, user request: "No reason to
+  have it and diminish the space").
 - **Order and colours** are kept in a hidden `.froonty.json` in the notes
   folder, so the `.md` files stay plain Markdown. A note restored from the
   Trash comes back yellow.
@@ -78,6 +80,262 @@ Markdown so that I can use the edit buttons"):
   note's colour: grey on the pastels, lighter on charcoal.
 - **Not yet:** clicking a checkbox to tick it, and images.
 
+## All notes window and labels (2026-10-02)
+
+User requests: "I want a button to show all the notes under the Notes tab,
+separately, into another window so that it will be easy for me to search
+through them. I also want a new sub-feature, to add one or more labels to
+a note and filter to search by one or more labels (like an indexing
+feature)"; then: labels by right-click on the note's title; "The
+expandable bar button and the + button (to add a new note) must be the
+only buttons on that row"; "To show all notes, a button next to the
+settings button"; that button "tinted slightly different to indicate that
+is part of the Notes tab"; and "The color circle in the Note's title
+should disappear".
+
+### What shows
+
+- **Hub header, Notes tab only:** `… 📅 [All notes] ⚙️`. An icon button
+  like its neighbours (`edit-find-symbolic`, tooltip and accessible name
+  "All notes"), with a faint wash of the selected note's colour behind the
+  icon: alpha 0.16 at rest, 0.28 on hover or focus, 0.38 pressed (charcoal
+  0.30/0.48/0.60: #3b3b3b would vanish on the black island). Tab order:
+  📅 → All notes → ⚙️. A click collapses the island (which saves the open
+  note) and opens the settings window on its All notes page, or raises it.
+  Other tabs show `📅 ⚙️` as before.
+- **The tab row** keeps the note tabs, "+" and the fold button only; the
+  tools row is unchanged. A tab shows its name, and × on hover or while
+  selected. No colour dot, and labels never show there.
+- **A note's labels:** right-click its tab, or Menu / Shift+F10 on a
+  focused tab. A GNOME popup menu opens under the tab:
+
+  ```
+  ┌ Labels · Plan ───────────────┐  title (plain text)
+  │ [Filter or add a label…    ] │  has the focus
+  │ ✓ q4                         │  this note's labels, then the others,
+  │ ✓ work                       │    each by name; the order holds while
+  │   home                       │    the menu is open
+  │ + Add “ideas”                │  when the text is a new label
+  │   3 more — type to filter    │  past 12
+  └──────────────────────────────┘
+  ```
+
+  Typing filters (ignoring case and accents). Enter turns an existing label
+  on (never off) or adds a new one, then clears the entry; Down moves to
+  the list. Click, Space or Return flips a label, written at once, and the
+  menu stays open. Escape or a click outside closes only the menu: the
+  island stays open and the focus goes back where it was. If the labels
+  file cannot be read, the menu says so and offers nothing else.
+- **The All notes page** is a subpage of Froonty's settings window, the GTK
+  window GNOME's extension preferences service runs: a real window (Alt+Tab,
+  resizable, stays open through a screen lock) whose back arrow leads to
+  the settings tabs. 900×640 when it opens on this page.
+  - Sidebar: a search entry (Ctrl+F; Down to the list; Escape clears it;
+    Enter goes into the note at its first match, or at its end without a
+    search: the open note while it is listed, else the first result, which
+    opens, so typing never goes into a note the search or the chips hide),
+    label chips with their counts (over notes that exist),
+    All/Any while two or more chips are on, Clear, and the list: colour,
+    name, date ("16:03" today, "29 Sep" this year, else with the year), a
+    two-line excerpt with the matches in bold, and the note's labels. At
+    most 300 rows, then "Showing 300 of N — refine the search".
+  - Note pane: colour, name, labels and a **Labels** menu (an entry and a
+    check per label), then a plain-text editor with GTK's undo. Matches of
+    the search are marked in yellow, and the view scrolls to the first.
+    Loading a note or a reload cannot be undone, so undo never reaches into
+    another note or version.
+  - Without a search the newest notes come first; with one, name matches,
+    then label matches, then text-only matches, newest first within each.
+  - The list re-runs only when the search, the chips, All/Any or the notes
+    change; not while typing in the editor, so rows do not move. A note the
+    filter hides stays open in the pane.
+  - It opens on the note last used in the island (`notes-last`), else the
+    newest. It follows the island again whenever the island has moved to
+    another note since the window last looked: when the page is shown
+    again, or the window is raised (the island's button raises it without
+    changing the view key). A note picked in the window stays while the
+    island stays on its note.
+  - Another notes folder (Settings → Notes): the page starts over there,
+    also when the folder changed while the page was hidden. The open note
+    is saved in its own folder first, and closed (it was once still open,
+    and typing went to the old folder's file).
+  - A note that is not plain UTF-8 text is shown read-only, with a banner
+    (see Data).
+  - Settings → Notes → **All notes** opens it too.
+  - Create, rename and Trash stay in the island (v1).
+
+### Filters
+
+Words of the search must all match (AND), each in the name, the text or a
+label, ignoring case and accents. Selected labels narrow further: **all of
+them** by default, **any of them** as an option, remembered in
+`notes-label-match`. AND by default because each extra chip should narrow
+the list, the way an index is used; OR would widen it with every click.
+
+- **Accents** are the combining diacritical marks (the five Unicode blocks
+  of that name: Latin, Greek and Cyrillic accents; "cafe" finds "Café",
+  "ежик" finds "Ёжик"). Other combining marks are letters or sounds of
+  their scripts and count: Devanagari vowel signs ("काता" does not find
+  "कुत्ता", "dog"), Japanese voicing marks ("がき" does not find "かき"),
+  Thai vowels. Folding removed every mark before.
+- **Cost:** a search keeps one folded copy of each note's text (a string),
+  and works out excerpts and bold ranges only for the rows shown (at most
+  300). Measured on this machine with 500 generated notes of 10 KB: the
+  first search took about 120 ms and the process grew by about 19 MB;
+  before, with a map of two numbers per character for every note, about
+  1 s and 171 MB, held while the window was open. Later searches take a
+  few ms.
+
+### Data
+
+- `.md` files: unchanged, plain Markdown.
+- `.md` files that are not plain UTF-8 text (Latin-1, UTF-16 from Windows
+  Notepad, NUL bytes): shown **read-only** in both editors, with a notice
+  (invalid bytes as "�", NUL as "␀"), and never written. Before, the
+  editors replaced the bytes with U+FFFD or cut the text at the first
+  NUL, and the first keystroke saved that for good. Renaming, colours,
+  labels and the Trash still work.
+- `.froonty.json` (order, colours): format unchanged, written by the Shell
+  only. Keys Froonty does not know are now kept (`meta.extra`), so a later
+  version's fields survive. A file that cannot be read (not UTF-8, invalid
+  JSON, not an object, another `version`, a read error other than "not
+  found") is **never written**: the island shows the default order and
+  colours with the line "Order and colours could not be read
+  (.froonty.json), so they are not saved.", colour changes are refused,
+  and the window's banner says so. Once the file is fixed it counts again.
+  Before, any such file was rewritten at once with the alphabetical order
+  and no colours (and a sync tool spread that). Empty: nothing, writable.
+- **`.froonty-labels.json`** (new), next to the notes:
+  `{"version": 1, "labels": {"Plan": ["q4", "work"]}}`, 2-space indent.
+  - A file of its own: older Froonty builds rewrite `.froonty.json` and
+    would drop labels kept there; they never touch this file.
+  - Missing: no labels. Empty: no labels, and it may be written. Invalid
+    JSON, a top level or `labels` that is not an object, another `version`,
+    invalid UTF-8, or a read error other than "not found": the file is
+    read-only (never written), and the menu and the window say "Labels
+    could not be read (.froonty-labels.json)". In a readable file, bad
+    entries are dropped one by one; unknown top-level keys are written back
+    as found. (A file without `labels` reads as no labels.)
+  - A label: NFC, trimmed, leading `#` dropped, whitespace runs made one
+    space; 1 to 40 code points, no control characters. Identity ignores
+    case, not accents ("Work" = "work", "café" ≠ "cafe"); the first
+    spelling in the file wins.
+  - Writes: read, change, write back with the etag read (the previous file
+    is kept as `.froonty-labels.json~`); if someone wrote in between, all
+    over again, up to 3 times. A missing file is first made empty with
+    `create`, never over one that appeared meanwhile.
+  - Entries move or go only when the user turns a label off, when Froonty
+    renames a note (an old entry at the new name is replaced), and when
+    Froonty creates a note (or a conflict copy) whose name has an old entry
+    (cleared). Conflict copies clear it in `store.saveCopy`, shared by the
+    island and the window (the window's copies kept old labels before). Entries of notes that are gone are kept, never shown or
+    counted: a note restored from the Trash gets its labels back (its
+    colour still comes back yellow). A rename made outside Froonty leaves
+    the labels under the old name, and renaming back restores them: a known
+    v1 limit.
+- `settings-window-view` (`settings` | `all-notes`, internal): which page
+  the settings window shows. The Shell sets it before it opens or raises
+  the window; the window follows it, sets it as the user navigates, and
+  sets it back to `settings` when it closes on All notes. With no window of
+  Froonty's, the Shell also sets it back: on enable (login, unlock) and
+  when a requested window has not come after 10 s (another extension's
+  preferences were open). Before, a window that never came, or one that
+  went without closing (logout, a killed process), left it on `all-notes`,
+  and the Extensions app then opened on All notes.
+
+### Two writers
+
+The island and the window are two processes that may edit the same note.
+Both save through `noteWriter.js`:
+
+- Each write names the etag (modification time) of the version it
+  replaces. If the file changed since, the writer reads it. The same text
+  as ours: take its etag. Our base text (only the time changed, e.g. a sync
+  tool touched it): write again. Anything else: keep both. Ours goes to a
+  new note `<name> (conflict)` (or `(conflict) (2)` and so on, made with
+  `create`, so it never overwrites anything), which becomes the open note,
+  with the notice "“Plan” changed elsewhere. Your version was kept as “Plan
+  (conflict)”." A copy starts without labels and yellow.
+- Writes run one after the other, each with the etag the previous one
+  returned. A write in flight finishes after disable or a screen lock,
+  conflict copy included.
+- A note deleted elsewhere while it has unsaved edits: they go to a copy.
+- **A save that fails** (no permission, a full disk, a USB or network
+  folder that went away) leaves the text unsaved, with the error shown: it
+  is tried again with the next keystroke or switch. Neither the island nor
+  the window opens another note over it (a tab or row click, "+" and Enter
+  do nothing until it can be saved); `NoteWriter.open()` throws rather than
+  drop unsaved text. When the notes folder changes, text that still cannot
+  be saved in the old folder is kept as `<name> (conflict)` in the new one,
+  which opens, with the notice "“Plan” could not be saved in the previous
+  folder. Your text was kept here as “Plan (conflict)”." Before, picking
+  another note dropped the text and wiped the error.
+- Trash waits for a write in flight (written after the Trash, it would
+  make the note again).
+- A reload never replaces text typed (or saved) while its read was on the
+  way. Before, a keystroke typed during a refresh could be undone by the
+  older text from disk.
+- A rename while the window's library is listing the folder (a slow or
+  large folder) is not taken for a removal: entries renamed after a
+  listing started are left to the next refresh. Before, the renamed note
+  was "removed", and the window saved its unsaved edits as a needless
+  `(conflict)` copy.
+- Limits: folders without etags write unchecked, as before. A save that
+  still fails when the island is disabled (a screen lock) is lost with
+  the island's state, as before. On exFAT,
+  changes less than about 10 ms apart are not told apart (measured), so the
+  last writer wins. A window save racing the island's Trash can make the
+  note again; its text is kept, never lost. The window's process exits 2 s
+  after its window closes; a write still pending then is cut off, and
+  `g_file_replace` keeps the previous file, so at most the last ≤0.8 s of
+  typing is lost.
+
+### How
+
+- **Right-click (the route that shipped):** a `Clutter.ClickGesture` for
+  the secondary button with `recognize_on_press`, added to each tab, as
+  GNOME's app icons do. It is recognized before St.Button's own gesture,
+  which then neither selects nor renames; the headless tests check both.
+  The fallback (button 3 in `button_mask`, handled in `clicked`) was not
+  needed. The keyboard way is St's `popup-menu` signal (Menu, Shift+F10).
+  The double-click detector counts primary presses only.
+- **The menu hangs from the tab's content**, not the tab: a PopupMenu takes
+  over its source's Space and Return, which must stay the tab's.
+- **The entry keeps the focus** until the pointer moves over the menu.
+  GNOME's menu items take the key focus when the pointer enters them; a
+  menu opened from the keyboard under a resting pointer lost the typing to
+  the item below it (found by the headless tests). Items follow the
+  pointer only after a motion inside the menu (`ui/contextMenu.js`).
+- **Flipping a label keeps the menu open:** the items override
+  `activate()` instead of emitting 'activate', which would close the menu.
+- **Tabs are rebuilt only when the notes or the selection change**, so a
+  folder event (or a label written) leaves an open menu alone. A rename or
+  Trash rebuilds them, and the menu closes with its source. The service
+  tells the view when a refresh changed the list, its order or the
+  colours, also when the open note is unchanged: a note made by another
+  program (or a window's conflict copy) used to get its tab only once
+  something else changed.
+- **Hub header actions** (`ui/hubHeader.js`): a view may expose
+  `headerActions`, widgets it owns and destroys; the hub places them
+  between 📅 and ⚙️, only while that tab is active. The hub also reports a
+  `minWidth`: the island grows so that the centred panic bar stays 8 px
+  clear of the tab column and of the header's buttons (4 panic buttons need
+  about 378 px; the Notes default, 428, is unchanged). The value it returns
+  is always the one it reports. With no panic buttons it used to return 0
+  while still reporting the last width, so the header's allocation watch
+  saw a change on every frame of an expand: about 60 resizes, each
+  restarting the animation (1.5 s, no bounce) until panic buttons came
+  back or the extension restarted.
+- **Lifecycle, Shell:** the button lives with the Notes view. The label
+  menu exists only while open (one modal grab, one uiGroup child, one focus
+  group, one `Main.sessionMode` and one `system-modal-opened` handler) and
+  is destroyed when it closes, on a tab switch or collapse, and on disable
+  or lock. No new timer, monitor or subprocess.
+- **Lifecycle, window:** while the page is shown, one folder monitor and up
+  to 8 reads in flight; while its editor has unsaved text, one 0.8 s
+  one-shot timer. Everything stops when the page is left or the window
+  closes.
+
 ## 1. Goal
 
 The hub gets a Notes tab: a quick plain-text / Markdown scratch space.
@@ -108,19 +366,38 @@ features/notes/
 │                 which formatting applies there (toggle state)
 ├── render.js     pure: rendered Markdown spans, markers to hide
 ├── styler.js     Pango attributes on the editor from render.js
-├── store.js      Gio async file I/O: list, read, atomic write, create,
-│                 rename (never overwrites), trash; folder monitor
-├── service.js    notes list + selection; queued operations; autosave
-├── tabs.js       St: capsule tabs, inline rename, two-step ×
+├── labels.js     pure: labels, their file, label filters
+├── search.js     pure: folding, search, ranking, excerpts, Pango markup
+├── store.js      Gio async file I/O: list, read, atomic write (etag-
+│                 checked), create, rename (never overwrites), trash,
+│                 conflict copies, labels file; folder monitor
+├── noteWriter.js autosave of one note: etag checks, conflict copies
+│                 (shared by the island and the window)
+├── service.js    notes list + selection; queued operations; labels
+├── tabs.js       St: capsule tabs, inline rename, two-step ×, right-click
+├── labelMenu.js  St: a note's labels in a GNOME popup menu
+├── headerActions.js  St: "All notes" in the hub header, tinted
 ├── formatBar.js  St: formatting buttons; lights the active toggles
 ├── view.js       St: composes tabs, fold button, tools row, editor,
 │                 empty state
 ├── icons/        ⤴ / ⤵ fold icons (symbolic SVG)
-└── prefs.js      Notes settings tab: enable, folder
+├── prefs.js      Notes settings tab: enable, folder, All notes
+├── library.js    window side, no GTK: every note, followed by the monitor
+├── allNotesPage.js  GTK: the All notes page (search, labels, list)
+└── allNotesNote.js  GTK: its note pane (header, Labels, editor)
 ```
 
-`names.js`, `markdown.js`, `store.js` and `service.js` have unit tests
-(`tools/unit/`, plain `gjs`, isolated temporary folders).
+`names.js`, `markdown.js`, `labels.js`, `search.js`, `store.js`,
+`noteWriter.js`, `service.js` and `library.js` have unit tests
+(`tools/unit/`, plain `gjs`, isolated temporary folders). The All notes
+page itself (`allNotesPage.js`, `allNotesNote.js`) is driven through its
+widgets in `notes-all-notes.gtk.test.js`: search and bold matches, chips
+with All/Any and Clear, the Labels menu writing the file, Enter into the
+first result, a failed save, a folder change (also with a failed save),
+following the island, a conflict copy's labels, read-only notes. It runs
+on a private Broadway display (`tools/unit/run.sh`) and imports a copy of
+the modules in which the preferences service's gettext import names a
+stub.
 
 ## 4. Behaviour
 

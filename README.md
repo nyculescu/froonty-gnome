@@ -96,7 +96,16 @@ feature has a design note in [docs/features/](docs/features/).
   - Autosave, colours in the style of Sticky Notes, and a formatting bar.
   - A wrap toggle with horizontal scrolling.
   - Rename, middle-click to Trash, and pick-up of edits made in other
-    programs.
+    programs. If a note changes elsewhere while you type, both versions
+    are kept ("<name> (conflict)"). A note that cannot be saved stays
+    open until it can; a note that is not plain UTF-8 text opens
+    read-only.
+  - Labels: right-click a note's tab (or Menu / Shift+F10) to add or remove
+    them. They live in a hidden `.froonty-labels.json`; the `.md` files
+    stay plain Markdown.
+  - **All notes**, a button next to ⚙️ on the Notes tab (tinted with the
+    note's colour), opens every note in a window: search them all, filter
+    by labels (all of them, or any), and read or edit them there.
 - **Claude** tab: your Claude plan's usage (Session, Weekly, Weekly Fable)
   and when each resets, as Claude Code last checked it.
   - It is read from Claude Code's own config file each time the tab opens.
@@ -174,7 +183,9 @@ froonty@catalin/             the extension (this directory is what gets installe
 │   ├── animations.js        content cross-fade
 │   ├── chrome.js            registers the island as chrome + Ctrl+Alt+Tab
 │   ├── collapsedView.js     collapsed content (time, optional date, unread dot)
-│   ├── hub.js               expanded content: tab column, panic bar, 📅, ⚙️
+│   ├── hub.js               expanded content: tab column, panic bar, header
+│   ├── hubHeader.js         its top row: 📅, the active tab's buttons, ⚙️
+│   ├── contextMenu.js       GNOME popup menus for features (note labels)
 │   ├── panicBar.js          up to 5 panic buttons
 │   ├── attentionBar.js      the "Claude needs you" bar under the pill
 │   ├── hoverOpen.js         opens the island after hovering it
@@ -184,7 +195,8 @@ froonty@catalin/             the extension (this directory is what gets installe
 │   ├── calendar/            Calendar tab: Evolution Data Server (eds.js),
 │   │                        month grid, agenda, provider links
 │   ├── notifications/       GNOME's own notifications (through ctx.notifications)
-│   ├── notes/               Markdown notes: store, service, tabs, editor, prefs
+│   ├── notes/               Markdown notes: store, service, tabs, editor,
+│   │                        labels, the All notes window page, prefs
 │   ├── claude/              Claude plan usage, read from Claude Code's config;
 │   │                        livenerf's Opus 5.5 row, fetched from GitHub;
 │   │                        the attention bar's hook script, set-up and model
@@ -201,7 +213,8 @@ froonty@catalin/             the extension (this directory is what gets installe
     ├── notificationStore.js the only code reading or writing them (Shell-free)
     ├── mixer.js             the Shell's shared audio mixer
     ├── claudeAttention.js   the attention bar's apps, windows, focus, banners
-    └── settingsWindow.js    opens or raises the settings window
+    └── settingsWindow.js    opens or raises the settings window (or its
+                             All notes page)
 third_party/livenerf/        git submodule: the benchmark behind the Claude
                              tab's Opus 5.5 row (not installed or packed)
 tools/headless-test/         isolated headless GNOME Shell test harness
@@ -236,7 +249,8 @@ make pack       # build dist/froonty@catalin.shell-extension.zip
 ## Test
 
 ```sh
-make unit       # fast: pure logic and file I/O, no Shell
+make unit       # fast: pure logic and file I/O, no Shell (the GTK
+                # All notes page on a private Broadway display)
 make test       # headless GNOME Shell 50, default and Ubuntu session modes
 tools/headless-test/run.sh --keep   # one mode, keep screenshots and logs
 ```
@@ -275,7 +289,7 @@ its tabs:
 - **Panic buttons:** which buttons, and their order.
 - **Calendar:** enable, Online Accounts, which calendars, size.
 - **Notifications:** enable, size.
-- **Notes:** enable, folder.
+- **Notes:** enable, folder, size, All notes.
 - **Claude:** enable.
 - **Kill Process:** enable, refresh interval, what is never killed, size.
 - **ZeroTier:** enable, allow reading ZeroTier's status.
@@ -307,6 +321,8 @@ The keys behind it:
 | `notes-folder` | `''` | Notes folder; empty means `~/.local/share/froonty/notes` |
 | `notes-wrap` | `true` | Wrap long lines in notes; off scrolls horizontally |
 | `notes-show-tools` | `true` | Show the notes formatting row (it can be folded away) |
+| `notes-label-match` | `all` | All notes window: `all` shows notes with every selected label, `any` with at least one |
+| `settings-window-view` | `settings` | Which page the settings window shows, `settings` or `all-notes` (internal) |
 | `claude-enabled` | `true` | Show the Claude tab |
 | `zerotier-enabled` | `true` | Show the ZeroTier tab |
 | `zerotier-install-checked` | `false` | ZeroTier's installation was checked on the first start (internal) |

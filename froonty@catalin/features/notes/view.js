@@ -11,7 +11,9 @@
 // Renders NotesService state; typing goes to service.setText().
 // ⤴ folds the tools row away for a taller editor; ⤵ brings it back
 // (notes-show-tools). The formatting toggles light up for the formatting
-// at the cursor.
+// at the cursor. A right-click on a tab opens that note's labels
+// (labelMenu.js). In the hub header, while this tab is shown: "All notes"
+// (headerActions.js), tinted with the note's colour.
 
 import Clutter from 'gi://Clutter';
 import Gio from 'gi://Gio';
@@ -23,22 +25,30 @@ import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js'
 import {ColorPicker} from './colorPicker.js';
 import {COLOR_IDS} from './colors.js';
 import {FormatBar} from './formatBar.js';
+import {AllNotesButton} from './headerActions.js';
+import {LabelMenu} from './labelMenu.js';
 import {MarkdownStyler} from './styler.js';
 import {NoteTabs} from './tabs.js';
 
 // ⤴ / ⤵ as bundled symbolic icons: the Unicode arrows need a fallback font
 // whose tall line height made the tab row 11 px taller, and may be missing.
+// Made with the view, not at import time.
 const foldIcon = name => new Gio.FileIcon({
     file: Gio.File.new_for_uri(import.meta.url).get_parent()
         .get_child('icons').get_child(`froonty-fold-${name}-symbolic.svg`),
 });
-const FOLD_UP = foldIcon('up');
-const FOLD_DOWN = foldIcon('down');
 
 export class NotesView {
     constructor(ctx, service) {
         this._service = service;
         this._settings = ctx.settings;
+        this._foldUp = foldIcon('up');
+        this._foldDown = foldIcon('down');
+
+        // Hub header, between 📅 and ⚙️ (owned here, placed by the hub).
+        this._allNotes = new AllNotesButton(() => ctx.openSettingsWindow('all-notes'));
+        this.headerActions = [this._allNotes.actor];
+        this._labelMenu = new LabelMenu(ctx, service);
 
         // Content, plus an overlay layer (fixed positions, click-through) for
         // the tab name bubble.
@@ -73,16 +83,22 @@ export class NotesView {
             onCreate: () => this._create(),
             onRename: async name => {
                 await service.rename(name);
-                this._sync(); // also restores the tab if the name was refused
+                // Rebuilt either way: also restores the tab if the name
+                // was refused.
+                this._sync({forceTabs: true});
             },
             onTrash: name => service.trash(name),
+            onLabels: (name, anchor) => {
+                this._tabs.tooltip.hide();
+                this._labelMenu.open(anchor, name);
+            },
         });
         // After "+": folds the tools row away (icon set in _sync).
         this._toolsButton = new St.Button({
             style_class: 'froonty-icon-button',
             can_focus: true,
             toggle_mode: true,
-            child: new St.Icon({gicon: FOLD_UP}),
+            child: new St.Icon({gicon: this._foldUp}),
         });
         this._toolsButton.connect('clicked', () => this._focusEditor());
         this._tabs.actor.add_child(this._toolsButton);
@@ -140,13 +156,17 @@ export class NotesView {
         Gio.Settings.unbind(this._formatBar.wrapButton, 'checked');
         Gio.Settings.unbind(this._toolsButton, 'checked');
         this._service.disconnect(this._changedId);
+        this._labelMenu.destroy();
+        this._allNotes.destroy();
         this.actor.destroy();
     }
 
     // Shown: typing goes straight into the note (Escape still collapses).
     setActive(active) {
-        if (!active)
+        if (!active) {
+            this._labelMenu.close();
             return;
+        }
         this._focusEditor();
     }
 
@@ -238,25 +258,36 @@ export class NotesView {
         this._empty.add_child(button);
     }
 
-    _sync() {
-        const {notes, selected, text, error} = this._service;
+    _sync({forceTabs = false} = {}) {
+        const {notes, selected, text, error, notice} = this._service;
         const hasNote = selected !== null;
 
-        this._tabs.update(notes, selected, name => this._service.colorOf(name));
+        this._tabs.update(notes, selected, {force: forceTabs});
         const showTools = this._settings.get_boolean('notes-show-tools');
         this._tools.visible = hasNote && showTools;
         if (!this._tools.visible)
             this._colorPicker.setOpen(false);
         this._toolsButton.visible = hasNote;
-        this._toolsButton.child.gicon = showTools ? FOLD_UP : FOLD_DOWN;
+        this._toolsButton.child.gicon = showTools ? this._foldUp : this._foldDown;
         this._toolsButton.accessible_name = showTools
             ? _('Hide formatting tools') : _('Show formatting tools');
         this._colorPicker.setColor(this._service.color);
         this._setTint(this._service.color);
+        this._allNotes.setColor(this._service.color);
         this._scroll.visible = hasNote;
         this._empty.visible = !hasNote;
-        this._error.text = error ?? '';
-        this._error.visible = Boolean(error);
+        // An error, or else what happened to the note (a conflict copy),
+        // why it cannot be edited, or that the order and colours are not
+        // saved.
+        const message = error ?? this._noticeText(notice) ?? (this._service.readOnly
+            ? _('“%s” is not plain UTF-8 text. It is read-only here, so that saving cannot damage it.')
+                .format(selected)
+            : this._service.metaState === 'unreadable'
+                ? _('Order and colours could not be read (.froonty.json), so they are not saved.')
+                : null);
+        this._error.text = message ?? '';
+        this._error.visible = Boolean(message);
+        this._entry.clutter_text.editable = !this._service.readOnly;
 
         // Only replace the text when the service loaded something else;
         // never while it matches what the user is typing.
@@ -266,6 +297,19 @@ export class NotesView {
             this._syncing = false;
         }
         this._syncFormatState();
+    }
+
+    _noticeText(notice) {
+        switch (notice?.kind) {
+        case 'conflict':
+            return _('“%s” changed elsewhere. Your version was kept as “%s”.')
+                .format(notice.name, notice.copy);
+        case 'rescued':
+            return _('“%s” could not be saved in the previous folder. Your text was kept here as “%s”.')
+                .format(notice.name, notice.copy);
+        default:
+            return null;
+        }
     }
 
     // The editor surface takes the note's colour (stylesheet.css).
@@ -290,6 +334,8 @@ export class NotesView {
 
     // Applies a markdown.js edit to the editor text and selection.
     _applyEdit(edit) {
+        if (this._service.readOnly)
+            return;
         const result = edit(this._editorState());
         const text = this._entry.clutter_text;
         text.text = result.text;

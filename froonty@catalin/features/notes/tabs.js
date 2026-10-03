@@ -1,16 +1,19 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Capsule tabs, one per note, plus "+" to add one.
 //
-//   [● as][● 28.09.26 16.03][● Weekly planni…]›  [+]
+//   [as][28.09.26 16.03 ×][Weekly planni…]›  [+]
 //
-//   Each tab is as wide as its name. Names longer than MAX_TITLE_CHARS (a
-//   full "dd.mm.yy hh.mm" is exactly 14) are shortened to 13 characters
-//   plus "…" and shown whole in a bubble while hovered. The row scrolls (wheel or
-//   touchpad; edge fade) and keeps the selected tab in view. ● is the
-//   note's colour.
+//   Each tab is as wide as its name, and shows nothing but its name (no
+//   colour dot, no labels: the row is crowded enough). Names longer than
+//   MAX_TITLE_CHARS (a full "dd.mm.yy hh.mm" is exactly 14) are shortened to
+//   13 characters plus "…" and shown whole in a bubble while hovered. The
+//   row scrolls (wheel or touchpad; edge fade) and keeps the selected tab
+//   in view.
 //
 //   click          select        double-click   rename inline
 //   middle-click   move the note to the Trash at once (like a browser tab)
+//   right-click    the note's labels (labelMenu.js); so do the Menu key and
+//                  Shift+F10 on a focused tab
 //   × (hover)      first click arms it, second click moves the note to the
 //                  Trash; leaving the tab disarms it (no timer involved)
 
@@ -41,9 +44,13 @@ export class NoteTabs {
      * @param {Function} callbacks.onCreate ()
      * @param {Function} callbacks.onRename (newName) renames the selected note
      * @param {Function} callbacks.onTrash (name)
+     * @param {Function} callbacks.onLabels (name, anchor) the note's labels,
+     *   in a menu below `anchor`
      */
     constructor(callbacks) {
         this._callbacks = callbacks;
+        this._last = null;
+        this._renaming = null;
 
         this._box = new St.BoxLayout({style_class: 'froonty-note-tabs'});
         this._scroll = new St.ScrollView({
@@ -77,17 +84,25 @@ export class NoteTabs {
     }
 
     /**
-     * Rebuilds the tabs. Cheap: a handful of buttons.
+     * Rebuilds the tabs when the notes or the selection changed (or when
+     * forced: a refused rename puts the old name back). Cheap: a handful of
+     * buttons. Unchanged, they stay, and so does a label menu open below one.
      *
      * @param {string[]} notes in display order
      * @param {?string} selected
-     * @param {Function} colorOf (name) → colour id
+     * @param {object} [options]
+     * @param {boolean} [options.force]
      */
-    update(notes, selected, colorOf) {
+    update(notes, selected, {force = false} = {}) {
+        const state = JSON.stringify([notes, selected]);
+        if (state === this._last && !force)
+            return;
+        this._last = state;
+        this._renaming = null;
         this._tooltip.hide();
         this._box.destroy_all_children();
         for (const name of notes)
-            this._box.add_child(this._makeTab(name, name === selected, colorOf(name)));
+            this._box.add_child(this._makeTab(name, name === selected));
     }
 
     // Keeps a tab in view. Its allocation is valid when this runs: from
@@ -120,7 +135,7 @@ export class NoteTabs {
         return Clutter.EVENT_STOP;
     }
 
-    _makeTab(name, selected, color) {
+    _makeTab(name, selected) {
         const tab = new St.Button({
             style_class: 'froonty-note-tab',
             accessible_name: name,
@@ -130,11 +145,10 @@ export class NoteTabs {
             // Middle-click closes (trashes) the note, like a browser tab.
             button_mask: St.ButtonMask.ONE | St.ButtonMask.TWO,
         });
-        const box = new St.BoxLayout();
-        box.add_child(new St.Widget({
-            style_class: `froonty-note-dot froonty-note-color-${color}`,
-            y_align: Clutter.ActorAlign.CENTER,
-        }));
+        // The tab's content: [name, ×]. It is also where the label menu
+        // hangs: a PopupMenu takes over its source's Space and Return, which
+        // must stay the tab's.
+        const content = new St.BoxLayout();
         const label = new St.Label({
             style_class: 'froonty-note-tab-label',
             text: shortTitle(name),
@@ -142,10 +156,10 @@ export class NoteTabs {
         });
         // St.Label ellipsizes by default, which would let the row squeeze it.
         label.clutter_text.ellipsize = Pango.EllipsizeMode.NONE;
-        box.add_child(label);
+        content.add_child(label);
         const trashButton = this._makeTrashButton(tab, name);
-        box.add_child(trashButton);
-        tab.set_child(box);
+        content.add_child(trashButton);
+        tab.set_child(content);
 
         tab.connect('clicked', (_tab, button) => {
             if (button === Clutter.BUTTON_MIDDLE)
@@ -154,6 +168,22 @@ export class NoteTabs {
                 this._callbacks.onSelect(name);
         });
         this._tooltip.attach(tab, () => (shortTitle(name) === name ? null : name), 'below');
+
+        // Right-click, as GNOME's app icons do: a gesture of its own that is
+        // recognized on press, before St.Button's own (which then does not
+        // select the tab). The keyboard way: Menu or Shift+F10 (St's
+        // 'popup-menu'). Not while the tab is being renamed.
+        const labels = () => {
+            if (this._renaming !== tab)
+                this._callbacks.onLabels(name, content);
+        };
+        const rightClick = new Clutter.ClickGesture({
+            required_button: Clutter.BUTTON_SECONDARY,
+            recognize_on_press: true,
+        });
+        rightClick.connect('recognize', labels);
+        tab.add_action(rightClick);
+        tab.connect('popup-menu', labels);
         tab.connect('key-focus-in', () => this._scrollTo(tab));
         // Once, when first laid out: later allocations (hover shows the
         // close button) must not undo the user's scrolling.
@@ -168,6 +198,10 @@ export class NoteTabs {
         // against the system double-click time instead.
         let lastPress = 0;
         tab.connect('button-press-event', (_actor, event) => {
+            // Only primary presses count: a right-press then a left-press
+            // is no double-click.
+            if (event.get_button() !== Clutter.BUTTON_PRIMARY)
+                return Clutter.EVENT_PROPAGATE;
             // Presses on × are not rename clicks: × is clicked twice on purpose.
             if (trashButton.contains(global.stage.get_event_actor(event)))
                 return Clutter.EVENT_PROPAGATE;
@@ -199,8 +233,13 @@ export class NoteTabs {
             if (!alive)
                 return;
             // Takes room only where it is usable: on hover and on the selected
-            // tab, so other tabs stay as narrow as their names.
+            // tab, so other tabs stay as narrow as their names. The tab's
+            // right padding shrinks with it, so a bare name stays centred.
             button.visible = tab.hover || tab.checked;
+            if (button.visible)
+                tab.add_style_class_name('froonty-note-tab-closable');
+            else
+                tab.remove_style_class_name('froonty-note-tab-closable');
             button.remove_style_class_name('froonty-armed');
             button.child.icon_name = 'window-close-symbolic';
             button.accessible_name = _('Move to Trash');
@@ -215,7 +254,7 @@ export class NoteTabs {
             button.accessible_name = _('Click again to move to Trash');
         });
         tab.connect('notify::hover', () => disarm());
-        button.visible = tab.checked;
+        disarm();
         return button;
     }
 
@@ -228,11 +267,13 @@ export class NoteTabs {
             text: name,
             can_focus: true,
         });
-        // set_child() only detaches the old content (dot, name, ×); destroy it
+        // set_child() only detaches the old content (name, ×); destroy it
         // explicitly rather than leaving it to the garbage collector.
+        this._renaming = tab;
         const oldContent = tab.child;
         tab.set_child(entry);
         oldContent.destroy();
+        tab.remove_style_class_name('froonty-note-tab-closable');
         // The entry shows the full name; the bubble would cover it.
         this._tooltip.hide();
         // The tab changes width: keep it in view once laid out again. After

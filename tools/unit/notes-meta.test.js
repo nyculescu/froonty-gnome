@@ -4,13 +4,16 @@
 import {test, eq, done} from './test.js';
 import * as Meta from '../../froonty@catalin/features/notes/meta.js';
 
-const meta = (order, colors = {}) => ({version: 1, order, colors});
+const meta = (order, colors = {}, extra = {}) => ({version: 1, order, colors, extra});
 
-test('parse: tolerates garbage, drops unknown and default colours', () => {
-    eq(Meta.parseMeta('not json'), Meta.emptyMeta());
-    eq(Meta.parseMeta('{"order": "x"}'), Meta.emptyMeta());
+test('parse: odd entries are dropped; a file that is not understood is reported', () => {
+    eq(Meta.parseMeta('{"order": "x"}'), {ok: true, meta: Meta.emptyMeta()});
     eq(Meta.parseMeta('{"order": ["a", 3, "a"], "colors": {"a": "green", "b": "neon", "c": "yellow"}}'),
-        meta(['a'], {a: 'green'}));
+        {ok: true, meta: meta(['a'], {a: 'green'})});
+    eq(Meta.parseMeta(''), {ok: true, meta: Meta.emptyMeta()}, 'empty: nothing, and writable');
+    for (const text of ['not json', '{"version": 1, "order": ["B", "A"], "colors": {"A": "green"',
+        '{"version": 1, "order": ["B", "A"],}', '[1, 2]', 'null', '{"version": 2, "order": []}'])
+        eq(Meta.parseMeta(text).ok, false, text);
 });
 
 test('order: creation order first, then unknown notes by name', () => {
@@ -40,6 +43,20 @@ test('withNote appends once; snapshot keeps only existing notes', () => {
     eq(Meta.withNote(meta(['a', 'b']), 'a').order, ['b', 'a']);
     eq(Meta.snapshot(meta(['x', 'a'], {x: 'gray', a: 'green'}), ['a']),
         meta(['a'], {a: 'green'}));
+});
+
+test('unknown top-level keys survive parse, snapshot and serialize', () => {
+    const text = JSON.stringify({future: {a: [1, 2]}, version: 1, order: ['a', 'b'],
+        colors: {a: 'green'}, note: 'kept', __proto__x: 1});
+    const {meta: m} = Meta.parseMeta(text);
+    eq(m.extra, {future: {a: [1, 2]}, note: 'kept', __proto__x: 1});
+    const written = JSON.parse(Meta.serializeMeta(Meta.snapshot(Meta.withColor(m, 'b', 'pink'), ['a', 'b'])));
+    eq(written, {future: {a: [1, 2]}, note: 'kept', __proto__x: 1, version: 1, order: ['a', 'b'],
+        colors: {a: 'green', b: 'pink'}});
+    // A key named __proto__ stays a plain key, not a prototype.
+    const {meta: odd} = Meta.parseMeta('{"version": 1, "order": [], "colors": {}, "__proto__": {"x": 1}}');
+    eq(JSON.parse(Meta.serializeMeta(odd)).__proto__, {x: 1});
+    eq(Meta.colorOf(Meta.emptyMeta(), 'constructor'), 'yellow', 'names are not object properties');
 });
 
 await done();

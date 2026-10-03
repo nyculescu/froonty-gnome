@@ -8,7 +8,9 @@
 // The .md files stay plain Markdown (no front matter), so other editors
 // see only the text. The files on disk decide which notes exist; the
 // metadata only orders and colours them, and entries for vanished notes
-// are dropped whenever it is written.
+// are dropped whenever it is written. Top-level keys this version does
+// not know are kept (`extra`) and written back as found. A file that
+// cannot be read is never written (parseMeta, store.js readMeta).
 
 import {COLOR_IDS, DEFAULT_COLOR} from './colors.js';
 import {compareNames} from './names.js';
@@ -16,29 +18,51 @@ import {compareNames} from './names.js';
 export const META_FILE = '.froonty.json';
 
 export function emptyMeta() {
-    return {version: 1, order: [], colors: {}};
+    // `extra` has no prototype: a key may be "__proto__".
+    return {version: 1, order: [], colors: {}, extra: Object.create(null)};
 }
 
-/** Parses the file; anything unexpected is ignored rather than fatal. */
+/**
+ * Parses the file. A file that cannot be understood (not JSON, not an
+ * object, another version) is reported, never repaired: Froonty then
+ * neither trusts nor writes it, so a typo made by hand or a half-synced
+ * file does not cost the order and the colours. Inside a readable file,
+ * odd entries are ignored one by one. An empty file holds nothing and may
+ * be written.
+ *
+ * @returns {{ok: true, meta: object} | {ok: false, reason: string}}
+ */
 export function parseMeta(text) {
+    if (text === '')
+        return {ok: true, meta: emptyMeta()};
     let data;
     try {
         data = JSON.parse(text);
     } catch {
-        return emptyMeta();
+        return {ok: false, reason: 'not valid JSON'};
     }
+    if (!data || typeof data !== 'object' || Array.isArray(data))
+        return {ok: false, reason: 'not a JSON object'};
+    if (data.version !== undefined && data.version !== 1)
+        return {ok: false, reason: `version ${JSON.stringify(data.version)}`};
     const meta = emptyMeta();
-    if (Array.isArray(data?.order))
+    if (Array.isArray(data.order))
         meta.order = [...new Set(data.order.filter(n => typeof n === 'string'))];
-    for (const [name, color] of Object.entries(data?.colors ?? {})) {
+    const colors = data.colors && typeof data.colors === 'object' ? data.colors : {};
+    for (const [name, color] of Object.entries(colors)) {
         if (COLOR_IDS.includes(color) && color !== DEFAULT_COLOR)
             meta.colors[name] = color;
     }
-    return meta;
+    for (const [key, value] of Object.entries(data)) {
+        if (!['version', 'order', 'colors'].includes(key))
+            meta.extra[key] = value;
+    }
+    return {ok: true, meta};
 }
 
 export function serializeMeta(meta) {
-    return `${JSON.stringify(meta, null, 2)}\n`;
+    const {version, order, colors} = meta;
+    return `${JSON.stringify({...meta.extra, version, order, colors}, null, 2)}\n`;
 }
 
 /**
@@ -54,17 +78,17 @@ export function orderedNames(diskNames, meta) {
 }
 
 export function colorOf(meta, name) {
-    return meta.colors[name] ?? DEFAULT_COLOR;
+    return Object.hasOwn(meta.colors, name) ? meta.colors[name] : DEFAULT_COLOR;
 }
 
 /** Metadata for writing: current display order, colours of existing notes. */
 export function snapshot(meta, names) {
     const colors = {};
     for (const name of names) {
-        if (meta.colors[name])
+        if (Object.hasOwn(meta.colors, name))
             colors[name] = meta.colors[name];
     }
-    return {version: 1, order: [...names], colors};
+    return {version: 1, order: [...names], colors, extra: Object.assign(Object.create(null), meta.extra)};
 }
 
 export function withNote(meta, name) {

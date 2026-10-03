@@ -37,6 +37,17 @@
       <description>The feature id shown when the island expands (see features/registry.js).</description>
     </key>
 
+    <!-- Settings window (shell/settingsWindow.js, prefs.js) -->
+    <key name="settings-window-view" type="s">
+      <choices>
+        <choice value="settings"/>
+        <choice value="all-notes"/>
+      </choices>
+      <default>'settings'</default>
+      <summary>Page the settings window shows (internal)</summary>
+      <description>Set by the Shell before it opens the settings window, and kept in step by the window: "settings" for the settings tabs, "all-notes" for the All notes page.</description>
+    </key>
+
     <!-- Panic buttons (docs/features/panic-buttons.md) -->
     <key name="panic-buttons" type="as">
       <default>['mute-microphone', 'mute-sound']</default>
@@ -98,6 +109,15 @@
     <key name="notes-last" type="s">
       <default>''</default>
       <summary>Note selected last</summary>
+    </key>
+    <key name="notes-label-match" type="s">
+      <choices>
+        <choice value="all"/>
+        <choice value="any"/>
+      </choices>
+      <default>'all'</default>
+      <summary>All notes: how selected labels filter</summary>
+      <description>"all": notes that have every selected label; "any": notes that have at least one.</description>
     </key>
 
     <!-- Claude feature (docs/features/claude.md) -->

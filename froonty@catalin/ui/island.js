@@ -34,6 +34,7 @@ import {crossfade, showOnly} from './animations.js';
 import {AttentionBar} from './attentionBar.js';
 import {addIslandChrome, removeIslandChrome} from './chrome.js';
 import {CollapsedView} from './collapsedView.js';
+import {ContextMenu} from './contextMenu.js';
 import {IslandGeometry} from './geometry.js';
 import {HoverOpen} from './hoverOpen.js';
 import {Hub} from './hub.js';
@@ -57,7 +58,8 @@ export class Island {
      * @param {PanelClock} panelClock the concealed top bar clock the
      *   collapsed pill must cover
      * @param {object} actions
-     * @param {Function} actions.openSettings opens Froonty's settings window
+     * @param {Function} actions.openSettings (view) opens Froonty's settings
+     *   window on 'settings' or 'all-notes'
      */
     constructor(settings, clock, panelClock, {openSettings}) {
         this._settings = settings;
@@ -68,6 +70,8 @@ export class Island {
         // Whether the user is at the open island: opened on purpose, or
         // since a press, or a key or scroll that counts (_isDeliberate).
         this._engaged = false;
+        // Context menus features opened (ctx.contextMenu), while they exist.
+        this._menus = new Set();
         this._themeContext = St.ThemeContext.get_for_stage(global.stage);
         // "When Claude needs you" (docs/features/claude-attention.md).
         this._attention = null;
@@ -103,6 +107,10 @@ export class Island {
     }
 
     destroy() {
+        // An open context menu holds a modal grab above the island's.
+        for (const menu of [...this._menus])
+            menu.destroy();
+
         // Release the modal grab first. Setting _expanded beforehand turns
         // the resulting onUngrab callback into a no-op instead of starting a
         // collapse animation on actors that are about to be destroyed.
@@ -202,10 +210,16 @@ export class Island {
     }
 
     // Collapsing first releases the modal grab, so the settings window can
-    // take keyboard focus when it appears.
-    _openSettings() {
+    // take keyboard focus when it appears (and saves an open note).
+    _openSettings(view = 'settings') {
         this.collapse();
-        this._openSettingsAction();
+        this._openSettingsAction(view);
+    }
+
+    _trackMenu(menu) {
+        this._menus.add(menu);
+        menu.actor.connect('destroy', () => this._menus.delete(menu));
+        return menu;
     }
 
     // GNOME's menu opens first, above the island, and takes the keyboard
@@ -264,9 +278,15 @@ export class Island {
             // Releases the grab, e.g. so a browser or Settings opened from
             // a tab can take the focus.
             collapse: () => this.collapse(),
+            // Collapses the island, then opens the settings window on
+            // 'settings' or 'all-notes'.
+            openSettingsWindow: view => this._openSettings(view),
+            // A GNOME popup menu below `source` (ui/contextMenu.js); it is
+            // destroyed with the island at the latest.
+            contextMenu: (source, params) => this._trackMenu(new ContextMenu(source, params)),
         };
         this._hub = new Hub(ctx, FEATURES, {
-            openSettings: () => this._openSettings(),
+            openSettings: () => this._openSettings('settings'),
             openCalendar: this._calendarMenu.available
                 ? () => this._openCalendar() : null,
         });
@@ -358,7 +378,11 @@ export class Island {
         const node = this._pill.get_theme_node();
         const tabs = this._hub.minHeight + node.get_vertical_padding() +
             node.get_border_width(St.Side.TOP) + node.get_border_width(St.Side.BOTTOM);
-        return {width: size.width, height: Math.max(size.height, tabs)};
+        // Wide enough that the centred panic bar clears the tab column and
+        // the header's buttons.
+        const header = this._hub.minWidth + node.get_horizontal_padding() +
+            node.get_border_width(St.Side.LEFT) + node.get_border_width(St.Side.RIGHT);
+        return {width: Math.max(size.width, header), height: Math.max(size.height, tabs)};
     }
 
     // Places the strip on the primary monitor and snaps the pill to the

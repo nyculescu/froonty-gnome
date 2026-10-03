@@ -10,6 +10,18 @@
 //     prevention does not focus the new window.
 //   - The window has no GTK application id; it is identified by its WM class
 //     (the service's app id) and its title (the extension's name).
+//
+// The window has two views: the settings tabs, and the All notes page (a
+// subpage, features/notes/allNotesPage.js). Which one shows is the
+// settings-window-view key, set here before the window is opened or raised;
+// the window follows it, and keeps it in step when the user navigates.
+//
+// The key outlives a window that never came (another extension's
+// preferences were open: "Already showing a prefs dialog") or went without
+// closing (the session ended, the process was killed). With no window of
+// ours, it goes back to "settings": when the wait for a requested window
+// gives up, and on enable (login, unlock). So the Extensions app opens on
+// the settings next time.
 
 import GLib from 'gi://GLib';
 import Gio from 'gi://Gio';
@@ -17,6 +29,7 @@ import Gio from 'gi://Gio';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 const PREFS_SERVICE = 'org.gnome.Shell.Extensions';
+const VIEW_KEY = 'settings-window-view';
 const PREFS_OBJECT_PATH = '/org/gnome/Shell/Extensions';
 // Stop waiting for the requested window after this long (it normally
 // appears within a second; the service may be starting up).
@@ -26,14 +39,20 @@ export class SettingsWindow {
     /**
      * @param {string} uuid extension uuid
      * @param {string} title window title, i.e. the extension's name
+     * @param {Gio.Settings} settings Froonty's settings (shared with the window)
      */
-    constructor(uuid, title) {
+    constructor(uuid, title, settings) {
         this._uuid = uuid;
         this._title = title;
+        this._settings = settings;
         this._waitTimeoutId = 0;
+        this._resetViewWithoutWindow();
     }
 
-    open() {
+    /** @param {'settings'|'all-notes'} view the page to show */
+    open(view = 'settings') {
+        if (this._settings.get_string(VIEW_KEY) !== view)
+            this._settings.set_string(VIEW_KEY, view);
         const window = this._findWindow();
         if (window) {
             Main.activateWindow(window);
@@ -43,6 +62,7 @@ export class SettingsWindow {
         this._activateWhenShown();
         this._request().catch(e => {
             this._stopWaiting();
+            this._resetViewWithoutWindow();
             logError(e, 'Froonty: could not open the settings window');
         });
     }
@@ -95,8 +115,18 @@ export class SettingsWindow {
             WINDOW_WAIT_SECONDS, () => {
                 this._waitTimeoutId = 0;
                 this._stopWaiting();
+                // No window came (e.g. another extension's preferences
+                // were open): nothing will set the page back.
+                this._resetViewWithoutWindow();
                 return GLib.SOURCE_REMOVE;
             });
+    }
+
+    // The All notes page is asked for only while a window of ours exists
+    // or is on its way; otherwise the key goes back to the settings.
+    _resetViewWithoutWindow() {
+        if (this._settings.get_string(VIEW_KEY) !== 'settings' && !this._findWindow())
+            this._settings.set_string(VIEW_KEY, 'settings');
     }
 
     _stopWaiting() {

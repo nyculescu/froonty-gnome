@@ -27,7 +27,7 @@ export default class FroontyExtension extends Extension {
     enable() {
         this._settings = this.getSettings();
         this._panelClock = new PanelClock();
-        this._settingsWindow = new SettingsWindow(this.uuid, this.metadata.name);
+        this._settingsWindow = new SettingsWindow(this.uuid, this.metadata.name, this._settings);
         this._clock = null;
         this._island = null;
         this._launcher = null;
@@ -148,7 +148,7 @@ export default class FroontyExtension extends Extension {
         this._clock = new ClockService(this._settings);
         this._clock.start();
         this._island = new Island(this._settings, this._clock, this._panelClock, {
-            openSettings: () => this._settingsWindow.open(),
+            openSettings: view => this._settingsWindow.open(view),
         });
 
         this._syncPanelClock();

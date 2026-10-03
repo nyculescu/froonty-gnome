@@ -400,8 +400,19 @@ function makeFakeFeature(log) {
         createView: () => {
             log.push('view');
             const actor = new St.Label({text: 'fake feature'});
-            return {actor, destroy: () => {
+            // A button of its own in the hub header (view.headerActions).
+            const action = new St.Button({
+                style_class: 'froonty-icon-button',
+                accessible_name: 'Fake action',
+                can_focus: true,
+                track_hover: true,
+                child: new St.Icon({icon_name: 'dialog-information-symbolic'}),
+            });
+            log.action = action;
+            action.connect('destroy', () => (log.actionDestroyed = true));
+            return {actor, headerActions: [action], destroy: () => {
                 log.push('destroy');
+                action.destroy();
                 actor.destroy();
             }};
         },
@@ -554,6 +565,21 @@ async function testHub(outDir) {
             settings().get_string('hub-last-tab') === 'test-fake');
         await screenshotTop(outDir, 'hub-two-tabs');
 
+        // Its header button: between 📅 and ⚙️, only while its tab is active.
+        const hub = island()._hub;
+        const action = log.action;
+        const [cal, act, gear] = [hub.calendarButton, action, hub.settingsButton].map(boxOf);
+        check('hub: a feature\'s header button sits between 📅 and ⚙️ while its tab is active',
+            action?.mapped && cal.x2 <= act.x1 && act.x2 <= gear.x1 &&
+            Math.abs((act.y1 + act.y2) - (gear.y1 + gear.y2)) <= 4,
+            `📅=[${cal.x1},${cal.x2}] action=[${act.x1},${act.x2}] ⚙️=[${gear.x1},${gear.x2}]`);
+        await movePointerTo((act.x1 + act.x2) / 2, (act.y1 + act.y2) / 2);
+        await sleep(SETTLE_MS);
+        check('hub: hovering it shows its name in the hub tooltip',
+            hub._tooltip.actor.visible && hub._tooltip.actor.text === 'Fake action',
+            `visible=${hub._tooltip.actor.visible} text=${hub._tooltip.actor.text}`);
+        await movePointerTo(...pillCenter());
+
         island().collapse();
         await sleep(animationWait());
         island().expand();
@@ -567,6 +593,8 @@ async function testHub(outDir) {
         check('hub: switching away deactivates the service and resizes back',
             log.at(-1) === 'inactive' && cw === settings().get_int('expanded-width') * scale(),
             `${log.join(',')} width=${cw}`);
+        check('hub: another tab hides the feature\'s header button',
+            !log.action.mapped && !log.actionDestroyed);
 
         await clickActor(tabButton('test-fake'));
         await sleep(animationWait());
@@ -576,6 +604,7 @@ async function testHub(outDir) {
         await setExtensionEnabled(false);
         check('hub: disable destroys the view and stops the service',
             log.includes('destroy') && log.includes('stop'), log.join(','));
+        check('hub: and the view\'s header button with it', log.actionDestroyed === true);
     } finally {
         FEATURES.splice(FEATURES.findIndex(f => f.id === 'test-fake'), 1);
         await setExtensionEnabled(false);
@@ -740,8 +769,8 @@ async function testNotes(outDir) {
         view._entry.text === 'edited elsewhere', view._entry.text);
 
     // × twice moves the selected note to the (isolated) Trash.
-    // Tab content: [colour dot, name, ×].
-    const close = view._tabs._box.get_child_at_index(0).child.get_child_at_index(2);
+    // Tab content: [name, ×].
+    const close = view._tabs._box.get_child_at_index(0).child.get_child_at_index(1);
     await clickActor(close);
     await clickActor(close);
     await sleep(2 * SETTLE_MS);
@@ -788,9 +817,24 @@ async function testNotesTabsAndColors(outDir) {
     check('colour: saved in .froonty.json, not in the .md file',
         meta.colors[service.selected] === 'green' &&
         !readNote(`${service.selected}.md`).includes('green'), JSON.stringify(meta));
-    const selectedTab = view._tabs._box.get_children().find(t => t.checked);
-    check('colour: the tab dot shows the colour',
-        selectedTab.child.get_child_at_index(0).has_style_class_name('froonty-note-color-green'));
+    // No colour dot in any tab (user request): the name only, plus ×.
+    const dotted = [];
+    const visit = actor => {
+        const classes = actor.style_class ?? '';
+        if (/froonty-note-dot|froonty-note-color-/.test(classes))
+            dotted.push(describeActor(actor));
+        actor.get_children().forEach(visit);
+    };
+    const allTabs = view._tabs._box.get_children();
+    allTabs.forEach(visit);
+    check('tabs: no tab has a colour dot; a tab holds [name, ×]',
+        dotted.length === 0 && allTabs.every(t => t.child.get_n_children() === 2 &&
+            t.child.get_child_at_index(0) instanceof St.Label &&
+            t.child.get_child_at_index(1).has_style_class_name('froonty-note-tab-close')),
+        dotted.join(', '));
+    check('colour: the surface and the colour button show green',
+        view._scroll.has_style_class_name('froonty-note-color-green') &&
+        view._colorPicker.button.child.has_style_class_name('froonty-note-color-green'));
     await screenshotTop(outDir, 'notes-green');
 
     // ---- tab strip: tabs as wide as their names (up to ~14 characters)
@@ -804,7 +848,7 @@ async function testNotesTabsAndColors(outDir) {
     const [scrollW] = scroll.get_transformed_size();
     // Names of up to 14 characters are shown whole; longer ones end in "…".
     const ellipsized = tabs.filter(t => {
-        const shown = t.child.get_child_at_index(1).text;
+        const shown = t.child.get_child_at_index(0).text;
         return [...t.accessible_name].length <= 14
             ? shown !== t.accessible_name : !shown.endsWith('…');
     });
@@ -868,6 +912,8 @@ async function testNotesTabsAndColors(outDir) {
         adjustment.value < before, `${before} -> ${adjustment.value}`);
     await screenshotTop(outDir, 'notes-many-tabs');
 
+    await testNoteLabels(outDir, view, service);
+
     // Middle-click an unselected tab: that note goes to the Trash at once.
     const inRow = t => {
         const b = boxOf(t);
@@ -902,12 +948,12 @@ async function testNotesTabsAndColors(outDir) {
     await sleep(SETTLE_MS);
     await hoverTab(fourteen);
     check('tabs: a 14-character name is not cut and shows no bubble',
-        !tooltip.visible && fourteen.child.get_child_at_index(1).text === fourteen.accessible_name,
+        !tooltip.visible && fourteen.child.get_child_at_index(0).text === fourteen.accessible_name,
         fourteen.accessible_name);
     await service.rename('Weekly planning and shopping list');
     await sleep(2 * SETTLE_MS);
     const longTab = view._tabs._box.get_children().find(t => t.checked);
-    const longLabel = longTab.child.get_child_at_index(1);
+    const longLabel = longTab.child.get_child_at_index(0);
     await hoverTab(longTab);
     check('tabs: a long name is cut and shown whole in a bubble on hover',
         longLabel.text === 'Weekly planni…' && tooltip.visible &&
@@ -999,6 +1045,152 @@ async function testNotesTabsAndColors(outDir) {
     await sleep(animationWait());
 }
 
+// ---------------------------------------------------------------- note labels
+
+const labelsFile = () => notesFolder().get_child('.froonty-labels.json');
+
+function labelsOnDisk() {
+    try {
+        const [, bytes] = labelsFile().load_contents(null);
+        return JSON.parse(new TextDecoder().decode(bytes)).labels;
+    } catch {
+        return null;
+    }
+}
+
+const labelMenuOf = view => view._labelMenu._menu;
+
+async function pressWith(modifier, keyval) {
+    await pressKeys(modifier, keyval);
+}
+
+// A right-click on a note tab opens its labels in a GNOME popup menu under
+// the tab; so do Menu and Shift+F10 on a focused tab.
+async function testNoteLabels(outDir, view, service) {
+    const inRow = t => {
+        const b = boxOf(t);
+        const r = boxOf(view._tabs._scroll);
+        return b.x1 >= r.x1 - 1 && b.x2 <= r.x2 + 1;
+    };
+    const tabs = () => view._tabs._box.get_children();
+    const target = tabs().find(t => !t.checked && inRow(t));
+    const name = target.accessible_name;
+    const selectedBefore = service.selected;
+    const modalBefore = Main.modalCount;
+    const focusBefore = global.stage.key_focus;
+    const t = boxOf(target);
+    pointer.notify_absolute_motion(now(), (t.x1 + t.x2) / 2, (t.y1 + t.y2) / 2);
+    await sleep(50);
+    pointer.notify_button(now(), Clutter.BUTTON_SECONDARY, Clutter.ButtonState.PRESSED);
+    await sleep(30);
+    pointer.notify_button(now(), Clutter.BUTTON_SECONDARY, Clutter.ButtonState.RELEASED);
+    await sleep(animationWait());
+
+    let menu = labelMenuOf(view);
+    // The menu's visible box (its actor also holds the room of the arrow).
+    const m = menu ? boxOf(menu.actor.bin) : null;
+    const stack = Main.layoutManager.uiGroup.get_children();
+    const state = () => `open=${labelMenuOf(view)?.isOpen} modal=${Main.modalCount} (before ${modalBefore}) ` +
+        `selected=${service.selected} expanded=${island().expanded}`;
+    check('labels: a right-click on a tab opens its menu below that tab, above the island',
+        menu?.isOpen && m.y1 >= t.y2 - 1 && m.x1 < t.x2 && m.x2 > t.x1 &&
+        stack.indexOf(menu.actor) > stack.indexOf(strip()),
+        m ? `menu=[${m.x1},${m.y1} - ${m.x2},${m.y2}] tab=[${t.x1},${t.y1} - ${t.x2},${t.y2}]` : 'no menu');
+    check('labels: the menu holds one modal grab; the tab is not selected or renamed',
+        Main.modalCount === modalBefore + 1 && service.selected === selectedBefore &&
+        !tabs().some(tab => tab.child instanceof St.Entry), state());
+    check('labels: its entry has the key focus',
+        global.stage.key_focus === view._labelMenu._entry?.clutter_text, `${global.stage.key_focus}`);
+    await screenshotTop(outDir, 'notes-label-menu', 420);
+
+    // Enter adds a new label to that note and keeps the menu open.
+    await typeText('work');
+    await screenshotTop(outDir, 'notes-label-menu-filtered', 420);
+    await pressKeys(Clutter.KEY_Return);
+    await sleep(2 * SETTLE_MS);
+    check('labels: typing a new label and Enter writes it to .froonty-labels.json, menu still open',
+        JSON.stringify(labelsOnDisk()?.[name]) === '["work"]' && labelMenuOf(view)?.isOpen &&
+        view._labelMenu._entry.text === '', `${JSON.stringify(labelsOnDisk())} ${state()}`);
+    const item = view._labelMenu._section.items.find(i => i.label?.text === 'work');
+    check('labels: the new label is listed, ticked', item?.checked === true);
+
+    await clickActor(item);
+    await sleep(2 * SETTLE_MS);
+    check('labels: a click on a ticked label removes it, menu still open',
+        !labelsOnDisk()?.[name] && labelMenuOf(view)?.isOpen && item.checked === false,
+        `${JSON.stringify(labelsOnDisk())} ${state()}`);
+    await clickActor(item);
+    await sleep(2 * SETTLE_MS);
+    check('labels: and another click puts it back',
+        JSON.stringify(labelsOnDisk()?.[name]) === '["work"]', JSON.stringify(labelsOnDisk()));
+
+    // Folder events do not rebuild the tabs, so the menu stays.
+    notesFolder().get_child('unrelated.txt').replace_contents('x', null, false, 0, null);
+    await sleep(1500);
+    check('labels: an unrelated change in the folder leaves the menu open',
+        labelMenuOf(view)?.isOpen === true, state());
+    notesFolder().get_child('unrelated.txt').delete(null);
+    check('labels: labels never show in the tab',
+        tabs().find(tab => tab.accessible_name === name)?.child.get_n_children() === 2);
+
+    await pressKeys(Clutter.KEY_Escape);
+    await sleep(animationWait());
+    check('labels: Escape closes only the menu; the grab is gone, the focus is back',
+        !labelMenuOf(view) && island().expanded && Main.modalCount === modalBefore &&
+        global.stage.key_focus === focusBefore,
+        `${state()} focus=${global.stage.key_focus} before=${focusBefore}`);
+    const boxpointers = Main.layoutManager.uiGroup.get_children()
+        .filter(a => a.has_style_class_name?.('froonty-label-menu'));
+    check('labels: the closed menu is destroyed', boxpointers.length === 0, `${boxpointers.length} left`);
+
+    // Keyboard: Menu, then Shift+F10, on a focused tab.
+    const focusTab = tabs().find(tab => tab.accessible_name === name);
+    focusTab.grab_key_focus();
+    const focusTrail = [];
+    const trailId = global.stage.connect('notify::key-focus',
+        () => focusTrail.push(describeActor(global.stage.key_focus ?? global.stage)));
+    await pressKeys(Clutter.KEY_Menu);
+    await sleep(animationWait());
+    global.stage.disconnect(trailId);
+    check('labels: Menu on a focused tab opens its menu, the entry focused',
+        labelMenuOf(view)?.isOpen && view._labelMenu._name === name &&
+        global.stage.key_focus === view._labelMenu._entry?.clutter_text,
+        `${state()} name=${view._labelMenu._name} focus trail: ${focusTrail.join(' > ')}`);
+    await pressKeys(Clutter.KEY_Escape);
+    await sleep(animationWait());
+    check('labels: Escape gives the focus back to the tab',
+        !labelMenuOf(view) && global.stage.key_focus === focusTab, `${global.stage.key_focus}`);
+    await pressWith(Clutter.KEY_Shift_L, Clutter.KEY_F10);
+    await sleep(animationWait());
+    check('labels: Shift+F10 opens it too', labelMenuOf(view)?.isOpen === true, state());
+    await pressKeys(Clutter.KEY_Escape);
+    await sleep(animationWait());
+    check('labels: and Escape closes it', !labelMenuOf(view) && Main.modalCount === modalBefore, state());
+
+    // Regressions: Return selects a focused tab; a right-press then a
+    // left-press on the selected tab is no double-click.
+    focusTab.grab_key_focus();
+    await pressKeys(Clutter.KEY_Return);
+    await sleep(2 * SETTLE_MS);
+    check('labels: Return on a focused tab still selects it', service.selected === name, service.selected);
+    const selectedTab = tabs().find(tab => tab.checked);
+    const sb = boxOf(selectedTab);
+    pointer.notify_absolute_motion(now(), (sb.x1 + sb.x2) / 2 - 10, (sb.y1 + sb.y2) / 2);
+    await sleep(50);
+    pointer.notify_button(now(), Clutter.BUTTON_SECONDARY, Clutter.ButtonState.PRESSED);
+    pointer.notify_button(now(), Clutter.BUTTON_SECONDARY, Clutter.ButtonState.RELEASED);
+    await sleep(40);
+    pointer.notify_button(now(), Clutter.BUTTON_PRIMARY, Clutter.ButtonState.PRESSED);
+    pointer.notify_button(now(), Clutter.BUTTON_PRIMARY, Clutter.ButtonState.RELEASED);
+    await sleep(animationWait());
+    check('labels: a right-press then a left-press on the selected tab does not rename it',
+        !tabs().some(tab => tab.child instanceof St.Entry), state());
+    if (labelMenuOf(view))
+        await pressKeys(Clutter.KEY_Escape);
+    await sleep(animationWait());
+    check('labels: no grab left', Main.modalCount === modalBefore && island().expanded, state());
+}
+
 // Rendered Markdown: the note is drawn formatted; its text stays Markdown.
 // Markers hide off the line being edited, as in Obsidian's live preview.
 async function testRenderedMarkdown(outDir, view) {
@@ -1085,6 +1277,351 @@ async function testToolsFold(outDir, view) {
         toggle.child.gicon.get_file().get_basename().includes('fold-up') && view._scroll.height === editorHeight,
         `editor ${view._scroll.height}`);
     settings().reset('notes-show-tools');
+}
+
+// ---------------------------------------------------------------- notes header
+
+const viewKey = () => settings().get_string('settings-window-view');
+
+async function waitForKey(value, timeoutMs = 3000) {
+    for (let waited = 0; waited < timeoutMs && viewKey() !== value; waited += 100)
+        await sleep(100);
+    return viewKey() === value;
+}
+
+async function waitForFocus(window, timeoutMs = 3000) {
+    for (let waited = 0; waited < timeoutMs && global.display.focus_window !== window; waited += 100)
+        await sleep(100);
+    return global.display.focus_window === window;
+}
+
+async function screenshotAll(outDir, name) {
+    const stream = Gio.File.new_for_path(GLib.build_filenamev([outDir, `${name}.png`]))
+        .replace(null, false, Gio.FileCreateFlags.NONE, null);
+    await new Shell.Screenshot().screenshot(false, stream);
+    stream.close(null);
+}
+
+// Notes' "All notes" in the hub header: between 📅 and ⚙️, only on the
+// Notes tab, tinted with the note's colour; it opens the settings window
+// on its All notes page.
+async function testNotesHeader(outDir) {
+    const hub = () => island()._hub;
+    const modalBefore = Main.modalCount;
+    island().expand();
+    await sleep(animationWait());
+    await clickActor(tabButton('clock'));
+    await sleep(animationWait());
+    const {view, service} = hub()._entries.get('notes');
+    const button = view._allNotes.actor;
+    check('notes header: "All notes" is not shown on the Clock tab', !button.mapped);
+    await clickActor(tabButton('notes'));
+    await sleep(animationWait());
+    const [cal, btn, gear] = [hub().calendarButton, button, hub().settingsButton].map(boxOf);
+    const middle = b => (b.y1 + b.y2) / 2;
+    check('notes header: on the Notes tab "All notes" sits between 📅 and ⚙️, centres level',
+        button.mapped && cal.x2 <= btn.x1 && btn.x2 <= gear.x1 &&
+        Math.abs(middle(cal) - middle(btn)) <= 2 && Math.abs(middle(gear) - middle(btn)) <= 2,
+        `📅=[${cal.x1},${cal.y1} - ${cal.x2},${cal.y2}] button=[${btn.x1},${btn.y1} - ${btn.x2},${btn.y2}] ` +
+        `⚙️=[${gear.x1},${gear.y1} - ${gear.x2},${gear.y2}]`);
+    check('notes header: it is an icon button like ⚙️ (16 px icon, same size)',
+        button.child.get_width() === 16 * scale() && Math.abs((btn.x2 - btn.x1) - (gear.x2 - gear.x1)) <= 1 &&
+        Math.abs((btn.y2 - btn.y1) - (gear.y2 - gear.y1)) <= 1, `${btn.x2 - btn.x1}x${btn.y2 - btn.y1}`);
+    const row = view._tabs.actor.get_children();
+    check('notes header: the tab row holds only the note tabs, "+" and the fold button',
+        row.length === 3 && row[1] === view._tabs.addButton && row[2] === view._toolsButton,
+        row.map(describeActor).join(', '));
+
+    await movePointerTo((btn.x1 + btn.x2) / 2, (btn.y1 + btn.y2) / 2);
+    await sleep(SETTLE_MS);
+    const tip = hub()._tooltip.actor;
+    check('notes header: hovering it says "All notes"',
+        tip.visible && tip.text === 'All notes' && button.accessible_name === 'All notes',
+        `visible=${tip.visible} text=${tip.text}`);
+    const editor = boxOf(view._scroll);
+    const away = [(editor.x1 + editor.x2) / 2, (editor.y1 + editor.y2) / 2];
+    await movePointerTo(...away);
+    await sleep(SETTLE_MS);
+
+    // Keyboard order: 📅 → All notes → ⚙️.
+    hub().calendarButton.grab_key_focus();
+    await pressKeys(Clutter.KEY_Tab);
+    const first = global.stage.key_focus;
+    await pressKeys(Clutter.KEY_Tab);
+    const second = global.stage.key_focus;
+    check('notes header: Tab goes 📅 → All notes → ⚙️',
+        first === button && second === hub().settingsButton, `${first} then ${second}`);
+    view._entry.clutter_text.grab_key_focus();
+    await sleep(SETTLE_MS);
+
+    // The tint follows the note's colour; ⚙️ stays plain.
+    const background = actor => actor.get_theme_node().get_background_color();
+    const rgba = c => `rgba(${c.red},${c.green},${c.blue},${c.alpha})`;
+    const tints = () => button.style_class.split(/\s+/).filter(c => c.startsWith('froonty-notes-action-'));
+    let restAlpha = 0;
+    for (const color of ['yellow', 'green', 'charcoal']) {
+        await service.setColor(color);
+        await sleep(2 * SETTLE_MS);
+        const c = background(button);
+        const g = background(hub().settingsButton);
+        const hue = color === 'yellow' ? c.red >= c.green && c.green > c.blue
+            : color === 'green' ? c.green > c.red && c.green > c.blue : true;
+        check(`notes header: ${color} note → the button has a faint ${color} wash, ⚙️ none`,
+            tints().join() === `froonty-notes-action-${color}` && c.alpha > 0 && c.alpha < 128 &&
+            g.alpha === 0 && hue, `${tints().join()} ${rgba(c)} ⚙️ ${rgba(g)}`);
+        await screenshotTop(outDir, `notes-header-${color}`, 120);
+        if (color === 'green')
+            restAlpha = c.alpha;
+    }
+    await service.setColor('green');
+    await sleep(2 * SETTLE_MS);
+    await movePointerTo((btn.x1 + btn.x2) / 2, (btn.y1 + btn.y2) / 2);
+    await sleep(SETTLE_MS);
+    const hover = background(button);
+    check('notes header: hovering it deepens the wash', button.hover && hover.alpha > restAlpha,
+        `${rgba(hover)} at rest alpha ${restAlpha}`);
+    await screenshotTop(outDir, 'notes-header-hover', 120);
+    await movePointerTo(...away);
+    button.grab_key_focus();
+    await sleep(SETTLE_MS);
+    const focused = background(button);
+    check('notes header: focused, it keeps the deeper wash and the focus ring',
+        focused.alpha > restAlpha && button.get_theme_node().get_box_shadow() !== null, rgba(focused));
+    await screenshotTop(outDir, 'notes-header-focus', 120);
+    view._entry.clutter_text.grab_key_focus();
+    await service.setColor('yellow');
+    await sleep(2 * SETTLE_MS);
+
+    // Four panic buttons at the narrowest Notes width: the island grows
+    // so the centred panic bar clears the tab column and the header.
+    settings().set_strv('panic-buttons', ['mute-microphone', 'mute-sound', 'claude-session', 'block-camera']);
+    settings().set_int('notes-width', 360);
+    await sleep(animationWait() + SETTLE_MS);
+    const node = pill().get_theme_node();
+    const frame = node.get_horizontal_padding() + node.get_border_width(St.Side.LEFT) +
+        node.get_border_width(St.Side.RIGHT);
+    const [wide] = pill().get_transformed_size();
+    const bar = boxOf(hub()._panicBar.actor);
+    const leftmost = Math.min(...hub()._header.end.get_children().filter(b => b.visible).map(b => boxOf(b).x1));
+    const tabsRight = boxOf(hub()._tabColumn).x2;
+    check('notes header: with 4 panic buttons at width 360 the island grows to fit them',
+        wide >= hub().minWidth + frame - 1 && wide > 360 * scale(),
+        `island ${wide}, needs ${hub().minWidth} + ${frame}`);
+    check('notes header: the panic bar stays 8 px clear of the header buttons and the tabs',
+        leftmost - bar.x2 >= 8 * scale() - 1 && bar.x1 - tabsRight >= 8 * scale() - 1,
+        `tabs end ${tabsRight}, bar [${bar.x1},${bar.x2}], header from ${leftmost}`);
+    await screenshotTop(outDir, 'notes-header-4-panic-360', 120);
+    settings().reset('panic-buttons');
+    settings().reset('notes-width');
+    await sleep(animationWait() + SETTLE_MS);
+    const [back] = pill().get_transformed_size();
+    check('notes header: back to the defaults, the island is 428 px wide again',
+        back === 428 * scale(), `${back}`);
+
+    // A click: the island closes (saving the note), the settings window
+    // opens on All notes.
+    await clickActor(button);
+    const window = await waitForSettingsWindow();
+    check('notes header: a click collapses the island and releases its grab',
+        !island().expanded && Main.modalCount === modalBefore,
+        `expanded=${island().expanded} modalCount=${Main.modalCount} before ${modalBefore}`);
+    check('notes header: it asks for the All notes page', viewKey() === 'all-notes', viewKey());
+    check('notes header: the "Froonty" window opens and gets the focus',
+        window !== null && await waitForFocus(window), `focus=${global.display.focus_window?.get_title()}`);
+    await sleep(1500);
+    await screenshotAll(outDir, 'all-notes-window');
+
+    // Again: the same window is raised.
+    Main.overview.show();
+    await sleep(animationWait());
+    Main.overview.hide();
+    await sleep(animationWait());
+    global.display.focus_default_window(global.get_current_time());
+    island().expand();
+    await sleep(animationWait());
+    await clickActor(view._allNotes.actor);
+    await sleep(1000);
+    check('notes header: a second click raises the same window',
+        settingsWindows().length === 1 && global.display.focus_window === window,
+        `windows=${settingsWindows().length} focus=${global.display.focus_window?.get_title()}`);
+
+    // ⚙️ takes the window back to the settings.
+    island().expand();
+    await sleep(animationWait());
+    await clickActor(hub().settingsButton);
+    await sleep(1500);
+    check('notes header: ⚙️ asks for the settings page of the same window',
+        viewKey() === 'settings' && settingsWindows().length === 1, viewKey());
+    await screenshotAll(outDir, 'all-notes-back-to-settings');
+    await closeSettingsWindows();
+    check('notes header: windows closed, the view key is "settings"',
+        settingsWindows().length === 0 && await waitForKey('settings'), viewKey());
+}
+
+// End to end: the island's note, edited in the All notes window; then a
+// conflict with another program. Opening on All notes also proves the
+// subpage is pushed before the window is first shown.
+async function testAllNotesWindow(outDir) {
+    const hub = () => island()._hub;
+    const {service, view} = hub()._entries.get('notes');
+    const file = name => notesFolder().get_child(`${name}.md`);
+    // What the island's tab row shows (not only what the service knows).
+    const tabNames = () => view._tabs._box.get_children().map(tab => tab.accessible_name);
+    file('e2e').replace_contents('hello', null, false, 0, null);
+    file('follow').replace_contents('f', null, false, 0, null);
+    await sleep(1500);
+    await service.select('e2e');
+    check('all notes: the island knows the note "e2e"', service.selected === 'e2e' && service.text === 'hello',
+        `${service.selected}: ${service.text}`);
+
+    island().expand();
+    await sleep(animationWait());
+    await clickActor(tabButton('notes'));
+    await sleep(animationWait());
+    await clickActor(hub()._entries.get('notes').view._allNotes.actor);
+    const window = await waitForSettingsWindow();
+    const focused = window !== null && await waitForFocus(window);
+    await sleep(2000); // the page is shown, the notes read, the search focused
+    check('all notes: the window opens focused on All notes', focused && viewKey() === 'all-notes',
+        `focus=${global.display.focus_window?.get_title()} key=${viewKey()}`);
+    await screenshotAll(outDir, 'all-notes-e2e');
+
+    // Return in the empty search: into the note, at its end.
+    await pressKeys(Clutter.KEY_Return);
+    await typeText('!');
+    await sleep(1500);
+    check('all notes: typing in the window saves the note after the pause',
+        readNote('e2e.md') === 'hello!', JSON.stringify(readNote('e2e.md')));
+    island().expand();
+    await sleep(animationWait());
+    check('all notes: the island shows the window\'s edit', service.text === 'hello!', service.text);
+    island().collapse();
+    await sleep(animationWait());
+    Main.activateWindow(window);
+    await waitForFocus(window);
+    await sleep(300);
+
+    // Typing, then another program writes the note before the pause ends.
+    await typeText('?');
+    await sleep(100);
+    file('e2e').replace_contents('external', null, false, 0, null);
+    await sleep(1500);
+    let copy = null;
+    try {
+        copy = readNote('e2e (conflict).md');
+    } catch {}
+    check('all notes: an edit elsewhere during typing keeps both: ours as "e2e (conflict)"',
+        copy === 'hello!?' && readNote('e2e.md') === 'external',
+        `copy=${JSON.stringify(copy)} e2e=${JSON.stringify(readNote('e2e.md'))}`);
+    await screenshotAll(outDir, 'all-notes-conflict');
+    await sleep(1500);
+    check('all notes: the island\'s tab row shows the copy the window made',
+        service.selected === 'e2e' && tabNames().includes('e2e (conflict)'),
+        `selected=${service.selected} tabs=${tabNames().join(', ')}`);
+
+    // The island moves to another note; its button raises the window,
+    // which follows it (typing goes there, not into the copy).
+    await service.select('follow');
+    island().expand();
+    await sleep(animationWait());
+    await clickActor(view._allNotes.actor);
+    const raised = await waitForFocus(window);
+    await sleep(1500);
+    await typeText('#');
+    await sleep(1500);
+    check('all notes: raised from the island on another note, the window follows it',
+        raised && readNote('follow.md') === '#f' && readNote('e2e (conflict).md') === 'hello!?',
+        `focus=${raised} follow=${JSON.stringify(readNote('follow.md'))} ` +
+        `copy=${JSON.stringify(readNote('e2e (conflict).md'))}`);
+    await screenshotAll(outDir, 'all-notes-follows-island');
+
+    await closeSettingsWindows();
+    check('all notes: closing the window on All notes sets the view key back to "settings"',
+        settingsWindows().length === 0 && await waitForKey('settings'), viewKey());
+
+    // A note made by another program shows as a tab, though the open
+    // note did not change.
+    file('zzz external').replace_contents('x', null, false, 0, null);
+    await sleep(2000);
+    check('all notes: a note that appears in the folder gets its tab at once',
+        tabNames().includes('zzz external') && service.notes.includes('zzz external'),
+        tabNames().join(', '));
+    file('zzz external').delete(null);
+    await sleep(1500);
+}
+
+// The settings-window-view key never outlives a window that is not there:
+// on enable (login, unlock) and when the wait for a requested window gives
+// up (e.g. another extension's preferences were open), it goes back to
+// "settings"; with the window open on All notes it is kept.
+async function testSettingsViewKey() {
+    settings().set_string('settings-window-view', 'all-notes'); // left over
+    await setExtensionEnabled(false);
+    await setExtensionEnabled(true);
+    check('view key: a left-over "all-notes" without a window is reset on enable',
+        viewKey() === 'settings', viewKey());
+
+    extension().stateObj._settingsWindow.open('all-notes');
+    const window = await waitForSettingsWindow();
+    await sleep(1500);
+    await setExtensionEnabled(false); // as a screen lock does
+    await setExtensionEnabled(true);
+    check('view key: kept while the window is open on All notes (lock and unlock)',
+        window !== null && viewKey() === 'all-notes' && settingsWindows().length === 1,
+        `key=${viewKey()} windows=${settingsWindows().length}`);
+    await closeSettingsWindows();
+    await waitForKey('settings');
+
+    // Nothing opens (as when another extension's preferences are open:
+    // the service answers "Already showing a prefs dialog").
+    const settingsWindow = extension().stateObj._settingsWindow;
+    settingsWindow._request = async () => {};
+    settingsWindow.open('all-notes');
+    const asked = viewKey();
+    await sleep(5000);
+    const waiting = viewKey();
+    // The wait is a timeout_add_seconds (10 s), which GLib may run up to
+    // a second late.
+    const reset = await waitFor(() => viewKey() === 'settings', 8000);
+    delete settingsWindow._request;
+    check('view key: no window came: back to "settings" when the wait gives up',
+        asked === 'all-notes' && waiting === 'all-notes' && reset && settingsWindows().length === 0,
+        `asked=${asked} after 5 s=${waiting} now=${viewKey()} windows=${settingsWindows().length}`);
+}
+
+// Disable (e.g. a screen lock) with the label menu open: no menu, grab or
+// handler is left behind.
+async function testLabelMenuLifecycle() {
+    const hub = () => island()._hub;
+    const modalBefore = Main.modalCount;
+    const menus = () => Main.layoutManager.uiGroup.get_children()
+        .filter(a => a.has_style_class_name?.('popup-menu-boxpointer')).length;
+    const handlers = () => ({
+        systemModal: countHandlers(Main.layoutManager, 'system-modal-opened'),
+        session: jsHandlerCount(Main.sessionMode, 'updated'),
+    });
+    island().expand();
+    await sleep(animationWait());
+    await clickActor(tabButton('notes'));
+    await sleep(animationWait());
+    const view = hub()._entries.get('notes').view;
+    const menusBefore = menus();
+    const handlersBefore = handlers();
+    const tab = view._tabs._box.get_children().find(t => t.checked);
+    tab.grab_key_focus();
+    await pressKeys(Clutter.KEY_Menu);
+    await sleep(animationWait());
+    check('labels lifecycle: the menu is open before disabling',
+        view._labelMenu.isOpen && menus() === menusBefore + 1 && Main.modalCount === modalBefore + 2,
+        `menus=${menus()} modal=${Main.modalCount}`);
+    await setExtensionEnabled(false);
+    check('labels lifecycle: disable removes the open menu and both grabs',
+        menus() === menusBefore && Main.modalCount === modalBefore, `menus=${menus()} modal=${Main.modalCount}`);
+    await setExtensionEnabled(true);
+    await sleep(SETTLE_MS);
+    check('labels lifecycle: after enable, the same handlers as before',
+        JSON.stringify(handlers()) === JSON.stringify(handlersBefore),
+        `${JSON.stringify(handlersBefore)} -> ${JSON.stringify(handlers())}`);
 }
 
 // ---------------------------------------------------------------- claude
@@ -2592,7 +3129,7 @@ async function testSettingsButton(outDir) {
     // 📅), Enter activates it.
     island().expand();
     await sleep(animationWait());
-    for (let i = 0; i < 8 && global.stage.key_focus !== gear; i++)
+    for (let i = 0; i < 12 && global.stage.key_focus !== gear; i++)
         await pressKeys(Clutter.KEY_Tab);
     check('Tab reaches ⚙️', global.stage.key_focus === gear,
         `focus=${global.stage.key_focus}`);
@@ -2782,6 +3319,43 @@ async function testLifecycle() {
 
 // ---------------------------------------------------------------- hub layout
 
+// Without panic buttons the hub needs no room for them: an expand reports
+// its size once and reaches its width within the animation. (A stale
+// minimum width once restarted the resize on every frame: about 60 reports
+// and 1.5 s per expand.)
+async function testHubWithoutPanicButtons() {
+    const s = settings();
+    island().expand();
+    await sleep(animationWait());
+    s.set_strv('panic-buttons', []);
+    await sleep(animationWait());
+    island().collapse();
+    await sleep(animationWait());
+    const hub = island()._hub;
+    let reports = 0;
+    const id = hub.connect('size-changed', () => reports++);
+    const start = now();
+    const widths = [];
+    island().expand();
+    for (let t = 0; t < 1500; t += 25) {
+        widths.push([(now() - start) / 1000, pill().get_transformed_size()[0]]);
+        await sleep(25);
+    }
+    hub.disconnect(id);
+    const final = widths.at(-1)[1];
+    const last = widths.findLastIndex(([, w]) => w !== final);
+    const settledMs = last < 0 ? 0 : widths[Math.min(last + 1, widths.length - 1)][0];
+    const duration = s.get_int('animation-duration');
+    check('layout: without panic buttons an expand reports its size at most once, settling in time',
+        reports <= 1 && settledMs <= duration + 150,
+        `reports=${reports} settled after ${Math.round(settledMs)} ms (animation ${duration} ms) ` +
+        `minWidth=${hub.minWidth} reported=${hub._reportedMinWidth}`);
+    island().collapse();
+    await sleep(animationWait());
+    s.reset('panic-buttons');
+    await sleep(SETTLE_MS);
+}
+
 async function testHubLayout(outDir) {
     island().expand();
     await sleep(animationWait());
@@ -2797,10 +3371,12 @@ async function testHubLayout(outDir) {
         `${boxes.map(b => `[${b.x1},${b.y1}]`).join(' ')} island bottom=${boxOf(pill()).y2}`);
     const bar = boxOf(hub._panicBar.actor);
     const isle = boxOf(pill());
-    check('layout: the panic bar is centered on the island, clear of tabs and ⚙️',
+    const leftmost = Math.min(...hub._header.end.get_children()
+        .filter(b => b.visible).map(b => boxOf(b).x1));
+    check('layout: the panic bar is centered on the island, clear of tabs and the header buttons',
         Math.abs((bar.x1 + bar.x2) / 2 - (isle.x1 + isle.x2) / 2) <= 1 &&
-        bar.x2 <= boxOf(hub.settingsButton).x1 && bar.x1 > Math.max(...boxes.map(b => b.x2)),
-        `bar=[${bar.x1},${bar.x2}] island=[${isle.x1},${isle.x2}]`);
+        bar.x2 <= leftmost && bar.x1 > Math.max(...boxes.map(b => b.x2)),
+        `bar=[${bar.x1},${bar.x2}] island=[${isle.x1},${isle.x2}] header from ${leftmost}`);
 
     const notesBox = boxOf(tabButton('notes'));
     await movePointerTo((notesBox.x1 + notesBox.x2) / 2, (notesBox.y1 + notesBox.y2) / 2);
@@ -3226,7 +3802,7 @@ async function testCalendarMenu(outDir) {
     // Keyboard only: Tab to 📅, Enter.
     island().expand();
     await sleep(animationWait());
-    for (let i = 0; i < 8 && global.stage.key_focus !== button; i++)
+    for (let i = 0; i < 12 && global.stage.key_focus !== button; i++)
         await pressKeys(Clutter.KEY_Tab);
     check('calendar: Tab reaches 📅', global.stage.key_focus === button, state());
     await pressKeys(Clutter.KEY_Return);
@@ -3307,7 +3883,7 @@ async function testCalendarMenu(outDir) {
     await sleep(animationWait());
     hub = island()._hub;
     check('calendar: 📅 carries the dot in the expanded island',
-        hub._unreadBadge.visible && hub._unreadBadge.mapped);
+        hub._header.unreadBadge.visible && hub._header.unreadBadge.mapped);
     await screenshotTop(outDir, 'hub-unread');
     island().collapse();
     await sleep(animationWait());
@@ -3334,7 +3910,7 @@ async function testCalendarMenu(outDir) {
     await sleep(animationWait());
     check('calendar: GNOME\'s list marks it seen, the dot goes; the notification stays',
         calendarMenuOpen() && !gnomeUnreadDot() && !pillUnreadDot() &&
-        !island()._hub._unreadBadge.visible && source.notifications.includes(unseen),
+        !island()._hub._header.unreadBadge.visible && source.notifications.includes(unseen),
         `${state()} kept=${source.notifications.includes(unseen)}`);
     await closeCalendarMenu();
 
@@ -3480,7 +4056,7 @@ async function testNotifications(outDir) {
         await sleep(animationWait());
     };
     const dotsOff = () => !gnomeUnreadDot() && !pillUnreadDot() &&
-        !island()._hub._unreadBadge.visible && !notificationsEntry().dot.visible;
+        !island()._hub._header.unreadBadge.visible && !notificationsEntry().dot.visible;
 
     const critical = notify(build, 'Build failed', {urgency: Urgency.CRITICAL, seconds: 1800, acknowledged: true});
     const recent = notify(mail, 'New mail', {seconds: 120,
@@ -3656,7 +4232,7 @@ async function testNotifications(outDir) {
     await sleep(SETTLE_MS);
     const entry = notificationsEntry();
     check('notifications: a LOW one arriving with Clock on screen lights the tab\'s dot and 📅\'s; the tab says so',
-        entry.dot.visible && entry.dot.mapped && island()._hub._unreadBadge.visible &&
+        entry.dot.visible && entry.dot.mapped && island()._hub._header.unreadBadge.visible &&
         entry.button.accessible_name.endsWith(', unread notifications') && !low.acknowledged,
         `tab dot=${entry.dot.visible} name="${entry.button.accessible_name}"`);
     await screenshotTop(outDir, 'notifications-tab-dot', 520);
@@ -4320,7 +4896,7 @@ async function testNotificationSafeguards(outDir) {
         const lowAfter = notify('Held: low after');
         await sleep(SETTLE_MS);
         check('notifications safeguards: then, with Clock on screen, a LOW one lights the tab\'s, 📅\'s and GNOME\'s dot',
-            !lowAfter.acknowledged && notificationsEntry().dot.visible && island()._hub._unreadBadge.visible &&
+            !lowAfter.acknowledged && notificationsEntry().dot.visible && island()._hub._header.unreadBadge.visible &&
             gnomeUnreadDot(), `tab=${notificationsEntry().dot.visible} gnome=${gnomeUnreadDot()} queue=${tray.queueCount}`);
         await collapse();
         check('notifications safeguards: once the island closes, the held banner shows, and GNOME\'s banner marks it seen',
@@ -5943,6 +6519,7 @@ export async function runAll(outDir) {
         await testKeyboard();
         await testHubLayout(outDir);
         await testPanic(outDir);
+        await testHubWithoutPanicButtons();
         // The camera panic button is switched off for now (panic/catalog.js).
         // await testPanicCamera(outDir);
         await testHoverOpen();
@@ -5958,6 +6535,10 @@ export async function runAll(outDir) {
         await testHub(outDir);
         await testNotes(outDir);
         await testNotesTabsAndColors(outDir);
+        await testNotesHeader(outDir);
+        await testAllNotesWindow(outDir);
+        await testSettingsViewKey();
+        await testLabelMenuLifecycle();
         await testClaude(outDir);
         await testClipboard(outDir);
         await testKillProcess(outDir);

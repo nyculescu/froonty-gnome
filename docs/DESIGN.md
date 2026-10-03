@@ -150,7 +150,7 @@ The hub (`ui/hub.js`) is the expanded content:
 
 ```
 hub     BinLayout, reactive (stops clicks from reaching the pill)
- ├ main     [tab column (GridLayout, TAB_COLUMNS = 1; the island grows to fit it)] [header 📅 ⚙️ / content]
+ ├ main     [tab column (GridLayout, TAB_COLUMNS = 1; the island grows to fit it)] [header 📅 [feature actions] ⚙️ / content]
  ├ panic    panic bar, centered across the island (click-through layer)
  └ overlay  tooltips (click-through, fixed positions)
 ```
@@ -307,6 +307,7 @@ Consequences:
 | `org.gnome.Shell.Extensions.OpenExtensionPrefs` (public D-Bus API of the prefs service); `global.display` `window-created`, `Meta.Window` `shown` / `get_wm_class()`; `Main.activateWindow` | `Shell/Extensions/js/extensionsService.js`, `ui/main.js:878` |
 | Attention bar: `Shell.WindowTracker.get_app_from_pid` / `get_window_app`, `Shell.AppSystem.lookup_app`, `Shell.App.get_windows` / `get_name` / `get_id` / `get_app_info`, `global.display` `notify::focus-window` / `focus_window` / `focus_default_window`, `Main.activateWindow`, `Main.overview` `visible` / `showing` / `hidden` | `shell/claudeAttention.js`, `ui/attentionBar.js` (50.1) |
 | `Main.sessionMode.isLocked`: set from the new mode before `updated`, on which the extension system disables extensions at a lock (`ui/sessionMode.js` `_sync()`, `ui/extensionSystem.js` `_sessionUpdated()`, 50.1) | `shell/claudeAttention.js` `screenLocked()`: the island keeps the attention bar's state folder through a screen lock only |
+| `PopupMenu.PopupMenu`, `PopupMenuManager`, `PopupMenuSection`, `PopupBaseMenuItem` (subclassed; `activate()` overridden so flipping a label does not close the menu, `popupMenu.js:787` in 50.1), `PopupMenuItem`, `Ornament`; `BoxPointer.PopupAnimation`; `Main.uiGroup`. Only in `ui/contextMenu.js` (a note tab's label menu) | `ui/popupMenu.js`, `ui/boxpointer.js`, `ui/main.js` (50.1) |
 
 ### 6.3 Private / internal (isolated in `shell/`)
 
@@ -359,6 +360,32 @@ three GNOME Shell 46 behaviors found while testing:
 - The window has no GTK application id. It is matched by WM class
   (`org.gnome.Shell.Extensions`) and title (the extension name).
 
+The same window also holds the Notes **All notes** page
+([features/notes.md](features/notes.md)), a subpage
+(`Adw.PreferencesWindow.push_subpage`; the window is GNOME's
+`ExtensionPrefsDialog`, an `Adw.PreferencesWindow`):
+
+- The Shell cannot talk to the window, so the page to show travels in the
+  internal `settings-window-view` key (`settings` | `all-notes`). The Shell
+  sets it before it opens or raises the window (`SettingsWindow.open(view)`);
+  the window reads it when it is filled (a subpage pushed before the window
+  is first shown, checked by the headless tests) and follows its changes,
+  sets it as the user navigates (Settings → Notes → All notes, the back
+  arrow), and sets it back to `settings` when it closes on All notes, so the
+  Extensions app opens on the settings next time. Its `close-request`
+  handler runs after the preferences service's own (which forgets the
+  window) and never stops the close.
+- The key would outlive a window that never came ("Already showing a
+  prefs dialog" while another extension's preferences are open) or went
+  without `close-request` (logout, a killed process). With no window of
+  Froonty's, the Shell sets it back to `settings`: on enable (login,
+  unlock; a window left open through a lock keeps its page) and when the
+  10 s wait for a requested window gives up.
+- The preferences process exits 2 s after its last window closes
+  (`IDLE_SHUTDOWN_TIME`, `dbusService.js`). A note write still pending then
+  is cut off; `g_file_replace` keeps the previous file, so at most the last
+  0.8 s of typing is lost.
+
 Two St/Clutter rules also shaped the island:
 
 - `Clutter.BinLayout` honors a child's `x_align`/`y_align` only when the
@@ -405,6 +432,9 @@ Two St/Clutter rules also shaped the island:
 | Timers / GLib sources | **No periodic timer while the island is closed.** One-shot only: the hover-open delay while the pointer rests on the collapsed pill (`HoverOpen`); a 10 s give-up timeout while a requested settings window has not appeared (`SettingsWindow.destroy()`); Notes' 0.8 s autosave while there are unsaved edits (`NotesService.stop()` flushes and removes it); the Clipboard tab's hidden password expiry (`clipboard-password-minutes`), only while one is listed (`ClipboardRecorder.destroy()`). **Two periodic timers**, each only while its tab is on screen: the Btop tab's, every `sysmon-interval` seconds (1-10, default 2), and the Kill Process tab's, every `killprocess-interval` seconds (1-10, default 3), both `timeout_add_seconds` so GLib can batch their wakeups (`SysmonService.setActive(false)`, `KillProcessService.setActive(false)`); plus a 5 s give-up timeout per `nvidia-smi` or `kill` run, and the Kill Process tab's one-shot early reading (0.5 s after it comes on screen or a signal is sent, then each second while a killed process is still listed). At most one pending `BEFORE_REDRAW` later (cover recompute), removed in `PanelClock.restore()`; and at most one in the Kill Process list, which fills its rows after a scroll or a new height (never queued while the tab is hidden; removed when it is hidden or its view destroyed). While a Kill Process reading is in flight, at most one idle (`PRIORITY_DEFAULT_IDLE`) at a time between its batches of reads, removed when the reading is cancelled (`KillProcessService.setActive(false)`); the interval's readings are spaced at least ten times as long as the previous one took. The clock ticks come from the top bar's own WallClock, so Froonty owns none | `ClockService.stop()` |
 | File watching | Notes: one inotify folder monitor (`Gio.FileMonitor`), only while the Notes tab has been opened. Claude: one monitor on Claude Code's config file while the Claude tab is on screen, and one more while the island is open with the Claude session panic button. Attention bar: one folder monitor (`WATCH_MOVES`) on `$XDG_RUNTIME_DIR/froonty/claude-attention`, while the island exists and the bar is on; per state file event one read of at most 4 KiB; per recorded session one `/proc/<pid>/stat` read on arrival, on each move of the focus to another window while an entry with a known app shows, and on each collapse | `NotesService.stop()`; `ClaudeService.setActive(false)`; `AttentionService.stop()` |
 | Attention bar | Signals: message tray `notify::visible`, overview `showing` / `hidden` (adapter, for its life); `org.gnome.desktop.notifications` `changed::show-banners`; 3 settings; tray `source-added` / `source-removed` plus 4 per followed source (the Claude app, browsers) and 3 per followed notification, while those are followed (the Notifications tab's store, with a `filter`; other sources get none); `global.display` `notify::focus-window` only while a shown entry has a known app. One Ctrl+Alt+Tab group, listed only while the bar is mapped. No timer, no process. Disk: the `0700` folder and at most one `0600` file of 4 KiB per waiting session, on tmpfs; kept through a screen lock (what waits survives it), removed by any other disable and when the island or the bar is turned off | `Island.destroy()` (`_stopAttention()`, which also removes the folder unless the screen is locking); turning the bar off also removes the folder |
+| Notes: All notes button | 1 `St.Button` in the hub header (with the Notes view; shown only on the Notes tab); its tooltip handler | `NotesView.destroy()`, then `HubHeader.removeActions()` |
+| Notes: label menu | Only while open: 1 modal grab (POPUP action mode), 1 `uiGroup` child, 1 focus group, 1 `Main.sessionMode` `updated` handler, 1 `system-modal-opened` handler, 1 `labels-changed` and 1 `changed` handler on the Notes service. Label writes only on user action, rename or create | Destroyed on close, tab switch, collapse, `NotesView.destroy()` (disable, lock, Notes off), `Island.destroy()` (backstop), or its tab going away |
+| Settings window (separate process), All notes page | While the page is shown: one folder monitor, up to 8 reads in flight; while its editor has unsaved text, one 0.8 s one-shot timer. The process exits 2 s after its window closes | Page `hidden` and the window's `close-request` |
 | Clipboard | Clipboard tab enabled (off by default): one `owner-changed` connection on `global.display.get_selection()`, one settings connection, and one read per copy (`St.Clipboard`); history and images under `~/.local/share/froonty/clipboard` (0700/0600) | `releaseRecorder()` (extension `disable()`, tab turned off) |
 | Network monitor | Claude: three connections on the shared `Gio.NetworkMonitor` (`network-changed`, `notify::connectivity`, `notify::network-available`) per active reader: the tab while on screen, the panic button while the island is open | `ClaudeService.setActive(false)` |
 | Calendar tab | Nothing at module load or enable but a one-time probe (GIRepository's typelib list). The service, when the tab is first selected: 4 settings handlers (2 Froonty keys, 2 `org.gnome.desktop.calendar`). Once the tab has been shown, until disable: 1 `ESourceRegistry`, 1 `SourceRegistryWatcher` (3 handlers), 1 registry handler, 1 `ECal.Client` per visible calendar (1 handler each). From the first time the tab shows a month until another month or zone (or disable): 1 EDS view per visible calendar (4 handlers each), kept and paused while the tab is not on screen, so opening and closing the island makes **no** EDS call. Each view's `start()` is a **synchronous D-Bus call** to evolution-calendar-factory (libecal offers no other; about 0.3 ms with local calendars), once per calendar and month shown; the months a fast wheel passes through (within 250 ms) get none. Views are never `stop()`ped (also synchronous): they are let go, and libecal disposes of them asynchronously once collected. One asynchronous `get_objects_for_uid` per repeating event (its moved occurrences, which views do not deliver), one `get_timezone` per calendar and unknown zone. Timers: none periodic; one idle to coalesce redraws, one idle shared by every view's expansion (3 ms of work per turn; a series is expanded in slices from a moved start, features/calendar.md §B.6), only while on screen and there is work; a one-shot 250 ms quiet period after a month change; while a calendar loads, redraws at most every 200 ms (a one-shot timeout in place of the idle). libecal, libedataserver, libical(-glib) and libcamel stay mapped once loaded | `CalendarService.stop()` (views let go, in-flight answers cancelled, late views let go, idles and timer removed); `setActive(false)` pauses |
@@ -422,8 +452,11 @@ Two test layers:
   `settings.json` set-up and its model; the
   Notifications tab's store and service (over GObject fakes of GNOME's
   tray, sources and notifications; a destroyed one throws on any access),
-  Notes names,
-  Markdown edits, metadata, file store and service, the panic catalog and
+  Notes names, Markdown edits, metadata, labels, search, file store, note
+  writer, service and the All notes window's library, the All notes page
+  itself (GTK 4 and libadwaita driven through its widgets, `*.gtk.test.js`,
+  on a private Broadway display that `tools/unit/run.sh` starts), the panic
+  catalog and
   the camera switch (on in-memory GSettings backends or a fake, never the
   real settings), the Claude usage parser and service, the Btop tab's
   parsers, sampler (over a fake `/proc` and `/sys`) and polling lifecycle,
@@ -459,15 +492,46 @@ input through Clutter virtual devices and cover:
   keyboard, shortcut and hover, the modal grab, and a real primary-monitor
   switch.
 - **Hub:** the tab column and its tooltips; lazy feature creation and
-  activation, tested with a fake feature.
+  activation, tested with a fake feature, including its header button
+  (between 📅 and ⚙️, only while its tab is active, named in the tooltip,
+  destroyed with the view).
 - **Panic buttons:** real mute and unmute, following changes made elsewhere,
   and the settings rules. Block camera: click and keyboard toggle GNOME's
   `disable-camera` in the private keyfile backend (checked to be private
   first), changes made elsewhere, and no handler left after removal.
 - **Notes:**
-  - create, type, autosave, formatting, rename, Trash, colours, tabs;
+  - create, type, autosave, formatting, rename, Trash, colours, tabs (and
+    no colour dot in them);
   - long-note scrolling and line wrap;
-  - pixel checks that text is really visible, not just scrolled to.
+  - pixel checks that text is really visible, not just scrolled to;
+  - labels: right-click, Menu and Shift+F10 open a GNOME menu under the
+    tab, which neither selects nor renames it; typing and Enter add a label
+    to `.froonty-labels.json`, a click removes it, the menu stays open
+    through folder events, Escape gives the grab and the focus back;
+    disabling with the menu open leaves no menu, grab or handler;
+  - the "All notes" button: only on the Notes tab, between 📅 and ⚙️, Tab
+    order, its tint following the note's colour (read from the theme node)
+    and deepening on hover and focus, the island growing so the panic bar
+    stays clear with four panic buttons at the narrowest width;
+  - the All notes window end to end: opened on that page (and raised, and
+    sent back to the settings by ⚙️), typing saved and seen by the island,
+    an edit elsewhere during typing kept as "e2e (conflict)" and shown in
+    the island's tab row, the window following the island's note when
+    raised from another one, a note made by another program getting its
+    tab at once, the view key back to `settings` when it closes, reset on
+    enable without a window, kept through a lock with one, and reset when
+    no window comes;
+  - without panic buttons, an expand reports its size at most once and
+    settles within the animation.
+- **Unit tests** cover labels, search (accents only, folded strings
+  kept, excerpts on demand), the note writer (etag checks, conflict copies
+  and their labels, a touched file, stop, failed writes, read-only notes),
+  the service's labels, races, failed saves, read-only notes, an
+  unreadable `.froonty.json` and notes appearing elsewhere, the window's
+  library (reads only changed notes, never writes `.froonty.json`, renames
+  during a listing, folder changes) and the All notes page (search, chips,
+  All/Any, Clear, the Labels menu, Enter, failed saves, folder changes,
+  following the island, read-only notes).
 - **Claude:** rows and wording from a private `CLAUDE_CONFIG_DIR`, live
   updates while shown, "Unknown" offline, nothing watched while collapsed,
   a fresh read on reopening.
@@ -520,7 +584,8 @@ input through Clutter virtual devices and cover:
   120 events in an unknown zone) with every expansion turn under a
   frame; disable while loading
   ([features/calendar.md](features/calendar.md) §B.8).
-- **Settings window:** open, raise instead of duplicating, focus.
+- **Settings window:** open, raise instead of duplicating, focus; its All
+  notes page (above).
 - **GNOME's calendar and notification menu:** 📅 by pointer and keyboard,
   Super+V over the open island, one modal grab at a time, the menu above
   the island and taking clicks, the unread dot from a test notification

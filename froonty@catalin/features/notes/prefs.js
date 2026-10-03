@@ -27,6 +27,13 @@ export function notesPage(settings) {
     settings.bind('notes-enabled', enabled, 'active', Gio.SettingsBindFlags.DEFAULT);
     group.add(enabled);
     group.add(folderRow(settings));
+    // Every note, to search and filter by label (allNotesPage.js).
+    const allNotes = new Adw.ButtonRow({
+        title: _('All notes'),
+        end_icon_name: 'go-next-symbolic',
+    });
+    allNotes.connect('activated', () => settings.set_string('settings-window-view', 'all-notes'));
+    group.add(allNotes);
 
     page.add(group);
     page.add(sizeGroup(settings));

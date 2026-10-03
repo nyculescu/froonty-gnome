@@ -17,6 +17,7 @@ import {calendarPage} from './features/calendar/prefs.js';
 import {addIconPath, claudePage} from './features/claude/prefs.js';
 import {clipboardPage} from './features/clipboard/prefs.js';
 import {killProcessPage} from './features/killprocess/prefs.js';
+import {attachAllNotes} from './features/notes/allNotesPage.js';
 import {notesPage} from './features/notes/prefs.js';
 import {notificationsPage} from './features/notifications/prefs.js';
 import {sysmonPage} from './features/sysmon/prefs.js';
@@ -52,6 +53,8 @@ export default class FroontyPreferences extends ExtensionPreferences {
         window.add(killProcessPage(settings));
         addLocalPrefs(window, settings);
         window.visible_page_name = GENERAL_PAGE;
+        // The All notes page (a subpage), when the island asked for it.
+        attachAllNotes(window, settings);
     }
 
     _generalPage(settings) {

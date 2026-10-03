@@ -96,6 +96,35 @@
   - Nothing is watched while the tab is not on screen, and nothing is
     ever removed without a click. Settings → Notifications: show the
     tab, and its size (400 × 440 by default).
+- **Notes: All notes window.** On the Notes tab, a button between 📅 and ⚙️
+  in the island's top row (tinted with a faint wash of the open note's
+  colour, so it reads as part of Notes) opens every note in a window of its
+  own: the settings window's All notes page (Settings → Notes → All notes
+  too). Search all notes at once (every word must match the name, the text
+  or a label; case and accents do not matter), filter by labels, and read
+  or edit a note there; edits save as in the island. The window stays open
+  through a screen lock; its back arrow leads to the settings.
+  - It opens on the note you are on in the island, and follows the island
+    when you have switched notes there since (the button raises the
+    window).
+  - Enter in the search goes into the open note at the first match; if the
+    search hides that note, into the first result, which opens.
+  - Changing the notes folder starts the window over in the new folder,
+    also while it shows the settings.
+  - Accents are ignored as in Latin, Greek and Cyrillic; the vowel signs
+    of Indic scripts and Japanese voicing marks still count.
+- **Notes: labels.** Right-click a note's tab (or Menu / Shift+F10 on it)
+  to give it labels: type to filter or add one, click to turn one on or
+  off. In the All notes window, label chips narrow the list (notes with all
+  the chosen labels, or any of them). Labels are kept in a hidden
+  `.froonty-labels.json` next to the notes, so the `.md` files stay plain
+  Markdown and older Froonty versions leave them alone. A note restored
+  from the Trash gets its labels back.
+- **Notes: conflict copies.** If a note changes elsewhere (another editor,
+  a sync tool, the All notes window) while you have unsaved typing, both
+  versions are kept: yours as "<name> (conflict)", which then stays open,
+  with a line saying so. A file that was only touched, or rewritten with
+  the same text, is no conflict.
 - **Notes: rendered Markdown.** Notes are drawn formatted while staying
   plain Markdown files. Headings are larger, bold is bold, italic is
   italic, struck text is struck, code is monospace, links are underlined,
@@ -150,9 +179,18 @@
 
 ### Changed
 - The camera panic button is switched off for now (its code is kept).
+- Notes: the colour dot is gone from the tabs (more room for names); the
+  note's colour still tints its page, the colour button and the All notes
+  button.
+- Notes: an edit made elsewhere while you are typing no longer waits to
+  be overwritten by your next save: both versions are kept (see conflict
+  copies above). A keystroke typed while the note was being re-read could
+  also be undone by the older text on disk; it no longer is.
 - Notes: paler note surfaces (yellow, green, pink, purple, blue, gray), so
-  the text is easier to read. Tab dots and colour swatches keep the
-  stronger shades that tell the colours apart.
+  the text is easier to read. Colour swatches keep the stronger shades
+  that tell the colours apart.
+- The island grows when the panic buttons and the top row's buttons need
+  more room than its width, so the centred panic bar never overlaps them.
 
 ### Fixed
 - Claude tab: **Set up** and **Remove** for the status line no longer
@@ -166,6 +204,22 @@
   GLib looked for the status line's missing folder every 4 s (its inotify
   backend's rescan of missing paths). Froonty now makes that folder of its
   own (`~/.cache/froonty`, 0700) before watching it.
+- Notes: a note whose save fails (no permission, a full disk, a notes
+  folder on a USB drive or network share that went away) stays open, with
+  its error, until it can be saved. Picking another note used to drop the
+  unsaved text and the error. If you switch to another notes folder
+  meanwhile, the text is kept there as "<name> (conflict)".
+- Notes: a `.froonty.json` that cannot be read (a hand edit with a typo, a
+  half-synced file) is left as it is, and the island says so; once fixed,
+  its order and colours are back. It used to be rewritten at once with the
+  notes in alphabetical order and no colours.
+- Notes: a note that is not plain UTF-8 text (Latin-1, a UTF-16 file from
+  Windows Notepad, NUL bytes) is shown read-only, with a notice. The first
+  keystroke used to replace its accented letters with "�", or cut it at
+  the first NUL, for good.
+- Notes: a note added to the folder by another program, or a colour
+  changed elsewhere, shows in the island at once, not only after something
+  else changed.
 
 ## 0.4.0-rc0 (2026-10-02)
 

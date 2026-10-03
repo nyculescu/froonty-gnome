@@ -3,13 +3,18 @@
 // docs/local/ideas.md) and contains no feature logic of its own:
 //
 //   ┌─────┬────────────────────────────────────┐
-//   │ tab │      [panic][panic]…          📅 ⚙️ │  panic bar (max 5), centered
+//   │ tab │      [panic][panic]…        📅 [a] ⚙️ │  panic bar (max 5), centered
 //   │ tab ├────────────────────────────────────┤
 //   │ …   │        active feature's view      │  content
 //   └─────┴────────────────────────────────────┘
 //     tab column: one icon per feature; its name shows in a tooltip on hover
-//     📅: GNOME's own calendar and notification menu, with GNOME's unread dot
-//     (as does the tab of a feature that asks for it: unreadDot)
+//     header (hubHeader.js): 📅 GNOME's own calendar and notification menu,
+//       [a] the active feature's own buttons (view.headerActions), ⚙️
+//       (GNOME's unread dot on 📅, as on the tab of a feature that asks
+//       for it: unreadDot)
+//
+// The island is at least wide enough (minWidth) that the centred panic bar
+// stays clear of the tab column and of the header's buttons.
 //
 // A feature's view (and its service, if any) is created the first time its
 // tab is selected, and destroyed when the feature is disabled or the hub is
@@ -24,12 +29,15 @@ import Clutter from 'gi://Clutter';
 import St from 'gi://St';
 
 import {EventEmitter} from 'resource:///org/gnome/shell/misc/signals.js';
-import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 
 import {Tooltip} from '../core/tooltip.js';
+import {HubHeader} from './hubHeader.js';
 import {PanicBar} from './panicBar.js';
 
 const LAST_TAB_KEY = 'hub-last-tab';
+
+// Room kept on each side of the centred panic bar (logical px).
+const PANIC_GAP = 8;
 
 // Feature tabs fill a grid column by column. One column: the island grows
 // taller when the tabs need it (minHeight).
@@ -54,8 +62,6 @@ export class Hub extends EventEmitter {
         this._activeId = null;
         this._shown = false;
         this._unread = false;
-        this.calendarButton = null;
-        this._unreadBadge = null;
 
         this._buildActors(openSettings, openCalendar);
 
@@ -82,11 +88,36 @@ export class Hub extends EventEmitter {
      * can grow to show every tab; 0 while there is no column.
      */
     get minHeight() {
-        if (!this._tabColumn.visible || !this._tabColumn.get_stage())
+        const visible = this._tabColumn.visible && this._tabColumn.get_stage();
+        // Kept in step on every path, as for minWidth.
+        this._reportedMinHeight = visible ? this._tabColumn.get_preferred_height(-1)[1] : 0;
+        return this._reportedMinHeight;
+    }
+
+    /**
+     * The width the island's content needs (physical pixels) so that the
+     * panic bar, centred on it, keeps PANIC_GAP clear of the tab column on
+     * the left and of the header's buttons on the right; 0 off stage or
+     * without panic buttons.
+     */
+    get minWidth() {
+        // Whatever it returns is what was reported: the allocation watches
+        // below compare against it, and a stale value made them report a
+        // change on every frame of an animation.
+        this._reportedMinWidth = this._measureMinWidth();
+        return this._reportedMinWidth;
+    }
+
+    _measureMinWidth() {
+        const panic = this._panicBar.actor;
+        if (!this.actor.get_stage() || !panic.visible || panic.get_n_children() === 0)
             return 0;
-        const [, natural] = this._tabColumn.get_preferred_height(-1);
-        this._reportedMinHeight = natural;
-        return natural;
+        const natural = actor => (actor.visible ? actor.get_preferred_width(-1)[1] : 0);
+        const scale = St.ThemeContext.get_for_stage(global.stage).scale_factor;
+        const spacing = this._main.get_theme_node().get_length('spacing');
+        const left = this._tabColumn.visible ? natural(this._tabColumn) + spacing : 0;
+        const right = natural(this._header.end);
+        return natural(panic) + 2 * PANIC_GAP * scale + 2 * Math.max(left, right);
     }
 
     /**
@@ -97,8 +128,7 @@ export class Hub extends EventEmitter {
      */
     setUnread(unread) {
         this._unread = unread;
-        if (this._unreadBadge)
-            this._unreadBadge.visible = unread;
+        this._header.setUnread(unread);
         for (const entry of this._entries.values())
             this._syncEntryUnread(entry);
     }
@@ -147,6 +177,8 @@ export class Hub extends EventEmitter {
         entry.button.checked = true;
         this._ensureView(entry);
         entry.view.actor.show();
+        // Its header buttons, before the size: they may widen the island.
+        this._header.showActions(id);
         this.emit('size-changed');
         this._setEntryActive(entry, this._shown);
         // Only on change: select() also runs on every enable (screen unlock).
@@ -181,6 +213,7 @@ export class Hub extends EventEmitter {
         this.actor.add_action(new Clutter.ClickGesture({required_button: Clutter.BUTTON_PRIMARY}));
 
         const main = new St.BoxLayout({style_class: 'froonty-hub', x_expand: true, y_expand: true});
+        this._main = main;
         this._tabGrid = new Clutter.GridLayout({orientation: Clutter.Orientation.VERTICAL});
         this._tabColumn = new St.Widget({
             style_class: 'froonty-tab-column',
@@ -204,27 +237,13 @@ export class Hub extends EventEmitter {
             x_expand: true,
             y_expand: true,
         });
-        // The header row holds 📅 and ⚙️ on the right; the panic bar is
-        // centered over the whole island in its own layer (see below).
-        const header = new St.BoxLayout({style_class: 'froonty-hub-header'});
-        header.add_child(new St.Widget({x_expand: true}));
+        // The header row holds 📅, the active feature's buttons and ⚙️ on
+        // the right; the panic bar is centered over the whole island in its
+        // own layer (see below).
         this._tooltip = new Tooltip();
-
-        if (openCalendar) {
-            this.calendarButton = this._buildCalendarButton();
-            this.calendarButton.connect('clicked', () => openCalendar());
-            header.add_child(this.calendarButton);
-        }
-
-        this.settingsButton = new St.Button({
-            style_class: 'froonty-icon-button',
-            accessible_name: _('Settings'),
-            can_focus: true,
-            track_hover: true,
-            child: new St.Icon({icon_name: 'emblem-system-symbolic'}),
-        });
-        this.settingsButton.connect('clicked', () => openSettings());
-        header.add_child(this.settingsButton);
+        this._header = new HubHeader(this._tooltip, {openSettings, openCalendar});
+        this.settingsButton = this._header.settingsButton;
+        this.calendarButton = this._header.calendarButton;
 
         this._content = new St.Widget({
             style_class: 'froonty-hub-content',
@@ -232,7 +251,7 @@ export class Hub extends EventEmitter {
             x_expand: true,
             y_expand: true,
         });
-        right.add_child(header);
+        right.add_child(this._header.actor);
         right.add_child(this._content);
         main.add_child(right);
 
@@ -260,6 +279,17 @@ export class Hub extends EventEmitter {
             y_expand: true,
         });
         panicLayer.add_child(this._panicBar.actor);
+        // The panic bar and the header's buttons change width with the
+        // settings and the active tab; once laid out, the island follows
+        // if the room they need changed (as for minHeight).
+        this._reportedMinWidth = 0;
+        for (const actor of [this._panicBar.actor, this._header.end]) {
+            actor.connect('notify::allocation', () => {
+                const reported = this._reportedMinWidth;
+                if (actor.mapped && this.minWidth !== reported)
+                    this.emit('size-changed');
+            });
+        }
 
         const overlay = new St.Widget({x_expand: true, y_expand: true});
         overlay.add_child(this._tooltip.actor);
@@ -267,23 +297,6 @@ export class Hub extends EventEmitter {
         this.actor.add_child(main);
         this.actor.add_child(panicLayer);
         this.actor.add_child(overlay);
-    }
-
-    // 📅 opens GNOME's own calendar and notification menu, which the island
-    // covers. While GNOME's clock would show its unread-notifications dot,
-    // the button carries the same dot.
-    _buildCalendarButton() {
-        const {child, dot} = iconWithDot({icon_name: 'x-office-calendar-symbolic'});
-        this._unreadBadge = dot;
-        const button = new St.Button({
-            style_class: 'froonty-icon-button',
-            accessible_name: _('Calendar and notifications'),
-            can_focus: true,
-            track_hover: true,
-            child,
-        });
-        this._tooltip.attach(button, () => button.accessible_name, 'below');
-        return button;
     }
 
     // Adds entries for newly enabled features, removes disabled ones, and
@@ -357,11 +370,16 @@ export class Hub extends EventEmitter {
         entry.service?.start();
         entry.view = entry.feature.createView(this._ctx, entry.service);
         this._content.add_child(entry.view.actor);
+        // Header buttons of its own (view contract: owned and destroyed by
+        // the view; shown only while its tab is active).
+        this._header.addActions(entry.feature.id, entry.view.headerActions ?? []);
     }
 
     _removeEntry(id) {
         const entry = this._entries.get(id);
+        // The view destroys its own header buttons; then their box goes.
         entry.view?.destroy();
+        this._header.removeActions(id);
         entry.service?.stop();
         entry.button.destroy();
         this._entries.delete(id);
