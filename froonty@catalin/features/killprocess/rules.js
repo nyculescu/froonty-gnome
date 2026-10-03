@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// What the Kill Process tab may kill, and in which order it lists
-// processes (docs/features/kill-process.md). Pure functions, so they load
-// in the Shell, in the preferences window and in plain gjs tests.
+// What the Kill Process tab may kill, in which order it lists processes
+// and how it counts them (docs/features/kill-process.md). Pure functions,
+// so they load in the Shell, in the preferences window and in plain gjs tests.
 
 /**
  * Programs whose death ends the session or takes the desktop with it.
@@ -70,36 +70,84 @@ export function ancestorsOf(selfPid, parents) {
 /**
  * Why a process must not be killed from the tab, or null when it may be.
  *
- * @param {{pid: number, comm: string, args: string[]}} process
+ * @param {{pid: number, comm: string, args: string[], named?: boolean}}
+ *   process; `named`, when given, is isProtectedName(comm, args) worked
+ *   out earlier (the sampler keeps it for each process), and comm and
+ *   args are then not needed
  * @param {{selfPid: number, ancestors: Set<number>}} context
  * @returns {?('shell'|'session')} 'shell' for GNOME Shell itself
  */
-export function protectedReason({pid, comm, args}, {selfPid, ancestors}) {
+export function protectedReason({pid, comm, args, named = isProtectedName(comm, args)},
+    {selfPid, ancestors}) {
     if (pid === selfPid)
         return 'shell';
-    if (!isValidPid(pid) || ancestors.has(pid) || isProtectedName(comm, args))
+    if (!isValidPid(pid) || ancestors.has(pid) || named)
         return 'session';
     return null;
 }
 
-export const SORTS = ['cpu', 'memory'];
+export const SORTS = ['cpu', 'memory', 'threads'];
 
 /**
- * The processes to list: those matching `filter` (name, command line or
- * process id, ignoring case), most CPU or memory first, at most `limit`.
- * Without a CPU reading yet (a visit's first sample), memory decides.
+ * The processes to list, all of those matching `filter` (name, command
+ * line or process id, ignoring case): most CPU, memory or threads first.
+ * Ties go to the busier process (CPU, then memory), then to the lower
+ * process id, so the order holds still between equal readings. Without
+ * a CPU reading yet (a visit's first sample), memory decides.
  *
- * @returns {{shown: object[], matching: number}}
+ * @param {object[]} processes from ProcessSampler.sample
+ * @param {{sort?: string, filter?: string}} [options] sort is one of SORTS
+ * @returns {object[]} a new array
  */
-export function rankProcesses(processes, {sort = 'cpu', filter = '', limit = 30} = {}) {
-    const needle = filter.trim().toLowerCase();
-    const matching = needle
-        ? processes.filter(p => `${p.pid} ${p.name} ${p.command}`.toLowerCase().includes(needle))
-        : [...processes];
+export function rankProcesses(processes, {sort = 'cpu', filter = ''} = {}) {
+    const matching = matchingProcesses(processes, filter);
     const cpu = p => p.cpu ?? -1;
     const byCpu = (a, b) => cpu(b) - cpu(a);
     const byMemory = (a, b) => b.memory - a.memory;
-    const [first, second] = sort === 'memory' ? [byMemory, byCpu] : [byCpu, byMemory];
-    matching.sort((a, b) => first(a, b) || second(a, b) || a.pid - b.pid);
-    return {shown: matching.slice(0, limit), matching: matching.length};
+    const byThreads = (a, b) => b.threads - a.threads;
+    const order = {
+        cpu: [byCpu, byMemory],
+        memory: [byMemory, byCpu],
+        threads: [byThreads, byCpu, byMemory],
+    }[sort] ?? [byCpu, byMemory];
+    return matching.sort((a, b) => {
+        for (const compare of order) {
+            const result = compare(a, b);
+            if (result)
+                return result;
+        }
+        return a.pid - b.pid;
+    });
+}
+
+// Those of `processes` that `filter` matches (all for an empty one), in
+// a new array.
+function matchingProcesses(processes, filter) {
+    const needle = filter.trim().toLowerCase();
+    return needle
+        ? processes.filter(p => `${p.pid} ${p.name} ${p.command}`.toLowerCase().includes(needle))
+        : [...processes];
+}
+
+/** How many of `processes` the filter matches, as rankProcesses lists them. */
+export function countMatching(processes, filter = '') {
+    return filter.trim() ? matchingProcesses(processes, filter).length : processes.length;
+}
+
+/**
+ * The line over the list: how many processes it holds, "Your 256
+ * processes" or, with a filter, "12 of your 256 processes match". Takes
+ * the caller's ngettext (the Shell's, or a test's).
+ *
+ * @param {number} total all of the user's processes
+ * @param {number} matching those the filter matches
+ * @param {boolean} filtered whether a filter is typed
+ * @param {Function} ngettext
+ */
+export function countText(total, matching, filtered, ngettext) {
+    const [text, ...values] = filtered
+        ? [ngettext('%d of your %d processes matches', '%d of your %d processes match',
+            matching), matching, total]
+        : [ngettext('Your %d process', 'Your %d processes', total), total];
+    return values.reduce((result, value) => result.replace('%d', String(value)), text);
 }

@@ -22,7 +22,7 @@ export function killProcessPage(settings) {
 
     const group = new Adw.PreferencesGroup({
         title: _('Kill Process'),
-        description: _('Your own processes, busiest first, each with a button to kill it: a click, then a confirmation. A process is asked to quit first; “Force quit” is offered only if it is still running a few seconds later. Other users’ processes are not listed, and Froonty never asks for administrator rights. It reads the processes only while the tab is on screen.'),
+        description: _('All of your own processes, sorted by CPU load, memory or threads (the toggles in the tab), each with a button to kill it: a click, then a confirmation. A process is asked to quit first; “Force quit” is offered only if it is still running a few seconds later. Other users’ processes are not listed, and Froonty never asks for administrator rights. It reads the processes only while the tab is on screen.'),
     });
     group.add(switchRow(settings, 'killprocess-enabled', _('Show the Kill Process tab')));
     group.add(spinRow(settings, 'killprocess-interval', _('Refresh every (s)')));

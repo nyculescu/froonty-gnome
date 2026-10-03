@@ -6,18 +6,28 @@
 
 // /proc/<pid>/stat flags: a kernel thread (PF_KTHREAD, include/linux/sched.h).
 const PF_KTHREAD = 0x00200000;
-// States of a process that has ended and waits for its parent to reap it.
+// States of a process whose main thread has ended (a zombie, or dead).
 const ENDED_STATES = new Set(['Z', 'X', 'x']);
+// The fields read: from "state" (3) to "rss" (24).
+const FIELDS = 22;
 
 /**
  * One process's /proc/<pid>/stat, or null when it is not one. comm is
  * between the first "(" and the last ")": it may hold spaces and
  * brackets of its own ("(sd-pam)").
  *
+ * A process has ended (waits for its parent to reap it) when its main
+ * thread is a zombie and no other thread is left. A zombie main thread
+ * with others still running (it called pthread_exit) is a live process:
+ * the kernel then reports no memory and no command line for it
+ * (`leaderExited`), but its CPU time is all of its threads', and a
+ * signal still reaches them.
+ *
  * @returns {?{pid: number, comm: string, state: string, ppid: number,
- *   ticks: number, start: number, rssPages: number, kernel: boolean,
- *   ended: boolean}} ticks is user + system CPU time, start the start
- *   time since boot, both in clock ticks
+ *   ticks: number, threads: number, start: number, rssPages: number,
+ *   kernel: boolean, ended: boolean, leaderExited: boolean}} ticks is
+ *   user + system CPU time, start the start time since boot, both in
+ *   clock ticks
  */
 export function parseProcStat(text) {
     if (typeof text !== 'string')
@@ -28,24 +38,31 @@ export function parseProcStat(text) {
         return null;
     const pid = Number(text.slice(0, open).trim());
     // Fields from the third ("state") on; man 5 proc numbers them from 1.
-    const fields = text.slice(close + 1).trim().split(/\s+/);
-    if (!Number.isSafeInteger(pid) || pid < 1 || fields.length < 22)
+    // The kernel separates them with one space; only those needed are
+    // split off (this runs for every process at every reading).
+    const fields = text.slice(close + 1).trimStart().split(' ', FIELDS);
+    if (!Number.isSafeInteger(pid) || pid < 1 || fields.length < FIELDS)
         return null;
     const field = n => Number(fields[n - 3]);
-    const [ppid, flags, utime, stime, start, rssPages] = [4, 9, 14, 15, 22, 24].map(field);
-    if (![ppid, flags, utime, stime, start, rssPages].every(Number.isFinite))
+    // ppid, flags, utime, stime, num_threads, starttime, rss.
+    const values = [4, 9, 14, 15, 20, 22, 24].map(field);
+    if (!values.every(Number.isFinite))
         return null;
+    const [ppid, flags, utime, stime, threads, start, rssPages] = values;
     const state = fields[0];
+    const zombie = ENDED_STATES.has(state);
     return {
         pid,
         comm: text.slice(open + 1, close),
         state,
         ppid,
         ticks: utime + stime,
+        threads,
         start,
         rssPages,
         kernel: (flags & PF_KTHREAD) !== 0,
-        ended: ENDED_STATES.has(state),
+        ended: zombie && threads <= 1,
+        leaderExited: zombie && threads > 1,
     };
 }
 

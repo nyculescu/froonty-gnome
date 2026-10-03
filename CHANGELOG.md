@@ -35,9 +35,15 @@
     underneath the island and counting as seen.
   - Only one of the two is open at a time: opening the island closes
     GNOME's menu, and the menu opening closes the island.
-- **Kill Process tab** (off by default). Your own processes, busiest
-  first (by CPU or by memory, at most 30, with a filter by name, command
-  or process id for the rest), each with a kill button.
+- **Kill Process tab** (off by default). All of your own processes,
+  with their CPU load, memory and number of threads, sorted by any of
+  the three (the CPU, Memory and Threads toggles) and filtered by name,
+  command line or process id, each with a kill button. Only the rows on
+  screen exist, so sorting and showing a long list costs about as much as
+  one screenful. Reading `/proc` still grows with the number of
+  processes: it is read in small batches, with room for the Shell to draw
+  in between, and less often than the interval when one reading takes
+  long.
   - Two clicks: ⊘, then "Kill “name”?". The process is asked to quit
     (SIGTERM). If it is still running 3 s later, the row offers "Force
     quit" (SIGKILL).
@@ -47,12 +53,17 @@
     processes are not listed; Froonty never asks for administrator rights.
   - Right before each signal the process is read again, so a process id
     the kernel has since given to another process is never signalled.
-  - The list holds still while the pointer is on it, so a click never
-    lands on a process that has just moved there.
+  - The list holds still while the pointer is on it (or while the
+    keyboard has put the focus on a row), so a click never lands on a
+    process that has just moved there. The count over it stays current.
+  - Tab scrolls the list to the row it reaches, and a row's buttons act
+    only while the row is on screen, so nothing is killed unseen.
+  - A process whose main thread has ended while its other threads run is
+    listed (and can be killed); its memory shows as "—".
   - It reads `/proc` only while the tab is on screen, every 3 s by
     default, and runs `/usr/bin/kill` once per confirmed step.
   - Settings → Kill Process: show the tab, refresh interval (1-10 s),
-    what is never killed, and the tab's size (480 × 440 by default).
+    what is never killed, and the tab's size (520 × 440 by default).
 
 ### Changed
 - Notes: paler note surfaces (yellow, green, pink, purple, blue, gray), so

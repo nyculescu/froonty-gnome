@@ -3,12 +3,20 @@
 // and the check made right before one is killed.
 //
 // sample() lists every process of this user: its name, command line,
-// CPU share since the previous sample and resident memory, and whether
-// it is protected (rules.js). Only the user's own processes are read:
+// CPU share since the previous sample, resident memory, number of threads,
+// and whether it is protected (rules.js). Only the user's own processes are read:
 // /proc/<pid> belongs to the process's user, so one listing of /proc
-// tells which they are. A command line is read once per process.
+// tells which they are. A command line is read once per process, and
+// what it tells (the name, the command, a protected name) is kept with it.
 // verify() reads one process again just before a signal, so a process
 // id the kernel has since given to another process is never signalled.
+//
+// The files are read BATCH at a time, with a pause in between (io.pause)
+// that lets the Shell draw. Each asynchronous read costs the main thread
+// some tens of microseconds in GJS, and their completions all come at the
+// default priority, ahead of Clutter's redraws: a thousand of them at
+// once held frames off for 70-160 ms in the headless Shell. Each batch
+// is parsed as it comes, so no long stretch is left for the end.
 // No St.
 
 import {parseStat} from '../sysmon/parse.js';
@@ -16,12 +24,14 @@ import {
     cpuShare, displayName, pageSize, parseCmdline, parseProcStat, parseStatusRssKb,
     parseStatusUid,
 } from './parse.js';
-import {ancestorsOf, isValidPid, protectedReason} from './rules.js';
+import {ancestorsOf, isProtectedName, isValidPid, protectedReason} from './rules.js';
 
 const keyOf = (pid, start) => `${pid}:${start}`;
 // GNOME Shell's ancestors are a handful (systemd --user, then init); a
 // chain this long is not a real one.
 const MAX_DEPTH = 64;
+/** Files read at once, between two pauses (see the file comment). */
+export const BATCH = 32;
 
 export class ProcessSampler {
     /**
@@ -38,41 +48,48 @@ export class ProcessSampler {
     /** Forgets the previous sample and the command lines (a new visit). */
     reset() {
         this._previous = {machine: null, ticks: new Map()};
+        // By process key: {args, comm, name, command, named}; name, command
+        // and named (a protected name) are worked out again only when the
+        // process renames itself (comm).
         this._commands = new Map();
     }
 
     /**
      * Every process of this user, unsorted, or null when `cancellable`
      * was cancelled meanwhile. A process is {key, pid, start, name,
-     * command, cpu, memory, protected}: key is "pid:start", which no other
-     * process has had since boot; cpu is null on its first sample; memory
-     * is its resident size in bytes; protected is null or the reason
-     * (rules.js protectedReason).
+     * command, cpu, memory, threads, protected}: key is "pid:start", which
+     * no other process has had since boot; cpu is null on its first sample;
+     * memory is its resident size in bytes, null when the kernel does not
+     * tell (its main thread has exited, parse.js); threads comes from the
+     * same stat file; protected is null or the reason (rules.js
+     * protectedReason).
      */
     async sample(cancellable = null) {
         const io = this._io;
-        const read = path => io.read(path, cancellable);
         const [entries, statText] = await Promise.all([
             io.owners('/proc', cancellable),
-            read('/proc/stat'),
+            io.read('/proc/stat', cancellable),
             this._pageSize === null ? this._readPageSize(cancellable) : null,
         ]);
         const pids = entries
             .filter(entry => entry.uid === this._self.uid && /^[1-9]\d*$/.test(entry.name))
             .map(entry => Number(entry.name));
-        const stats = await Promise.all(pids.map(pid => read(`/proc/${pid}/stat`)));
-        const live = stats.map(parseProcStat)
-            .filter(stat => stat && !stat.kernel && !stat.ended);
+        const stats = await this._readAll(pids.map(pid => `/proc/${pid}/stat`), parseProcStat,
+            cancellable);
+        if (stats === null)
+            return null;
+        const live = stats.filter(stat => stat && !stat.kernel && !stat.ended);
         for (const stat of live)
             stat.key = keyOf(stat.pid, stat.start);
 
         // Command lines: once per process, for the name, the filter and
         // the tooltip.
         const missing = live.filter(stat => !this._commands.has(stat.key));
-        const cmdlines = await Promise.all(missing.map(stat => read(`/proc/${stat.pid}/cmdline`)));
-        if (cancellable?.is_cancelled())
+        const cmdlines = await this._readAll(missing.map(stat => `/proc/${stat.pid}/cmdline`),
+            parseCmdline, cancellable);
+        if (cmdlines === null || cancellable?.is_cancelled())
             return null;
-        missing.forEach((stat, i) => this._commands.set(stat.key, parseCmdline(cmdlines[i])));
+        missing.forEach((stat, i) => this._commands.set(stat.key, {args: cmdlines[i], comm: null}));
         const keys = new Set(live.map(stat => stat.key));
         for (const key of this._commands.keys()) {
             if (!keys.has(key))
@@ -88,16 +105,17 @@ export class ProcessSampler {
         };
 
         const processes = live.map(stat => {
-            const args = this._commands.get(stat.key);
+            const known = this._describe(stat);
             return {
                 key: stat.key,
                 pid: stat.pid,
                 start: stat.start,
-                name: displayName(stat.comm, args),
-                command: args.length ? args.join(' ') : `[${stat.comm}]`,
+                name: known.name,
+                command: known.command,
                 cpu: cpuShare(this._previous.ticks.get(stat.key), stat.ticks, machineTicks),
-                memory: stat.rssPages * this._pageSize,
-                protected: protectedReason({pid: stat.pid, comm: stat.comm, args}, context),
+                memory: stat.leaderExited ? null : stat.rssPages * this._pageSize,
+                threads: stat.threads,
+                protected: protectedReason({pid: stat.pid, named: known.named}, context),
             };
         });
         this._previous = {
@@ -105,6 +123,40 @@ export class ProcessSampler {
             ticks: new Map(live.map(stat => [stat.key, stat.ticks])),
         };
         return processes;
+    }
+
+    // What a process's command line tells, kept with it: worked out once,
+    // and again only when the process renamed itself.
+    _describe(stat) {
+        const known = this._commands.get(stat.key);
+        if (known.comm !== stat.comm) {
+            const {args} = known;
+            known.comm = stat.comm;
+            known.name = displayName(stat.comm, args);
+            known.command = args.length ? args.join(' ') : `[${stat.comm}]`;
+            known.named = isProtectedName(stat.comm, args);
+        }
+        return known;
+    }
+
+    // `paths` read BATCH at a time, each batch parsed as it comes, with a
+    // pause before the next (see the file comment); null when cancelled.
+    async _readAll(paths, parse, cancellable) {
+        const results = [];
+        for (let i = 0; i < paths.length; i += BATCH) {
+            if (i > 0) {
+                // eslint-disable-next-line no-await-in-loop
+                await this._io.pause(cancellable);
+            }
+            if (cancellable?.is_cancelled())
+                return null;
+            // eslint-disable-next-line no-await-in-loop
+            const texts = await Promise.all(paths.slice(i, i + BATCH)
+                .map(path => this._io.read(path, cancellable)));
+            for (const text of texts)
+                results.push(parse(text));
+        }
+        return results;
     }
 
     /**

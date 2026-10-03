@@ -802,9 +802,12 @@
 .froonty-killprocess-status.froonty-killprocess-news {
     color: #99c1f1;
 }
+/* Room on the right for the overlay scrollbar, so it never covers the
+   numbers or the buttons. The spacing is part of a row's height, which
+   the list's windowing reads (view.js). */
 .froonty-killprocess-list {
     spacing: 1px;
-    padding: 2px 4px 4px;
+    padding: 2px 14px 4px 4px;
 }
 .froonty-killprocess-row {
     spacing: 8px;
@@ -830,7 +833,11 @@
     font-size: 0.8em;
     font-feature-settings: "tnum";
     text-align: right;
-    color: rgba(255, 255, 255, 0.85);
+    color: rgba(255, 255, 255, 0.7);
+}
+/* The column the list is sorted by, as the checked toggle says. */
+.froonty-killprocess-number.froonty-killprocess-sorted {
+    color: #ffffff;
 }
 /* Fixed widths: the columns line up, and a tight row shortens the name. */
 .froonty-killprocess-cpu {
@@ -838,6 +845,9 @@
 }
 .froonty-killprocess-memory {
     min-width: 64px;
+}
+.froonty-killprocess-threads {
+    min-width: 28px;
 }
 .froonty-killprocess-ended .froonty-killprocess-name,
 .froonty-killprocess-ended .froonty-killprocess-number {

@@ -87,8 +87,9 @@ feature has a design note in [docs/features/](docs/features/).
   only, readable by you only; password managers' copies are never kept.
   See [docs/features/clipboard.md](docs/features/clipboard.md).
 - **Kill Process** tab (off by default; turn it on in Settings → Kill
-  Process): your own processes, busiest by CPU or memory first (at most
-  30, with a filter for the rest), each with a kill button.
+  Process): all of your own processes, sorted by CPU load, memory or
+  threads, with a filter by name, command line or process id, each with a
+  kill button.
   - Two clicks: ⊘, then "Kill “name”?". The process is asked to quit
     (SIGTERM); "Force quit" (SIGKILL) is offered only if it is still
     running 3 s later.

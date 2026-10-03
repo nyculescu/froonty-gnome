@@ -1458,6 +1458,516 @@ function parentPid() {
     return Number(text.slice(text.lastIndexOf(')') + 1).trim().split(/\s+/)[1]);
 }
 
+// A stand-in for KillProcessService with made-up processes, for timing the
+// view with many rows and driving it from the keyboard and the pointer. It
+// never signals anything: kill() and forceQuit() only record the process
+// id they were asked about (forceQuit's negated).
+function fakeKillService(processes) {
+    const handlers = new Map();
+    let nextId = 1;
+    return {
+        processes,
+        killed: [],
+        sort: 'cpu',
+        lastResult: null,
+        connect(_signal, fn) {
+            handlers.set(nextId, fn);
+            return nextId++;
+        },
+        disconnect(id) {
+            handlers.delete(id);
+        },
+        emit() {
+            for (const fn of handlers.values())
+                fn();
+        },
+        killState: () => null,
+        setSort(sort) {
+            this.sort = sort;
+            this.emit();
+        },
+        kill(process) {
+            this.killed.push(process.pid);
+        },
+        forceQuit(process) {
+            this.killed.push(-process.pid);
+        },
+    };
+}
+
+// `count` made-up processes; `seed` changes their numbers (and so their order).
+function syntheticProcesses(count, seed) {
+    return Array.from({length: count}, (_, i) => {
+        const pid = 100000 + i;
+        const mix = (i * 7919 + seed * 104729) % 100003;
+        return {
+            key: `${pid}:1`, pid, start: 1,
+            name: `synthetic-${i % 97}`,
+            command: `/opt/synthetic/bin/worker-${i} --index ${i} --seed ${seed}`,
+            cpu: (mix % 1000) / 10,
+            memory: (mix % 5000) * 104858,
+            threads: 1 + mix % 64,
+            protected: null,
+        };
+    });
+}
+
+// Main-thread time of `change` itself, then of the frames that follow it
+// (layout: before-update to prepare-frame; frame: before-update to
+// after-update), in ms. The largest frame over 300 ms is kept.
+async function refreshCost(change) {
+    const stage = global.stage;
+    const at = () => GLib.get_monotonic_time() / 1000;
+    let start = 0;
+    let layoutEnd = 0;
+    let layout = 0;
+    let frame = 0;
+    const ids = [
+        stage.connect('before-update', () => {
+            start = at();
+        }),
+        stage.connect('prepare-frame', () => {
+            layoutEnd = at();
+        }),
+        stage.connect('after-update', () => {
+            if (start) {
+                layout = Math.max(layout, layoutEnd - start);
+                frame = Math.max(frame, at() - start);
+            }
+            start = 0;
+        }),
+    ];
+    const t0 = at();
+    change();
+    const js = at() - t0;
+    await sleep(300);
+    ids.forEach(id => stage.disconnect(id));
+    return {js, layout, frame};
+}
+
+const ms = cost => `${cost.js.toFixed(1)} ms JS, layout ${cost.layout.toFixed(1)} ms, ` +
+    `frame ${cost.frame.toFixed(1)} ms`;
+
+// Times the Kill Process view: refreshes with the real list, and with
+// 1000 made-up processes in a second view in the same place. Returns
+// notes for the report, and what the checks need.
+async function measureKillProcess(view, service) {
+    const notes = [];
+    const header = boxOf(view._filter);
+    await movePointerTo(header.x1 + 10, header.y1 + 5);
+    view._filter.text = '';
+    await sleep(SETTLE_MS);
+    const real = service.processes;
+    const idle = await refreshCost(() => {
+        view._status.text = `${view._status.text} `;
+    });
+    notes.push(`idle frame (a status text change): ${ms(idle)}`);
+    const realRows = [...view._rows];
+    for (const seed of [1, 2, 3]) {
+        // eslint-disable-next-line no-await-in-loop
+        const cost = await refreshCost(() => {
+            service.processes = real.map((p, i) => ({...p, cpu: ((i * 31 + seed * 17) % 100) / 10}));
+            view._sync(true);
+        });
+        notes.push(`real list (${real.length}), new numbers and order #${seed}: ${ms(cost)}`);
+    }
+    const realReused = view._rows.length === realRows.length &&
+        view._rows.every(row => realRows.includes(row));
+    service.processes = real;
+    view._sync(true);
+
+    const fake = fakeKillService(syntheticProcesses(1000, 1));
+    const parent = view.actor.get_parent();
+    view.actor.hide();
+    let fakeView = null;
+    const build = await refreshCost(() => {
+        fakeView = new view.constructor(fake);
+        parent.add_child(fakeView.actor);
+        fakeView.setActive(true);
+    });
+    notes.push(`1000 synthetic, first show: ${ms(build)}`);
+    const rowsBefore = [...fakeView._rows];
+    for (const factor of [0.9, 0.8, 0.7]) {
+        // eslint-disable-next-line no-await-in-loop
+        const cost = await refreshCost(() => {
+            fake.processes = fake.processes.map(p => ({...p, cpu: p.cpu * factor}));
+            fake.emit();
+        });
+        notes.push(`1000 synthetic, new numbers, same order: ${ms(cost)}`);
+    }
+    const reordered = [];
+    for (const seed of [2, 3, 4]) {
+        // eslint-disable-next-line no-await-in-loop
+        const cost = await refreshCost(() => {
+            fake.processes = syntheticProcesses(1000, seed);
+            fake.emit();
+        });
+        reordered.push(cost.js);
+        notes.push(`1000 synthetic, new numbers and order: ${ms(cost)}`);
+    }
+    const reused = fakeView._rows.length === rowsBefore.length &&
+        fakeView._rows.every(row => rowsBefore.includes(row));
+    const adjustment = fakeView._scroll.vadjustment;
+    const jumped = await refreshCost(() => {
+        adjustment.value = (adjustment.upper - adjustment.page_size) / 2;
+        fakeView._renderWindow();
+    });
+    notes.push(`1000 synthetic, jump to the middle: ${ms(jumped)}`);
+    const stepped = await refreshCost(() => {
+        adjustment.value += fakeView._pitch;
+        fakeView._renderWindow();
+    });
+    notes.push(`1000 synthetic, scroll by one row: ${ms(stepped)}`);
+    const rows = fakeView._rows.length;
+    notes.push(`row actors: ${rows} for 1000 processes (reused: ${reused}); ` +
+        `${view._rows.length} for the real ${real.length} (reused: ${realReused})`);
+    fakeView.destroy();
+    view.actor.show();
+    await sleep(SETTLE_MS);
+    return {
+        notes,
+        rows,
+        reused: reused && realReused,
+        // The median, so that one garbage collection does not decide.
+        refreshJs: reordered.sort((a, b) => a - b)[1],
+    };
+}
+
+// Like boxOf, but from the last allocation even while a new layout is
+// pending (boxOf would then give the preferred size).
+function allocatedBox(actor) {
+    const [x, y] = actor.get_transformed_position();
+    const box = actor.get_allocation_box();
+    return {x1: x, y1: y, x2: x + box.get_width(), y2: y + box.get_height()};
+}
+
+// The user's live processes, counted as the tab should: the /proc entries
+// they own, without kernel threads and processes that have ended (a zombie
+// main thread with no other thread left; with others, it still runs).
+function ownProcessCount() {
+    const uid = new Gio.Credentials().get_unix_user();
+    const enumerator = Gio.File.new_for_path('/proc').enumerate_children(
+        'standard::name,unix::uid', Gio.FileQueryInfoFlags.NOFOLLOW_SYMLINKS, null);
+    let count = 0;
+    for (let info = enumerator.next_file(null); info; info = enumerator.next_file(null)) {
+        if (!/^\d+$/.test(info.get_name()) || info.get_attribute_uint32('unix::uid') !== uid)
+            continue;
+        try {
+            const [, bytes] = GLib.file_get_contents(`/proc/${info.get_name()}/stat`);
+            const text = new TextDecoder().decode(bytes);
+            // From field 3 (state) on: flags is field 9, num_threads 20.
+            const fields = text.slice(text.lastIndexOf(')') + 2).split(' ');
+            const ended = 'ZXx'.includes(fields[0]) && Number(fields[17]) <= 1;
+            if (!ended && !(Number(fields[6]) & 0x00200000))
+                count++;
+        } catch (e) {
+            // Ended meanwhile.
+        }
+    }
+    enumerator.close(null);
+    return count;
+}
+
+const shownRows = view => view?._rows.filter(row => row.visible) ?? [];
+const descending = values => values.every((value, i) => i === 0 || values[i - 1] >= value);
+
+// A second view over a fake service (it signals nothing), in the tab's
+// place, for the checks below. Returns it; `done()` puts the tab back.
+async function fakeKillView(view, processes) {
+    const fake = fakeKillService(processes);
+    const parent = view.actor.get_parent();
+    view.actor.hide();
+    const fakeView = new view.constructor(fake);
+    parent.add_child(fakeView.actor);
+    fakeView.setActive(true);
+    await sleep(SETTLE_MS);
+    return {
+        fake,
+        fakeView,
+        done: async () => {
+            fakeView.destroy();
+            view.actor.show();
+            view._filter.clutter_text.grab_key_focus();
+            await sleep(SETTLE_MS);
+        },
+    };
+}
+
+// Whether all of `actor` is inside the visible part of `scroll`, on screen.
+function fullyInside(actor, scroll) {
+    const box = allocatedBox(actor);
+    const view = allocatedBox(scroll);
+    return box.y1 >= view.y1 - 0.5 && box.y2 <= view.y2 + 0.5;
+}
+
+// The list from the keyboard and the pointer, over made-up processes (a
+// fake service that only records what it is asked to kill): the keyboard
+// never reaches a row out of sight, a click never leaves the list held,
+// the keyboard's own focus does, and the count line is today's.
+async function testKillProcessFocus(view) {
+    const {fake, fakeView, done} = await fakeKillView(view, syntheticProcesses(300, 1));
+    try {
+        const adjustment = fakeView._scroll.vadjustment;
+        const scrollBox = allocatedBox(fakeView._scroll);
+        const filterBox = boxOf(fakeView._filter);
+        const pointAtList = () => movePointerTo(scrollBox.x1 + 20, scrollBox.y1 + 40);
+        const pointAtFilter = () => movePointerTo(filterBox.x1 + 10, filterBox.y1 + 5);
+
+        // Scrolled to row 100 with the pointer resting on the list (as
+        // after the wheel): the rows just above exist too, out of sight.
+        await pointAtList();
+        adjustment.value = 100 * fakeView._pitch;
+        await sleep(SETTLE_MS);
+        const scrolledTo = adjustment.value;
+        fakeView._sortButtons.get('threads').grab_key_focus();
+        await pressKeys(Clutter.KEY_Tab);
+        const row = fakeView._focusedRow();
+        const process = row?.process ?? null;
+        check('kill process: Tab over a scrolled list, pointer on it, shows the row it reaches',
+            row && fakeView._scroll.hover && adjustment.value < scrolledTo &&
+            fullyInside(row, fakeView._scroll) && fakeView._held(),
+            `row ${process && fakeView._shown.indexOf(process)}, value ${scrolledTo} -> ` +
+            `${adjustment.value}, hover ${fakeView._scroll.hover}`);
+        await pressKeys(Clutter.KEY_Return);
+        const confirm = row?._part('confirm');
+        const asked = fakeView._confirmKey === process?.key && confirm?.visible &&
+            fullyInside(confirm, fakeView._scroll);
+        await pressKeys(Clutter.KEY_Return);
+        check('kill process: Enter, Enter there kills the process that is shown, nothing else',
+            asked && fake.killed.length === 1 && fake.killed[0] === process.pid,
+            `asked=${asked} killed=${fake.killed} (row's ${process?.pid})`);
+
+        // A row out of sight refuses to act, whatever asks it (here no
+        // event, as from an accessibility tool).
+        adjustment.value = 100 * fakeView._pitch;
+        await sleep(SETTLE_MS);
+        const hidden = fakeView._rows.find(r => r.visible && r.process &&
+            !fakeView._onScreen(r)) ?? null;
+        const shown = fakeView._rows.find(r => r.visible && r.process &&
+            fullyInside(r, fakeView._scroll)) ?? null;
+        fake.killed.length = 0;
+        if (hidden) {
+            fakeView._ask(hidden);
+            const askedHidden = fakeView._confirmKey;
+            fakeView._confirmKey = hidden.process.key;
+            fakeView._confirm(hidden);
+            fakeView._force(hidden);
+            fakeView._confirmKey = null;
+            check('kill process: a row out of sight is never asked about nor killed',
+                askedHidden === null && fake.killed.length === 0 &&
+                !fullyInside(hidden, fakeView._scroll),
+                `asked=${askedHidden} killed=${fake.killed}`);
+        } else {
+            check('kill process: a row out of sight is never asked about nor killed', false,
+                'no row out of sight');
+        }
+        fakeView._ask(shown);
+        check('kill process: a row on screen still is', shown &&
+            fakeView._confirmKey === shown.process.key, `${fakeView._confirmKey}`);
+        fakeView._cancel(shown);
+
+        // A click on ⊘, then ✕, and the pointer leaves: nothing holds the
+        // list any more, so a new process at the top shows.
+        adjustment.value = 0;
+        await pointAtFilter();
+        fakeView._filter.clutter_text.grab_key_focus();
+        await sleep(SETTLE_MS);
+        const target = shownRows(fakeView)[3];
+        const clickPart = async name => {
+            const b = boxOf(target._part(name));
+            await clickAt((b.x1 + b.x2) / 2, (b.y1 + b.y2) / 2);
+        };
+        await clickPart('kill');
+        const clickedAsk = fakeView._confirmKey === target.process?.key;
+        await clickPart('cancel');
+        await pointAtFilter();
+        await sleep(SETTLE_MS);
+        // Above every made-up process (their CPU shares go up to 99.9%).
+        const runaway = {...fake.processes[0], key: '999999:1', pid: 999999, name: 'runaway',
+            command: '/opt/runaway', cpu: 100};
+        fake.processes = [...fake.processes, runaway];
+        fake.emit();
+        check('kill process: ⊘ then ✕ by pointer leaves no hold: once it leaves, the list re-sorts',
+            clickedAsk && fakeView._confirmKey === null && fakeView._focusedRow() === null &&
+            !fakeView._held() && fakeView._shown[0]?.pid === runaway.pid &&
+            fakeView._status.text === `Your ${fake.processes.length} processes` &&
+            fake.killed.length === 0,
+            `asked=${clickedAsk} focus=${global.stage.get_key_focus()} held=${fakeView._held()} ` +
+            `first=${fakeView._shown[0]?.pid} "${fakeView._status.text}"`);
+
+        // Held by the pointer, the rows stay; the count is today's.
+        fakeView._filter.text = 'worker-29';
+        await sleep(SETTLE_MS);
+        const before = fakeView._shown.length;
+        await pointAtList();
+        await sleep(SETTLE_MS);
+        const late = {...runaway, key: '999998:1', pid: 999998, command: '/opt/worker-29-late',
+            cpu: 0};
+        fake.processes = [...fake.processes, late];
+        fake.emit();
+        const heldCount = fakeView._shown.length;
+        const heldText = fakeView._status.text;
+        await pointAtFilter();
+        await sleep(SETTLE_MS);
+        check('kill process: while rows are held, the count line counts today\'s processes',
+            heldCount === before && heldText ===
+                `${before + 1} of your ${fake.processes.length} processes match` &&
+            fakeView._shown.length === before + 1,
+            `held ${heldCount} rows, "${heldText}", then ${fakeView._shown.length}`);
+        fakeView._filter.text = '';
+        await sleep(SETTLE_MS);
+
+        // The keyboard's own focus on a row holds the list (pointer away);
+        // focus back in the filter, it re-sorts.
+        fakeView._sortButtons.get('threads').grab_key_focus();
+        await pressKeys(Clutter.KEY_Tab);
+        const keyed = fakeView._focusedRow();
+        // As busy as the runaway, with more memory: first.
+        const top = {...runaway, key: '999997:1', pid: 999997, memory: runaway.memory + 1};
+        fake.processes = [...fake.processes, top];
+        fake.emit();
+        const keptOrder = keyed !== null && fakeView._held() && fakeView._shown[0]?.pid !== top.pid;
+        fakeView._filter.clutter_text.grab_key_focus();
+        fake.emit();
+        check('kill process: a row the keyboard focused holds the list until the focus leaves',
+            keptOrder && fakeView._shown[0]?.pid === top.pid && fake.killed.length === 0,
+            `kept=${keptOrder} first=${fakeView._shown[0]?.pid}`);
+    } finally {
+        await done();
+    }
+}
+
+// A whole refresh, as the tab makes it every few seconds: the real
+// service reads /proc (real Gio reads, BATCH at a time), then the real
+// view sorts and fills its rows. Each of the user's processes is served
+// `copies` times under made-up ids beyond PID_MAX (so every row is
+// protected, and verify() refuses them); run() records and signals
+// nothing, and no kill command is found. A heartbeat at Clutter's redraw
+// priority finds the longest time the main loop was held (no frame could
+// be drawn then); the main thread's CPU time is its schedstat's.
+async function measureWholeRefresh(view, service, copies) {
+    const {BATCH} = await import(`file://${extension().path}/features/killprocess/sampler.js`);
+    const SHIFT = 4194304;
+    const real = service._io;
+    const runs = [];
+    let pauses = 0;
+    const io = {
+        ...real,
+        run: async argv => {
+            runs.push(argv);
+            return null;
+        },
+        executable: async () => false,
+        pause: cancellable => {
+            pauses++;
+            return real.pause(cancellable);
+        },
+        async owners(path, cancellable) {
+            const entries = await real.owners(path, cancellable);
+            const out = [];
+            for (let k = 1; k <= copies; k++) {
+                for (const entry of entries) {
+                    if (/^\d+$/.test(entry.name))
+                        out.push({...entry, name: String(Number(entry.name) + k * SHIFT)});
+                }
+            }
+            return out;
+        },
+        async read(path, cancellable) {
+            const match = /^\/proc\/(\d+)\/(.+)$/.exec(path);
+            if (!match)
+                return real.read(path, cancellable);
+            const text = await real.read(`/proc/${Number(match[1]) % SHIFT}/${match[2]}`,
+                cancellable);
+            return match[2] === 'stat' && text ? text.replace(/^\d+/, match[1]) : text;
+        },
+    };
+    const decoder = new TextDecoder();
+    const cpu = () => Number(decoder.decode(
+        GLib.file_get_contents('/proc/thread-self/schedstat')[1]).split(' ')[0]) / 1e6;
+    const at = () => GLib.get_monotonic_time() / 1000;
+
+    const measured = new service.constructor(settings(), {io});
+    measured.start();
+    const parent = view.actor.get_parent();
+    view.actor.hide();
+    const measuredView = new view.constructor(measured);
+    parent.add_child(measuredView.actor);
+    measuredView.setActive(true);
+    let syncMs = 0;
+    const sync = measuredView._sync.bind(measuredView);
+    measuredView._sync = (...args) => {
+        const t0 = at();
+        sync(...args);
+        syncMs = at() - t0;
+    };
+
+    let last = at();
+    let longest = 0;
+    const beat = GLib.timeout_add(Clutter.PRIORITY_REDRAW, 1, () => {
+        const t = at();
+        longest = Math.max(longest, t - last);
+        last = t;
+        return GLib.SOURCE_CONTINUE;
+    });
+    let begun = null;
+    const sample = measured._sampler.sample.bind(measured._sampler);
+    measured._sampler.sample = (...args) => {
+        begun = {at: at(), cpu: cpu(), pauses};
+        last = at();
+        longest = 0;
+        return sample(...args);
+    };
+    const refreshes = [];
+    measured.connect('changed', () => {
+        if (!begun)
+            return;
+        longest = Math.max(longest, at() - last);
+        refreshes.push({
+            n: measured.processes.length,
+            wall: at() - begun.at,
+            cpu: cpu() - begun.cpu,
+            longest,
+            pauses: pauses - begun.pauses,
+            sync: syncMs,
+        });
+        begun = null;
+    });
+    try {
+        measured.setActive(true);
+        for (let i = 0; i < 40 && refreshes.length < 6; i++) {
+            // eslint-disable-next-line no-await-in-loop
+            await sleep(250);
+            if (refreshes.length >= 2)
+                measured._tick();
+        }
+    } finally {
+        GLib.source_remove(beat);
+        measured.setActive(false);
+        measured.stop();
+        measuredView.destroy();
+        view.actor.show();
+        await sleep(SETTLE_MS);
+    }
+    const later = refreshes.slice(1);
+    const median = values => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)];
+    const fmt = r => `${r.n} processes: ${r.wall.toFixed(0)} ms wall, ${r.cpu.toFixed(0)} ms ` +
+        `main-thread CPU, held at most ${r.longest.toFixed(1)} ms (_sync ${r.sync.toFixed(1)} ms), ` +
+        `${r.pauses} pauses`;
+    return {
+        notes: [`x${copies}, first reading (command lines too): ${refreshes[0] ? fmt(refreshes[0]) : '-'}`,
+            ...later.map(r => `x${copies}, reading: ${fmt(r)}`)],
+        runs: runs.length,
+        // Every batch but the first comes after a pause, and the view's
+        // refresh after one more.
+        batched: refreshes.length >= 4 && refreshes.every(r => r.pauses >= Math.ceil(r.n / BATCH)),
+        // The longest hold against the reading's own length: the whole
+        // reading in one block would be about 1.
+        heldShare: later.length ? median(later.map(r => r.longest / r.wall)) : 1,
+        count: later.length ? median(later.map(r => r.n)) : 0,
+    };
+}
+
 async function testKillProcess(outDir) {
     check('kill process: off by default, so no tab and nothing read',
         !settings().get_boolean('killprocess-enabled') && !tabButton('killprocess'));
@@ -1470,6 +1980,26 @@ async function testKillProcess(outDir) {
         // "Force quit" (SIGKILL) ends this one.
         const stubborn = spawnChild(['/bin/sh', '-c', 'trap "" TERM; exec /usr/bin/sleep 601']);
         children.push(stubborn);
+        // Four threads that sleep, and the main one: five in all. Never
+        // signalled by the tab; ended with the other children at the end.
+        const python = '/usr/bin/python3';
+        const threaded = GLib.file_test(python, GLib.FileTest.IS_EXECUTABLE)
+            ? spawnChild([python, '-c', 'import threading, time\n' +
+                '[threading.Thread(target=time.sleep, args=(600,), daemon=True).start() ' +
+                'for _ in range(4)]\ntime.sleep(600)'])
+            : null;
+        if (threaded)
+            children.push(threaded);
+        // Its main thread exits (pthread_exit) while another one sleeps:
+        // the kernel then shows the main thread as a zombie, but the
+        // process runs on. Never signalled by the tab either.
+        const leaderless = threaded
+            ? spawnChild([python, '-c', 'import ctypes, threading, time\n' +
+                'threading.Thread(target=time.sleep, args=(600,)).start()\n' +
+                'ctypes.CDLL(None).pthread_exit(None)'])
+            : null;
+        if (leaderless)
+            children.push(leaderless);
         await sleep(300);
 
         settings().set_boolean('killprocess-enabled', true);
@@ -1483,7 +2013,7 @@ async function testKillProcess(outDir) {
         const [w, h] = pill().get_transformed_size();
         check('kill process: the tab opens at its size and reads processes while on screen',
             island()._hub.activeFeature?.id === 'killprocess' && service?.polling === true &&
-            w === 480 * scale() && h === 440 * scale(),
+            w === 520 * scale() && h === 440 * scale(),
             `${w}x${h} polling=${service?.polling}`);
         await waitFor(() => service?.processes?.some(p => p.pid === sleeper.pid));
         const listed = pid => service?.processes?.find(p => p.pid === pid) ?? null;
@@ -1492,6 +2022,119 @@ async function testKillProcess(outDir) {
             service.processes.every(p => p.pid > 1),
             `${service?.processes?.length} processes; sleep=${JSON.stringify(listed(sleeper.pid))}`);
         await screenshotTop(outDir, 'killprocess', 520);
+
+        // Every process, not the busiest few: as many as /proc has, read
+        // right after a fresh sample.
+        const header = boxOf(view._filter);
+        await movePointerTo(header.x1 + 10, header.y1 + 5);
+        const previous = service.processes;
+        await waitFor(() => service.processes !== previous, 8000);
+        const counted = ownProcessCount();
+        const total = service.processes.length;
+        check('kill process: all of the user\'s processes are listed, as many as /proc has',
+            total > 30 && Math.abs(total - counted) <= 5 && view._shown.length === total &&
+            view._status.text === `Your ${total} processes`,
+            `listed ${total}, /proc ${counted}, shown ${view._shown.length}, "${view._status.text}"`);
+
+        const visibleRows = shownRows(view);
+        const heights = new Set(visibleRows.map(row => row.height));
+        check('kill process: only the rows on screen exist, all as tall as each other',
+            view._rows.length < total && view._rows.length <= 40 && heights.size === 1 &&
+            Math.abs(view._pitch - (visibleRows[0]?.height ?? 0) - 1 * scale()) < 0.5,
+            `${view._rows.length} row actors for ${total}; heights ${[...heights]}, ` +
+            `pitch ${view._pitch}`);
+
+        // The pointer on the list holds its order, so a sample in between
+        // cannot re-sort it under the check.
+        const adjustment = view._scroll.vadjustment;
+        const scrollBox = allocatedBox(view._scroll);
+        await movePointerTo(scrollBox.x1 + 20, scrollBox.y1 + 40);
+        await sleep(SETTLE_MS);
+        const rowAt = y => shownRows(view).find(row => {
+            const b = allocatedBox(row);
+            return b.y1 <= y && y < b.y2;
+        }) ?? null;
+        const index = Math.min(100, total - 20);
+        adjustment.value = index * view._pitch;
+        await sleep(SETTLE_MS);
+        const middle = rowAt(scrollBox.y1 + view._pitch / 2)?.process ?? null;
+        adjustment.value = adjustment.upper - adjustment.page_size;
+        await sleep(SETTLE_MS);
+        const lastRow = shownRows(view).at(-1);
+        const lastBox = lastRow ? allocatedBox(lastRow) : null;
+        const last = lastRow?.process ?? null;
+        check('kill process: scrolled, each process is in its place, the last one at the bottom',
+            middle?.key === view._shown[index].key && last?.key === view._shown.at(-1).key &&
+            lastBox.y2 <= scrollBox.y2 + 1 && lastBox.y2 > scrollBox.y2 - 2 * view._pitch,
+            `row ${index}: ${middle?.pid} vs ${view._shown[index].pid}; last ${last?.pid} vs ` +
+            `${view._shown.at(-1).pid}, bottom ${lastBox?.y2} in ${scrollBox.y2}`);
+        await screenshotTop(outDir, 'killprocess-end', 520);
+        adjustment.value = 0;
+        await movePointerTo(header.x1 + 10, header.y1 + 5);
+        await sleep(SETTLE_MS);
+
+        const firstRow = shownRows(view)[0];
+        const bar = view._scroll.get_children().find(child => child instanceof St.ScrollBar &&
+            child.orientation === Clutter.Orientation.VERTICAL) ?? null;
+        const barLeft = bar ? allocatedBox(bar).x1 : -1;
+        const nameWidth = firstRow?._part('name').width ?? 0;
+        check('kill process: the scroll bar covers no number or button; the name keeps room',
+            view._scroll.vscrollbar_visible && bar?.visible && firstRow &&
+            boxOf(firstRow._part('threads')).x2 <= barLeft &&
+            boxOf(firstRow._part('kill')).x2 <= barLeft && nameWidth >= 120 * scale(),
+            `note: threads ends at ${firstRow && boxOf(firstRow._part('threads')).x2}, ⊘ at ` +
+            `${firstRow && boxOf(firstRow._part('kill')).x2}, scroll bar from ${barLeft}; ` +
+            `name ${nameWidth} px at scale ${scale()}`);
+
+        await clickActor(view._sortButtons.get('threads'));
+        await sleep(SETTLE_MS);
+        const ranked = view._shown.map(p => p.threads);
+        const rendered = shownRows(view).map(row => Number(row._part('threads').text));
+        check('kill process: the Threads toggle sorts by thread count, most first',
+            service.sort === 'threads' && settings().get_string('killprocess-sort') === 'threads' &&
+            view._sortButtons.get('threads').checked && !view._sortButtons.get('cpu').checked &&
+            descending(ranked) && rendered.length > 5 && descending(rendered) &&
+            rendered[0] === ranked[0] &&
+            firstRow._part('threads').has_style_class_name('froonty-killprocess-sorted') &&
+            !firstRow._part('cpu').has_style_class_name('froonty-killprocess-sorted'),
+            `first rows: ${rendered.slice(0, 8)}`);
+        await screenshotTop(outDir, 'killprocess-threads', 520);
+        await clickActor(view._sortButtons.get('memory'));
+        await sleep(SETTLE_MS);
+        const memory = view._shown.map(p => p.memory);
+        check('kill process: the Memory toggle sorts by memory, most first',
+            service.sort === 'memory' && descending(memory), `${memory.slice(0, 5)}`);
+        await clickActor(view._sortButtons.get('cpu'));
+        await sleep(SETTLE_MS);
+
+        check('kill process: a single-threaded process counts 1 thread, a threaded one its own',
+            listed(sleeper.pid)?.threads === 1 &&
+            (threaded === null || listed(threaded.pid)?.threads === 5),
+            threaded === null ? 'note: no /usr/bin/python3, threaded process not checked'
+                : `sleep ${listed(sleeper.pid)?.threads}, python ${listed(threaded.pid)?.threads}`);
+        if (threaded) {
+            view._filter.text = String(threaded.pid);
+            await waitFor(() => killRow(view, threaded.pid) !== null);
+            // The process id may also be part of other processes' ids or
+            // command lines: whatever matches is counted.
+            const matching = view._shown.length;
+            check('kill process: its row shows the thread count; the count line, the matches',
+                killRow(view, threaded.pid)?._part('threads').text === '5' &&
+                view._status.text === `${matching} of your ${service.processes.length} ` +
+                    `processes ${matching === 1 ? 'matches' : 'match'}`,
+                `${killRow(view, threaded.pid)?._part('threads').text} / ${view._status.text}`);
+            view._filter.text = '';
+        }
+
+        if (leaderless) {
+            const leader = listed(leaderless.pid);
+            // verify() only reads /proc: it is what kill() asks first.
+            check('kill process: a process whose main thread has exited, others running, is ' +
+                'listed and may be killed',
+                leader?.threads === 2 && leader.memory === null && leader.protected === null &&
+                await service._sampler.verify(leader) === 'ok' && !leaderless.exited,
+                JSON.stringify(leader));
+        }
 
         const shellPid = new Gio.Credentials().get_unix_pid();
         const shellParent = parentPid();
@@ -1552,7 +2195,6 @@ async function testKillProcess(outDir) {
             view._status.text.includes(`(${sleeper.pid}) has ended`) &&
             killRow(view, sleeper.pid)?._part('state').text === 'Ended',
             `${view._status.text} / ${killRow(view, sleeper.pid)?._part('state').text}`);
-        const header = boxOf(view._filter);
         await movePointerTo(header.x1 + 10, header.y1 + 5);
         await sleep(SETTLE_MS);
         check('kill process: once the pointer leaves, the ended process is gone from the list',
@@ -1580,6 +2222,45 @@ async function testKillProcess(outDir) {
             stubborn.proc.get_term_sig() === 9,
             `forced=${forced} exited=${stubborn.exited}`);
 
+        const cost = await measureKillProcess(view, service);
+        // The bound only catches one row per process again (497-703 ms on
+        // the development machine): the figures vary with the machine's
+        // load (up to 24 ms with a parallel build running), so they are
+        // notes, not a limit.
+        check('kill process: a refresh of 1000 processes reuses a few dozen rows',
+            cost.rows <= 40 && cost.reused && cost.refreshJs < 100,
+            `note: ${cost.notes.join('\n     ')}`);
+
+        const wholes = [];
+        for (const copies of [1, 4]) {
+            // eslint-disable-next-line no-await-in-loop
+            wholes.push(await measureWholeRefresh(view, service, copies));
+        }
+        check('kill process: a whole refresh reads in batches and leaves room for frames',
+            wholes.every(w => w.batched && w.heldShare < 0.5 && w.runs === 0) &&
+            wholes[1].count > 3 * wholes[0].count,
+            `note: ${wholes.flatMap(w => w.notes).join('\n     ')}\n     ` +
+            `longest hold / reading: ${wholes.map(w => w.heldShare.toFixed(2)).join(', ')}`);
+
+        await testKillProcessFocus(view);
+
+        // Rows filled after the tab was hidden (a collapsing island still
+        // lays out the list), counted from the moment it was hidden.
+        let renders = 0;
+        let hiddenAt = Infinity;
+        const renderWindow = view._renderWindow;
+        const setActive = view.setActive;
+        view._renderWindow = function (...args) {
+            if (!this._active)
+                renders++;
+            return renderWindow.apply(this, args);
+        };
+        view.setActive = function (active) {
+            if (!active)
+                hiddenAt = Math.min(hiddenAt, GLib.get_monotonic_time());
+            return setActive.call(this, active);
+        };
+
         await clickActor(tabButton('clock'));
         await sleep(animationWait());
         check('kill process: another tab stops the reading, and clears the filter',
@@ -1589,7 +2270,12 @@ async function testKillProcess(outDir) {
         check('kill process: back on screen, it reads again', service.polling === true);
         island().collapse();
         await sleep(animationWait());
-        check('kill process: collapsing the island stops the reading', service.polling === false);
+        check('kill process: collapsing the island stops the reading, and fills no row after',
+            service.polling === false && hiddenAt < Infinity && renders === 0 &&
+            view._renderLater === 0,
+            `${renders} fills after hiding, later ${view._renderLater}`);
+        delete view._renderWindow;
+        delete view.setActive;
         island().expand();
         await sleep(animationWait());
         await clickActor(tabButton('clock'));
@@ -1601,6 +2287,7 @@ async function testKillProcess(outDir) {
             if (!child.exited)
                 child.proc.force_exit();
         }
+        settings().reset('killprocess-sort');
         settings().reset('killprocess-enabled');
         await sleep(SETTLE_MS);
     }

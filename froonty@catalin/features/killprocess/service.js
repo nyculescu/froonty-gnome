@@ -6,7 +6,9 @@
 // Like the Btop tab's, its timer runs only while the tab is on screen
 // (DESIGN.md §2 and §8): CPU use is only worth anything live, and no
 // event tells when it changes. The interval is the user's
-// (killprocess-interval).
+// (killprocess-interval), but the timer's readings are spaced at least
+// PACE times as long as the previous reading took: a reading costs the
+// Shell's main thread more the more processes there are.
 //
 // A kill is SIGTERM first: the process may save and quit. One still
 // running FORCE_AFTER_S later is offered "Force quit" (SIGKILL). Right
@@ -36,6 +38,9 @@ const CHECK_MS = 500;
 // interval goes on.
 const PENDING_MS = 1000;
 const FOLLOW_KILL_S = 10;
+// A timer reading is skipped while less than PACE times the previous
+// reading's duration has passed since it ended (see the file comment).
+const PACE = 10;
 /** A process still running this long after SIGTERM is offered "Force quit". */
 export const FORCE_AFTER_S = 3;
 
@@ -60,6 +65,8 @@ export class KillProcessService extends Emitter {
         this._followUpId = 0;
         this._cancellable = null;
         this._sampling = false;
+        // The latest reading: when it ended and how long it took (seconds).
+        this._sampled = {end: -Infinity, took: 0};
         this._warned = false;
         this._settingsIds = [];
         this._killPath = null;
@@ -141,7 +148,7 @@ export class KillProcessService extends Emitter {
 
     _readSettings() {
         const sort = this._settings.get_string(SORT_KEY);
-        /** 'cpu' or 'memory': what the list is sorted by. */
+        /** 'cpu', 'memory' or 'threads' (rules.js SORTS): what the list is sorted by. */
         this.sort = SORTS.includes(sort) ? sort : SORTS[0];
         this._interval = this._settings.get_int(INTERVAL_KEY);
     }
@@ -158,7 +165,7 @@ export class KillProcessService extends Emitter {
         // Whole seconds, so GLib can wake the Shell for it together with
         // other timers.
         this._timerId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, this._interval, () => {
-            this._tick();
+            this._tick(true);
             return GLib.SOURCE_CONTINUE;
         });
     }
@@ -180,14 +187,25 @@ export class KillProcessService extends Emitter {
         });
     }
 
-    _tick() {
+    /** @param {boolean} [timer] the interval's reading (paced), not an early one */
+    _tick(timer = false) {
         // A slow read never piles up behind itself.
         if (this._sampling)
             return;
+        const start = this._now();
+        if (timer && start - this._sampled.end < PACE * this._sampled.took)
+            return;
         this._sampling = true;
         const cancellable = this._cancellable;
-        this._sampler.sample(cancellable).then(processes => {
+        this._sampler.sample(cancellable).then(async processes => {
             if (cancellable.is_cancelled() || !processes)
+                return;
+            const end = this._now();
+            this._sampled = {end, took: end - start};
+            // The view's refresh (sorting, filling the rows) gets a turn of
+            // the main loop of its own, after the reading's last batch.
+            await this._io.pause(cancellable);
+            if (cancellable.is_cancelled())
                 return;
             this.processes = processes;
             this._followKills(processes);

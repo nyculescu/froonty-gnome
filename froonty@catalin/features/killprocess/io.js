@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // The Kill Process tab's access to /proc and to the kill command: the Btop
 // tab's asynchronous reads and subprocess (features/sysmon/io.js), plus a
-// listing that tells who owns each entry. The sampler and the service take
-// an object of this shape, so tests can hand them a fake /proc (and a fake
+// listing that tells who owns each entry, and a pause that lets the Shell
+// draw between batches of reads. The sampler and the service take an
+// object of this shape, so tests can hand them a fake /proc (and a fake
 // kill that signals nothing) instead. No St.
 
 import Gio from 'gi://Gio';
@@ -40,7 +41,35 @@ async function owners(path, cancellable = null) {
     }
 }
 
-export const PROCESS_IO = {...SYSTEM_IO, owners};
+/**
+ * Resolves once the main loop has nothing more urgent to do: an idle at
+ * PRIORITY_DEFAULT_IDLE runs after due frames (Clutter draws at
+ * PRIORITY_REDRAW, 50) and after IO completions (PRIORITY_DEFAULT).
+ * Cancelling `cancellable` removes the idle and resolves at once.
+ */
+function pause(cancellable = null) {
+    return new Promise(resolve => {
+        if (cancellable?.is_cancelled()) {
+            resolve();
+            return;
+        }
+        let cancelId = 0;
+        const sourceId = GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+            if (cancelId)
+                cancellable.disconnect(cancelId);
+            resolve();
+            return GLib.SOURCE_REMOVE;
+        });
+        // Not disconnected here: g_cancellable_disconnect() must not be
+        // called from the handler; the visit's cancellable goes with it.
+        cancelId = cancellable?.connect(() => {
+            GLib.source_remove(sourceId);
+            resolve();
+        }) ?? 0;
+    });
+}
+
+export const PROCESS_IO = {...SYSTEM_IO, owners, pause};
 
 /** GNOME Shell's own process id and user id (the process Froonty runs in). */
 export function currentProcess() {
