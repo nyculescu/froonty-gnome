@@ -66,7 +66,7 @@ GNOME's list, not a second one: Froonty keeps no copy and stores nothing.
   (Quick Settings' one). Under Do Not Disturb the header starts with "Do
   Not Disturb ·": no banners, and notifications still arrive here.
 - **The unread dot:** the tab's icon carries GNOME's unread dot, the same
-  one as on the pill and on 📅 (calendar.md §A).
+  one as on the pill and on the hub header's date pill (calendar.md §A).
 - **Size:** 400 × 440 px by default; Settings → Notifications → Size
   (`notifications-width` 320-960, `notifications-height` 200-720), live.
 - **Empty:** "No notifications" (and "Do Not Disturb is on" under it).
@@ -157,7 +157,7 @@ From the JavaScript in `/usr/lib/gnome-shell/libshell-18.so`
   no dot until the island closed.) (A setting could offer GNOME's looser
   rule.)
 - **One dot rule.** The tab's dot is GNOME's `MessagesIndicator`
-  (`CalendarMenu.hasUnread`), as for the pill and 📅. A NORMAL
+  (`CalendarMenu.hasUnread`), as for the pill and the date pill. A NORMAL
   notification arriving while the island is open waits for its banner, so
   it lights no dot (GNOME counts unseen minus queued); a LOW one, or one
   past the queue's limit of three, lights it at once, also after the user
@@ -212,8 +212,8 @@ From the JavaScript in `/usr/lib/gnome-shell/libshell-18.so`
   GNOME (where a banner shown or the list shown counts) or stricter. It is where the pill's unread dot
   now leads. Unlike Clipboard (it records data) and Kill Process (it
   ends programs), it carries no privacy or destructive risk. Its cost is
-  one more tab in the column (about 32 px), which the Clock tab's 140 px
-  height already exceeds.
+  one more tab in the column (about 32 px), which the 140 px height of a
+  tab without a size of its own (the Clock tab then) already exceeded.
 
 ## 4. Data flow
 
@@ -224,7 +224,7 @@ From the JavaScript in `/usr/lib/gnome-shell/libshell-18.so`
    the island calls `hub.noteUserInput()` → `view.onUserInput()` →
    `service.markSeen()`: GNOME's `acknowledged` on each listed one, except
    one waiting in GNOME's banner queue; GNOME's dot goes, so the pill's,
-   📅's and the tab's go, and so do the rows' dots.
+   the date pill's and the tab's go, and so do the rows' dots.
 2. **Arrival while on screen:** a row appears in its place with its dot,
    not seen. A LOW one (no banner) is marked seen by the next deliberate
    input (§3). A NORMAL or critical one waits for its banner (the island
@@ -356,7 +356,7 @@ nothing from `shell/`. The hub shows the dot on tabs that declare
   every call a no-op while hidden, `snapshot()` / `countClearable()`,
   `stop()`); the bubble's wrapping.
 - `tools/headless-test/checks.js` `testNotifications` (both session
-  modes): on by default and after Clock; nothing watched before it is
+  modes): on by default and after Calendar; nothing watched before it is
   shown; the dot on the tab and in its name; hover-open lists and marks
   nothing seen, nor does Shift then, but after Tab a key marks them seen
   and every dot goes; urgent
@@ -390,9 +390,9 @@ nothing from `shell/`. The hub shows the dot on tabs that declare
   and stays; a click on a D-Bus notification without a default action
   removes its app's two non-resident ones (`NotificationClosed` 2 each,
   no `ActionInvoked`) and keeps the resident one and another app's; with
-  banners held, a key leaves the queued one unseen, a LOW one on the
-  Clock tab then lights the tab's dot, and once the island closes the
-  banner shows and marks it seen.
+  banners held, a key leaves the queued one unseen, a LOW one with
+  another tab on screen then lights the tab's dot, and once the island
+  closes the banner shows and marks it seen.
 - Screenshots: `notifications-list`, `notifications-live`,
   `notifications-tab-dot`, `notifications-urgent-actions`,
   `notifications-confirm`, `notifications-empty`, `notifications-dnd`,

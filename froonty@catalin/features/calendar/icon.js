@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// The Calendar tab's icon, bundled: x-office-calendar-symbolic is already
-// 📅 (GNOME's own menu), and Adwaita has no other calendar icon. Laid out
-// as an icon theme for the settings window (prefs.js).
+// The Calendar tab's icon, bundled: Adwaita's only calendar icon,
+// x-office-calendar-symbolic, stood for GNOME's own calendar menu (the
+// old 📅 header button, now the date pill) and is still the island's
+// Ctrl+Alt+Tab icon. Laid out as an icon theme for the settings window
+// (prefs.js).
 
 import Gio from 'gi://Gio';
 

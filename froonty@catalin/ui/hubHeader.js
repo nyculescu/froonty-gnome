@@ -2,10 +2,13 @@
 // The hub's header row, right-aligned (the panic bar is centred over it in
 // a layer of its own, see hub.js):
 //
-//   ……………………………………  📅  [feature actions]  ⚙️
+//   ……………………………  (Sat Oct 3 14:05•)  [feature actions]  ⚙️
 //
-//   📅   GNOME's own calendar and notification menu, with GNOME's unread
-//        dot (absent when this Shell has no date menu)
+//   (date time)  a small pill with the date in the top bar clock's format
+//        (the one under the island), the time as Froonty shows it, and
+//        GNOME's unread dot after the time; a press closes the island and
+//        opens GNOME's own calendar and notification menu (absent when
+//        this Shell has no date menu)
 //   feature actions  buttons a feature's view provides (`headerActions`),
 //        shown only while its tab is the active one; e.g. Notes' "All notes"
 //   ⚙️   Froonty's settings window
@@ -23,12 +26,15 @@ export class HubHeader {
     /**
      * @param {Tooltip} tooltip the hub's tooltip (its overlay layer)
      * @param {object} actions
+     * @param {ClockService} actions.clock the date and time on the pill
      * @param {Function} actions.openSettings
-     * @param {?Function} actions.openCalendar null: no 📅
+     * @param {?Function} actions.openCalendar null: no date pill
      */
-    constructor(tooltip, {openSettings, openCalendar}) {
+    constructor(tooltip, {clock, openSettings, openCalendar}) {
         this._tooltip = tooltip;
+        this._clock = clock;
         this._boxes = new Map(); // feature id → box of its actions
+        this._unread = false;
         this.calendarButton = null;
         this.unreadBadge = null;
 
@@ -41,6 +47,9 @@ export class HubHeader {
             this.calendarButton = this._buildCalendarButton();
             this.calendarButton.connect('clicked', () => openCalendar());
             this.end.add_child(this.calendarButton);
+            // The top bar clock's ticks; no timer of its own.
+            this._clock.connectObject('changed', () => this._syncClock(), this);
+            this._syncClock();
         }
 
         // Hidden while it holds nothing to show: no double spacing.
@@ -59,6 +68,11 @@ export class HubHeader {
         });
         this.settingsButton.connect('clicked', () => openSettings());
         this.end.add_child(this.settingsButton);
+    }
+
+    /** Stops following the clock (the hub destroys the actors). */
+    destroy() {
+        this._clock.disconnectObject(this);
     }
 
     /**
@@ -84,7 +98,11 @@ export class HubHeader {
         this._boxes.set(id, box);
     }
 
-    /** Shows that feature's actions, hides every other feature's. */
+    /**
+     * Shows that feature's actions, hides every other feature's.
+     *
+     * @param {?string} id null: none (no tab is on)
+     */
     showActions(id) {
         for (const [key, box] of this._boxes)
             box.visible = key === id;
@@ -104,34 +122,68 @@ export class HubHeader {
 
     /** @param {boolean} unread whether GNOME's clock would show its dot */
     setUnread(unread) {
-        if (this.unreadBadge)
-            this.unreadBadge.visible = unread;
+        this._unread = unread;
+        if (!this.calendarButton)
+            return;
+        this.unreadBadge.visible = unread;
+        this._syncName();
     }
 
-    // 📅 opens GNOME's own calendar and notification menu, which the island
-    // covers. While GNOME's clock would show its unread-notifications dot,
-    // the button carries the same dot.
+    // The pill, in the collapsed pill's style: the date as the top bar
+    // clock writes it (weekday, month and day: ClockService.snapshot().date),
+    // always (there is room here; "Show date when collapsed" is the
+    // collapsed pill's), the time as the collapsed pill shows it (12/24-hour
+    // as set in Froonty), and GNOME's unread dot after the time. A press
+    // opens GNOME's own calendar and notification menu, which the island
+    // covers; the island closes as it opens (Island._openCalendar).
     _buildCalendarButton() {
+        const row = new St.BoxLayout({
+            style_class: 'froonty-header-clock-row',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        this._dateLabel = new St.Label({
+            style_class: 'froonty-header-clock-date',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        this._timeLabel = new St.Label({
+            style_class: 'froonty-header-clock-time',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
         this.unreadBadge = new St.Widget({
             style_class: 'froonty-unread-dot',
-            x_align: Clutter.ActorAlign.END,
-            y_align: Clutter.ActorAlign.START,
-            x_expand: true,
-            y_expand: true,
+            y_align: Clutter.ActorAlign.CENTER,
             visible: false,
         });
-        const icon = new St.Widget({layout_manager: new Clutter.BinLayout()});
-        icon.add_child(new St.Icon({icon_name: 'x-office-calendar-symbolic'}));
-        icon.add_child(this.unreadBadge);
+        row.add_child(this._dateLabel);
+        row.add_child(this._timeLabel);
+        row.add_child(this.unreadBadge);
 
         const button = new St.Button({
-            style_class: 'froonty-icon-button',
-            accessible_name: _('Calendar and notifications'),
+            style_class: 'froonty-header-clock',
+            y_align: Clutter.ActorAlign.CENTER,
             can_focus: true,
             track_hover: true,
-            child: icon,
+            child: row,
         });
-        this._tooltip.attach(button, () => button.accessible_name, 'below');
+        // What a press does; the pill itself shows the date and time.
+        this._tooltip.attach(button, () => _('Calendar and notifications'), 'below');
         return button;
+    }
+
+    _syncClock() {
+        const clock = this._clock.snapshot();
+        this._dateLabel.text = clock.date;
+        this._timeLabel.text = clock.time;
+        this._syncName(clock);
+    }
+
+    // "Calendar and notifications, Saturday, October 3 2026, 14:05", and
+    // ", unread notifications" while the dot shows.
+    _syncName(clock = this._clock.snapshot()) {
+        let name = [_('Calendar and notifications'), clock.weekday, clock.longDate, clock.time]
+            .join(', ');
+        if (this._unread)
+            name = `${name}, ${_('unread notifications')}`;
+        this.calendarButton.accessible_name = name;
     }
 }

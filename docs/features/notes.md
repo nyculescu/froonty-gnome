@@ -102,14 +102,15 @@ should disappear".
 
 ### What shows
 
-- **Hub header, Notes tab only:** `… 📅 [All notes] ⚙️`. An icon button
-  like its neighbours (`edit-find-symbolic`, tooltip and accessible name
-  "All notes"), with a faint wash of the selected note's colour behind the
-  icon: alpha 0.16 at rest, 0.28 on hover or focus, 0.38 pressed (charcoal
-  0.30/0.48/0.60: #3b3b3b would vanish on the black island). Tab order:
-  📅 → All notes → ⚙️. A click collapses the island (which saves the open
-  note) and opens the settings window on its All notes page, or raises it.
-  Other tabs show `📅 ⚙️` as before.
+- **Hub header, Notes tab only:** `… (date pill) [All notes] ⚙️`. An
+  icon button like its neighbours (`edit-find-symbolic`, tooltip and
+  accessible name "All notes"), with a faint wash of the selected note's
+  colour behind the icon: alpha 0.16 at rest, 0.28 on hover or focus,
+  0.38 pressed (charcoal 0.30/0.48/0.60: #3b3b3b would vanish on the
+  black island). Tab order: date pill → All notes → ⚙️. A click collapses
+  the island (which saves the open note) and opens the settings window on
+  its All notes page, or raises it. Other tabs show `(date pill) ⚙️` (the
+  date pill was 📅 until 2026-10-03).
 - **The tab row** keeps the note tabs, "+" and the fold button only; the
   tools row is unchanged. A tab shows its name, and × on hover or while
   selected. No colour dot, and labels never show there.
@@ -324,10 +325,14 @@ Both save through `noteWriter.js`:
   something else changed.
 - **Hub header actions** (`ui/hubHeader.js`): a view may expose
   `headerActions`, widgets it owns and destroys; the hub places them
-  between 📅 and ⚙️, only while that tab is active. The hub also reports a
-  `minWidth`: the island grows so that the centred panic bar stays 8 px
-  clear of the tab column and of the header's buttons (4 panic buttons need
-  about 378 px; the Notes default, 428, is unchanged). The value it returns
+  between the date pill and ⚙️, only while that tab is active. The hub
+  also reports a `minWidth`: the island grows so that the panic bar
+  fits between the tab column and the header's buttons, 8 px clear of
+  each. The bar is centred on the island where that leaves it clear of
+  the header's buttons, and moved left as far as needed where not. (With
+  the date pill, from 2026-10-03, the bar used to stay centred and the
+  island grew instead: about 498 px on the Notes tab, whose default is
+  428.) The value it returns
   is always the one it reports. With no panic buttons it used to return 0
   while still reporting the last width, so the header's allocation watch
   saw a change on every frame of an expand: about 60 resizes, each

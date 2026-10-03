@@ -7,8 +7,8 @@ facilities GNOME Shell already has. It does not reimplement them.
 Status: **0.4.0-rc0**, a release candidate. See [CHANGELOG.md](CHANGELOG.md).
 
 - The published extension package (`make pack`, extensions.gnome.org)
-  has the first submission's tabs only: Clock, Calendar, Notifications
-  and Notes, with the mute panic buttons. Media, Claude, Btop, Clipboard,
+  has the first submission's tabs only: Calendar, Notifications and
+  Notes, with the mute panic buttons. Media, Claude, Btop, Clipboard,
   Kill Process and Break follow in later versions; ZeroTier and Writing
   stay working-tree only. `make install` includes them all.
 - The polling timers are the Btop (system monitor) and Kill Process
@@ -45,16 +45,21 @@ feature has a design note in [docs/features/](docs/features/).
     tabs whose size can be set.
   - Feature tabs sit in one column on the left, each named in a tooltip;
     the island grows taller when they need the room.
-  - The panic bar is centered at the top, with 📅 (calendar and
-    notifications) and ⚙️ (settings) on the right.
+  - The panic bar is centered at the top. On the right: a small pill with
+    the date and the time ("Sat Oct 3 14:05", GNOME's unread dot after
+    it), which opens GNOME's calendar and notification menu, and ⚙️
+    (settings).
+  - Every tab can be turned off. With none on, the island still opens,
+    says so, and offers a button to Settings.
 - **Calendar and notifications:** GNOME's own menu, the one its clock
   opens: notifications (with their actions, Clear and Do Not Disturb), the
   calendar, events, world clocks and weather. Froonty reimplements none of
   it.
-  - **Open:** 📅 in the open island (or Tab to it, Enter), or GNOME's own
-    `Super+V` at any time. It opens under the pill, and the island closes.
+  - **Open:** the date pill in the open island (or Tab to it, Enter or
+    Space), or GNOME's own `Super+V` at any time. The island closes and
+    GNOME's menu opens under the pill.
   - **Unread:** while GNOME's clock would show its dot, the pill shows it
-    after the time, and 📅 carries it too. Opening GNOME's list marks
+    after the time, and so does the date pill. Opening GNOME's list marks
     them seen, and the dot goes.
   - Banners that arrive while the island is open wait, and show when it
     closes. See [docs/features/calendar.md](docs/features/calendar.md).
@@ -67,7 +72,6 @@ feature has a design note in [docs/features/](docs/features/).
   - The camera button (**Block camera for apps that ask GNOME**) is switched
     off for now; its code is kept
     ([details](docs/features/panic-buttons.md#4-block-camera-for-apps-that-ask-gnome)).
-- **Clock** tab: weekday, time and date.
 - **Calendar** tab: the events of every calendar GNOME knows, read-only
   and live: Google, Microsoft 365, Nextcloud and other accounts in
   Settings → Online Accounts, and calendars added in GNOME Calendar or
@@ -234,17 +238,18 @@ Each tab can be turned off on its own page in Settings.
 
 | Tab or button | On at first start | Install (Ubuntu) | Network |
 |---|---|---|---|
-| Island, Clock, GNOME's calendar menu | yes | nothing | none |
+| Island, GNOME's calendar menu | yes | nothing | none |
 | Calendar | yes (off if `gir1.2-ecal-2.0` is missing) | `gir1.2-ecal-2.0` | none by Froonty; GNOME syncs your accounts |
 | Notifications | yes | nothing | none |
 | Notes | yes | nothing | none |
 | Panic: mute microphone, mute sound | yes | nothing | none |
 
-- **Island and Clock:** makes the top bar clock transparent while the
-  island shows (Settings → Hide top bar clock; restored when Froonty is
-  off), holds notification banners back while the island is open (they
-  show when it closes), adds `Super+Alt+I` and a Ctrl+Alt+Tab entry, and
-  shows a top bar icon while the island is hidden.
+- **Island:** makes the top bar clock transparent while the island
+  shows (Settings → Hide top bar clock; restored when Froonty is off),
+  holds notification banners back while the island is open (they show
+  when it closes), adds `Super+Alt+I` and a Ctrl+Alt+Tab entry, and
+  shows a top bar icon while the island is hidden. The date pill in its
+  top row opens GNOME's own calendar and notification menu.
 - **Calendar:** `sudo apt install gir1.2-ecal-2.0` (Evolution Data
   Server's introspection data); without it the tab says what to install.
   It shows the calendars GNOME already knows: add them in Settings →
@@ -287,14 +292,14 @@ froonty@catalin/             the extension (this directory is what gets installe
 │   ├── collapsedView.js     collapsed content (time, optional date, unread dot,
 │   │                        a feature's cue)
 │   ├── hub.js               expanded content: tab column, panic bar, header
-│   ├── hubHeader.js         its top row: 📅, the active tab's buttons, ⚙️
+│   ├── hubHeader.js         its top row: the date pill, the active tab's
+│   │                        buttons, ⚙️
 │   ├── contextMenu.js       GNOME popup menus for features (note labels)
 │   ├── panicBar.js          up to 5 panic buttons
 │   ├── attentionBar.js      the "Claude needs you" bar under the pill
 │   ├── hoverOpen.js         opens the island after hovering it
 │   └── panelLauncher.js     top bar icon while the island is not shown
 ├── features/                hub tabs, one folder each (registry.js lists them)
-│   ├── clock/
 │   ├── calendar/            Calendar tab: Evolution Data Server (eds.js),
 │   │                        month grid, agenda, provider links
 │   ├── notifications/       GNOME's own notifications (through ctx.notifications)
@@ -420,7 +425,8 @@ The settings window (⚙️, the top bar icon while the island is hidden, or
 its tabs:
 
 - **General:** startup, island, hover, shortcut, clock.
-- **Appearance:** size, animation.
+- **Appearance:** size (the expanded size is for when no tab is on),
+  animation.
 - **Panic buttons:** which buttons, and their order.
 - **Calendar:** enable, Online Accounts, which calendars, size.
 - **Notifications:** enable, size.
@@ -445,10 +451,10 @@ The keys behind it:
 | `hide-panel-clock` | `true` | Makes the top bar clock transparent; its menu keeps working |
 | `hover-open-delay` | 350 ms | Open the island after hovering it this long; 0 turns it off |
 | `toggle-shortcut` | `['<Super><Alt>i']` | |
-| `show-date` | `false` | |
+| `show-date` | `false` | The date before the time on the collapsed pill (the hub header's date pill always shows it) |
 | `clock-format` | `system` | `system`, `24h` or `12h` |
 | `collapsed-width` / `collapsed-height` | 160 / 28 | Logical px. Both are minimums: while the top bar clock is hidden, the pill grows to cover its button completely |
-| `expanded-width` / `expanded-height` | 360 / 140 | Logical px; used by tabs without their own size (Clock) |
+| `expanded-width` / `expanded-height` | 360 / 140 | Logical px; the open island's size while no tab is on (each tab has its own) |
 | `corner-radius` | 14 | Clamped to half the height by St |
 | `animation-duration` | 250 ms | GNOME's enable-animations setting still applies |
 | `panic-buttons` | microphone, sound | Panic buttons in bar order, at most 5 |
@@ -490,7 +496,8 @@ The keys behind it:
 | `posture-buildup`, `-step-minutes`, `-ceiling-minutes` | `true`, 15, 240 | The optional build-up |
 | `posture-reminders`, `posture-sit-minutes`, `posture-stand-minutes` | `true`, 45, 15 | Switch reminders |
 | `break-gnome-saved`, `posture-buildup-target` | | What Froonty changed in GNOME; the built-up target (internal) |
-| `hub-last-tab`, `notes-last` | | Remembered selections (internal) |
+| `hub-last-tab` | `calendar` | The tab the island opens on (internal); when it is gone or off, the first tab that is on |
+| `notes-last` | | Remembered selection (internal) |
 
 ## Working-tree only (`make install`)
 

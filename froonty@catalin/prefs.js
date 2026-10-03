@@ -148,13 +148,20 @@ export default class FroontyPreferences extends ExtensionPreferences {
             title: _('Clock format'),
             model: Gtk.StringList.new([_('Follow system'), _('24-hour'), _('12-hour')]),
         });
+        // Showing the setting must not write it back: a change made
+        // elsewhere (the Shell, gsettings) reaches this process late, and
+        // writing back what it shows then would undo a newer one.
+        let syncing = false;
         const syncFormatRow = () => {
             const index = CLOCK_FORMATS.indexOf(settings.get_string('clock-format'));
+            syncing = true;
             formatRow.selected = Math.max(index, 0);
+            syncing = false;
         };
         syncFormatRow();
         formatRow.connect('notify::selected', () => {
-            settings.set_string('clock-format', CLOCK_FORMATS[formatRow.selected]);
+            if (!syncing)
+                settings.set_string('clock-format', CLOCK_FORMATS[formatRow.selected]);
         });
         settings.connect('changed::clock-format', syncFormatRow);
         group.add(formatRow);
@@ -168,8 +175,13 @@ export default class FroontyPreferences extends ExtensionPreferences {
         });
         group.add(spinRow(settings, 'collapsed-width', _('Collapsed width (minimum)')));
         group.add(spinRow(settings, 'collapsed-height', _('Collapsed height (minimum)')));
-        group.add(spinRow(settings, 'expanded-width', _('Expanded width')));
-        group.add(spinRow(settings, 'expanded-height', _('Expanded height')));
+        // Each tab has a size of its own, on its page.
+        for (const [key, title] of [['expanded-width', _('Expanded width')],
+            ['expanded-height', _('Expanded height')]]) {
+            const row = spinRow(settings, key, title);
+            row.subtitle = _('While no tab is on');
+            group.add(row);
+        }
         group.add(spinRow(settings, 'corner-radius', _('Corner radius')));
         return group;
     }

@@ -29,6 +29,22 @@ const TIME_FORMAT_24H = '%H:%M';
 const TIME_FORMAT_12H = '%-l:%M %p';
 const WEEKDAY_FORMAT = '%A';
 const SHORT_DATE_FORMAT = '%a %-d';
+// As formatTime() writes a date: "Thu 5 Nov".
+const DATE_FORMAT = '%a %-d %b';
+
+// The top bar clock's date, as GNOME writes it: gnome-desktop's
+// GnomeWallClock takes its format from its own catalog ("gnome-desktop-3.0",
+// the name libgnome-desktop-4 keeps), and the date is what comes before
+// the '_' (the time follows it). "Sat Oct 3" in English, "Sat 3 Oct" in
+// British English. Looked up on each snapshot, as GNOME does on each tick.
+const TOP_BAR_DOMAIN = 'gnome-desktop-3.0';
+const TOP_BAR_FORMAT = '%a %b %-e_%R';
+
+function topBarDateFormat() {
+    const format = GLib.dgettext(TOP_BAR_DOMAIN, TOP_BAR_FORMAT);
+    const date = format.includes('_') ? format.split('_')[0].trim() : '';
+    return date || TOP_BAR_FORMAT.split('_')[0];
+}
 
 /**
  * Emits 'changed' whenever the displayed text may have changed.
@@ -97,14 +113,20 @@ export class ClockService extends EventEmitter {
     }
 
     /**
-     * @returns {{time: string, shortDate: string, weekday: string,
-     *            longDate: string, showDate: boolean}}
+     * The collapsed pill shows `shortDate` ("Sat 3", only with showDate) and
+     * `time`; the hub header's pill `date` (the top bar clock's date, "Sat
+     * Oct 3") and `time`, and names them with `weekday` and `longDate`
+     * ("Saturday", "October 3 2026").
+     *
+     * @returns {{time: string, shortDate: string, date: string,
+     *            weekday: string, longDate: string, showDate: boolean}}
      */
     snapshot() {
         const now = GLib.DateTime.new_now(this._timeZone());
         return {
             time: now.format(this._timeFormat()).trim(),
             shortDate: now.format(SHORT_DATE_FORMAT),
+            date: now.format(topBarDateFormat()),
             weekday: now.format(WEEKDAY_FORMAT),
             longDate: now.format(Shell.util_translate_time_string(LONG_DATE_FORMAT)),
             showDate: this._settings.get_boolean('show-date'),
@@ -125,7 +147,7 @@ export class ClockService extends EventEmitter {
             .to_timezone(this._timeZone());
         let format = this._timeFormat();
         if (date)
-            format = `%a %-d %b ${format}`;
+            format = `${DATE_FORMAT} ${format}`;
         else if (weekday)
             format = `%a ${format}`;
         return time.format(format).trim();

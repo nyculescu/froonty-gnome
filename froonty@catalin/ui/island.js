@@ -257,10 +257,15 @@ export class Island {
         return menu;
     }
 
-    // GNOME's menu opens first, above the island, and takes the keyboard
-    // focus; its 'opened' signal then collapses the island, as for Super+V.
-    // Should it not open (e.g. another extension hid the clock), the
-    // island simply stays open.
+    // The header's date pill: Froonty closes and GNOME's own menu opens,
+    // as a click on the clock under the pill would open it. The menu opens
+    // first, above the island, and takes the keyboard focus (its grab
+    // holds banners back in turn); its 'opened' signal then collapses the
+    // island, as for Super+V, and the island's grab goes from under the
+    // menu's. Once the menu closes, the key focus is back where it was
+    // before the island opened (Main.popModal shifts it to the menu's
+    // grab). Should the menu not open (e.g. another extension hid the
+    // clock), the island simply stays open.
     _openCalendar() {
         this._calendarMenu.open();
     }
@@ -385,8 +390,9 @@ export class Island {
         this._clock.connectObject('changed', () => this._updateContent(), this);
         this._panelClock.connectObject('cover-changed',
             () => this._onCoverChanged(), this);
-        // GNOME's calendar menu opening, by any means (📅, Super+V),
-        // collapses the island, which releases its grab under the menu's.
+        // GNOME's calendar menu opening, by any means (the header's date
+        // pill, Super+V), collapses the island, which releases its grab
+        // under the menu's.
         this._calendarMenu.connectObject(
             'opened', () => this.collapse(),
             'unread-changed', () => this._updateUnread(),
@@ -503,7 +509,8 @@ export class Island {
     }
 
     // GNOME's clock, under the pill, would show its unread-notifications
-    // dot: the pill shows one instead, and so does 📅 in the hub.
+    // dot: the pill shows one instead, and so does the hub header's date
+    // pill.
     _updateUnread() {
         const unread = this._calendarMenu.hasUnread;
         this._collapsedView.setUnread(unread);

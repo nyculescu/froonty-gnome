@@ -7,19 +7,22 @@ the following week; the bar and the catalog are ready for them.
 
 The hub has a bar of up to **5 quick-action buttons** at the top of the
 expanded island, in the place the feature tabs used to occupy. The bar is
-**centered across the whole island**, and each button shows its name in a
-tooltip on hover. You choose and order the buttons in Settings → Panic
+**centered across the whole island** (on a tab too narrow for that, it
+moves left just enough to keep clear of the date pill and ⚙️), and each
+button shows its name in a tooltip on hover. You choose and order the buttons in Settings → Panic
 buttons.
 
-The feature tabs (Clock, Notes, …) moved to a **vertical column on the
-left**. Each tab shows its feature's name in a tooltip on hover.
+The feature tabs (Calendar, Notes, …) moved to a **vertical column on
+the left**. Each tab shows its feature's name in a tooltip on hover. (Its
+first tab was a Clock tab until 2026-10-03; the date and the time are now
+in a pill left of ⚙️, which opens GNOME's calendar menu.)
 
 ```
-┌────┬──────────────────────────────────────┐
-│ 🕒 │         [🎤][🔊]                 ⚙️   │  panic bar (max 5), centered
-│ 📝 │──────────────────────────────────────│
-│    │         active feature               │
-└────┴──────────────────────────────────────┘
+┌────┬──────────────────────────────────────────┐
+│ 🗓 │      [🎤][🔊]      ( Sat Oct 3 14:05 ) ⚙️ │  panic bar (max 5), centered
+│ 📝 │──────────────────────────────────────────│
+│    │         active feature                   │
+└────┴──────────────────────────────────────────┘
 ```
 
 ## 2. Decisions (agreed 2026-09-28)

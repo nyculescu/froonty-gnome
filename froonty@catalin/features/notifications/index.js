@@ -19,7 +19,8 @@ export default {
     enabledKey: 'notifications-enabled',
     // Settings → Notifications → Size.
     hubSizeKeys: {width: 'notifications-width', height: 'notifications-height'},
-    // The tab carries GNOME's unread dot, as the pill and 📅 do.
+    // The tab carries GNOME's unread dot, as the pill and the header's
+    // date pill do.
     unreadDot: true,
     createService: ctx => new NotificationsService(ctx.notifications),
     createView: (ctx, service) => new NotificationsView(ctx, service),
