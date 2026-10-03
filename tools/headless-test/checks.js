@@ -6875,8 +6875,16 @@ async function testClaudeAttentionWindows(outDir) {
     // With a fresh timestamp: an activation with a stale one can be turned
     // down by focus-stealing prevention (then the focus stays put).
     const focusOn = async window => {
+        // Then, if that is turned down too (Ubuntu's session), raise and
+        // focus the window directly.
         for (let i = 0; i < 3 && global.display.focus_window !== window; i++) {
-            Main.activateWindow(window, global.display.get_current_time_roundtrip());
+            const time = global.display.get_current_time_roundtrip();
+            if (i === 0) {
+                Main.activateWindow(window, time);
+            } else {
+                window.raise();
+                window.focus(time);
+            }
             // eslint-disable-next-line no-await-in-loop
             await waitFor(() => global.display.focus_window === window, 1500);
         }
