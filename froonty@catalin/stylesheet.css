@@ -34,7 +34,7 @@
 }
 
 /* The unread-notifications dot of GNOME's clock, which the pill covers: on
-   the collapsed pill and on the hub's calendar button. */
+   the collapsed pill and on the hub header's date pill. */
 .froonty-unread-dot {
     width: 6px;
     height: 6px;
@@ -127,7 +127,7 @@
     spacing: 4px;
 }
 
-/* 📅, the active feature's buttons, ⚙️ (ui/hubHeader.js). */
+/* The date pill, the active feature's buttons, ⚙️ (ui/hubHeader.js). */
 .froonty-hub-header-end,
 .froonty-hub-feature-actions {
     spacing: 4px;
@@ -164,7 +164,7 @@
     color: rgba(255, 255, 255, 0.25);
 }
 
-/* Icon buttons: hub tabs, 📅, feature actions and ⚙️ */
+/* Icon buttons: hub tabs, feature actions and ⚙️ */
 
 .froonty-icon-button {
     border-radius: 9px;
@@ -199,9 +199,9 @@
 }
 
 /* Notes' "All notes" in the hub header: a faint wash of the selected
-   note's colour sets it apart from the global 📅 and ⚙️ and ties it to the
-   Notes tab (features/notes/headerActions.js). After the icon-button rules
-   on purpose: same specificity, so these win. The focus ring stays. */
+   note's colour sets it apart from the global date pill and ⚙️ and ties it
+   to the Notes tab (features/notes/headerActions.js). After the icon-button
+   rules on purpose: same specificity, so these win. The focus ring stays. */
 .froonty-icon-button.froonty-notes-action {
     color: rgba(255, 255, 255, 0.75);
 }
@@ -237,6 +237,45 @@
 .froonty-notes-action.froonty-notes-action-blue:active { color: #ffffff; background-color: rgba(207, 228, 255, 0.38); }
 .froonty-notes-action.froonty-notes-action-gray:active { color: #ffffff; background-color: rgba(228, 228, 228, 0.38); }
 .froonty-notes-action.froonty-notes-action-charcoal:active { color: #ffffff; background-color: rgba(110, 110, 110, 0.60); }
+
+/* The hub header's date pill (ui/hubHeader.js): the collapsed pill's
+   look, as tall as the icon buttons beside it. A press opens GNOME's own
+   calendar and notification menu. */
+.froonty-header-clock {
+    background-color: #000000;
+    color: #ffffff;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 13px;
+    padding: 3px 10px;
+    transition-duration: 150ms;
+}
+
+.froonty-header-clock:hover {
+    background-color: #161616;
+}
+
+.froonty-header-clock:focus {
+    border-color: rgba(255, 255, 255, 0.45);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.45);
+}
+
+.froonty-header-clock:active {
+    background-color: #1f1f1f;
+}
+
+.froonty-header-clock-row {
+    spacing: 5px;
+}
+
+.froonty-header-clock-date {
+    color: rgba(255, 255, 255, 0.7);
+    font-weight: bold;
+}
+
+.froonty-header-clock-time {
+    font-weight: bold;
+    font-feature-settings: "tnum";
+}
 
 /* Clock feature */
 

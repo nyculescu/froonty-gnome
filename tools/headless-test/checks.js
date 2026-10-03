@@ -296,8 +296,8 @@ async function testPointer(outDir) {
         extension().stateObj._clock?._wallClock === Main.panel.statusArea.dateMenu._clock);
     // expanded-height is a minimum: the island grows to show every tab.
     const tabs = island()._hub._tabColumn.get_children().map(boxOf);
-    check('expanded size matches settings, tall enough for every tab',
-        w === s.get_int('expanded-width') * scale() &&
+    check('expanded size matches settings (wider if the top row needs it), tall enough for every tab',
+        isOpenWidth(w, s.get_int('expanded-width')) &&
         h >= s.get_int('expanded-height') * scale() && tabs.at(-1).y2 <= boxOf(pill()).y2 &&
         (h === s.get_int('expanded-height') * scale() || h - (tabs.at(-1).y2 - boxOf(pill()).y1) <= 16 * scale()),
         `${w}x${h}`);
@@ -440,6 +440,29 @@ function makeFakeFeature(log) {
 
 const tabButton = id => island()._hub._entries.get(id)?.button;
 
+
+// The island's padding and border, left and right (stage px).
+function islandFrame() {
+    const node = pill().get_theme_node();
+    return node.get_horizontal_padding() + node.get_border_width(St.Side.LEFT) +
+        node.get_border_width(St.Side.RIGHT);
+}
+
+// The open island's width for a tab `logical` px wide: that, or wider
+// when the centred panic bar needs room beside the top row's buttons
+// (Hub.minWidth: the date pill, the tab's own buttons, ⚙️).
+function openWidth(logical) {
+    return Math.max(logical * scale(), island()._hub._measureMinWidth() + islandFrame());
+}
+
+// Whether `width` (stage px, as allocated) is openWidth(logical); text
+// makes the top row's width fractional, the allocation is whole pixels.
+const isOpenWidth = (width, logical) => Math.abs(width - openWidth(logical)) < 1;
+
+// The configured width of the tab on screen (logical px; expanded-width
+// while no tab is on).
+const tabWidth = () => island()._geometry.expandedSize(island()._hub.activeFeature).width / scale();
+
 async function clickActor(actor) {
     const b = boxOf(actor);
     await clickAt((b.x1 + b.x2) / 2, (b.y1 + b.y2) / 2);
@@ -494,7 +517,7 @@ async function testHub(outDir) {
     // Header, summary, notices, networks: informative, no join controls.
     check('hub: ZeroTier opens its status at the configured size',
         hub.activeFeature?.id === 'zerotier' && zeroTierView?.actor.get_children().length === 4 &&
-        zeroTierWidth === 420 * scale() &&
+        isOpenWidth(zeroTierWidth, 420) &&
         // A minimum: the island grows to show every tab.
         (zeroTierHeight === 280 * scale() ||
             (zeroTierHeight > 280 * scale() &&
@@ -509,7 +532,7 @@ async function testHub(outDir) {
     const [sysmonWidth, sysmonHeight] = pill().get_transformed_size();
     check('hub: Btop opens at the configured size and polls while on screen',
         hub.activeFeature?.id === 'sysmon' && sysmon?.service.polling === true &&
-        sysmonWidth === 460 * scale() && sysmonHeight === 480 * scale(),
+        isOpenWidth(sysmonWidth, 460) && sysmonHeight === 480 * scale(),
         `${sysmonWidth}x${sysmonHeight} polling=${sysmon?.service.polling}`);
     await sleep(2500);
     check('sysmon: a sample reached the tab',
@@ -538,7 +561,7 @@ async function testHub(outDir) {
     await sleep(animationWait() + 2500);
     const [narrowWidth] = pill().get_transformed_size();
     check('sysmon: a width set in Settings resizes the open island; narrow, a thread per row',
-        narrowWidth === 380 * scale() && sysmon?.view._coreColumns === 1,
+        isOpenWidth(narrowWidth, 380) && sysmon?.view._coreColumns === 1,
         `${narrowWidth} ${sysmon?.view._coreColumns} columns`);
     await screenshotTop(outDir, 'sysmon-narrow', 520);
     settings().reset('sysmon-width');
@@ -581,21 +604,22 @@ async function testHub(outDir) {
         // The height is a minimum: the island grows to show every tab.
         const lastTab = boxOf(island()._hub._tabColumn.get_children().at(-1));
         check('hub: island resizes to the feature\'s hubSize',
-            w === 420 * scale() && h >= 220 * scale() &&
-            (h === 220 * scale() || h - (lastTab.y2 - boxOf(pill()).y1) <= 16 * scale()),
-            `${w}x${h}`);
+            isOpenWidth(w, 420) && h >= 300 * scale() &&
+            (h === 300 * scale() || h - (lastTab.y2 - boxOf(pill()).y1) <= 16 * scale()),
+            `${w}x${h}, expected width ${openWidth(420)}`);
         check('hub: selected tab is remembered',
             settings().get_string('hub-last-tab') === 'test-fake');
         await screenshotTop(outDir, 'hub-two-tabs');
 
-        // Its header button: between 📅 and ⚙️, only while its tab is active.
+        // Its header button: between the date pill and ⚙️, only while its
+        // tab is active.
         const hub = island()._hub;
         const action = log.action;
         const [cal, act, gear] = [hub.calendarButton, action, hub.settingsButton].map(boxOf);
-        check('hub: a feature\'s header button sits between 📅 and ⚙️ while its tab is active',
+        check('hub: a feature\'s header button sits between the date pill and ⚙️ while its tab is active',
             action?.mapped && cal.x2 <= act.x1 && act.x2 <= gear.x1 &&
             Math.abs((act.y1 + act.y2) - (gear.y1 + gear.y2)) <= 4,
-            `📅=[${cal.x1},${cal.x2}] action=[${act.x1},${act.x2}] ⚙️=[${gear.x1},${gear.x2}]`);
+            `date pill=[${cal.x1},${cal.x2}] action=[${act.x1},${act.x2}] ⚙️=[${gear.x1},${gear.x2}]`);
         await movePointerTo((act.x1 + act.x2) / 2, (act.y1 + act.y2) / 2);
         await sleep(SETTLE_MS);
         check('hub: hovering it shows its name in the hub tooltip',
@@ -614,7 +638,7 @@ async function testHub(outDir) {
         await sleep(animationWait());
         const [cw] = pill().get_transformed_size();
         check('hub: switching away deactivates the service and resizes back',
-            log.at(-1) === 'inactive' && cw === settings().get_int('expanded-width') * scale(),
+            log.at(-1) === 'inactive' && isOpenWidth(cw, settings().get_int('expanded-width')),
             `${log.join(',')} width=${cw}`);
         check('hub: another tab hides the feature\'s header button',
             !log.action.mapped && !log.actionDestroyed);
@@ -705,8 +729,8 @@ async function testNotes(outDir) {
 
     const view = hub()._entries.get('notes')?.view;
     const [w, h] = pill().get_transformed_size();
-    check('notes: tab opens and resizes the island to 428x319',
-        view && w === 428 * scale() && h === 319 * scale(), `${w}x${h}`);
+    check('notes: tab opens and resizes the island to 428x319 (wider if the top row needs it)',
+        view && isOpenWidth(w, 428) && h === 319 * scale(), `${w}x${h}`);
     // Settings → Notes → Size applies live; "Default size" resets it.
     settings().set_int('notes-width', 500);
     settings().set_int('notes-height', 400);
@@ -717,8 +741,8 @@ async function testNotes(outDir) {
     await sleep(animationWait());
     const [rw, rh] = pill().get_transformed_size();
     check('notes: the size settings resize the open island, and reset',
-        sw === 500 * scale() && sh === 400 * scale() &&
-        rw === 428 * scale() && rh === 319 * scale(), `${sw}x${sh} -> ${rw}x${rh}`);
+        isOpenWidth(sw, 500) && sh === 400 * scale() &&
+        isOpenWidth(rw, 428) && rh === 319 * scale(), `${sw}x${sh} -> ${rw}x${rh}`);
     check('notes: empty folder shows the empty state',
         view._empty.visible && !view._scroll.visible);
     await screenshotTop(outDir, 'notes-empty');
@@ -806,7 +830,7 @@ async function testNotes(outDir) {
     const [cw] = pill().get_transformed_size();
     check('notes: disabling removes the tab, stops the service, resizes back',
         !hub()._entries.has('notes') && service._monitor === null &&
-        cw === settings().get_int('expanded-width') * scale(), `width=${cw}`);
+        isOpenWidth(cw, settings().get_int('expanded-width')), `width=${cw}`);
     settings().reset('notes-enabled');
     island().collapse();
     await sleep(animationWait());
@@ -1325,9 +1349,9 @@ async function screenshotAll(outDir, name) {
     stream.close(null);
 }
 
-// Notes' "All notes" in the hub header: between 📅 and ⚙️, only on the
-// Notes tab, tinted with the note's colour; it opens the settings window
-// on its All notes page.
+// Notes' "All notes" in the hub header: between the date pill and ⚙️,
+// only on the Notes tab, tinted with the note's colour; it opens the
+// settings window on its All notes page.
 async function testNotesHeader(outDir) {
     const hub = () => island()._hub;
     const modalBefore = Main.modalCount;
@@ -1342,10 +1366,10 @@ async function testNotesHeader(outDir) {
     await sleep(animationWait());
     const [cal, btn, gear] = [hub().calendarButton, button, hub().settingsButton].map(boxOf);
     const middle = b => (b.y1 + b.y2) / 2;
-    check('notes header: on the Notes tab "All notes" sits between 📅 and ⚙️, centres level',
+    check('notes header: on the Notes tab "All notes" sits between the date pill and ⚙️, centres level',
         button.mapped && cal.x2 <= btn.x1 && btn.x2 <= gear.x1 &&
         Math.abs(middle(cal) - middle(btn)) <= 2 && Math.abs(middle(gear) - middle(btn)) <= 2,
-        `📅=[${cal.x1},${cal.y1} - ${cal.x2},${cal.y2}] button=[${btn.x1},${btn.y1} - ${btn.x2},${btn.y2}] ` +
+        `date pill=[${cal.x1},${cal.y1} - ${cal.x2},${cal.y2}] button=[${btn.x1},${btn.y1} - ${btn.x2},${btn.y2}] ` +
         `⚙️=[${gear.x1},${gear.y1} - ${gear.x2},${gear.y2}]`);
     check('notes header: it is an icon button like ⚙️ (16 px icon, same size)',
         button.child.get_width() === 16 * scale() && Math.abs((btn.x2 - btn.x1) - (gear.x2 - gear.x1)) <= 1 &&
@@ -1366,13 +1390,13 @@ async function testNotesHeader(outDir) {
     await movePointerTo(...away);
     await sleep(SETTLE_MS);
 
-    // Keyboard order: 📅 → All notes → ⚙️.
+    // Keyboard order: the date pill → All notes → ⚙️.
     hub().calendarButton.grab_key_focus();
     await pressKeys(Clutter.KEY_Tab);
     const first = global.stage.key_focus;
     await pressKeys(Clutter.KEY_Tab);
     const second = global.stage.key_focus;
-    check('notes header: Tab goes 📅 → All notes → ⚙️',
+    check('notes header: Tab goes date pill → All notes → ⚙️',
         first === button && second === hub().settingsButton, `${first} then ${second}`);
     view._entry.clutter_text.grab_key_focus();
     await sleep(SETTLE_MS);
@@ -1438,8 +1462,8 @@ async function testNotesHeader(outDir) {
     settings().reset('notes-width');
     await sleep(animationWait() + SETTLE_MS);
     const [back] = pill().get_transformed_size();
-    check('notes header: back to the defaults, the island is 428 px wide again',
-        back === 428 * scale(), `${back}`);
+    check('notes header: back to the defaults, the island is 428 px wide again (or as the top row needs)',
+        isOpenWidth(back, 428), `note: ${back} px, the top row needs ${hub()._measureMinWidth()} + ${islandFrame()}`);
 
     // A click: the island closes (saving the note), the settings window
     // opens on All notes.
@@ -1974,7 +1998,7 @@ async function testClipboard(outDir) {
     check('clipboard: "Plain text" is offered only for formatted text',
         view && !view._plainButton.visible && recorder.currentFormatted === false);
     check('clipboard: the tab opens at its configured size',
-        w === 400 * scale() && h === 440 * scale(), `${w}x${h}`);
+        isOpenWidth(w, 400) && h === 440 * scale(), `${w}x${h}`);
     await screenshotTop(outDir, 'clipboard', 520);
 
     // Click the text entry (the oldest): it is on the clipboard again.
@@ -2100,7 +2124,7 @@ async function testWriting(outDir) {
             view._emptyLabel.text === 'No writing engine is turned on.', view._emptyLabel.text);
         const [w, h] = pill().get_transformed_size();
         check('writing: the tab opens at its configured size',
-            w === 460 * scale() && h === 540 * scale(), `${w}x${h}`);
+            isOpenWidth(w, 460) && h === 540 * scale(), `${w}x${h}`);
         await screenshotTop(outDir, 'writing-empty', 560);
         await clickActor(view._settingsButton);
         const window = await waitForSettingsWindow();
@@ -3138,7 +3162,7 @@ async function testKillProcess(outDir) {
         const [w, h] = pill().get_transformed_size();
         check('kill process: the tab opens at its size and reads processes while on screen',
             island()._hub.activeFeature?.id === 'killprocess' && service?.polling === true &&
-            w === 520 * scale() && h === 440 * scale(),
+            isOpenWidth(w, 520) && h === 440 * scale(),
             `${w}x${h} polling=${service?.polling}`);
         await waitFor(() => service?.processes?.some(p => p.pid === sleeper.pid));
         const listed = pid => service?.processes?.find(p => p.pid === pid) ?? null;
@@ -3437,7 +3461,7 @@ async function testClaude(outDir) {
     check('claude: the tab opens', hub().activeFeature?.id === 'claude' && view && service);
     const [w, h] = pill().get_transformed_size();
     check('claude: island resizes to the tab\'s hubSize',
-        w === 380 * scale() && h === 465 * scale(), `${w}x${h}`);
+        isOpenWidth(w, 380) && h === 465 * scale(), `${w}x${h}`);
 
     // Swap in a network we control, then show the tab again.
     const network = new FakeNetwork();
@@ -3685,7 +3709,7 @@ async function testSettingsButton(outDir) {
     await closeSettingsWindows();
 
     // Keyboard: Tab from the focused pill reaches ⚙️ (after the tabs and
-    // 📅), Enter activates it.
+    // the date pill), Enter activates it.
     island().expand();
     await sleep(animationWait());
     for (let i = 0; i < 12 && global.stage.key_focus !== gear; i++)
@@ -4309,9 +4333,10 @@ async function testStartup() {
 // ---------------------------------------------------------------- calendar menu
 //
 // GNOME's own calendar and notification menu, which the island covers
-// (docs/features/calendar.md): 📅 in the hub, Super+V, one modal grab at a
-// time, the unread dot, banners held while expanded, and the handlers on
-// GNOME's date menu across disable/enable. A self-contained block.
+// (docs/features/calendar.md): the date pill in the hub header, Super+V,
+// one modal grab at a time, the unread dot, banners held while expanded,
+// and the handlers on GNOME's date menu across disable/enable. A
+// self-contained block.
 
 const dateMenuButton = () => Main.panel.statusArea.dateMenu;
 const calendarMenuOpen = () => dateMenuButton().menu.isOpen;
@@ -4342,21 +4367,27 @@ async function testCalendarMenu(outDir) {
         `modal=${Main.modalCount} (before ${modalBefore}) focus=${global.stage.key_focus} ` +
         `bannersHeld=${tray._bannerBlocked}`;
 
-    // 📅 in the hub header.
+    // Hover-open stays out of the way of the clicks on the pill below.
+    const hoverDelay = settings().get_int('hover-open-delay');
+    settings().set_int('hover-open-delay', 0);
+
+    // The date pill in the hub header (its text, name and look:
+    // testDatePill).
+    const focusBefore = global.stage.key_focus;
     island().expand();
     await sleep(animationWait());
     let hub = island()._hub;
     const button = hub.calendarButton;
     const [b, g, bar] = [button, hub.settingsButton, hub._panicBar.actor].map(boxOf);
-    check('calendar: 📅 sits left of ⚙️ in the hub header, clear of the panic bar',
+    check('calendar: the date pill sits left of ⚙️ in the hub header, clear of the panic bar',
         button?.mapped && b.x2 <= g.x1 && Math.abs(b.y1 + b.y2 - g.y1 - g.y2) <= 2 && bar.x2 <= b.x1,
-        `📅=[${b.x1},${b.y1} - ${b.x2},${b.y2}] ⚙️=[${g.x1},${g.y1}] panic bar ends at ${bar.x2}`);
+        `date pill=[${b.x1},${b.y1} - ${b.x2},${b.y2}] ⚙️=[${g.x1},${g.y1}] panic bar ends at ${bar.x2}`);
     check('calendar: GNOME\'s banners are held while the island is expanded',
         tray._bannerBlocked === true, state());
     await movePointerTo((b.x1 + b.x2) / 2, (b.y1 + b.y2) / 2);
     await sleep(SETTLE_MS);
     const tip = hub._tooltip.actor;
-    check('calendar: hovering 📅 names it',
+    check('calendar: hovering the date pill says what it opens',
         tip.visible && tip.text === 'Calendar and notifications', `visible=${tip.visible} text=${tip.text}`);
 
     // A click: GNOME's menu opens above the island, which collapses.
@@ -4366,11 +4397,12 @@ async function testCalendarMenu(outDir) {
         uiChildren.indexOf(menu.actor) > uiChildren.indexOf(strip()),
         `menu ${uiChildren.indexOf(menu.actor)}, island ${uiChildren.indexOf(strip())}`);
     await sleep(animationWait());
-    check('calendar: clicking 📅 opens GNOME\'s calendar and notification menu',
+    check('calendar: clicking the date pill opens GNOME\'s calendar and notification menu',
         calendarMenuOpen() && menu.actor.visible, state());
     check('calendar: the island collapses and releases its grab; only the menu holds one',
         !island().expanded && !island()._grabHelper.grabbed && !strip().reactive &&
-        Main.modalCount === modalBefore + 1, state());
+        Main.modalCount === modalBefore + 1 && !hub.actor.visible && !button.mapped &&
+        pill().width === island()._targetSize(false).width, state());
     check('calendar: the keyboard focus moves into the menu', focusInCalendarMenu(), state());
     const m = boxOf(menu.actor);
     const [pcx] = pillCenter();
@@ -4396,20 +4428,54 @@ async function testCalendarMenu(outDir) {
     check('calendar: Escape closes it and releases its grab',
         !calendarMenuOpen() && !island().expanded && Main.modalCount === modalBefore &&
         !tray._bannerBlocked, state());
+    check('calendar: the key focus is back where it was before the island opened, not on the hidden pill',
+        global.stage.key_focus === focusBefore && !strip().contains(global.stage.key_focus),
+        `${state()} before=${focusBefore}`);
 
-    // Keyboard only: Tab to 📅, Enter.
+    // Pressed again where the clock is (the collapsed pill covers it), as
+    // a click on GNOME's clock closes its open menu: the menu closes, and
+    // the island stays closed.
+    island().expand();
+    await sleep(animationWait());
+    await clickActor(button);
+    await sleep(animationWait());
+    const openBefore = calendarMenuOpen() && !island().expanded;
+    await clickAt(...pillCenter());
+    await sleep(animationWait());
+    await movePointerTo(...away);
+    check('calendar: with the menu open, a click where the clock is closes it (as on GNOME\'s clock); the island stays closed',
+        openBefore && !calendarMenuOpen() && !island().expanded && Main.modalCount === modalBefore &&
+        !tray._bannerBlocked, `open before=${openBefore} ${state()}`);
+    if (island().expanded) {
+        island().collapse();
+        await sleep(animationWait());
+    }
+
+    // Keyboard only: Tab to the date pill, Enter; then Space.
     island().expand();
     await sleep(animationWait());
     for (let i = 0; i < 12 && global.stage.key_focus !== button; i++)
         await pressKeys(Clutter.KEY_Tab);
-    check('calendar: Tab reaches 📅', global.stage.key_focus === button, state());
+    check('calendar: Tab reaches the date pill', global.stage.key_focus === button, state());
     await pressKeys(Clutter.KEY_Return);
     await sleep(animationWait());
-    check('calendar: Enter on 📅 opens the menu, focus inside, island collapsed',
+    check('calendar: Enter on the date pill opens the menu, focus inside, island collapsed',
         calendarMenuOpen() && focusInCalendarMenu() && !island().expanded &&
         Main.modalCount === modalBefore + 1, state());
     await pressKeys(Clutter.KEY_Escape);
     await sleep(animationWait());
+    island().expand();
+    await sleep(animationWait());
+    button.grab_key_focus();
+    await pressKeys(Clutter.KEY_space);
+    await sleep(animationWait());
+    check('calendar: Space on the date pill does the same',
+        calendarMenuOpen() && focusInCalendarMenu() && !island().expanded &&
+        Main.modalCount === modalBefore + 1, state());
+    await pressKeys(Clutter.KEY_Escape);
+    await sleep(animationWait());
+    check('calendar: and Escape closes it, no grab left',
+        !calendarMenuOpen() && !island().expanded && Main.modalCount === modalBefore, state());
 
     // GNOME's own shortcut over the expanded island, and back.
     island().expand();
@@ -4480,8 +4546,13 @@ async function testCalendarMenu(outDir) {
     island().expand();
     await sleep(animationWait());
     hub = island()._hub;
-    check('calendar: 📅 carries the dot in the expanded island',
-        hub._header.unreadBadge.visible && hub._header.unreadBadge.mapped);
+    const dot = boxOf(hub._header.unreadBadge);
+    const time = boxOf(hub._header._timeLabel);
+    check('calendar: the date pill carries the dot after the time, and says so',
+        hub._header.unreadBadge.visible && hub._header.unreadBadge.mapped && dot.x1 >= time.x2 &&
+        dot.x2 <= boxOf(hub.calendarButton).x2 &&
+        hub.calendarButton.accessible_name.endsWith(', unread notifications'),
+        `dot=[${dot.x1},${dot.x2}] time ends ${time.x2} name="${hub.calendarButton.accessible_name}"`);
     await screenshotTop(outDir, 'hub-unread');
     island().collapse();
     await sleep(animationWait());
@@ -4506,9 +4577,10 @@ async function testCalendarMenu(outDir) {
     await sleep(animationWait());
     await clickActor(island()._hub.calendarButton);
     await sleep(animationWait());
-    check('calendar: GNOME\'s list marks it seen, the dot goes; the notification stays',
+    check('calendar: GNOME\'s list marks it seen, the dot goes (on the date pill and in its name); the notification stays',
         calendarMenuOpen() && !gnomeUnreadDot() && !pillUnreadDot() &&
-        !island()._hub._header.unreadBadge.visible && source.notifications.includes(unseen),
+        !island()._hub._header.unreadBadge.visible &&
+        !island()._hub.calendarButton.accessible_name.includes('unread') && source.notifications.includes(unseen),
         `${state()} kept=${source.notifications.includes(unseen)}`);
     await closeCalendarMenu();
 
@@ -4565,6 +4637,133 @@ async function testCalendarMenu(outDir) {
     await sleep(animationWait());
     island().collapse();
     await sleep(animationWait());
+    settings().set_int('hover-open-delay', hoverDelay);
+}
+
+// ---------------------------------------------------------------- date pill
+//
+// The hub header's date pill (ui/hubHeader.js): the date and the time as
+// the collapsed pill shows them, in Froonty's 12/24-hour format, always
+// with the date ("Show date when collapsed" is the collapsed pill's);
+// GNOME's unread dot after the time; its name; its look in the header row;
+// one handler on the clock service while it exists, none once its hub is
+// gone; no pill without GNOME's date menu. A press: testCalendarMenu.
+
+async function testDatePill(outDir) {
+    const s = settings();
+    const iface = new Gio.Settings({schema_id: 'org.gnome.desktop.interface'});
+    island().expand();
+    await sleep(animationWait());
+    const hub = island()._hub;
+    const header = hub._header;
+    const button = hub.calendarButton;
+    const clock = island()._clock;
+    const shown = () => `"${header._dateLabel.text}" "${header._timeLabel.text}" name="${button.accessible_name}"`;
+    // As the clock service says now (a minute may turn meanwhile: the
+    // pill follows on the tick).
+    const matches = () => {
+        const now = clock.snapshot();
+        return header._dateLabel.text === now.date && header._timeLabel.text === now.time &&
+            header._dateLabel.visible && header._timeLabel.visible;
+    };
+    const DATE = /^\S+ \d{1,2} \S+$/;
+
+    s.set_string('clock-format', '24h');
+    await sleep(SETTLE_MS);
+    check('date pill: 24-hour, the date and the time as the clock service says ("Sat 3 Oct" "14:05"), with the date though "Show date when collapsed" is off',
+        await waitFor(matches, 2000) && DATE.test(header._dateLabel.text) &&
+        /^\d{1,2}:\d{2}$/.test(header._timeLabel.text) && !s.get_boolean('show-date'), shown());
+    const name = () => {
+        const now = clock.snapshot();
+        const unread = gnomeUnreadDot() ? ', unread notifications' : '';
+        return `Calendar and notifications, ${now.weekday}, ${now.longDate}, ${now.time}${unread}`;
+    };
+    check('date pill: named "Calendar and notifications, <weekday>, <date>, <time>" (and the dot, if GNOME shows one)',
+        await waitFor(() => button.accessible_name === name(), 2000) &&
+        header.unreadBadge.visible === gnomeUnreadDot(), `${shown()} expected "${name()}"`);
+    const path = await screenshotTop(outDir, 'hub-header-pill', 120);
+    check('date pill: screenshot of the header', true, `note: ${path}`);
+
+    s.set_boolean('show-date', true);
+    await sleep(SETTLE_MS);
+    const collapsedDate = island()._collapsedView._dateLabel;
+    check('date pill: "Show date when collapsed" on changes nothing here (the collapsed pill gets its date)',
+        matches() && collapsedDate.visible && collapsedDate.text === clock.snapshot().shortDate, shown());
+    s.reset('show-date');
+
+    s.set_string('clock-format', '12h');
+    await sleep(SETTLE_MS);
+    check('date pill: 12-hour', await waitFor(matches, 2000) && /[AP]M/.test(header._timeLabel.text) &&
+        DATE.test(header._dateLabel.text) && button.accessible_name.includes(header._timeLabel.text), shown());
+    await screenshotTop(outDir, 'hub-header-pill-12h', 120);
+    s.set_string('clock-format', 'system');
+    iface.set_string('clock-format', '12h');
+    await sleep(SETTLE_MS);
+    const system12 = await waitFor(() => matches() && /[AP]M/.test(header._timeLabel.text), 2000);
+    iface.set_string('clock-format', '24h');
+    await sleep(SETTLE_MS);
+    check('date pill: "Follow system" follows GNOME\'s 12/24-hour setting',
+        system12 && await waitFor(() => matches() && !/[AP]M/.test(header._timeLabel.text), 2000), shown());
+    iface.reset('clock-format');
+    s.reset('clock-format');
+    await sleep(SETTLE_MS);
+
+    // A tick of the top bar's own clock is what updates it.
+    header._dateLabel.text = '-';
+    header._timeLabel.text = '-';
+    Main.panel.statusArea.dateMenu._clock.notify('clock');
+    await sleep(SETTLE_MS);
+    check('date pill: a tick of the top bar clock updates it', matches(), shown());
+
+    // Its look: the collapsed pill's, as tall as ⚙️ beside it.
+    const [b, g] = [button, hub.settingsButton].map(boxOf);
+    const node = button.get_theme_node();
+    const bg = node.get_background_color();
+    check('date pill: a rounded pill as tall as ⚙️, text not cut, centres level',
+        Math.abs((b.y2 - b.y1) - (g.y2 - g.y1)) <= 2 * scale() &&
+        node.get_border_radius(St.Corner.TOPLEFT) >= (b.y2 - b.y1) / 2 - 1 &&
+        node.get_border_width(St.Side.TOP) > 0 && bg.alpha === 255 &&
+        !isEllipsized(header._dateLabel) && !isEllipsized(header._timeLabel) &&
+        Math.abs(b.y1 + b.y2 - g.y1 - g.y2) <= 2,
+        `pill ${b.x2 - b.x1}x${b.y2 - b.y1}, ⚙️ ${g.x2 - g.x1}x${g.y2 - g.y1}, radius ${node.get_border_radius(St.Corner.TOPLEFT)}`);
+    check('date pill: keyboard focusable, and hover shows the pill\'s hover',
+        button.can_focus && button.track_hover && button.reactive);
+    island().collapse();
+    await sleep(animationWait());
+
+    // Without GNOME's date menu: no pill, and no handler on the clock.
+    const {HubHeader} = await import(`file://${extension().path}/ui/hubHeader.js`);
+    const {Tooltip} = await import(`file://${extension().path}/core/tooltip.js`);
+    const before = jsHandlerCount(clock, 'changed');
+    const bareTip = new Tooltip();
+    const bare = new HubHeader(bareTip, {clock, openSettings: () => {}, openCalendar: null});
+    bare.setUnread(true);
+    check('date pill: none without GNOME\'s date menu (⚙️ alone), and no clock handler',
+        bare.calendarButton === null && bare.unreadBadge === null &&
+        bare.end.get_children().length === 2 && bare.end.get_last_child() === bare.settingsButton &&
+        jsHandlerCount(clock, 'changed') === before, `${bare.end.get_children().length} children`);
+    bare.destroy();
+    bare.actor.destroy();
+    bareTip.actor.destroy();
+    const tip = new Tooltip();
+    const own = new HubHeader(tip, {clock, openSettings: () => {}, openCalendar: () => {}});
+    const during = jsHandlerCount(clock, 'changed');
+    own.destroy();
+    own.actor.destroy();
+    tip.actor.destroy();
+    check('date pill: one handler on the clock service while it exists, none after',
+        during === before + 1 && jsHandlerCount(clock, 'changed') === before,
+        `${before} -> ${during} -> ${jsHandlerCount(clock, 'changed')}`);
+
+    // The island's own hub: every handler on the clock service goes with it.
+    const withIsland = jsHandlerCount(clock, 'changed');
+    s.set_boolean('island-enabled', false);
+    await sleep(SETTLE_MS);
+    check('date pill: with the island gone, nothing listens to its clock service any more',
+        withIsland >= 2 && jsHandlerCount(clock, 'changed') === 0,
+        `${withIsland} -> ${jsHandlerCount(clock, 'changed')}`);
+    s.reset('island-enabled');
+    await sleep(SETTLE_MS);
 }
 
 // ---------------------------------------------------------------- notifications tab
@@ -4747,7 +4946,7 @@ async function testNotifications(outDir) {
         `seen=${recent.acknowledged} gnome=${gnomeUnreadDot()} tab=${notificationsEntry().dot.visible}`);
     await pressKeys(Clutter.KEY_Tab);
     await pressKeys(Clutter.KEY_x);
-    check('notifications: once Tab moved the focus into the island, a key marks them seen; GNOME\'s, the pill\'s, 📅\'s and the tab\'s dots go',
+    check('notifications: once Tab moved the focus into the island, a key marks them seen; GNOME\'s, the pill\'s, the date pill\'s and the tab\'s dots go',
         recent.acknowledged && older.acknowledged && markup.acknowledged && dotsOff() &&
         !notificationRow('New mail')._part('new').visible && destroyed.length === 0,
         `seen=${recent.acknowledged} gnome=${gnomeUnreadDot()} tab=${notificationsEntry().dot.visible}`);
@@ -4829,7 +5028,7 @@ async function testNotifications(outDir) {
     const low = notify(mail, 'Low while open');
     await sleep(SETTLE_MS);
     const entry = notificationsEntry();
-    check('notifications: a LOW one arriving with Clock on screen lights the tab\'s dot and 📅\'s; the tab says so',
+    check('notifications: a LOW one arriving with Clock on screen lights the tab\'s dot and the date pill\'s; the tab says so',
         entry.dot.visible && entry.dot.mapped && island()._hub._header.unreadBadge.visible &&
         entry.button.accessible_name.endsWith(', unread notifications') && !low.acknowledged,
         `tab dot=${entry.dot.visible} name="${entry.button.accessible_name}"`);
@@ -4998,8 +5197,8 @@ async function testNotifications(outDir) {
     s.set_int('notifications-height', 360);
     await sleep(animationWait());
     const [w2, h2] = pill().get_transformed_size();
-    check('notifications: 400×440 by default, and live with the settings',
-        w === 400 * scale() && h === 440 * scale() && w2 === 520 * scale() && h2 === 360 * scale(),
+    check('notifications: 400×440 by default (wider if the top row needs it), and live with the settings',
+        isOpenWidth(w, 400) && h === 440 * scale() && isOpenWidth(w2, 520) && h2 === 360 * scale(),
         `${w}x${h} then ${w2}x${h2}`);
     s.reset('notifications-width');
     s.reset('notifications-height');
@@ -5493,7 +5692,7 @@ async function testNotificationSafeguards(outDir) {
         await sleep(animationWait());
         const lowAfter = notify('Held: low after');
         await sleep(SETTLE_MS);
-        check('notifications safeguards: then, with Clock on screen, a LOW one lights the tab\'s, 📅\'s and GNOME\'s dot',
+        check('notifications safeguards: then, with Clock on screen, a LOW one lights the tab\'s, the date pill\'s and GNOME\'s dot',
             !lowAfter.acknowledged && notificationsEntry().dot.visible && island()._hub._header.unreadBadge.visible &&
             gnomeUnreadDot(), `tab=${notificationsEntry().dot.visible} gnome=${gnomeUnreadDot()} queue=${tray.queueCount}`);
         await collapse();
@@ -8431,7 +8630,7 @@ async function testBreak(outDir) {
         });
         const [, listWidth] = view2._list.get_preferred_width(-1);
         check('break: at 440 × 480 every button is inside the tab; nothing scrolls sideways',
-            w === 440 * scale() && h === 480 * scale() && buttons.length >= 5 && outside.length === 0 &&
+            isOpenWidth(w, 440) && h === 480 * scale() && buttons.length >= 5 && outside.length === 0 &&
             view2._scroll.hscrollbar_policy === St.PolicyType.NEVER &&
             view2._list.width <= view2._scroll.width + 0.5,
             `${w}x${h} buttons=${buttons.length} outside=${outside.map(x => x.label ?? x.accessible_name)} ` +
@@ -8522,6 +8721,7 @@ async function testPublicBuild() {
 const ONLY_TESTS = {
     testClaudeAttention, testClaudeAttentionWindows, testNotifications, testCalendar,
     testNotes, testMedia, testBreak, testHub, testLifecycle, testPublicBuild,
+    testPointer, testHubLayout, testDatePill, testCalendarMenu,
 };
 
 export async function runAll(outDir) {
@@ -8563,6 +8763,7 @@ export async function runAll(outDir) {
         await testLauncher();
         await testStartup();
         await testSettingsButton(outDir);
+        await testDatePill(outDir);
         await testCalendarMenu(outDir);
         await testNotifications(outDir);
         await testNotificationSafeguards(outDir);

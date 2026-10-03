@@ -2,16 +2,16 @@
 // The hub: content of the expanded island. It hosts features
 // (features/registry.js) and contains no feature logic of its own:
 //
-//   ┌─────┬────────────────────────────────────┐
-//   │ tab │      [panic][panic]…        📅 [a] ⚙️ │  panic bar (max 5), centered
-//   │ tab ├────────────────────────────────────┤
-//   │ …   │        active feature's view      │  content
-//   └─────┴────────────────────────────────────┘
+//   ┌─────┬──────────────────────────────────────────────┐
+//   │ tab │      [panic][panic]…   (Sat 3 Oct 14:05) [a] ⚙️ │  panic bar (max 5), centered
+//   │ tab ├──────────────────────────────────────────────┤
+//   │ …   │            active feature's view             │  content
+//   └─────┴──────────────────────────────────────────────┘
 //     tab column: one icon per feature; its name shows in a tooltip on hover
-//     header (hubHeader.js): 📅 GNOME's own calendar and notification menu,
+//     header (hubHeader.js): a pill with the date and the time that opens
+//       GNOME's own calendar and notification menu (with GNOME's unread
+//       dot, as on the tab of a feature that asks for it: unreadDot),
 //       [a] the active feature's own buttons (view.headerActions), ⚙️
-//       (GNOME's unread dot on 📅, as on the tab of a feature that asks
-//       for it: unreadDot)
 //
 // The island is at least wide enough (minWidth) that the centred panic bar
 // stays clear of the tab column and of the header's buttons.
@@ -51,7 +51,7 @@ export class Hub extends EventEmitter {
      * @param {object} actions
      * @param {Function} actions.openSettings
      * @param {?Function} actions.openCalendar opens GNOME's calendar and
-     *   notification menu; null when this Shell has none (no 📅 button)
+     *   notification menu; null when this Shell has none (no date pill)
      */
     constructor(ctx, features, {openSettings, openCalendar}) {
         super();
@@ -72,6 +72,7 @@ export class Hub extends EventEmitter {
 
     destroy() {
         this._settings.disconnectObject(this);
+        this._header.destroy();
         this._panicBar.destroy();
         for (const id of [...this._entries.keys()])
             this._removeEntry(id);
@@ -136,8 +137,8 @@ export class Hub extends EventEmitter {
     }
 
     /**
-     * Shows GNOME's unread dot on 📅 and on the tabs of features that ask
-     * for it (unreadDot), whose names then say so.
+     * Shows GNOME's unread dot on the header's date pill and on the tabs of
+     * features that ask for it (unreadDot), whose names then say so.
      *
      * @param {boolean} unread whether GNOME's clock would show its dot
      */
@@ -252,11 +253,15 @@ export class Hub extends EventEmitter {
             x_expand: true,
             y_expand: true,
         });
-        // The header row holds 📅, the active feature's buttons and ⚙️ on
-        // the right; the panic bar is centered over the whole island in its
-        // own layer (see below).
+        // The header row holds the date pill, the active feature's buttons
+        // and ⚙️ on the right; the panic bar is centered over the whole
+        // island in its own layer (see below).
         this._tooltip = new Tooltip();
-        this._header = new HubHeader(this._tooltip, {openSettings, openCalendar});
+        this._header = new HubHeader(this._tooltip, {
+            clock: this._ctx.clock,
+            openSettings,
+            openCalendar,
+        });
         this.settingsButton = this._header.settingsButton;
         this.calendarButton = this._header.calendarButton;
 
@@ -411,7 +416,7 @@ export class Hub extends EventEmitter {
 
 /**
  * An icon with GNOME's unread dot in its top-right corner (hidden), as on
- * the clock: 📅 and the tabs of features with unreadDot.
+ * the clock: the tabs of features with unreadDot.
  *
  * @param {object} iconParams St.Icon properties
  * @returns {{child: St.Widget, dot: St.Widget}}

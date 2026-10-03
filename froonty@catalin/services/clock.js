@@ -29,6 +29,8 @@ const TIME_FORMAT_24H = '%H:%M';
 const TIME_FORMAT_12H = '%-l:%M %p';
 const WEEKDAY_FORMAT = '%A';
 const SHORT_DATE_FORMAT = '%a %-d';
+// As formatTime() writes a date: "Thu 5 Nov".
+const DATE_FORMAT = '%a %-d %b';
 
 /**
  * Emits 'changed' whenever the displayed text may have changed.
@@ -97,14 +99,20 @@ export class ClockService extends EventEmitter {
     }
 
     /**
-     * @returns {{time: string, shortDate: string, weekday: string,
-     *            longDate: string, showDate: boolean}}
+     * The collapsed pill shows `shortDate` ("Sat 3", only with showDate) and
+     * `time`; the hub header's pill `date` ("Sat 3 Oct") and `time`, and
+     * names them with `weekday` and `longDate` ("Saturday", "October 3
+     * 2026").
+     *
+     * @returns {{time: string, shortDate: string, date: string,
+     *            weekday: string, longDate: string, showDate: boolean}}
      */
     snapshot() {
         const now = GLib.DateTime.new_now(this._timeZone());
         return {
             time: now.format(this._timeFormat()).trim(),
             shortDate: now.format(SHORT_DATE_FORMAT),
+            date: now.format(DATE_FORMAT),
             weekday: now.format(WEEKDAY_FORMAT),
             longDate: now.format(Shell.util_translate_time_string(LONG_DATE_FORMAT)),
             showDate: this._settings.get_boolean('show-date'),
@@ -125,7 +133,7 @@ export class ClockService extends EventEmitter {
             .to_timezone(this._timeZone());
         let format = this._timeFormat();
         if (date)
-            format = `%a %-d %b ${format}`;
+            format = `${DATE_FORMAT} ${format}`;
         else if (weekday)
             format = `%a ${format}`;
         return time.format(format).trim();
