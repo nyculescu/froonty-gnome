@@ -25,9 +25,9 @@
 // notifies its initial events.
 //
 // Signals are connected with plain connect() and disconnected one by one
-// in release() and stop(); EDS objects are never disposed by hand (no
-// run_dispose()), the garbage collector releases them once Froonty lets
-// go.
+// in release() and stop(). The garbage collector releases the EDS objects
+// once Froonty lets go, except the source registry and its watcher,
+// disposed by hand in stop() (disposeRegistry()).
 
 import GLib from 'gi://GLib';
 import Gio from 'gi://Gio';
@@ -121,6 +121,22 @@ export async function loadEds() {
 }
 
 /**
+ * Disposes an ESourceRegistry (and its watcher) now. Its dispose runs the
+ * default main context (EDataServer 3.56); run by the garbage collector,
+ * every JS timeout or idle due meanwhile is refused by GJS ("Attempting to
+ * run a JS callback during garbage collection") and dropped for good, the
+ * Shell's and other extensions' too. Disposed here, outside a collection,
+ * those callbacks run normally.
+ *
+ * @param {?object} watcher EDataServer.SourceRegistryWatcher
+ * @param {?object} registry EDataServer.SourceRegistry
+ */
+function disposeRegistry(watcher, registry) {
+    watcher?.run_dispose();
+    registry?.run_dispose();
+}
+
+/**
  * GNOME's calendars and live views of their events.
  *
  * Emits 'calendar-appeared' (info), 'calendar-changed' (info),
@@ -150,8 +166,10 @@ export class EdsAdapter extends Emitter {
         const registry = await call(
             done => EDataServer.SourceRegistry.new(cancellable, done),
             (_source, result) => EDataServer.SourceRegistry.new_finish(result));
-        if (this._stopped)
+        if (this._stopped) {
+            disposeRegistry(null, registry);
             return;
+        }
         this._registry = registry;
 
         const watcher = EDataServer.SourceRegistryWatcher.new(registry, CALENDAR);
@@ -188,6 +206,7 @@ export class EdsAdapter extends Emitter {
             this._dropClient(uid);
         this._connecting.clear();
         this._sources.clear();
+        disposeRegistry(this._watcher, this._registry);
         this._watcher = null;
         this._registry = null;
     }

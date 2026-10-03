@@ -8502,8 +8502,11 @@ async function testPublicBuild() {
         uiGroupChildren: footprint.uiGroupChildren.filter(isOurs),
         trackedChrome: footprint.trackedChrome.filter(isOurs),
     });
+    const [x, y] = [scrub(baseline), scrub(after)];
     check('public build: shell footprint identical after the cycles',
-        JSON.stringify(scrub(after)) === JSON.stringify(scrub(baseline)), footprintDiff(baseline, after));
+        JSON.stringify(x) === JSON.stringify(y),
+        Object.keys(x).filter(k => JSON.stringify(x[k]) !== JSON.stringify(y[k]))
+            .map(k => `${k}: ${JSON.stringify(x[k])} -> ${JSON.stringify(y[k])}`).join('; '));
     check('public build: re-enable succeeds', await setExtensionEnabled(true), stateName());
 }
 
