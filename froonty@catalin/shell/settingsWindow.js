@@ -46,6 +46,9 @@ export class SettingsWindow {
         this._title = title;
         this._settings = settings;
         this._waitTimeoutId = 0;
+        // The windows watched for 'shown' while waiting: _stopWaiting() lets
+        // go of exactly these, also one unmanaged before it was ever shown.
+        this._watched = new Set();
         this._resetViewWithoutWindow();
     }
 
@@ -102,8 +105,10 @@ export class SettingsWindow {
 
         global.display.connectObject('window-created', (_display, window) => {
             // The title may not be final at creation time; check once shown.
+            this._watched.add(window);
             window.connectObject('shown', () => {
                 window.disconnectObject(this);
+                this._watched.delete(window);
                 if (this._isOurs(window)) {
                     this._stopWaiting();
                     Main.activateWindow(window);
@@ -131,8 +136,9 @@ export class SettingsWindow {
 
     _stopWaiting() {
         global.display.disconnectObject(this);
-        for (const window of global.display.list_all_windows())
+        for (const window of this._watched)
             window.disconnectObject(this);
+        this._watched.clear();
 
         if (this._waitTimeoutId) {
             GLib.source_remove(this._waitTimeoutId);

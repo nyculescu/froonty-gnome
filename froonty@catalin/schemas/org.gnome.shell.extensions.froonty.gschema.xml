@@ -64,7 +64,7 @@
     <key name="notifications-enabled" type="b">
       <default>true</default>
       <summary>Show the Notifications tab</summary>
-      <description>GNOME's own notifications, newest first, urgent ones on top: click one to open it (GNOME's rule: for an app that gave it no default action, GNOME opens the app and removes all of that app's non-resident notifications), × dismisses it, Clear all (after a confirmation) dismisses them all. Froonty keeps no copy, watches them only while the tab is on screen, and never removes one on its own. Do Not Disturb is GNOME's org.gnome.desktop.notifications show-banners.</description>
+      <description>GNOME's own notifications, newest first, urgent ones on top. Froonty keeps no copy, watches them only while the tab is shown, and never removes one on its own.</description>
     </key>
     <key name="notifications-width" type="i">
       <range min="320" max="960"/>
@@ -346,7 +346,7 @@
     <key name="calendar-enabled" type="b">
       <default>true</default>
       <summary>Show the Calendar tab</summary>
-      <description>The events of the calendars GNOME knows (Settings → Online Accounts, GNOME Calendar, Evolution), read-only from Evolution Data Server. Needs gir1.2-ecal-2.0; turned off once, on the first start, when it is missing.</description>
+      <description>The events of the calendars GNOME knows, read-only from Evolution Data Server. Needs gir1.2-ecal-2.0; turned off once, on the first start, when it is missing.</description>
     </key>
     <key name="calendar-eds-checked" type="b">
       <default>false</default>

@@ -3,14 +3,15 @@
 // wrong, a stray line) fails here instead of as an "Extension Error"
 // window in the Shell. Imports that only resolve inside the Shell or the
 // settings process (resource:///…) are expected to fail to link here;
-// only a SyntaxError counts.
+// only a SyntaxError counts. FROONTY_PARSE_ROOT names another copy (the
+// public package, unzipped, in tools/pack-public/test_pack_public.py).
 
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 
 import {test, eq, done} from './test.js';
 
-const ROOT = GLib.build_filenamev([
+const ROOT = GLib.getenv('FROONTY_PARSE_ROOT') ?? GLib.build_filenamev([
     GLib.path_get_dirname(GLib.filename_from_uri(import.meta.url)[0]), '..', '..', 'froonty@catalin']);
 
 function modules(dir, out = []) {

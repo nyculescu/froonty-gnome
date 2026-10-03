@@ -571,9 +571,9 @@ recorder.
   reset and nothing else), and `deleteTree`'s refusals.
 - **Leak guard** (`tools/pack-public/test_pack_public.py`): `check_zip.py`
   passes a clean zip and fails (and deletes the zip) on a local file, a
-  changed stub, LanguageTool's address in code, Writing CSS, a key in a
-  binary; `strip_local_css.py`; and a real `pack-public.sh` run into a
-  temporary folder.
+  module that lists local features, LanguageTool's address in code,
+  Writing CSS, a key in a binary; `strip_local.py`; and a real
+  `pack-public.sh` run into a temporary folder.
 - **Headless** (`testWriting`): off by default; the empty state and its
   Settings button (the window opens on Writing and empties `prefs-page`);
   Claude Code alone; a rewrite with the exact argv, the private folder, no
@@ -618,9 +618,11 @@ tests nor the development of this feature did:
 
 ## 10. If it is ever published (extensions.gnome.org)
 
-- **Remove it from the local-only list:** the Writing lines in
-  `tools/pack-public.sh`, `tools/pack-public/` (stubs, schema prefixes,
-  CSS block names) and `check_zip.py`'s list.
+- **Remove it from the local-only list:** its import, from
+  `features/localFeatures.js` to `features/registry.js` (and its settings
+  tab from `localPrefs.js` to `prefs.js`); the Writing lines in
+  `tools/pack-public.sh`, `tools/pack-public/` (schema prefixes, CSS
+  block names, `prune.py`'s lists) and `check_zip.py`'s list.
 - **`metadata.json`:** add "Writing tab (off by default): when you click
   Paraphrase, Fix grammar, Shorten, Formal, Casual or Summarise, the text in
   its box (typed, pasted, or the current Clipboard entry you picked) is sent

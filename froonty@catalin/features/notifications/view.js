@@ -335,12 +335,12 @@ export class NotificationsView {
     // island closes as GNOME's menu does.
     _activate(row) {
         if (!this._isSecondClick() && this._service.activate(row.key))
-            this._ctx.collapse?.();
+            this._ctx.collapse();
     }
 
     _activateAction(row, index) {
         if (!this._isSecondClick() && this._service.activateAction(row.key, index))
-            this._ctx.collapse?.();
+            this._ctx.collapse();
     }
 
     // The island stays open.

@@ -11,12 +11,12 @@ import Gtk from 'gi://Gtk';
 
 import {gettext as _} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
+import {sizeGroup} from '../../prefs/rows.js';
 import {sanitizeColor} from './color.js';
 import {loadEds} from './eds.js';
 import {CALENDAR_ICON_NAME} from './icon.js';
 import {detectProvider} from './providers.js';
 
-const SIZE_KEYS = ['calendar-width', 'calendar-height'];
 const HIDDEN_KEY = 'calendar-hidden-sources';
 
 // The tab's icon in the settings window's view switcher.
@@ -75,7 +75,8 @@ export function calendarPage(settings, window) {
 
     const cleanups = [];
     page.add(calendarsGroup(settings, cleanups));
-    page.add(sizeGroup(settings, cleanups));
+    page.add(sizeGroup(settings, ['calendar-width', 'calendar-height'],
+        _('Of the island while the Calendar tab is shown, in logical pixels.'), cleanups));
     const closeId = window.connect('close-request', () => {
         window.disconnect(closeId);
         for (const cleanup of cleanups.splice(0))
@@ -182,7 +183,8 @@ function calendarsGroup(settings, cleanups) {
             syncPlaceholder(_('GNOME’s calendar service did not answer: %s').format(e.message));
     });
 
-    // The registry and its D-Bus connection go with the window.
+    // The adapter's handlers and calendar connections go with the window;
+    // the source registry stays for the process (eds.js).
     cleanups.push(() => {
         destroyed = true;
         cancellable.cancel();
@@ -194,41 +196,4 @@ function calendarsGroup(settings, cleanups) {
         adapter = null;
     });
     return group;
-}
-
-// Island size while the Calendar tab is shown; applies live. As Kill Process'.
-function sizeGroup(settings, cleanups) {
-    const reset = new Gtk.Button({
-        label: _('Default size'),
-        valign: Gtk.Align.CENTER,
-        css_classes: ['flat'],
-    });
-    const group = new Adw.PreferencesGroup({
-        title: _('Size'),
-        description: _('Of the island while the Calendar tab is shown, in logical pixels.'),
-        header_suffix: reset,
-    });
-    group.add(spinRow(settings, 'calendar-width', _('Width')));
-    group.add(spinRow(settings, 'calendar-height', _('Height')));
-
-    const sync = () => {
-        const defaults = SIZE_KEYS.map(key => settings.get_default_value(key).unpack());
-        reset.tooltip_text = defaults.join(' × ');
-        reset.sensitive = SIZE_KEYS.some(key => settings.get_user_value(key) !== null);
-    };
-    sync();
-    const ids = SIZE_KEYS.map(key => settings.connect(`changed::${key}`, sync));
-    cleanups.push(() => ids.forEach(id => settings.disconnect(id)));
-    reset.connect('clicked', () => SIZE_KEYS.forEach(key => settings.reset(key)));
-    return group;
-}
-
-// Spin bounds are read from the schema's <range>, as in prefs.js.
-function spinRow(settings, key, title) {
-    const [, [lower, upper]] = settings.settings_schema.get_key(key)
-        .get_range().recursiveUnpack();
-    const row = Adw.SpinRow.new_with_range(lower, upper, 1);
-    row.title = title;
-    settings.bind(key, row, 'value', Gio.SettingsBindFlags.DEFAULT);
-    return row;
 }

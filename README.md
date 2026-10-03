@@ -302,6 +302,7 @@ froonty@catalin/             the extension (this directory is what gets installe
 ├── panic/                   panic button catalog, factories, buttons (mute,
 │                            Claude session, block camera, pause media,
 │                            sit/stand), prefs
+├── prefs/rows.js            settings rows the settings tabs share
 ├── core/                    shared by features: emitter.js, tooltip.js,
 │                            privateFile.js
 ├── services/clock.js        clock ticks from the top bar's GnomeDesktop.WallClock
@@ -346,17 +347,19 @@ after each change.
 
 GNOME Shell only discovers new extensions at startup: log out and back in.
 
-`make pack` stages a copy with empty stubs for `features/localFeatures.js`,
+`make pack` stages a copy without the `// local:begin local-features`
+… `// local:end local-features` blocks (`tools/pack-public/strip_local.py`):
+the imports and uses of `features/localFeatures.js`,
 `features/localPrefs.js`, `panic/localCatalog.js` and
-`panic/localFactories.js`, then keeps only the modules `extension.js` and
-`prefs.js` still reach, the remaining features' settings keys and CSS
-(`tools/pack-public/prune.py`), and the public description
-(`tools/pack-public/description.txt`). It checks the zip
-(`tools/pack-public/check_zip.py`): any trace of a left-out tab deletes
-the zip and fails the build. A feature goes public by moving its import
-from `localFeatures.js` to `features/registry.js` (and its settings tab
-from `localPrefs.js` to `prefs.js`), and out of the lists in
-`tools/pack-public/prune.py` and `check_zip.py`.
+`panic/localFactories.js`. It then keeps only the modules `extension.js`
+and `prefs.js` still reach (with the icons of the kept tabs), the
+remaining features' settings keys and CSS (`tools/pack-public/prune.py`),
+and the public description (`tools/pack-public/description.txt`). It
+checks the zip (`tools/pack-public/check_zip.py`): any trace of a
+left-out tab deletes the zip and fails the build. A feature goes public
+by moving its import from `localFeatures.js` to `features/registry.js`
+(and its settings tab from `localPrefs.js` to `prefs.js`), and out of
+the lists in `tools/pack-public/prune.py` and `check_zip.py`.
 
 Then run:
 

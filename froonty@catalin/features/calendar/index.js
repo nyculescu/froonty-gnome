@@ -23,7 +23,7 @@ function shellDeps(ctx) {
         desktopCalendar: () => new Gio.Settings({schema_id: 'org.gnome.desktop.calendar'}),
         // The island lets go of its grab first, so the browser or Settings
         // can take the focus.
-        collapse: () => ctx.collapse?.(),
+        collapse: () => ctx.collapse(),
         openUri: url => {
             const context = global.create_app_launch_context(global.get_current_time(), -1);
             Gio.AppInfo.launch_default_for_uri_async(url, context, null, (_source, result) => {

@@ -153,10 +153,3 @@ export function isWeekend(dow, noWork) {
 export function sexpTime(epoch) {
     return GLib.DateTime.new_from_unix_utc(Math.floor(epoch)).format('%Y%m%dT%H%M%SZ');
 }
-
-/** Whether {y, m, d} is a real date with integer fields. */
-export function isDate(date) {
-    return Boolean(date) && [date.y, date.m, date.d].every(Number.isInteger) &&
-        date.y >= 1 && date.y <= 9999 && date.m >= 1 && date.m <= 12 &&
-        date.d >= 1 && date.d <= daysInMonth(date.y, date.m);
-}

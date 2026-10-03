@@ -71,8 +71,7 @@ export class NotificationStore extends Emitter {
      *   it waits in GNOME's banner queue (its banner will mark it seen)
      * @param {object} [options]
      * @param {?Function} options.filter source → whether to follow it; a
-     *   source it turns down gets no handler at all (the Claude attention
-     *   bar follows only the Claude app and web browsers)
+     *   source it turns down gets no handler at all
      */
     constructor(tray, {critical, dismissed, waitingForBanner = () => false}, {filter = null} = {}) {
         super();

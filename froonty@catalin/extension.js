@@ -35,9 +35,9 @@ export default class FroontyExtension extends Extension {
         // toggled) keep what the user had, so disable() deliberately leaves
         // this field alone.
         this._started ??= this._settings.get_boolean('start-at-login');
-        // Choices kept in memory for as long as the Shell runs, across
-        // screen locks (Media's chosen player): plain data, never cleared
-        // by disable().
+        // Plain data features keep in memory (ctx.memory). Kept across
+        // screen locks only when a feature asks for that (keepsMemory);
+        // otherwise disable() drops it.
         this._memory ??= {};
 
         // Always available: starts Froonty while it waits after login,
@@ -53,7 +53,7 @@ export default class FroontyExtension extends Extension {
             'changed::hide-panel-clock', () => this._syncPanelClock(),
             this);
         // Work a feature does while it is enabled, not only once its tab
-        // has been opened (the Clipboard tab's recording, for one).
+        // has been opened.
         this._backgrounds = new Set();
         for (const feature of FEATURES.filter(f => f.background)) {
             this._settings.connectObject(`changed::${feature.enabledKey}`,
@@ -63,12 +63,12 @@ export default class FroontyExtension extends Extension {
         // One-time checks of features (e.g. a tab whose app is not
         // installed starts off); each remembers that it ran.
         for (const feature of FEATURES) {
-            feature.setup?.(this._settings)?.catch?.(e =>
+            feature.setup?.(this._settings).catch(e =>
                 console.warn(`Froonty: ${feature.id} setup failed: ${e.message}`));
         }
 
         // Parts of features that live as long as the extension and follow
-        // whether the island is shown (the Break tab's reminders).
+        // whether the island is shown.
         this._parts = FEATURES.filter(f => f.createExtensionPart)
             .map(f => f.createExtensionPart(this._settings));
         this._syncIsland();
@@ -94,6 +94,8 @@ export default class FroontyExtension extends Extension {
         this._settingsWindow = null;
         this._panelClock = null;
         this._settings = null;
+        if (!FEATURES.some(f => f.keepsMemory))
+            this._memory = null;
     }
 
     _syncBackground(feature) {

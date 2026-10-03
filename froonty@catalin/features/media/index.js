@@ -52,6 +52,8 @@ export default {
     hubSizeKeys: {width: 'media-width', height: 'media-height'},
     createService: ctx => new MediaHandle(ctx),
     createView: (ctx, handle) => new MediaView(ctx, handle),
+    // ctx.memory.media (the chosen player) survives screen locks.
+    keepsMemory: true,
     // Music on the collapsed pill (wings, a new song's notice).
     pillAccessoryKeys: ['media-enabled', 'media-show-in-pill', 'media-track-notice'],
     wantsPillAccessory: settings => settings.get_boolean('media-enabled') &&

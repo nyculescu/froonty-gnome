@@ -87,7 +87,7 @@ export class CalendarService extends Emitter {
      * @param {Function} [deps.desktopCalendar] makes org.gnome.desktop.calendar settings
      * @param {Function} [deps.openUri] opens a web page
      * @param {Function} [deps.openOnlineAccounts]
-     * @param {Function} [deps.collapse] closes the island (before a browser opens)
+     * @param {Function} deps.collapse closes the island (before a browser opens)
      * @param {object} [deps.idle] {add(fn) → id, cancel(id)}
      * @param {object} [deps.timeout] {add(ms, fn) → id, cancel(id)}
      * @param {Function} [deps.now] seconds since the epoch
@@ -457,7 +457,7 @@ export class CalendarService extends Emitter {
     }
 
     openOnlineAccounts() {
-        this._deps.collapse?.();
+        this._deps.collapse();
         this._deps.openOnlineAccounts?.();
     }
 
@@ -469,7 +469,7 @@ export class CalendarService extends Emitter {
     _open(url) {
         if (!url || !/^https?:\/\//.test(url))
             return false;
-        this._deps.collapse?.();
+        this._deps.collapse();
         this.openUri(url);
         return true;
     }

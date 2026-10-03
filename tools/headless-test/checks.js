@@ -189,7 +189,7 @@ function shellFootprint() {
             // The Claude attention bar: a banner or the overview hides it.
             trayVisible: countHandlers(Main.messageTray, 'notify::visible'),
             overviewShowing: jsHandlerCount(Main.overview, 'showing'),
-            overviewHidden: jsHandlerCount(Main.overview, 'hidden'),
+            overviewHidden: jsHandlerCount(Main.overview, 'hidden') - appGridHidden(),
         },
         handlers: {
             monitorsChanged: countHandlers(Main.layoutManager, 'monitors-changed'),
@@ -782,8 +782,34 @@ async function testNotes(outDir) {
         noteFiles().includes('plan.md') && readNote('plan.md') === 'second',
         noteFiles().join(','));
 
-    // An external edit of the clean first note shows up (inotify).
+    // A rename or select the service answers after the view is gone (a
+    // rename commits on focus-out, as when the screen locks) leaves the
+    // destroyed view alone. A second view over the same service.
     const service = hub()._entries.get('notes').service;
+    {
+        const {NotesView} = await import(`file://${extension().path}/features/notes/view.js`);
+        const spare = new NotesView(hub()._ctx, service);
+        const touched = [];
+        spare._sync = () => touched.push('sync');
+        spare._focusEditor = () => touched.push('focus');
+        const pending = [
+            spare._tabs._callbacks.onRename('plan'),
+            spare._tabs._callbacks.onSelect('plan'),
+            spare._create(),
+        ];
+        spare.destroy();
+        await Promise.all(pending);
+        await sleep(SETTLE_MS);
+        check('notes: a rename, select or new note answered after the view is destroyed leaves it alone',
+            touched.length === 0 && spare._service === null, touched.join(','));
+        // The new note the spare view asked for goes; "plan" is selected again.
+        const created = service.selected;
+        if (created !== 'plan')
+            await service.trash(created);
+        await sleep(SETTLE_MS);
+    }
+
+    // An external edit of the clean first note shows up (inotify).
     await service.select(service.notes.find(n => n !== 'plan'));
     await sleep(SETTLE_MS);
     notesFolder().get_child(files[0]).replace_contents('edited elsewhere', null, false, 0, null);
@@ -4323,6 +4349,11 @@ const focusInCalendarMenu = () =>
 // Handlers on a GJS (non-GObject) signal emitter, such as a PopupMenu.
 const jsHandlerCount = (emitter, signal) =>
     emitter._signalConnectionsByName?.[signal]?.length ?? 0;
+// GNOME Shell's app grid connects one overview 'hidden' handler of its own
+// (`() => this.goToPage(0)`, ui/appDisplay.js) once, from deferred work
+// that may run in the middle of a footprint comparison: not Froonty's.
+const appGridHidden = () => Object.values(Main.overview._signalConnections ?? {})
+    .filter(c => c.name === 'hidden' && /\bthis\.goToPage\(0\)/.test(String(c.callback))).length;
 const isEllipsized = label => label.clutter_text.get_layout().is_ellipsized();
 
 async function closeCalendarMenu() {
@@ -8482,11 +8513,20 @@ async function testPublicBuild() {
             opened.push(id);
     }
     check('public build: every tab opens', opened.length === 4, opened.join(','));
+    // The icons the kept tabs load from their own folders.
+    const notesView = hub._entries.get('notes')?.view;
+    const icons = [hub._entries.get('calendar')?.feature.icon, notesView?._foldUp, notesView?._foldDown]
+        .map(icon => icon?.get_file().get_path() ?? 'none');
+    const missing = icons.filter(path => !GLib.file_test(path, GLib.FileTest.EXISTS));
+    check('public build: the bundled icons are there', missing.length === 0, missing.join(', '));
     hub.select('clock');
     island().collapse();
     await sleep(animationWait());
 
     check('public build: disable succeeds', await setExtensionEnabled(false), stateName());
+    // No feature keeps memory across disable() in this build.
+    check('public build: disable drops the in-memory data', extension().stateObj._memory === null,
+        JSON.stringify(extension().stateObj._memory));
     const baseline = shellFootprint();
     const failures = [];
     for (let i = 0; i < 10; i++) {

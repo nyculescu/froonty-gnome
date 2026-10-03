@@ -1,22 +1,24 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Remove working-tree-only blocks from a staged stylesheet.
+"""Remove working-tree-only blocks from a staged stylesheet or module.
 
-A block is everything from a line starting with ``/* local:begin NAME`` to
-the line ``/* local:end NAME */``, both included. Each NAME given must be
-present exactly once; a missing, unbalanced or nested marker fails, so a
-renamed or half-deleted block cannot slip into a public build.
+A block is everything from a line starting with ``/* local:begin NAME``
+(CSS) or ``// local:begin NAME`` (JavaScript, indented or not) to the line
+``/* local:end NAME */`` or ``// local:end NAME``, both included. Each NAME
+given must be present exactly once (with --several: at least once); a
+missing, unbalanced or nested marker fails, so a renamed or half-deleted
+block cannot slip into a public build.
 
-Usage: strip_local_css.py STYLESHEET NAME...
+Usage: strip_local.py [--several] FILE NAME...
 """
 
 import re
 import sys
 
-BEGIN = re.compile(r"^/\* local:begin ([a-z0-9-]+)\b")
-END = re.compile(r"^/\* local:end ([a-z0-9-]+) \*/\s*$")
+BEGIN = re.compile(r"^\s*(?:/\*|//) local:begin ([a-z0-9-]+)\b")
+END = re.compile(r"^\s*(?:/\* local:end ([a-z0-9-]+) \*/|// local:end ([a-z0-9-]+))\s*$")
 
 
-def strip(text, names):
+def strip(text, names, several=False):
     """Return text without the named blocks; raise ValueError on bad markers."""
     out = []
     open_name = None
@@ -31,8 +33,9 @@ def strip(text, names):
             seen.append(open_name)
             continue
         if end:
-            if end.group(1) != open_name:
-                raise ValueError(f"line {number}: local:end {end.group(1)} without its begin")
+            name = end.group(1) or end.group(2)
+            if name != open_name:
+                raise ValueError(f"line {number}: local:end {name} without its begin")
             open_name = None
             continue
         if "local:begin" in line or "local:end" in line:
@@ -44,19 +47,22 @@ def strip(text, names):
     if open_name is not None:
         raise ValueError(f"local:begin {open_name} is never closed")
     for name in names:
-        if seen.count(name) != 1:
-            raise ValueError(f"expected one local block {name}, found {seen.count(name)}")
+        count = seen.count(name)
+        if count < 1 or (count > 1 and not several):
+            raise ValueError(f"expected {'a' if several else 'one'} local block {name}, found {count}")
     return "".join(out)
 
 
 def main(argv):
-    if len(argv) < 3:
+    several = "--several" in argv
+    args = [a for a in argv[1:] if a != "--several"]
+    if len(args) < 2:
         raise SystemExit(__doc__)
-    path, names = argv[1], argv[2:]
+    path, names = args[0], args[1:]
     with open(path, encoding="utf-8") as f:
         text = f.read()
     try:
-        stripped = strip(text, names)
+        stripped = strip(text, names, several)
     except ValueError as e:
         raise SystemExit(f"{path}: {e}")
     with open(path, "w", encoding="utf-8") as f:

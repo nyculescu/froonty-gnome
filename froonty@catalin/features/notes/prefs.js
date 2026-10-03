@@ -9,8 +9,9 @@ import Gtk from 'gi://Gtk';
 
 import {gettext as _} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
+import {sizeGroup} from '../../prefs/rows.js';
+
 const FOLDER_KEY = 'notes-folder';
-const SIZE_KEYS = ['notes-width', 'notes-height'];
 
 export function notesPage(settings) {
     const page = new Adw.PreferencesPage({
@@ -36,45 +37,9 @@ export function notesPage(settings) {
     group.add(allNotes);
 
     page.add(group);
-    page.add(sizeGroup(settings));
+    page.add(sizeGroup(settings, ['notes-width', 'notes-height'],
+        _('Of the island while the Notes tab is shown, in logical pixels.')));
     return page;
-}
-
-// Island size while the Notes tab is shown; applies live.
-function sizeGroup(settings) {
-    const reset = new Gtk.Button({
-        label: _('Default size'),
-        valign: Gtk.Align.CENTER,
-        css_classes: ['flat'],
-    });
-    const group = new Adw.PreferencesGroup({
-        title: _('Size'),
-        description: _('Of the island while the Notes tab is shown, in logical pixels.'),
-        header_suffix: reset,
-    });
-    group.add(spinRow(settings, 'notes-width', _('Width')));
-    group.add(spinRow(settings, 'notes-height', _('Height')));
-
-    const sync = () => {
-        const defaults = SIZE_KEYS.map(key => settings.get_default_value(key).unpack());
-        reset.tooltip_text = defaults.join(' × ');
-        reset.sensitive = SIZE_KEYS.some(key => settings.get_user_value(key) !== null);
-    };
-    sync();
-    for (const key of SIZE_KEYS)
-        settings.connect(`changed::${key}`, sync);
-    reset.connect('clicked', () => SIZE_KEYS.forEach(key => settings.reset(key)));
-    return group;
-}
-
-// Spin bounds are read from the schema's <range>, as in prefs.js.
-function spinRow(settings, key, title) {
-    const [, [lower, upper]] = settings.settings_schema.get_key(key)
-        .get_range().recursiveUnpack();
-    const row = Adw.SpinRow.new_with_range(lower, upper, 1);
-    row.title = title;
-    settings.bind(key, row, 'value', Gio.SettingsBindFlags.DEFAULT);
-    return row;
 }
 
 function folderRow(settings) {

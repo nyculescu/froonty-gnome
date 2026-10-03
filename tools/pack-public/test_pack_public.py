@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Tests for the public build's leak guard (check_zip.py) and CSS stripping
-(strip_local_css.py), plus one real `tools/pack-public.sh` run into a
-temporary folder. Run: python3 -m unittest tools/pack-public/test_pack_public.py
+"""Tests for the public build's leak guard (check_zip.py), marker stripping
+(strip_local.py) and CSS pruning (prune.py), plus one real
+`tools/pack-public.sh` run into a temporary folder.
+Run: python3 -m unittest tools/pack-public/test_pack_public.py
 """
 
 import importlib.util
@@ -26,12 +27,8 @@ def load(name):
 
 
 check_zip = load("check_zip")
-strip_local_css = load("strip_local_css")
-
-
-def stub(name):
-    with open(os.path.join(HERE, name), "rb") as f:
-        return f.read()
+strip_local = load("strip_local")
+prune = load("prune")
 
 
 class CheckZipTest(unittest.TestCase):
@@ -42,12 +39,9 @@ class CheckZipTest(unittest.TestCase):
         files = {
             "metadata.json": b"{}",
             "extension.js": b"export default class {}",
-            "features/localFeatures.js": stub("localFeatures.js"),
-            "features/localPrefs.js": stub("localPrefs.js"),
-            "panic/localCatalog.js": stub("localCatalog.js"),
-            "panic/localFactories.js": stub("localFactories.js"),
             "stylesheet.css": b".froonty-pill {}\n",
         }
+        files.update({name: b"<svg/>" for name in check_zip.REQUIRED if name.endswith(".svg")})
         files.update(replace or {})
         files.update(extra or {})
         with zipfile.ZipFile(path, "w") as archive:
@@ -57,23 +51,40 @@ class CheckZipTest(unittest.TestCase):
 
     def test_clean_zip_passes(self):
         path = self.make_zip()
-        self.assertEqual(check_zip.problems(path, HERE), [])
-        check_zip.main(["check_zip.py", path, HERE])
+        self.assertEqual(check_zip.problems(path), [])
+        check_zip.main(["check_zip.py", path])
         self.assertTrue(os.path.exists(path))
 
     def assert_fails(self, path, needle):
-        found = check_zip.problems(path, HERE)
+        found = check_zip.problems(path)
         self.assertTrue(any(needle in line for line in found), found)
         with self.assertRaises(SystemExit):
-            check_zip.main(["check_zip.py", path, HERE])
+            check_zip.main(["check_zip.py", path])
         self.assertFalse(os.path.exists(path), "a leaking zip is deleted")
 
     def test_local_file(self):
         self.assert_fails(self.make_zip({"features/writing/x.js": b"x"}), "local-only file")
 
-    def test_changed_stub(self):
-        path = self.make_zip(replace={"features/localFeatures.js": b"import w from './writing/index.js';"})
-        self.assert_fails(path, "not the public stub")
+    def test_local_module(self):
+        path = self.make_zip({"features/localFeatures.js": b"export const LOCAL_FEATURES = [];"})
+        self.assert_fails(path, "lists local-only features")
+
+    def test_missing_icon(self):
+        path = self.make_zip()
+        other = os.path.join(os.path.dirname(path), "other.zip")
+        icon = "features/notes/icons/froonty-fold-up-symbolic.svg"
+        with zipfile.ZipFile(path) as source, zipfile.ZipFile(other, "w") as target:
+            for name in source.namelist():
+                if name != icon:
+                    target.writestr(name, source.read(name))
+        self.assert_fails(other, f"{icon}: missing")
+
+    def test_long_line(self):
+        self.assert_fails(self.make_zip({"schemas/x.gschema.xml": b"<a>" + b"x" * 200 + b"</a>\n"}),
+                          "over 200")
+
+    def test_brand_in_comment(self):
+        self.assert_fails(self.make_zip({"ui/x.js": b"// the Claude attention bar\n"}), "Claude")
 
     def test_service_address_in_code(self):
         self.assert_fails(self.make_zip({"ui/x.js": b"const u = 'https://api.languagetool.org/v2';"}),
@@ -99,28 +110,63 @@ class CheckZipTest(unittest.TestCase):
         self.assert_fails(other, "metadata.json: missing")
 
 
-class StripCssTest(unittest.TestCase):
+class StripLocalTest(unittest.TestCase):
     CSS = (".a {}\n"
            "/* local:begin zerotier (local) */\n.froonty-zerotier {}\n/* local:end zerotier */\n"
            ".b {}\n"
            "/* local:begin writing (local) */\n.froonty-writing {}\n/* local:end writing */\n")
 
+    JS = ("import a from './a.js';\n"
+          "// local:begin local-features (local)\nimport {L} from './localFeatures.js';\n// local:end local-features\n"
+          "export const X = [\n    a,\n    // local:begin local-features\n    ...L,\n    // local:end local-features\n];\n")
+
     def test_strips_both(self):
-        self.assertEqual(strip_local_css.strip(self.CSS, ["zerotier", "writing"]), ".a {}\n.b {}\n")
+        self.assertEqual(strip_local.strip(self.CSS, ["zerotier", "writing"]), ".a {}\n.b {}\n")
+
+    def test_strips_js_blocks(self):
+        self.assertEqual(strip_local.strip(self.JS, ["local-features"], several=True),
+                         "import a from './a.js';\nexport const X = [\n    a,\n];\n")
+        with self.assertRaises(ValueError):
+            strip_local.strip(self.JS, ["local-features"])
+        with self.assertRaises(ValueError):
+            strip_local.strip("const a = 1;\n", ["local-features"], several=True)
 
     def test_unbalanced(self):
         for broken in (self.CSS.replace("/* local:end writing */\n", ""),
                        self.CSS.replace("/* local:begin zerotier (local) */\n", ""),
                        self.CSS.replace("/* local:end zerotier */\n", "/* local:end writing */\n")):
             with self.assertRaises(ValueError):
-                strip_local_css.strip(broken, ["zerotier", "writing"])
+                strip_local.strip(broken, ["zerotier", "writing"])
 
     def test_nested_and_missing(self):
         nested = "/* local:begin writing */\n/* local:begin zerotier */\n/* local:end zerotier */\n/* local:end writing */\n"
         with self.assertRaises(ValueError):
-            strip_local_css.strip(nested, ["zerotier", "writing"])
+            strip_local.strip(nested, ["zerotier", "writing"])
         with self.assertRaises(ValueError):
-            strip_local_css.strip(".a {}\n", ["writing"])
+            strip_local.strip(".a {}\n", ["writing"])
+
+
+class PruneCssTest(unittest.TestCase):
+    def test_removed_rule(self):
+        for selector in (".froonty-claude {", ".froonty-media-title {", ".froonty-break,\n.froonty-sysmon {",
+                         ".froonty-pill-cue-level-2,\n.froonty-pill-cue-posture {",
+                         ".froonty-panic-button.froonty-panic-posture:checked {"):
+            self.assertTrue(prune.removed_rule(selector + " }"), selector)
+        for selector in (".froonty-pill-cue {", ".froonty-pill-cue-text {", ".froonty-mediax {",
+                         ".froonty-claude, .froonty-pill {", ".froonty-panic-button {"):
+            self.assertFalse(prune.removed_rule(selector + " }"), selector)
+
+    def test_kept_feature_keeps_its_icons(self):
+        root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, root, True)
+        for rel in ("extension.js", "features/notes/index.js", "features/notes/icons/a.svg",
+                    "features/break/index.js", "features/break/icons/b.svg"):
+            os.makedirs(os.path.dirname(os.path.join(root, rel)), exist_ok=True)
+            with open(os.path.join(root, rel), "w") as f:
+                f.write("")
+        prune.prune_modules(root, {"extension.js", "features/notes/index.js"})
+        self.assertTrue(os.path.exists(os.path.join(root, "features/notes/icons/a.svg")))
+        self.assertFalse(os.path.exists(os.path.join(root, "features/break")))
 
 
 def archive_text(path, name):
@@ -150,6 +196,20 @@ class PackTest(unittest.TestCase):
         self.assertIn("features/calendar/index.js", names)
         self.assertIn("LICENSE", names)
         self.assertNotIn("panic/camera.js", names)
+        self.assertNotIn("features/localFeatures.js", names)
+        self.assertIn("features/notes/icons/froonty-fold-up-symbolic.svg", names)
+        self.assertNotIn(b"gettext-domain", schema)
+        self.assertNotIn(b".froonty-claude", css)
+        self.assertNotIn(b"froonty-pill-cue-level", css)
+        self.assertIn(b".froonty-pill-cue ", css)
+        # Every module of the package parses, without the stripped lines.
+        unpacked = os.path.join(out, "x")
+        with zipfile.ZipFile(path) as archive:
+            archive.extractall(unpacked)
+        parse = subprocess.run(["gjs", "-m", os.path.join(ROOT, "tools", "unit", "modules-parse.test.js")],
+                               env=dict(os.environ, FROONTY_PARSE_ROOT=unpacked),
+                               capture_output=True, text=True)
+        self.assertEqual(parse.returncode, 0, parse.stdout + parse.stderr)
         metadata = json.loads(archive_text(path, "metadata.json"))
         self.assertNotIn("gettext-domain", metadata)
         self.assertNotIn("Clipboard", metadata["description"])

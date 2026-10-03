@@ -25,7 +25,8 @@ export class IslandGeometry {
     // collapsed-height are minimums.
     /**
      * @param {number} [contentWidth] stage px the collapsed content needs
-     *   (music beside the time); the pill only ever grows for it
+     *   (a feature's accessory beside the time); the pill only ever grows
+     *   for it
      */
     collapsedSize(contentWidth = 0) {
         const scale = this._themeContext.scale_factor;
@@ -45,7 +46,7 @@ export class IslandGeometry {
      * @param {?object} feature active hub feature; its hubSizeKeys (settings
      *   the user can change) or hubSize win
      * @param {number} [extraHeight] logical px a feature adds for now
-     *   (Media's lyrics or queue); the island then stays on the monitor
+     *   (view.extraHeight); the island then stays on the monitor
      */
     expandedSize(feature, extraHeight = 0) {
         const scale = this._themeContext.scale_factor;
