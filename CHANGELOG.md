@@ -33,7 +33,7 @@
     removes it, and Claude Code's hooks then record nothing.
   - Nothing is polled and Froonty starts no process: one folder watch,
     and a few signals.
-- **Calendar tab**, right after Clock: the events of every calendar GNOME
+- **Calendar tab**, the first tab: the events of every calendar GNOME
   knows, read-only and live. Google, Microsoft 365, Nextcloud and other
   accounts come from Settings → Online Accounts; iCloud and any CalDAV or
   ICS calendar from GNOME Calendar or Evolution.
@@ -84,20 +84,20 @@
     what was listed at the first click, as it was then: one its app
     updated meanwhile stays, and N counts down. From the keyboard, the
     focus goes to "Keep them", so pressing Enter twice keeps them.
-  - The tab carries GNOME's unread dot, as the pill and 📅 do. Opening
-    the island on purpose with this tab on screen (a click, the keyboard,
-    the shortcut), or pressing, typing or scrolling in it, marks what it
-    lists as seen, as GNOME's list does, except one still waiting for its
-    banner, which shows when the island closes. Opening it by hover alone
-    does not, and neither do a modifier key alone, key repeats, a key
-    while the focus is still on the pill after a hover-open (Tab moves it
-    in), or a scroll outside the list after a hover-open.
+  - The tab carries GNOME's unread dot, as the pill and the date pill
+    do. Opening the island on purpose with this tab on screen (a click,
+    the keyboard, the shortcut), or pressing, typing or scrolling in it,
+    marks what it lists as seen, as GNOME's list does, except one still
+    waiting for its banner, which shows when the island closes. Opening it
+    by hover alone does not, and neither do a modifier key alone, key
+    repeats, a key while the focus is still on the pill after a hover-open
+    (Tab moves it in), or a scroll outside the list after a hover-open.
   - A Do Not Disturb toggle, bound to GNOME's own switch.
   - Nothing is watched while the tab is not on screen, and nothing is
     ever removed without a click. Settings → Notifications: show the
     tab, and its size (400 × 440 by default).
-- **Notes: All notes window.** On the Notes tab, a button between 📅 and ⚙️
-  in the island's top row (tinted with a faint wash of the open note's
+- **Notes: All notes window.** On the Notes tab, a button between the date
+  pill and ⚙️ in the island's top row (tinted with a faint wash of the open note's
   colour, so it reads as part of Notes) opens every note in a window of its
   own: the settings window's All notes page (Settings → Notes → All notes
   too). Search all notes at once (every word must match the name, the text
@@ -242,11 +242,12 @@
   GNOME's clock, so its menu (notifications, the calendar, events, world
   clocks, weather) and its unread dot were out of reach. Both are back,
   and nothing of them is reimplemented:
-  - **📅** in the open island, left of ⚙️ (or Tab to it, Enter), opens
-    GNOME's own menu under the pill; the island closes. GNOME's `Super+V`
+  - **The date pill** in the open island, left of ⚙️ (or Tab to it,
+    Enter or Space), opens GNOME's own menu under the pill; the island
+    closes (it was a 📅 button first; see Changed). GNOME's `Super+V`
     works too, also while the island is open. Escape closes the menu.
   - **Unread dot:** while GNOME's clock would show its dot, the pill
-    shows it after the time, and 📅 carries it. GNOME's rules decide
+    shows it after the time, and so does the date pill. GNOME's rules decide
     (seen once its list is shown; hidden under Do Not Disturb). Froonty
     never dismisses or removes a notification.
   - **Banners** that arrive while the island is open wait and show when
@@ -285,7 +286,25 @@
     what is never killed, and the tab's size (520 × 440 by default).
 
 ### Changed
-- **The published package has the first submission's tabs only:** Clock,
+- **The hub header's 📅 button is now a date-and-time pill:** "Sat 3 Oct
+  14:05", in Froonty's 12/24-hour setting (always with the date; "Show
+  date when collapsed" stays the collapsed pill's), with GNOME's unread
+  dot after the time, and the collapsed pill's look. A click, a touch,
+  Enter or Space closes the island and opens GNOME's own calendar and
+  notification menu, as a click on the clock under the pill would. Screen
+  readers hear "Calendar and notifications" and the full date. It follows
+  the top bar clock's ticks, with no timer of its own. The pill is wider
+  than 📅 was, so on narrow tabs the island is wider too: the centred
+  panic bar keeps clear of the top row. With the two default panic
+  buttons the island is at least about 430 px wide, and the Notes tab
+  (428 px by default, with its All notes button) about 498 px; the exact
+  figures depend on the font.
+- **Every tab can be turned off.** With none on, the island still opens:
+  its top row (the date pill, the panic buttons, ⚙️) and "No tabs are
+  on", with a button to Settings. Settings → Appearance → Expanded width
+  and height are now the island's size for that case (each tab has its
+  own).
+- **The published package has the first submission's tabs only:**
   Calendar, Notifications and Notes, with the mute panic buttons. Media,
   Claude, Btop, Clipboard, Kill Process and Break are in `make install`
   builds and follow on extensions.gnome.org in later versions; ZeroTier
@@ -305,6 +324,12 @@
   that tell the colours apart.
 - The island grows when the panic buttons and the top row's buttons need
   more room than its width, so the centred panic bar never overlaps them.
+
+### Removed
+- **The Clock tab.** The time and the date are in the island itself: on
+  the collapsed pill, and on the date pill in the hub header. The island
+  opened on the Clock tab last opens on the first tab that is on
+  (Calendar by default).
 
 ### Fixed
 - Claude tab: **Set up** and **Remove** for the status line no longer
