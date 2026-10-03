@@ -149,7 +149,7 @@
 
 /* Panic bar: up to 5 quick actions. Checked = the panic action is on
    (e.g. muted), shown in red; insensitive = no such device right now,
-   or a setting an administrator has locked (block camera). */
+   or a setting an administrator has locked. */
 .froonty-panic-bar {
     spacing: 4px;
 }
@@ -1116,7 +1116,7 @@
 .froonty-notifications-action:focus {
     box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.45);
 }
-/* "Clear all" and "Keep them": as Clipboard's "Plain text". */
+/* "Clear all" and "Keep them": small text buttons. */
 .froonty-notifications-clear {
     border-radius: 6px;
     padding: 2px 8px;
@@ -1138,7 +1138,7 @@
 .froonty-notifications-clear StIcon {
     icon-size: 14px;
 }
-/* "Clear N?": as Kill Process's confirmation. */
+/* "Clear N?": the confirmation. */
 .froonty-notifications-confirm {
     border-radius: 7px;
     padding: 2px 10px;

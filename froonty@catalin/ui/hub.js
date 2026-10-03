@@ -31,6 +31,7 @@ import St from 'gi://St';
 import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 import {EventEmitter} from 'resource:///org/gnome/shell/misc/signals.js';
 
+import {Emitter} from '../core/emitter.js';
 import {Tooltip} from '../core/tooltip.js';
 import {HubHeader} from './hubHeader.js';
 import {PanicBar} from './panicBar.js';
@@ -84,14 +85,14 @@ export class Hub extends EventEmitter {
         return this._entries.get(this._activeId)?.feature ?? null;
     }
 
-    /** Logical px the active feature adds to its size for now (Media's extras). */
+    /** Logical px the active feature adds to its size for now (view.extraHeight). */
     get activeExtraHeight() {
         return this._entries.get(this._activeId)?.view?.extraHeight ?? 0;
     }
 
     /**
      * Escape in the open island: the active view may close something of
-     * its own first (Media's source list or lyrics).
+     * its own first (view.handleEscape()).
      *
      * @returns {boolean} true when the view used it
      */
@@ -390,8 +391,8 @@ export class Hub extends EventEmitter {
         // Header buttons of its own (view contract: owned and destroyed by
         // the view; shown only while its tab is active).
         this._header.addActions(entry.feature.id, entry.view.headerActions ?? []);
-        // A view whose size changes by itself (Media's extras) says so.
-        if (typeof entry.view.connect === 'function')
+        // A view whose size changes by itself (an Emitter) says so.
+        if (entry.view instanceof Emitter)
             entry.viewSizeId = entry.view.connect('size-changed', () => this.emit('size-changed'));
     }
 

@@ -3,8 +3,7 @@
 // not follow a child's cursor, so editors that sit in one (an St.Entry
 // inside a vertical St.BoxLayout, the scroll view's child) call this on
 // the text's 'cursor-changed' (emitted at the next relayout, when the
-// caret's place is known). Used by the Notes editor and, in working-tree
-// builds, by others.
+// caret's place is known). Used by tab editors, such as the Notes one.
 
 import St from 'gi://St';
 

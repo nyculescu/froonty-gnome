@@ -11,8 +11,8 @@
 //       │      Centers the pill (also while its width animates).
 //       ├ pill St.Button: background, click and Enter/Space activation.
 //       │  └ content  BinLayout stacking the collapsed view and the hub.
-//       └ bars  features' bars under the pill (pillBar: the Claude
-//              attention bar), shown only while the island is collapsed.
+//       └ bars  features' bars under the pill (pillBar), shown only
+//              while the island is collapsed.
 
 import Atk from 'gi://Atk';
 import Clutter from 'gi://Clutter';
@@ -39,7 +39,7 @@ const EXPAND_MODE = Clutter.AnimationMode.EASE_OUT_BACK;
 const COLLAPSE_MODE = Clutter.AnimationMode.EASE_OUT_QUAD;
 const RESIZE_MODE = Clutter.AnimationMode.EASE_OUT_QUAD;
 
-// The pill's widest notice (a new song's title), logical px.
+// The pill's widest notice (a feature's peek), logical px.
 const PEEK_MAX_WIDTH = 360;
 
 const GEOMETRY_KEYS = [
@@ -84,7 +84,7 @@ export class Island {
         // GNOME's own calendar and notification menu: the clock the pill
         // covers would open it.
         this._calendarMenu = new CalendarMenu();
-        // Features' cues on the collapsed pill (a break due, …): id →
+        // Features' cues on the collapsed pill (pillCue): id →
         // {feature, source, id}. The best one shows; a click on the pill
         // then opens its tab (_onPillClicked). Never expands by itself.
         this._cueSources = new Map();
@@ -192,8 +192,8 @@ export class Island {
      *
      * @param {object} [options]
      * @param {boolean} [options.byHover] opened by resting on the pill
-     * @param {boolean} [options.pointer] opened by a click or hover: while
-     *   the pill shows music, the Media tab opens (media-pill-opens-tab)
+     * @param {boolean} [options.pointer] opened by a click or hover: the
+     *   tab of a pill accessory that asks for it (opensTab) opens
      */
     expand({byHover = false, pointer = false} = {}) {
         if (this._expanded)
@@ -312,9 +312,9 @@ export class Island {
             // A GNOME popup menu below `source` (ui/contextMenu.js); it is
             // destroyed with the island at the latest.
             contextMenu: (source, params) => this._trackMenu(new ContextMenu(source, params)),
-            // Plain data kept across screen locks (Media's chosen player).
+            // Plain data a feature keeps in memory (extension.js).
             memory: this._memory,
-            // The extension's version-name (Media's User-Agent).
+            // The extension's version-name.
             version: this._version,
             // Opens the settings window, on `page` (a tab's name) if given.
             openSettings: page => {
@@ -346,20 +346,20 @@ export class Island {
                 this._hub?.noteUserInput();
             return Clutter.EVENT_PROPAGATE;
         });
-        // Swipes on the collapsed pill (Media: change song).
+        // Swipes on the collapsed pill go to its accessory.
         this._pill.connect('scroll-event', (_actor, event) =>
             !this._expanded && this._accessory?.handleScroll(event)
                 ? Clutter.EVENT_STOP
                 : Clutter.EVENT_PROPAGATE);
         // Connected before GrabHelper's own handler (made on each grab), so
-        // the open tab can use Escape first (close its source list or
-        // lyrics) before Escape closes the island.
+        // the open tab can use Escape first (close something of its own)
+        // before Escape closes the island.
         this._strip.connect('captured-event', (_actor, event) =>
             this._expanded && event.type() === Clutter.EventType.KEY_PRESS &&
             event.get_key_symbol() === Clutter.KEY_Escape && this._hub.handleEscape()
                 ? Clutter.EVENT_STOP
                 : Clutter.EVENT_PROPAGATE);
-        // Over fullscreen windows the strip is unmapped: no music on the pill.
+        // Over fullscreen windows the strip is unmapped: no accessory on the pill.
         this._strip.connect('notify::mapped', () => this._syncAccessoryShown());
         // Tab/arrow focus navigation is normally driven from the stage, which
         // the expanded island's modal grab keeps key events away from, so
@@ -424,7 +424,7 @@ export class Island {
 
     // A click on the collapsed pill opens the tab its cue is about; hover
     // and the shortcut keep the last tab.
-    // A cue's tab wins over the music's (expand({pointer})).
+    // A cue's tab wins over the accessory's (expand({pointer})).
     _onPillClicked() {
         const cueTab = !this._expanded ? this._cueTab : null;
         if (cueTab)
@@ -516,13 +516,13 @@ export class Island {
         return {width: Math.max(size.width, header), height: Math.max(size.height, tabs)};
     }
 
-    // While the pill shows music (or a notice), it is as wide as its
+    // While the pill shows an accessory (or a notice), it is as wide as its
     // content needs (a notice at most PEEK_MAX_WIDTH); otherwise 0, the
     // usual size.
     _collapsedContentWidth() {
         const accessory = this._accessory;
-        const music = accessory && (accessory.showing || accessory.peekText);
-        if ((!music && !this._collapsedView.hasCue) || !this._pill.get_stage())
+        const shown = accessory && (accessory.showing || accessory.peekText);
+        if ((!shown && !this._collapsedView.hasCue) || !this._pill.get_stage())
             return 0;
         const node = this._pill.get_theme_node();
         const [, natural] = this._collapsedView.actor.get_preferred_width(-1);
@@ -532,8 +532,8 @@ export class Island {
         return accessory?.peekText ? Math.min(width, PEEK_MAX_WIDTH * scale) : width;
     }
 
-    // The accessory of the first feature that wants one (Media's music on
-    // the collapsed pill), rebuilt when its settings change.
+    // The accessory of the first feature that wants one (wings around the
+    // time on the collapsed pill), rebuilt when its settings change.
     _syncAccessory() {
         this._destroyAccessory();
         const feature = FEATURES.find(f => f.createPillAccessory && f.wantsPillAccessory?.(this._settings));
@@ -576,7 +576,7 @@ export class Island {
     }
 
     // At least the geometry's (covering the clock), and wide enough for
-    // the collapsed row with music or a cue in it.
+    // the collapsed row with an accessory or a cue in it.
     _collapsedSize() {
         return this._geometry.collapsedSize(this._collapsedContentWidth());
     }

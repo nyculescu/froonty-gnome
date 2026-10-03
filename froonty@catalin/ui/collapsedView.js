@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Content of the collapsed pill: the time, optionally preceded by a short
 // date, and the unread-notifications dot of GNOME's clock, which the pill
-// covers. A feature's pill accessory (Media's music) adds a wing on each
-// side, and may briefly show a notice in place of the time (a peek); a
-// feature's cue (a break due, …) shows after the dot:
+// covers. A feature's pill accessory adds a wing on each side, and may
+// briefly show a notice in place of the time (a peek); a feature's cue
+// shows after the dot:
 //
 //   [leading] [cue pad][dot pad][date time | peek][dot][cue] [trailing]
 //

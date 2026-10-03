@@ -53,7 +53,7 @@ export default class FroontyExtension extends Extension {
             'changed::hide-panel-clock', () => this._syncPanelClock(),
             this);
         // Work a feature does while it is enabled, not only once its tab
-        // has been opened (the Clipboard tab's recording, for one).
+        // has been opened.
         this._backgrounds = new Set();
         for (const feature of FEATURES.filter(f => f.background)) {
             this._settings.connectObject(`changed::${feature.enabledKey}`,
@@ -68,7 +68,7 @@ export default class FroontyExtension extends Extension {
         }
 
         // Parts of features that live as long as the extension and follow
-        // whether the island is shown (the Break tab's reminders).
+        // whether the island is shown.
         this._parts = FEATURES.filter(f => f.createExtensionPart)
             .map(f => f.createExtensionPart(this._settings));
         this._syncIsland();
