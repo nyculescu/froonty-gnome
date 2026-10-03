@@ -215,6 +215,51 @@ feature has a design note in [docs/features/](docs/features/).
 
 > Planned: more panic buttons, rendered Markdown in notes and many more inspired from https://github.com/vorssaint/vorssaint-utils
 
+## Requirements and permissions
+
+Froonty needs **GNOME Shell 50** (for example Ubuntu 26.04). Nothing in it
+asks for administrator rights, collects telemetry or uploads your data.
+Each tab can be turned off on its own page in Settings.
+
+| Tab or button | On at first start | Install (Ubuntu) | Network |
+|---|---|---|---|
+| Island, Clock, GNOME's calendar menu | yes | nothing | none |
+| Calendar | yes (off if `gir1.2-ecal-2.0` is missing) | `gir1.2-ecal-2.0` | none by Froonty; GNOME syncs your accounts |
+| Notifications | yes | nothing | none |
+| Notes | yes | nothing | none |
+| Panic: mute microphone, mute sound | yes | nothing | none |
+
+- **Island and Clock:** makes the top bar clock transparent while the
+  island shows (Settings → Hide top bar clock; restored when Froonty is
+  off), holds notification banners back while the island is open (they
+  show when it closes), adds `Super+Alt+I` and a Ctrl+Alt+Tab entry, and
+  shows a top bar icon while the island is hidden.
+- **Calendar:** `sudo apt install gir1.2-ecal-2.0` (Evolution Data
+  Server's introspection data); without it the tab says what to install.
+  It shows the calendars GNOME already knows: add them in Settings →
+  Online Accounts (Google, Nextcloud; Microsoft 365 and Exchange also
+  need `evolution-ews-core`), or as a CalDAV or ICS calendar in GNOME
+  Calendar or Evolution (iCloud: with an app-specific password). It reads
+  events and never changes a calendar. A click opens an event's day in
+  the web calendar it comes from.
+- **Notifications:** lists the notifications GNOME shows, only while the
+  tab is on screen. It opens or dismisses one only when you click it, and
+  keeps no copy.
+- **Notes:** Markdown files in `~/.local/share/froonty/notes`, or a folder
+  you choose in Settings → Notes, plus a hidden `.froonty.json` (order and
+  colours) and `.froonty-labels.json` (labels) there. Deleted notes go to
+  the Trash.
+- **Mute microphone, mute sound:** mute your default devices through
+  GNOME's sound settings, as Quick Settings does.
+- **After you remove Froonty:** your notes stay, and so do the mute
+  settings as you left them. GNOME extensions cannot run code on
+  uninstall.
+
+The tabs that are not in the published package yet (Media, Claude, Btop,
+Clipboard, Kill Process, Break; ZeroTier and Writing stay working-tree
+only) say what they need in Settings, and in their design notes under
+[docs/features/](docs/features/).
+
 ## Layout
 
 ```
