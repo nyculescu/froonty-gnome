@@ -603,6 +603,26 @@
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
 }
 
+/* The expanded island's resize grip (ui/resizeGrip.js): an arc drawn in
+   its colour, in the island's bottom-right corner. Brighter under the
+   pointer and while dragged; Adwaita's accent blue with the key focus. */
+.froonty-resize-grip {
+    color: rgba(255, 255, 255, 0.32);
+}
+
+.froonty-resize-grip:hover,
+.froonty-resize-grip:active {
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.froonty-resize-grip:focus {
+    color: #78aeed;
+}
+
+.froonty-resize-grip-tip {
+    margin-top: 0;
+}
+
 /* Claude feature. Bars in Claude's clay (its Spark colour); red when a
    limit is used up or Claude flags it. */
 .froonty-claude {

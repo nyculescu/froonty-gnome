@@ -65,7 +65,7 @@ function sizeGroup(settings) {
     });
     const group = new Adw.PreferencesGroup({
         title: _('Size'),
-        description: _('Of the island while the Btop tab is shown, in logical pixels. Below 460 wide, each thread takes a row of its own.'),
+        description: _('Of the island while the Btop tab is shown, in logical pixels. Below 460 wide, each thread takes a row of its own. Or drag the open island’s bottom-right corner.'),
         header_suffix: reset,
     });
     group.add(spinRow(settings, 'sysmon-width', _('Width')));

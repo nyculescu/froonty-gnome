@@ -76,7 +76,7 @@ export function calendarPage(settings, window) {
     const cleanups = [];
     page.add(calendarsGroup(settings, cleanups));
     page.add(sizeGroup(settings, ['calendar-width', 'calendar-height'],
-        _('Of the island while the Calendar tab is shown, in logical pixels.'), cleanups));
+        _('Of the island while the Calendar tab is shown, in logical pixels. Or drag the open island’s bottom-right corner.'), cleanups));
     const closeId = window.connect('close-request', () => {
         window.disconnect(closeId);
         for (const cleanup of cleanups.splice(0))

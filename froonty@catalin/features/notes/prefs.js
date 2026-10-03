@@ -38,7 +38,7 @@ export function notesPage(settings) {
 
     page.add(group);
     page.add(sizeGroup(settings, ['notes-width', 'notes-height'],
-        _('Of the island while the Notes tab is shown, in logical pixels.')));
+        _('Of the island while the Notes tab is shown, in logical pixels. Or drag the open island’s bottom-right corner.')));
     return page;
 }
 

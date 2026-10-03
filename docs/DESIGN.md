@@ -194,6 +194,10 @@ strip   St.Widget #froontyStrip, BinLayout, full monitor width, reactive only wh
  └ column  St.BoxLayout #froontyColumn .froonty-column, vertical, as wide as the strip, non-reactive
     ├ pill  St.Button #froontyPill (click + Enter/Space + a11y), clip_to_allocation, centered
     │  └ content  BinLayout: CollapsedView | Hub (cross-faded)
+    │     └ grip layer  click-through, over both (ui/resizeGrip.js): the resize
+    │                   grip, translated into the pill's bottom-right padding
+    │                   corner, and its tooltip; the grip shows only while
+    │                   expanded on a tab with hubSizeKeys
     └ bar   the Claude attention bar (features/claude/attentionBar.js), centered; only
             while that feature is on, shown only while the island is
             collapsed and a Claude session waits
@@ -237,6 +241,20 @@ hub     BinLayout, reactive (stops clicks from reaching the pill)
   - A global shortcut through `Main.wm.addKeybinding` (default `<Super><Alt>i`).
   - Ctrl+Alt+Tab through `Main.ctrlAltTabManager.addGroup`, which expands
     the island.
+- **Resize grip** (`ui/resizeGrip.js`, clamping in `ui/hubResize.js`). An
+  arc concentric with the island's bottom-right corner, drawn in an
+  `St.DrawingArea` with the `SE_RESIZE` cursor (`Clutter.Actor`'s own
+  `cursor-type`, so nothing global is set). A `Clutter.PanGesture` with a
+  begin threshold of 0, as GNOME's sliders use, recognizes on the press, so
+  the pill's own click gesture (an ancestor's) is cancelled and a press on
+  the grip never closes the island; a stage grab on the grip, nested in the
+  island's modal grab, holds the drag (Escape cancels it). While dragging,
+  the island takes the size at once (`Island._previewHubSize()`: the size
+  replaces the keys' values in `IslandGeometry.expandedSize()`, transitions
+  removed); the release writes the two keys while that size still holds, so
+  the island does not move. A click without movement counts towards a
+  double-click (GNOME's `double-click-time`, no timer), which resets both
+  keys.
 - Multi-monitor: the island follows the **primary** monitor, like GNOME's
   panel. It re-syncs on `layoutManager` `monitors-changed`, `panelBox`
   `notify::height` and `ThemeContext` `notify::scale-factor`.
@@ -508,6 +526,7 @@ Two St/Clutter rules also shaped the island:
 | Mixer connections | Per panic button: 2 on the Shell's mixer + 1 on its current stream | `PanicBar.destroy()` |
 | GNOME privacy settings | Block-camera panic button only: one `org.gnome.desktop.privacy` `Gio.Settings` per button, with 2 handlers (`changed::disable-camera`, `writable-changed::disable-camera`) | `PanicBar.destroy()` (`CameraAccess.destroy()`) |
 | Ctrl+Alt+Tab group | 1 | `Island.destroy()` |
+| Resize grip | Its actors and handlers live in the pill (destroyed with it); a stage grab only during a drag; GSettings writes only on release, an arrow key or a double-click | `ResizeGrip.destroy()` from `Island.destroy()` (cancels a drag: no write) |
 | Timers / GLib sources | **No periodic timer while the island is closed.** One-shot only: the hover-open delay while the pointer rests on the collapsed pill (`HoverOpen`); a 10 s give-up timeout while a requested settings window has not appeared (`SettingsWindow.destroy()`); Notes' 0.8 s autosave while there are unsaved edits (`NotesService.stop()` flushes and removes it); the Clipboard tab's hidden password expiry (`clipboard-password-minutes`), only while one is listed (`ClipboardRecorder.destroy()`); the Writing tab's per-request timeouts while a request runs (Claude Code 90 s plus 8-15 ms per character, `claude auth status` 10 s, Ollama 180 s plus 60 ms per character overall) and, when it starts Froonty's own Ollama, a chain of 500 ms one-shots for at most 15 s until it answers (all removed when the request ends or `WritingService.stop()` cancels it). **Two periodic timers**, each only while its tab is on screen: the Btop tab's, every `sysmon-interval` seconds (1-10, default 2), and the Kill Process tab's, every `killprocess-interval` seconds (1-10, default 3), both `timeout_add_seconds` so GLib can batch their wakeups (`SysmonService.setActive(false)`, `KillProcessService.setActive(false)`); plus a 5 s give-up timeout per `nvidia-smi` or `kill` run, and the Kill Process tab's one-shot early reading (0.5 s after it comes on screen or a signal is sent, then each second while a killed process is still listed). At most one pending `BEFORE_REDRAW` later (cover recompute), removed in `PanelClock.restore()`; and at most one in the Kill Process list, which fills its rows after a scroll or a new height (never queued while the tab is hidden; removed when it is hidden or its view destroyed). While a Kill Process reading is in flight, at most one idle (`PRIORITY_DEFAULT_IDLE`) at a time between its batches of reads, removed when the reading is cancelled (`KillProcessService.setActive(false)`); the interval's readings are spaced at least ten times as long as the previous one took. The clock ticks come from the top bar's own WallClock, so Froonty owns none | `ClockService.stop()` |
 | File watching | Notes: one inotify folder monitor (`Gio.FileMonitor`), only while the Notes tab has been opened. Claude: one monitor on Claude Code's config file while the Claude tab is on screen, and one more while the island is open with the Claude session panic button. Attention bar: one folder monitor (`WATCH_MOVES`) on `$XDG_RUNTIME_DIR/froonty/claude-attention`, while the island exists and the bar is on; per state file event one read of at most 4 KiB; per recorded session one `/proc/<pid>/stat` read on arrival, on each move of the focus to another window while an entry with a known app shows, and on each collapse | `NotesService.stop()`; `ClaudeService.setActive(false)`; `AttentionService.stop()` |
 | Attention bar | Signals: message tray `notify::visible`, overview `showing` / `hidden` (adapter, for its life); `org.gnome.desktop.notifications` `changed::show-banners`; 3 settings; tray `source-added` / `source-removed` plus 4 per followed source (the Claude app, browsers) and 3 per followed notification, while those are followed (the Notifications tab's store, with a `filter`; other sources get none); `global.display` `notify::focus-window` only while a shown entry has a known app. One Ctrl+Alt+Tab group, listed only while the bar is mapped. No timer, no process. Disk: the `0700` folder and at most one `0600` file of 4 KiB per waiting session, on tmpfs; kept through a screen lock (what waits survives it), removed by any other disable and when the island or the bar is turned off | `Island.destroy()` (`_stopAttention()`, which also removes the folder unless the screen is locking); turning the bar off also removes the folder |

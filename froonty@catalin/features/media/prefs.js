@@ -69,7 +69,7 @@ function sizeGroup(settings) {
     });
     const group = new Adw.PreferencesGroup({
         title: _('Size'),
-        description: _('Of the island while the Media tab is shown, in logical pixels. Lyrics and Up next add room while open.'),
+        description: _('Of the island while the Media tab is shown, in logical pixels. Lyrics and Up next add room while open. Or drag the open island’s bottom-right corner.'),
         header_suffix: reset,
     });
     group.add(spinRow(settings, 'media-width', _('Width')));

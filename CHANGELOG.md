@@ -291,6 +291,15 @@
     default, and runs `/usr/bin/kill` once per confirmed step.
   - Settings → Kill Process: show the tab, refresh interval (1-10 s),
     what is never killed, and the tab's size (520 × 440 by default).
+- **Resize the island live.** An arc in the open island's bottom-right
+  corner, on tabs whose size Settings → Size sets: drag it and the island
+  follows the pointer, centred (the width changes on both sides, the height
+  downward), within the keys' range, the screen's work area and what the
+  tabs and the panic bar need. The size is saved on release, per tab, and
+  Settings shows it; a double-click goes back to the tab's default size.
+  "Drag to resize, double-click to reset" on hover; with the key focus on
+  it, the arrow keys resize in steps of 10 px (Shift: 50), and Escape
+  cancels a drag.
 
 ### Changed
 - **The published package has the first submission's tabs only:** Clock,

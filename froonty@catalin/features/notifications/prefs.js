@@ -28,6 +28,6 @@ export function notificationsPage(settings) {
     group.add(switchRow(settings, 'notifications-enabled', _('Show the Notifications tab')));
     page.add(group);
     page.add(sizeGroup(settings, ['notifications-width', 'notifications-height'],
-        _('Of the island while the Notifications tab is shown, in logical pixels.')));
+        _('Of the island while the Notifications tab is shown, in logical pixels. Or drag the open island’s bottom-right corner.')));
     return page;
 }
