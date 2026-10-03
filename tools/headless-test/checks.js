@@ -782,8 +782,34 @@ async function testNotes(outDir) {
         noteFiles().includes('plan.md') && readNote('plan.md') === 'second',
         noteFiles().join(','));
 
-    // An external edit of the clean first note shows up (inotify).
+    // A rename or select the service answers after the view is gone (a
+    // rename commits on focus-out, as when the screen locks) leaves the
+    // destroyed view alone. A second view over the same service.
     const service = hub()._entries.get('notes').service;
+    {
+        const {NotesView} = await import(`file://${extension().path}/features/notes/view.js`);
+        const spare = new NotesView(hub()._ctx, service);
+        const touched = [];
+        spare._sync = () => touched.push('sync');
+        spare._focusEditor = () => touched.push('focus');
+        const pending = [
+            spare._tabs._callbacks.onRename('plan'),
+            spare._tabs._callbacks.onSelect('plan'),
+            spare._create(),
+        ];
+        spare.destroy();
+        await Promise.all(pending);
+        await sleep(SETTLE_MS);
+        check('notes: a rename, select or new note answered after the view is destroyed leaves it alone',
+            touched.length === 0 && spare._service === null, touched.join(','));
+        // The new note the spare view asked for goes; "plan" is selected again.
+        const created = service.selected;
+        if (created !== 'plan')
+            await service.trash(created);
+        await sleep(SETTLE_MS);
+    }
+
+    // An external edit of the clean first note shows up (inotify).
     await service.select(service.notes.find(n => n !== 'plan'));
     await sleep(SETTLE_MS);
     notesFolder().get_child(files[0]).replace_contents('edited elsewhere', null, false, 0, null);

@@ -77,16 +77,20 @@ export class NotesView {
         this.actor.add_child(overlay);
 
         this._tabs = new NoteTabs({
+            // The view may be gone once the service answers: destroy()
+            // drops this._service (a rename commits when the screen locks).
             onSelect: async name => {
                 await service.select(name);
-                this._focusEditor();
+                if (this._service)
+                    this._focusEditor();
             },
             onCreate: () => this._create(),
             onRename: async name => {
                 await service.rename(name);
                 // Rebuilt either way: also restores the tab if the name
                 // was refused.
-                this._sync({forceTabs: true});
+                if (this._service)
+                    this._sync({forceTabs: true});
             },
             onTrash: name => service.trash(name),
             onLabels: (name, anchor) => {
@@ -157,6 +161,7 @@ export class NotesView {
         Gio.Settings.unbind(this._formatBar.wrapButton, 'checked');
         Gio.Settings.unbind(this._toolsButton, 'checked');
         this._service.disconnect(this._changedId);
+        this._service = null;
         this._labelMenu.destroy();
         this._allNotes.destroy();
         this.actor.destroy();
@@ -173,7 +178,8 @@ export class NotesView {
 
     async _create() {
         await this._service.create();
-        this._focusEditor();
+        if (this._service)
+            this._focusEditor();
     }
 
     _focusEditor() {
