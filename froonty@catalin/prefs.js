@@ -16,7 +16,9 @@ import {calendarPage} from './features/calendar/prefs.js';
 import {attachAllNotes} from './features/notes/allNotesPage.js';
 import {notesPage} from './features/notes/prefs.js';
 import {notificationsPage} from './features/notifications/prefs.js';
+// local:begin local-features (working-tree only; tools/pack-public strips it)
 import {addLocalIconPaths, addLocalPrefs} from './features/localPrefs.js';
+// local:end local-features
 import {panicPage} from './panic/prefs.js';
 import {spinRow, switchRow} from './prefs/rows.js';
 
@@ -32,9 +34,11 @@ export default class FroontyPreferences extends ExtensionPreferences {
         const settings = this.getSettings();
         // Keep the settings object alive as long as the window.
         window._settings = settings;
+        // local:begin local-features
         // Bundled icons used in feature tabs and preferences (some also by
         // the Panic buttons page).
         addLocalIconPaths();
+        // local:end local-features
 
         // With more than one page, Adw.PreferencesWindow shows them as tabs
         // (a view switcher in the header bar).
@@ -51,8 +55,10 @@ export default class FroontyPreferences extends ExtensionPreferences {
             window.add(page);
             names.add(page.name);
         }
+        // local:begin local-features
         for (const name of addLocalPrefs(window, settings))
             names.add(name);
+        // local:end local-features
         window.visible_page_name = GENERAL_PAGE;
         // The All notes page (a subpage), when the island asked for it.
         attachAllNotes(window, settings);

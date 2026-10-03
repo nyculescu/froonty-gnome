@@ -553,7 +553,8 @@ Two test layers:
   `claude`, a local `Soup.Server` for LanguageTool, Ollama and GitHub, a
   fake `systemctl`, and tiny archives (hostile ones too) for Ollama's
   set-up and removal. Then `tools/pack-public/test_pack_public.py` checks
-  the public build's leak guard.
+  the public build's leak guard, its marker stripping and CSS pruning,
+  and that every module of a real `make pack` parses.
   Each run gets a private `TMPDIR` and XDG data, config, cache and runtime
   folders, so trashed test files never reach the real Trash and no test
   touches the real `~/.config/systemd/user` or Froonty's own folders.

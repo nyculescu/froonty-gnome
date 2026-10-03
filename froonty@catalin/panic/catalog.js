@@ -3,13 +3,14 @@
 // Pure data, shared by the Shell side (panic/registry.js) and the settings
 // window (panic/prefs.js), which cannot load each other's modules.
 //
-// Adding a panic button: an entry here, a factory in registry.js (for a
-// working-tree feature's button: localCatalog.js and localFactories.js,
-// which the public build replaces with empty ones).
+// Adding a panic button: an entry here and a factory in registry.js.
 // Titles (and the optional description Settings shows under a title) take
 // the caller's gettext, since each side has its own.
 
+// local:begin local-features (working-tree only; tools/pack-public strips it)
+// A working-tree feature's button: localCatalog.js and localFactories.js.
 import {LOCAL_PANIC_BUTTONS} from './localCatalog.js';
+// local:end local-features
 
 export const MAX_PANIC_BUTTONS = 5;
 
@@ -24,7 +25,9 @@ export const PANIC_BUTTONS = [
         icon: 'audio-volume-muted-symbolic',
         title: _ => _('Mute sound'),
     },
+    // local:begin local-features
     ...LOCAL_PANIC_BUTTONS,
+    // local:end local-features
 ];
 
 /**

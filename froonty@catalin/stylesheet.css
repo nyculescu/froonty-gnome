@@ -52,6 +52,11 @@
     font-weight: bold;
 }
 
+/* A feature's short notice in place of the time (a peek). */
+.froonty-collapsed-peek {
+    font-weight: bold;
+}
+
 /* The Claude attention bar under the collapsed pill
    (docs/features/claude-attention.md): the pill's black and hairline,
    one line, the Spark in Claude's clay. */
@@ -1778,11 +1783,6 @@
     font-size: 11px;
     color: #ffd27a;
 }
-
-/* Media: music on the collapsed pill */
-.froonty-collapsed-peek {
-    font-weight: bold;
-}
 /* End of the Media feature */
 
 /* local:begin writing (working-tree only; tools/pack-public strips it) */
@@ -1931,8 +1931,7 @@
 
 /* Break tab (docs/features/break.md) */
 
-/* The collapsed pill's cue. Never colour alone: each level has its own
-   shape (ring, bare icon, round badge, wide badge with "!"). */
+/* The collapsed pill's cue (a feature's state after the dot). */
 .froonty-pill-cue {
     spacing: 3px;
     color: #ffffff;
@@ -1944,6 +1943,8 @@
     font-size: 0.85em;
     font-feature-settings: "tnum";
 }
+/* Break's cue levels. Never colour alone: each level has its own shape
+   (ring, bare icon, round badge, wide badge with "!"). */
 .froonty-pill-cue-level-0 {
     color: rgba(255, 255, 255, 0.55);
 }

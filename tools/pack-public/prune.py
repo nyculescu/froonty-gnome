@@ -1,17 +1,18 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Trim a staged extension to what the public build runs.
 
-After the stubs replaced localFeatures.js, localPrefs.js, localCatalog.js
-and localFactories.js:
+After strip_local.py took out the imports of localFeatures.js,
+localPrefs.js, localCatalog.js and localFactories.js:
 
 1. Modules: only those reachable from extension.js and prefs.js through
-   relative imports stay; a folder left without any module goes whole
-   (icons and data included).
+   relative imports stay; a feature folder left without any module goes
+   whole (icons and data included), a kept one keeps its icons.
 2. Schema: the keys of the features no longer there (PREFIXES) go.
 3. Stylesheet: rules whose every selector names a removed feature's class
    go, with the comments right before them.
 4. Checks: every settings key the remaining code names exists in the
-   schema, and none of the removed ones is named.
+   schema, none of the removed ones is named, and no class whose rules
+   went is used by the remaining code.
 
 Usage: prune.py STAGED_DIR
 """
@@ -27,16 +28,21 @@ PREFIXES = (
     "media-", "claude-", "sysmon-", "clipboard-", "killprocess-",
     "break-", "posture-", "zerotier-", "writing-",
 )
-# Their CSS classes.
+# Their CSS classes: each name and every class it begins with a dash
+# (froonty-media matches .froonty-media and .froonty-media-title, not
+# .froonty-mediax). Break's cue levels and the sit/stand button's look
+# are theirs too; the cue itself (.froonty-pill-cue) is the core's.
 CLASSES = (
-    "froonty-media-", "froonty-claude-", "froonty-attention-", "froonty-sysmon-",
-    "froonty-clipboard-", "froonty-killprocess-", "froonty-break-", "froonty-posture-",
-    "froonty-zerotier-", "froonty-writing-", "froonty-ollama-",
+    "froonty-media", "froonty-claude", "froonty-attention", "froonty-sysmon",
+    "froonty-clipboard", "froonty-killprocess", "froonty-break", "froonty-posture",
+    "froonty-zerotier", "froonty-writing", "froonty-ollama",
+    "froonty-panic-posture", "froonty-pill-cue-level", "froonty-pill-cue-posture",
 )
+CLASS = re.compile(r"\.(" + "|".join(map(re.escape, CLASSES)) + r")(?![A-Za-z0-9_])")
 # Comments that mention them go too (a comment above a block of keys).
 MENTIONS = tuple(f"features/{name}" for name in (
     "media", "claude", "sysmon", "clipboard", "killprocess", "break", "zerotier", "writing",
-)) + ("claude-attention", "local-only")
+)) + ("kill-process", "claude-attention", "local-only")
 ROOTS = ("extension.js", "prefs.js")
 SCHEMA = "schemas/org.gnome.shell.extensions.froonty.gschema.xml"
 
@@ -71,12 +77,16 @@ def prune_modules(root, keep):
             if name.endswith(".js") and rel not in keep:
                 os.remove(os.path.join(root, rel))
                 removed.append(rel)
-    # Bottom-up: a folder whose tree has no module left goes (with its
-    # icons or data); the top level and schemas/ stay.
+    # Bottom-up: a folder goes (with its icons or data) when the folder of
+    # its feature (its first two path parts, e.g. features/notes) has no
+    # module left, so a kept feature keeps its icons/; the top level and
+    # schemas/ stay.
     for dirpath, _dirs, _files in sorted(os.walk(root), key=lambda w: -w[0].count(os.sep)):
-        if dirpath == root or os.path.relpath(dirpath, root).startswith("schemas"):
+        rel = os.path.relpath(dirpath, root)
+        if dirpath == root or rel.startswith("schemas"):
             continue
-        has_module = any(f.endswith(".js") for _d, _s, fs in os.walk(dirpath) for f in fs)
+        unit = os.path.join(root, *rel.split(os.sep)[:2])
+        has_module = any(f.endswith(".js") for _d, _s, fs in os.walk(unit) for f in fs)
         if not has_module and os.path.isdir(dirpath):
             shutil.rmtree(dirpath)
             removed.append(os.path.relpath(dirpath, root) + "/")
@@ -103,6 +113,8 @@ def prune_schema(root):
                 removed.add(name)
             else:
                 kept.add(name)
+    # The build ships no translations (describe.py drops it from metadata.json).
+    tree.getroot().attrib.pop("gettext-domain", None)
     tree.write(path, encoding="UTF-8", xml_declaration=True)
     return kept, removed
 
@@ -128,7 +140,7 @@ def css_segments(text):
 
 def removed_rule(rule):
     selectors = rule.split("{", 1)[0].split(",")
-    return all(any(c in sel for c in CLASSES) for sel in selectors)
+    return all(CLASS.search(sel) for sel in selectors)
 
 
 def prune_css(root):
@@ -160,6 +172,30 @@ def prune_css(root):
     text = re.sub(r"\n{3,}", "\n\n", text)
     with open(path, "w", encoding="utf-8") as f:
         f.write(text)
+    # The classes only dropped rules styled.
+    def classes(keep):
+        return {c for n, (kind, t) in enumerate(segments) if kind == "rule" and drop[n] != keep
+                for c in CSS_CLASS.findall(t.split("{", 1)[0])}
+    return classes(False) - classes(True)
+
+
+CSS_CLASS = re.compile(r"\.(froonty-[A-Za-z0-9_-]+)")
+
+
+def check_classes(root, dropped):
+    """Kept modules that name a class whose rules went."""
+    problems = []
+    for dirpath, _dirs, files in os.walk(root):
+        for name in files:
+            if not name.endswith(".js"):
+                continue
+            path = os.path.join(dirpath, name)
+            with open(path, encoding="utf-8") as f:
+                text = f.read()
+            for cls in dropped:
+                if re.search(rf"(?<![A-Za-z0-9_-]){re.escape(cls)}(?![A-Za-z0-9_-])", text):
+                    problems.append(f"{os.path.relpath(path, root)}: uses the removed class {cls}")
+    return sorted(problems)
 
 
 KEY_CALL = re.compile(
@@ -194,11 +230,15 @@ def main():
     keep = reachable(root)
     removed_files = prune_modules(root, keep)
     _kept, removed = prune_schema(root)
-    prune_css(root)
+    dropped_classes = prune_css(root)
     problems = check_keys(root, removed)
     if problems:
         print("\n".join(problems), file=sys.stderr)
         raise SystemExit("the public build still uses keys of features it leaves out")
+    problems = check_classes(root, dropped_classes)
+    if problems:
+        print("\n".join(problems), file=sys.stderr)
+        raise SystemExit("the public build still uses CSS classes whose rules it left out")
     print(f"public build: {len(keep)} modules, {len(removed_files)} files or folders "
           f"and {len(removed)} settings keys left out")
 

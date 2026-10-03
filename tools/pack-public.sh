@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Build the published extension without local-only feature implementations
-# (ZeroTier, Writing): their code, settings keys and CSS are removed from a
-# staged copy, and the packed zip is checked for leftovers (check_zip.py
-# deletes it and fails the build on any).
+# Build the published extension without the features it leaves out: their
+# code, settings keys and CSS are removed from a staged copy, and the packed
+# zip is checked for leftovers (check_zip.py deletes it and fails the build
+# on any).
 #
 # PACK_OUT_DIR: where the zip goes (default dist/; the tests use their own).
 set -euo pipefail
@@ -19,14 +19,16 @@ STAGED="$STAGING_ROOT/$UUID"
 trap 'rm -rf "$STAGING_ROOT"' EXIT
 
 cp -a "$ROOT/$UUID" "$STAGED"
-cp "$ROOT/tools/pack-public/localFeatures.js" "$STAGED/features/localFeatures.js"
-cp "$ROOT/tools/pack-public/localPrefs.js" "$STAGED/features/localPrefs.js"
-cp "$ROOT/tools/pack-public/localCatalog.js" "$STAGED/panic/localCatalog.js"
-cp "$ROOT/tools/pack-public/localFactories.js" "$STAGED/panic/localFactories.js"
+# The imports of features/localFeatures.js, features/localPrefs.js,
+# panic/localCatalog.js and panic/localFactories.js, and their uses, go;
+# prune.py then leaves those modules out with everything only they reach.
+for module in features/registry.js prefs.js panic/catalog.js panic/registry.js; do
+    python3 "$ROOT/tools/pack-public/strip_local.py" --several "$STAGED/$module" local-features
+done
 rm -rf "$STAGED/features/zerotier" "$STAGED/features/writing"
 python3 "$ROOT/tools/pack-public/strip-local-schema.py" \
     "$STAGED/schemas/org.gnome.shell.extensions.froonty.gschema.xml"
-python3 "$ROOT/tools/pack-public/strip_local_css.py" "$STAGED/stylesheet.css" zerotier writing
+python3 "$ROOT/tools/pack-public/strip_local.py" "$STAGED/stylesheet.css" zerotier writing
 # Only what extension.js and prefs.js reach, and only their settings keys
 # and CSS; the description says what this build has.
 python3 "$ROOT/tools/pack-public/prune.py" "$STAGED"
@@ -44,5 +46,4 @@ done
 mkdir -p "$OUT"
 "$GNOME_EXTENSIONS" pack --force "${extra_sources[@]}" \
     --out-dir="$OUT" "$STAGED"
-python3 "$ROOT/tools/pack-public/check_zip.py" "$OUT/$UUID.shell-extension.zip" \
-    "$ROOT/tools/pack-public"
+python3 "$ROOT/tools/pack-public/check_zip.py" "$OUT/$UUID.shell-extension.zip"

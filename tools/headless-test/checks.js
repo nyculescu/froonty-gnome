@@ -8508,6 +8508,12 @@ async function testPublicBuild() {
             opened.push(id);
     }
     check('public build: every tab opens', opened.length === 4, opened.join(','));
+    // The icons the kept tabs load from their own folders.
+    const notesView = hub._entries.get('notes')?.view;
+    const icons = [hub._entries.get('calendar')?.feature.icon, notesView?._foldUp, notesView?._foldDown]
+        .map(icon => icon?.get_file().get_path() ?? 'none');
+    const missing = icons.filter(path => !GLib.file_test(path, GLib.FileTest.EXISTS));
+    check('public build: the bundled icons are there', missing.length === 0, missing.join(', '));
     hub.select('clock');
     island().collapse();
     await sleep(animationWait());
