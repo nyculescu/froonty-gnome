@@ -170,9 +170,13 @@ feature has a design note in [docs/features/](docs/features/).
   - Two clicks: ⊘, then "Kill “name”?". The process is asked to quit
     (SIGTERM); "Force quit" (SIGKILL) is offered only if it is still
     running 3 s later.
-  - GNOME Shell, whatever started it and a short list of session programs
-    (gnome-session, systemd, Xwayland, D-Bus, PipeWire, the keyring) are
-    never offered. Other users' processes are not listed, and Froonty
+  - GNOME Shell, whatever started it, the session's programs
+    (gnome-session, systemd, Xwayland, D-Bus, PipeWire, the keyring) and
+    the desktop services nothing would start again before the next login
+    (GNOME's settings daemon `gsd-*`, IBus, the accessibility bus, the
+    title bars of X11 windows) are never offered. Services that come back
+    when next needed (portals, Evolution's, the file indexer) and apps
+    can be killed. Other users' processes are not listed, and Froonty
     never asks for administrator rights.
   - It reads `/proc` only while the tab is on screen, every 3 s (1-10 s
     in Settings), and runs `/usr/bin/kill` once per confirmed step. See

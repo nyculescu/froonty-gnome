@@ -266,10 +266,18 @@
   - Two clicks: ⊘, then "Kill “name”?". The process is asked to quit
     (SIGTERM). If it is still running 3 s later, the row offers "Force
     quit" (SIGKILL).
-  - Never offered: GNOME Shell, whatever started it, and a short list of
-    session programs (gnome-session, gdm's session wrapper, systemd --user,
-    Xwayland, D-Bus, PipeWire and WirePlumber, the keyring). Other users'
-    processes are not listed; Froonty never asks for administrator rights.
+  - Never offered: GNOME Shell, whatever started it, the session's
+    programs (gnome-session, gdm's session wrapper, systemd --user,
+    Xwayland, D-Bus, PipeWire and WirePlumber, the keyring), and the
+    desktop services that nothing starts again once asked to quit, so
+    their job would stay undone until the next login: GNOME's settings
+    daemon (every `gsd-*` process: power, media keys, Night Light, …),
+    IBus (`ibus-daemon`, `ibus-x11`: input methods), the accessibility bus
+    (`at-spi-bus-launcher`, `at-spi2-registryd`) and `mutter-x11-frames`
+    (X11 windows' title bars). Services that come back when next needed
+    (portals, Evolution's, Online Accounts, GVfs, the file indexer) and
+    apps can be killed. Other users' processes are not listed; Froonty
+    never asks for administrator rights.
   - Right before each signal the process is read again, so a process id
     the kernel has since given to another process is never signalled.
   - The list holds still while the pointer is on it (or while the

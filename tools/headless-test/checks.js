@@ -3295,6 +3295,20 @@ async function testKillProcess(outDir) {
             dbus.length > 0 && dbus.every(p => p.protected === 'session'),
             `shell=${listed(shellPid)?.protected} parent ${shellParent}=${listed(shellParent)?.protected} ` +
             `dbus=${dbus.map(p => p.protected)}`);
+        // The desktop's core services, as the tab names them (this user's
+        // own session runs them; a bare test machine may not), and services
+        // D-Bus starts again when next needed, which stay killable.
+        const named = pattern => service?.processes?.filter(p => pattern.test(p.name)) ?? [];
+        const core = named(/^(gsd-.+|ibus-daemon|ibus-x11|at-spi-bus-launcher|at-spi2-registryd|mutter-x11-frames)$/);
+        const onDemand = named(/^(xdg-desktop-portal(-gnome|-gtk)?|evolution-source-registry|localsearch-3|goa-daemon|gvfsd)$/);
+        check('kill process: settings daemon, IBus, accessibility and X11 frames are protected; ' +
+            'services D-Bus starts again are not',
+            core.every(p => p.protected === 'session') && onDemand.every(p => p.protected === null),
+            // A note, so the log says how many there were to check.
+            `note: ${core.length} core services (not protected: ` +
+            `${core.filter(p => p.protected !== 'session').map(p => p.name).join(' ') || 'none'}), ` +
+            `${onDemand.length} on demand (protected: ` +
+            `${onDemand.filter(p => p.protected !== null).map(p => p.name).join(' ') || 'none'})`);
         // verify() only reads /proc; it is what kill() asks before signalling.
         check('kill process: a kill of GNOME Shell is refused before any signal',
             await service?._sampler.verify(listed(shellPid)) === 'protected');

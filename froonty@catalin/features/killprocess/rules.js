@@ -4,10 +4,17 @@
 // so they load in the Shell, in the preferences window and in plain gjs tests.
 
 /**
- * Programs whose death ends the session or takes the desktop with it.
- * Froonty never offers to kill them, whoever started them. Matched on the
- * kernel's name (comm, cut to 15 characters) and on argv[0]'s file name.
- * Short on purpose; anything else is the user's call.
+ * Programs whose death ends the session, or takes a core part of the
+ * desktop with it until the next login. Froonty never offers to kill
+ * them, whoever started them. Matched on the kernel's name (comm, cut to
+ * 15 characters) and on argv[0]'s file name.
+ *
+ * The tab's first step is SIGTERM, and systemd restarts a user service
+ * after a crash only: a SIGTERM counts as a clean exit (systemd.service(5),
+ * Restart=). So gsd-* and ibus-daemon stay gone once asked to quit.
+ * Services that D-Bus starts again when next needed (the portals,
+ * Evolution's, GVfs, Online Accounts, the file indexer) are not here, nor
+ * any app: anything else is the user's call.
  */
 export const PROTECTED_NAMES = [
     'gnome-shell', // the compositor and desktop; Froonty runs inside it
@@ -17,18 +24,27 @@ export const PROTECTED_NAMES = [
     'systemd', // the user's service manager (systemd --user)
     '(sd-pam)', // its PAM session
     'Xwayland', // every X11 window
+    'mutter-x11-frames', // X11 windows' title bars; mutter starts it again after a crash only
     'dbus-daemon', // the session and accessibility buses
     'dbus-broker',
     'dbus-broker-launch',
+    'at-spi-bus-launcher', // the accessibility bus: screen reader, zoom following the focus
+    'at-spi2-registryd', // its registry: which apps and events a screen reader is told of
     'pipewire', // sound, screen sharing and the panic mute buttons
     'pipewire-pulse',
     'wireplumber',
     'gnome-keyring-daemon', // passwords and keys of the session
+    'gsd-', // GNOME's settings daemon, a process per job: power, media keys, Night Light, …
+    'ibus-daemon', // typing through input methods (IBus), in every app and the Shell
+    'ibus-x11', // the same for X11 apps (XIM); started once, when Xwayland starts
 ];
 
-// Names matched as a prefix too: "gnome-session" covers
-// gnome-session-binary, gnome-session-service, gnome-session-ctl, …
-const PREFIXES = ['gnome-session'];
+/**
+ * Those of PROTECTED_NAMES matched as a prefix too: "gnome-session"
+ * covers gnome-session-binary, -service, -ctl, …; "gsd-" every settings
+ * daemon process (gsd-power, gsd-media-keys, gsd-xsettings, …).
+ */
+export const PROTECTED_PREFIXES = ['gnome-session', 'gsd-'];
 const COMM_LENGTH = 15;
 // The kernel's largest process id (PID_MAX_LIMIT on 64-bit, 2^22).
 const PID_MAX = 4194304;
@@ -45,7 +61,7 @@ export function isValidPid(pid) {
 export function isProtectedName(comm, args = []) {
     const base = args[0]?.split('/').pop() ?? '';
     return PROTECTED_NAMES.some(name => {
-        const prefix = PREFIXES.includes(name);
+        const prefix = PROTECTED_PREFIXES.includes(name);
         const short = name.slice(0, COMM_LENGTH);
         return comm === short || base === name ||
             (prefix && (comm.startsWith(name) || base.startsWith(name)));

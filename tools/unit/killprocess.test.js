@@ -12,7 +12,7 @@ import {
 } from '../../froonty@catalin/features/killprocess/parse.js';
 import {
     ancestorsOf, countMatching, countText, isProtectedName, isValidPid, PROTECTED_NAMES,
-    protectedReason, rankProcesses, SORTS,
+    PROTECTED_PREFIXES, protectedReason, rankProcesses, SORTS,
 } from '../../froonty@catalin/features/killprocess/rules.js';
 import {PROCESS_IO} from '../../froonty@catalin/features/killprocess/io.js';
 import {KILL_PATHS, killArgv} from '../../froonty@catalin/features/killprocess/kill.js';
@@ -238,6 +238,84 @@ test('session programs are protected by comm (cut to 15) or by argv[0]', () => {
         ['systemd-run', ['/usr/bin/systemd-run']], ['firefox', ['/usr/lib/firefox/firefox']],
         ['pipewire-media', []]])
         ok(!isProtectedName(comm, args), `${comm} is not protected`);
+});
+
+test('core desktop services are protected: settings daemon, IBus, accessibility, X11 frames', () => {
+    // comm and argv[0] as ps showed them in a GNOME 50 session (Ubuntu
+    // 26.04, 2026-10-03); comm is cut to 15 characters.
+    const core = [
+        ['gsd-a11y-settin', '/usr/libexec/gsd-a11y-settings'],
+        ['gsd-color', '/usr/libexec/gsd-color'],
+        ['gsd-datetime', '/usr/libexec/gsd-datetime'],
+        ['gsd-housekeepin', '/usr/libexec/gsd-housekeeping'],
+        ['gsd-keyboard', '/usr/libexec/gsd-keyboard'],
+        ['gsd-media-keys', '/usr/libexec/gsd-media-keys'],
+        ['gsd-power', '/usr/libexec/gsd-power'],
+        ['gsd-print-notif', '/usr/libexec/gsd-print-notifications'],
+        ['gsd-printer', '/usr/libexec/gsd-printer'],
+        ['gsd-rfkill', '/usr/libexec/gsd-rfkill'],
+        ['gsd-screensaver', '/usr/libexec/gsd-screensaver-proxy'],
+        ['gsd-sharing', '/usr/libexec/gsd-sharing'],
+        ['gsd-smartcard', '/usr/libexec/gsd-smartcard'],
+        ['gsd-sound', '/usr/libexec/gsd-sound'],
+        ['gsd-usb-protect', '/usr/libexec/gsd-usb-protection'],
+        ['gsd-wwan', '/usr/libexec/gsd-wwan'],
+        ['gsd-xsettings', '/usr/libexec/gsd-xsettings'],
+        ['gsd-disk-utilit', '/usr/libexec/gsd-disk-utility-notify'],
+        ['gsd-wacom', '/usr/libexec/gsd-wacom'],
+        ['ibus-daemon', '/usr/bin/ibus-daemon'],
+        ['ibus-x11', '/usr/libexec/ibus-x11'],
+        ['at-spi-bus-laun', '/usr/libexec/at-spi-bus-launcher'],
+        ['at-spi2-registr', '/usr/libexec/at-spi2-registryd'],
+        ['mutter-x11-fram', '/usr/libexec/mutter-x11-frames'],
+    ];
+    for (const [comm, argv0] of core) {
+        ok(isProtectedName(comm, [argv0]), `${comm}, as listed`);
+        ok(isProtectedName(comm, []), `${comm} by comm alone`);
+        ok(isProtectedName('renamed', [argv0, '--option']), `${argv0} by argv[0] alone`);
+        ok(isProtectedName('renamed', [argv0.split('/').pop()]), `${argv0}, run from $PATH`);
+        eq(protectedReason({pid: 3300, comm, args: [argv0]},
+            {selfPid: 2000, ancestors: new Set()}), 'session', comm);
+    }
+    // Every protected name is matched by comm, cut as the kernel cuts it.
+    ok(isProtectedName('at-spi-bus-laun', []) && isProtectedName('mutter-x11-fram', []));
+    ok(!isProtectedName('at-spi-bus-launcher', []), 'a comm is never longer than 15');
+    eq(PROTECTED_PREFIXES, ['gnome-session', 'gsd-']);
+    ok(PROTECTED_PREFIXES.every(name => PROTECTED_NAMES.includes(name)));
+
+    // Still killable: names that only look alike, IBus's own helpers
+    // (engines are started again when next used, the portal by D-Bus), and
+    // services D-Bus starts again when next needed. Apps, of course.
+    for (const [comm, args] of [
+        ['gsdsomething', ['/usr/bin/gsdsomething']],
+        ['gsd', ['gsd']],
+        ['my-gsd-tool', ['/home/u/bin/my-gsd-tool']],
+        ['ibus-daemon-x', ['/opt/ibus-daemon-x']],
+        ['ibus-like', ['/usr/bin/ibus-like']],
+        ['ibus-engine-sim', ['/usr/libexec/ibus-engine-simple']],
+        ['ibus-dconf', ['/usr/libexec/ibus-dconf']],
+        ['ibus-extension-', ['/usr/libexec/ibus-extension-gtk3']],
+        ['ibus-portal', ['/usr/libexec/ibus-portal']],
+        ['ibus-ui-emojier', ['/usr/libexec/ibus-ui-emojier']],
+        ['at-spi-bus-lau', []],
+        ['mutter', ['/usr/bin/mutter']],
+        ['xdg-desktop-por', ['/usr/libexec/xdg-desktop-portal']],
+        ['xdg-desktop-por', ['/usr/libexec/xdg-desktop-portal-gnome']],
+        ['xdg-document-po', ['/usr/libexec/xdg-document-portal']],
+        ['xdg-permission-', ['/usr/libexec/xdg-permission-store']],
+        ['evolution-sourc', ['/usr/libexec/evolution-source-registry']],
+        ['evolution-calen', ['/usr/libexec/evolution-calendar-factory']],
+        ['evolution-alarm', ['/usr/libexec/evolution-data-server/evolution-alarm-notify']],
+        ['goa-daemon', ['/usr/libexec/goa-daemon']],
+        ['gvfsd', ['/usr/libexec/gvfsd']],
+        ['gvfsd-fuse', ['/usr/libexec/gvfsd-fuse', '/run/user/1000/gvfs', '-f']],
+        ['localsearch-3', ['/usr/libexec/localsearch-3']],
+        ['dconf-service', ['/usr/libexec/dconf-service']],
+        ['gcr-ssh-agent', ['/usr/libexec/gcr-ssh-agent']],
+        ['gnome-terminal-', ['/usr/libexec/gnome-terminal-server']],
+        ['gjs', ['/usr/bin/gjs', '-m', '/usr/share/gnome-shell/org.gnome.Shell.Notifications']],
+    ])
+        ok(!isProtectedName(comm, args), `${args[0] ?? comm} is not protected`);
 });
 
 test('GNOME Shell\'s ancestors, and why a process is protected', () => {

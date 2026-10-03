@@ -9,7 +9,7 @@ import Gtk from 'gi://Gtk';
 
 import {gettext as _} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
-import {PROTECTED_NAMES} from './rules.js';
+import {PROTECTED_NAMES, PROTECTED_PREFIXES} from './rules.js';
 
 const SIZE_KEYS = ['killprocess-width', 'killprocess-height'];
 
@@ -37,8 +37,10 @@ export function killProcessPage(settings) {
         subtitle: _('Froonty runs inside GNOME Shell'),
     }));
     protectedGroup.add(new Adw.ActionRow({
-        title: _('Session programs'),
-        subtitle: PROTECTED_NAMES.join(', '),
+        title: _('Session programs and desktop services'),
+        // A prefix shows as such: gnome-session*, gsd-*.
+        subtitle: PROTECTED_NAMES
+            .map(name => PROTECTED_PREFIXES.includes(name) ? `${name}*` : name).join(', '),
         subtitle_selectable: true,
     }));
     page.add(protectedGroup);
