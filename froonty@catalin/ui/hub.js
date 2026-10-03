@@ -344,8 +344,18 @@ export class Hub extends EventEmitter {
         // siblings), but only when its own box changes: when they change
         // width (a tab's buttons, the pill's text), it places the bar
         // again in the same pass.
-        for (const actor of [this._tabColumn, this._header.end])
-            actor.connect('notify::allocation', () => panicLayer.queue_relayout());
+        // Only when a width changed: a relayout queued on every allocation
+        // would never let the island settle.
+        let widths = '';
+        for (const actor of [this._tabColumn, this._header.end]) {
+            actor.connect('notify::allocation', () => {
+                const now = `${this._tabColumn.width}x${this._header.end.width}`;
+                if (now === widths)
+                    return;
+                widths = now;
+                panicLayer.queue_relayout();
+            });
+        }
         // The panic bar and the header's buttons change width with the
         // settings and the active tab; once laid out, the island follows
         // if the room they need changed (as for minHeight).
