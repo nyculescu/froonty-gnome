@@ -26,8 +26,8 @@
 //
 // Signals are connected with plain connect() and disconnected one by one
 // in release() and stop(). The garbage collector releases the EDS objects
-// once Froonty lets go, except the source registry and its watcher,
-// disposed by hand in stop() (disposeRegistry()).
+// once Froonty lets go, except the source registry: one for the life of
+// the Shell process (processRegistry()).
 
 import GLib from 'gi://GLib';
 import Gio from 'gi://Gio';
@@ -120,20 +120,28 @@ export async function loadEds() {
     }
 }
 
-/**
- * Disposes an ESourceRegistry (and its watcher) now. Its dispose runs the
- * default main context (EDataServer 3.56); run by the garbage collector,
- * every JS timeout or idle due meanwhile is refused by GJS ("Attempting to
- * run a JS callback during garbage collection") and dropped for good, the
- * Shell's and other extensions' too. Disposed here, outside a collection,
- * those callbacks run normally.
- *
- * @param {?object} watcher EDataServer.SourceRegistryWatcher
- * @param {?object} registry EDataServer.SourceRegistry
- */
-function disposeRegistry(watcher, registry) {
-    watcher?.run_dispose();
-    registry?.run_dispose();
+// The source registry, made on the Calendar tab's first use and kept for
+// the life of the Shell process, across disable() and enable(). EDS
+// (EDataServer 3.56) leaves no safe way to let one go: its dispose runs
+// the default main context, so finalized by the garbage collector it
+// makes GJS refuse, and drop for good, every JS timeout or idle due then
+// (the Shell's and other extensions' too), and disposed by hand it stops
+// every other registry of the process from seeing new calendars. While
+// Froonty is disabled it holds no handler on it.
+// By bindings module (the unit tests' fakes each get their own).
+const registries = new WeakMap();
+
+function processRegistry(EDataServer) {
+    if (!registries.has(EDataServer)) {
+        registries.set(EDataServer, call(
+            done => EDataServer.SourceRegistry.new(null, done),
+            (_source, result) => EDataServer.SourceRegistry.new_finish(result))
+            .catch(e => {
+                registries.delete(EDataServer);
+                throw e;
+            }));
+    }
+    return registries.get(EDataServer);
 }
 
 /**
@@ -163,13 +171,9 @@ export class EdsAdapter extends Emitter {
 
     async start(cancellable) {
         const {EDataServer} = this._libs;
-        const registry = await call(
-            done => EDataServer.SourceRegistry.new(cancellable, done),
-            (_source, result) => EDataServer.SourceRegistry.new_finish(result));
-        if (this._stopped) {
-            disposeRegistry(null, registry);
+        const registry = await processRegistry(EDataServer);
+        if (this._stopped || cancellable?.is_cancelled())
             return;
-        }
         this._registry = registry;
 
         const watcher = EDataServer.SourceRegistryWatcher.new(registry, CALENDAR);
@@ -206,7 +210,6 @@ export class EdsAdapter extends Emitter {
             this._dropClient(uid);
         this._connecting.clear();
         this._sources.clear();
-        disposeRegistry(this._watcher, this._registry);
         this._watcher = null;
         this._registry = null;
     }

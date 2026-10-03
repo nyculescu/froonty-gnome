@@ -1019,12 +1019,7 @@ test('static: no synchronous call but libecal\'s CPU-only expansion and one Clie
         // set_fields_of_interest are synchronous D-Bus calls although
         // their names do not say so; only start() is made, once per view.
         ok(!/(clientView|_clientView|\bview)\.(stop|set_flags|set_fields_of_interest)\(/.test(source), name);
-        // Only the source registry and its watcher, in disposeRegistry():
-        // their dispose runs the main context, which must not happen
-        // during a garbage collection (eds.js).
-        const disposes = [...source.matchAll(/(\w+)\?\.run_dispose\(\)/g)].map(m => m[1]);
-        eq(disposes, name === 'eds.js' ? ['watcher', 'registry'] : [], `${name}: run_dispose`);
-        ok(!/\.run_dispose\(\)/.test(source.replace(/\w+\?\.run_dispose\(\)/g, '')), `${name}: other run_dispose`);
+        ok(!/run_dispose/.test(source), `${name}: run_dispose`);
     }
     const eds = code(sources().find(file => file.name === 'eds.js').text);
     eq([...eds.matchAll(/\.start\(\);/g)].length, 1, 'one ClientView.start() call site');
