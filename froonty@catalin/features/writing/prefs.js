@@ -715,7 +715,7 @@ function sizeGroup(settings) {
     });
     const group = new Adw.PreferencesGroup({
         title: _('Size'),
-        description: _('Of the island while the Writing tab is shown, in logical pixels.'),
+        description: _('Of the island while the Writing tab is shown, in logical pixels. Or drag the open island’s bottom-right corner.'),
         header_suffix: reset,
     });
     for (const [key, title] of [['writing-width', _('Width')], ['writing-height', _('Height')]]) {

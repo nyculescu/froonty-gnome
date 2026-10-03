@@ -230,7 +230,7 @@ function sizeGroup(settings) {
     const reset = new Gtk.Button({label: _('Default size'), valign: Gtk.Align.CENTER, css_classes: ['flat']});
     const group = new Adw.PreferencesGroup({
         title: _('Size'),
-        description: _('Of the island while the Break tab is shown, in logical pixels.'),
+        description: _('Of the island while the Break tab is shown, in logical pixels. Or drag the open island’s bottom-right corner.'),
         header_suffix: reset,
     });
     group.add(spinRow(settings, 'break-width', _('Width')));
