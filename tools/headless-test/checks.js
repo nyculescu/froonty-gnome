@@ -494,7 +494,11 @@ async function testHub(outDir) {
     // Header, summary, notices, networks: informative, no join controls.
     check('hub: ZeroTier opens its status at the configured size',
         hub.activeFeature?.id === 'zerotier' && zeroTierView?.actor.get_children().length === 4 &&
-        zeroTierWidth === 420 * scale() && zeroTierHeight === 280 * scale(),
+        zeroTierWidth === 420 * scale() &&
+        // A minimum: the island grows to show every tab.
+        (zeroTierHeight === 280 * scale() ||
+            (zeroTierHeight > 280 * scale() &&
+             boxOf(hub._tabColumn.get_last_child()).y2 <= boxOf(pill()).y2)),
         `${zeroTierWidth}x${zeroTierHeight}`);
     check('zerotier: the first start recorded its install check',
         settings().get_boolean('zerotier-install-checked'));
@@ -1413,7 +1417,7 @@ async function testNotesHeader(outDir) {
 
     // Four panic buttons at the narrowest Notes width: the island grows
     // so the centred panic bar clears the tab column and the header.
-    settings().set_strv('panic-buttons', ['mute-microphone', 'mute-sound', 'claude-session', 'block-camera']);
+    settings().set_strv('panic-buttons', ['mute-microphone', 'mute-sound', 'claude-session', 'pause-media']);
     settings().set_int('notes-width', 360);
     await sleep(animationWait() + SETTLE_MS);
     const node = pill().get_theme_node();
@@ -1516,7 +1520,7 @@ async function testAllNotesWindow(outDir) {
     check('all notes: the island shows the window\'s edit', service.text === 'hello!', service.text);
     island().collapse();
     await sleep(animationWait());
-    Main.activateWindow(window);
+    Main.activateWindow(window, global.display.get_current_time_roundtrip());
     await waitForFocus(window);
     await sleep(300);
 
@@ -3890,13 +3894,6 @@ async function testLifecycle(outDir) {
     await sleep(SETTLE_MS);
     iface.reset('clock-format');
     check('disabled: no strip after signal/settings pokes', strip() === null);
-    // The player changes now: nothing of Froonty's listens any more.
-    await fakeSet(player, {Metadata: song('After Disable')});
-    await fakeSeeked(player, 9e6);
-    await sleep(SETTLE_MS);
-    check('media: disabled, no Media service and no holder (the bus subscription went with it)',
-        mediaSharedModule.sharedMedia() === null && mediaSharedModule.mediaUsers() === 0);
-    await quitFake(player);
     // The player changes now: nothing of Froonty's listens any more.
     await fakeSet(player, {Metadata: song('After Disable')});
     await fakeSeeked(player, 9e6);
@@ -6680,7 +6677,7 @@ async function testClaudeAttention(outDir) {
         await waitFor(barShown, 2000);
         const shownBefore = barShown();
         if (window)
-            Main.activateWindow(window);
+            Main.activateWindow(window, global.display.get_current_time_roundtrip());
         await waitFor(() => !stateThere('froonty-test-8') && barHidden(), 2000);
         check('attention: focusing its window clears it',
             shownBefore && !stateThere('froonty-test-8') && barHidden(), `before=${shownBefore} ${barState()}`);
@@ -6875,9 +6872,14 @@ async function testClaudeAttentionWindows(outDir) {
         sessions.push(session);
         await writeAttention(session, options);
     };
+    // With a fresh timestamp: an activation with a stale one can be turned
+    // down by focus-stealing prevention (then the focus stays put).
     const focusOn = async window => {
-        Main.activateWindow(window);
-        await waitFor(() => global.display.focus_window === window, 3000);
+        for (let i = 0; i < 3 && global.display.focus_window !== window; i++) {
+            Main.activateWindow(window, global.display.get_current_time_roundtrip());
+            // eslint-disable-next-line no-await-in-loop
+            await waitFor(() => global.display.focus_window === window, 1500);
+        }
         await sleep(SETTLE_MS);
         return global.display.focus_window === window;
     };
@@ -6918,11 +6920,14 @@ async function testClaudeAttentionWindows(outDir) {
         // 1. The user types in another window of the terminal (a shell
         // whose title holds the project folder): what Claude Code says
         // in its own window shows.
-        await focusOn(shell);
+        check('attention windows: the test can focus the shell window', await focusOn(shell),
+            `focus=${global.display.focus_window?.get_title()}`);
         await write('froonty-test-30', {kind: 'permission', entrypoint: 'cli', project: 'Froonty', pids: chain});
         await write('froonty-test-31', {kind: 'finished', entrypoint: 'cli', project: 'Froonty', pids: chain});
         await write('froonty-test-32', {kind: 'waiting', entrypoint: 'cli', project: 'Froonty', pids: chain});
         await waitFor(() => ids().length === 3, 2000);
+        // A GNOME banner hides the bar (as it should): let it go first.
+        await waitFor(() => !Main.messageTray.visible, 10000);
         await sleep(300);
         check('attention windows: a permission, a finished reply and an idle prompt show while another window of the terminal has the focus',
             JSON.stringify(ids()) === '["30","31","32"]' && barShown() &&
@@ -6952,6 +6957,7 @@ async function testClaudeAttentionWindows(outDir) {
         await write('froonty-test-34', {kind: 'finished', entrypoint: 'cli', project: 'Alpha', pids: chain});
         await write('froonty-test-35', {kind: 'permission', entrypoint: 'claude-vscode', project: 'Alpha', pids: chain});
         await waitFor(() => !stateThere('froonty-test-34') && !stateThere('froonty-test-35') && ids().length === 1, 2000);
+        await waitFor(() => !Main.messageTray.visible, 10000);
         await sleep(300);
         check('attention windows: its own window focused: a terminal permission shows, a finished reply and VS Code\'s permission do not',
             JSON.stringify(ids()) === '["33"]' && barShown() && stateThere('froonty-test-33') &&
@@ -8444,8 +8450,28 @@ async function testBreak(outDir) {
     }
 }
 
+// FROONTY_TEST_ONLY=testA,testB runs only those checks (while debugging).
+const ONLY_TESTS = {
+    testClaudeAttention, testClaudeAttentionWindows, testNotifications, testCalendar,
+    testNotes, testMedia, testBreak, testHub, testLifecycle,
+};
+
 export async function runAll(outDir) {
     results.length = 0;
+    const only = GLib.getenv('FROONTY_TEST_ONLY');
+    if (only) {
+        try {
+            testLoaded();
+            // A banner from the session's start would hide what is checked.
+            await waitFor(() => !Main.messageTray.visible, 15000);
+            for (const name of only.split(','))
+                // eslint-disable-next-line no-await-in-loop
+                await ONLY_TESTS[name](outDir);
+        } catch (e) {
+            check('test run completed without exception', false, `${e}\n${e.stack}`);
+        }
+        return results;
+    }
     // Pointer-driven checks move the pointer over the pill; keep hover-open
     // out of their way (testHoverOpen enables it explicitly).
     settings().set_int('hover-open-delay', 0);
