@@ -319,13 +319,13 @@ Both save through `noteWriter.js`:
 - **Hub header actions** (`ui/hubHeader.js`): a view may expose
   `headerActions`, widgets it owns and destroys; the hub places them
   between the date pill and ⚙️, only while that tab is active. The hub
-  also reports a `minWidth`: the island grows so that the centred panic
-  bar stays 8 px clear of the tab column and of the header's buttons.
-  With 📅 (until 2026-10-03) 4 panic buttons needed about 378 px and the
-  Notes default, 428, was unchanged; the wider date pill makes the Notes
-  tab open about 498 px wide with the two default panic buttons (the
-  headless check measures it: the top row needs 464 px of content plus
-  the island's 34 px of padding and border). The value it returns
+  also reports a `minWidth`: the island grows so that the panic bar
+  fits between the tab column and the header's buttons, 8 px clear of
+  each. The bar is centred on the island where that leaves it clear of
+  the header's buttons, and moved left as far as needed where not. (With
+  the date pill, from 2026-10-03, the bar used to stay centred and the
+  island grew instead: about 498 px on the Notes tab, whose default is
+  428.) The value it returns
   is always the one it reports. With no panic buttons it used to return 0
   while still reporting the last width, so the header's allocation watch
   saw a change on every frame of an expand: about 60 resizes, each

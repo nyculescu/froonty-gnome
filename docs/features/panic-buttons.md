@@ -7,8 +7,9 @@ the following week; the bar and the catalog are ready for them.
 
 The hub has a bar of up to **5 quick-action buttons** at the top of the
 expanded island, in the place the feature tabs used to occupy. The bar is
-**centered across the whole island**, and each button shows its name in a
-tooltip on hover. You choose and order the buttons in Settings → Panic
+**centered across the whole island** (on a tab too narrow for that, it
+moves left just enough to keep clear of the date pill and ⚙️), and each
+button shows its name in a tooltip on hover. You choose and order the buttons in Settings → Panic
 buttons.
 
 The feature tabs (Calendar, Notes, …) moved to a **vertical column on
@@ -18,7 +19,7 @@ in a pill left of ⚙️, which opens GNOME's calendar menu.)
 
 ```
 ┌────┬──────────────────────────────────────────┐
-│ 🗓 │      [🎤][🔊]      ( Sat 3 Oct 14:05 ) ⚙️ │  panic bar (max 5), centered
+│ 🗓 │      [🎤][🔊]      ( Sat Oct 3 14:05 ) ⚙️ │  panic bar (max 5), centered
 │ 📝 │──────────────────────────────────────────│
 │    │         active feature                   │
 └────┴──────────────────────────────────────────┘

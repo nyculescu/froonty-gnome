@@ -3,7 +3,7 @@
 // (features/registry.js) and contains no feature logic of its own:
 //
 //   ┌─────┬──────────────────────────────────────────────┐
-//   │ tab │      [panic][panic]…   (Sat 3 Oct 14:05) [a] ⚙️ │  panic bar (max 5), centered
+//   │ tab │      [panic][panic]…   (Sat Oct 3 14:05) [a] ⚙️ │  panic bar (max 5), centered
 //   │ tab ├──────────────────────────────────────────────┤
 //   │ …   │            active feature's view             │  content
 //   └─────┴──────────────────────────────────────────────┘
@@ -16,8 +16,11 @@
 // Every tab can be turned off. With none on, the header stays and the
 // content says so, with a button that opens Settings.
 //
-// The island is at least wide enough (minWidth) that the centred panic bar
-// stays clear of the tab column and of the header's buttons.
+// The panic bar is centred on the island. On an island too narrow for
+// that (a narrow tab beside the header's date pill and buttons) it moves
+// left just enough to stay clear of the header's buttons (PanicLayout);
+// the island is only made wider (minWidth) when the bar does not fit
+// between the tab column and those buttons at all.
 //
 // A feature's view (and its service, if any) is created the first time its
 // tab is selected, and destroyed when the feature is disabled or the hub is
@@ -29,6 +32,7 @@
 // alone, not a hover-open alone).
 
 import Clutter from 'gi://Clutter';
+import GObject from 'gi://GObject';
 import St from 'gi://St';
 
 import {EventEmitter} from 'resource:///org/gnome/shell/misc/signals.js';
@@ -40,8 +44,36 @@ import {PanicBar} from './panicBar.js';
 
 const LAST_TAB_KEY = 'hub-last-tab';
 
-// Room kept on each side of the centred panic bar (logical px).
+// Room kept on each side of the panic bar (logical px).
 const PANIC_GAP = 8;
+
+// Places the panic bar (the layer's one child) on the header row: centred
+// on the island, or, where that would bring it closer than PANIC_GAP to
+// the header's buttons, moved left until it is not, but never closer than
+// PANIC_GAP to the tab column (Hub.minWidth makes room for both). Mirrored
+// right to left.
+const PanicLayout = GObject.registerClass(
+class PanicLayout extends Clutter.BinLayout {
+    /** @param {Function} span → [left, right]: px kept free at each side */
+    _init(span) {
+        super._init();
+        this._span = span;
+    }
+
+    vfunc_allocate(container, box) {
+        const bar = container.get_first_child();
+        if (!bar)
+            return;
+        const [, width] = bar.get_preferred_width(-1);
+        const [, height] = bar.get_preferred_height(width);
+        let [start, end] = this._span();
+        if (container.get_text_direction() === Clutter.TextDirection.RTL)
+            [start, end] = [end, start];
+        const room = box.get_width();
+        const x = Math.round(Math.max(start, Math.min((room - width) / 2, room - end - width)));
+        bar.allocate(new Clutter.ActorBox({x1: x, y1: 0, x2: x + width, y2: height}));
+    }
+});
 
 // Feature tabs fill a grid column by column. One column: the island grows
 // taller when the tabs need it (minHeight).
@@ -116,9 +148,8 @@ export class Hub extends EventEmitter {
 
     /**
      * The width the island's content needs (physical pixels) so that the
-     * panic bar, centred on it, keeps PANIC_GAP clear of the tab column on
-     * the left and of the header's buttons on the right; 0 off stage or
-     * without panic buttons.
+     * panic bar fits between the tab column and the header's buttons with
+     * PANIC_GAP on each side; 0 off stage or without panic buttons.
      */
     get minWidth() {
         // Whatever it returns is what was reported: the allocation watches
@@ -132,12 +163,19 @@ export class Hub extends EventEmitter {
         const panic = this._panicBar.actor;
         if (!this.actor.get_stage() || !panic.visible || panic.get_n_children() === 0)
             return 0;
+        const [left, right] = this._panicSpan();
+        return left + panic.get_preferred_width(-1)[1] + right;
+    }
+
+    // The room the panic bar keeps free (physical pixels): [from the left
+    // edge, past the tab column; from the right edge, past the header's
+    // buttons], PANIC_GAP included.
+    _panicSpan() {
         const natural = actor => (actor.visible ? actor.get_preferred_width(-1)[1] : 0);
-        const scale = St.ThemeContext.get_for_stage(global.stage).scale_factor;
+        const gap = PANIC_GAP * St.ThemeContext.get_for_stage(global.stage).scale_factor;
         const spacing = this._main.get_theme_node().get_length('spacing');
         const left = this._tabColumn.visible ? natural(this._tabColumn) + spacing : 0;
-        const right = natural(this._header.end);
-        return natural(panic) + 2 * PANIC_GAP * scale + 2 * Math.max(left, right);
+        return [left + gap, natural(this._header.end) + gap];
     }
 
     /**
@@ -258,7 +296,7 @@ export class Hub extends EventEmitter {
             y_expand: true,
         });
         // The header row holds the date pill, the active feature's buttons
-        // and ⚙️ on the right; the panic bar is centered over the whole
+        // and ⚙️ on the right; the panic bar is centred over the whole
         // island in its own layer (see below).
         this._tooltip = new Tooltip();
         this._header = new HubHeader(this._tooltip, {
@@ -281,9 +319,10 @@ export class Hub extends EventEmitter {
         right.add_child(this._content);
         main.add_child(right);
 
-        // Panic bar: centered across the island (not just the column right of
-        // the tabs), on the header row. Its layer is click-through; only the
-        // buttons take input.
+        // Panic bar: centred across the island (not just the column right of
+        // the tabs), on the header row, as far as the header's buttons let
+        // it (PanicLayout). Its layer is click-through; only the buttons
+        // take input.
         this._panicBar = new PanicBar(this._settings, this._tooltip, {
             settings: this._settings,
             ctx: this._ctx,
@@ -295,17 +334,17 @@ export class Hub extends EventEmitter {
         });
         const panicLayer = new St.Widget({
             style_class: 'froonty-panic-layer',
-            layout_manager: new Clutter.BinLayout(),
-            x_expand: true,
-            y_expand: true,
-        });
-        this._panicBar.actor.set({
-            x_align: Clutter.ActorAlign.CENTER,
-            y_align: Clutter.ActorAlign.START,
+            layout_manager: new PanicLayout(() => this._panicSpan()),
             x_expand: true,
             y_expand: true,
         });
         panicLayer.add_child(this._panicBar.actor);
+        // The layer is laid out after the tab column and the header (later
+        // siblings), but only when its own box changes: when they change
+        // width (a tab's buttons, the pill's text), it places the bar
+        // again in the same pass.
+        for (const actor of [this._tabColumn, this._header.end])
+            actor.connect('notify::allocation', () => panicLayer.queue_relayout());
         // The panic bar and the header's buttons change width with the
         // settings and the active tab; once laid out, the island follows
         // if the room they need changed (as for minHeight).

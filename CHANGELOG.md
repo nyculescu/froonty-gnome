@@ -286,19 +286,18 @@
     what is never killed, and the tab's size (520 × 440 by default).
 
 ### Changed
-- **The hub header's 📅 button is now a date-and-time pill:** "Sat 3 Oct
-  14:05", in Froonty's 12/24-hour setting (always with the date; "Show
+- **The hub header's 📅 button is now a date-and-time pill:** "Sat Oct 3
+  14:05", the date as GNOME's top bar clock writes it in your language,
+  the time in Froonty's 12/24-hour setting (always with the date; "Show
   date when collapsed" stays the collapsed pill's), with GNOME's unread
   dot after the time, and the collapsed pill's look. A click, a touch,
   Enter or Space closes the island and opens GNOME's own calendar and
   notification menu, as a click on the clock under the pill would. Screen
   readers hear "Calendar and notifications" and the full date. It follows
   the top bar clock's ticks, with no timer of its own. The pill is wider
-  than 📅 was, so on narrow tabs the island is wider too: the centred
-  panic bar keeps clear of the top row. With the two default panic
-  buttons the island is at least about 430 px wide, and the Notes tab
-  (428 px by default, with its All notes button) about 498 px; the exact
-  figures depend on the font.
+  than 📅 was; on a tab too narrow to centre the panic bar beside it, the
+  panic bar moves left to keep clear of it, and each tab keeps the width
+  set in Settings.
 - **Every tab can be turned off.** With none on, the island still opens:
   its top row (the date pill, the panic buttons, ⚙️) and "No tabs are
   on", with a button to Settings. Settings → Appearance → Expanded width
@@ -322,8 +321,10 @@
 - Notes: paler note surfaces (yellow, green, pink, purple, blue, gray), so
   the text is easier to read. Colour swatches keep the stronger shades
   that tell the colours apart.
-- The island grows when the panic buttons and the top row's buttons need
-  more room than its width, so the centred panic bar never overlaps them.
+- The panic bar never overlaps the top row's buttons: it is centred on
+  the island where there is room, moves left where there is not, and the
+  island grows only when the bar does not fit between the tabs and those
+  buttons at all.
 
 ### Removed
 - **The Clock tab.** The time and the date are in the island itself: on

@@ -202,16 +202,17 @@ The hub (`ui/hub.js`) is the expanded content:
 ```
 hub     BinLayout, reactive (stops clicks from reaching the pill)
  ├ main     [tab column (GridLayout, TAB_COLUMNS = 1; the island grows to fit it)] [header / content]
- │            header   (date pill: "Sat 3 Oct 14:05" + GNOME's unread dot) [feature actions] ⚙️
+ │            header   (date pill: "Sat Oct 3 14:05" + GNOME's unread dot) [feature actions] ⚙️
  │            content  the active tab's view, or, while no tab is on, a notice and "Open Settings"
- ├ panic    panic bar, centered across the island (click-through layer)
+ ├ panic    panic bar, centered across the island, or moved left to clear the header (PanicLayout; click-through layer)
  └ overlay  tooltips (click-through, fixed positions)
 ```
 
 - The header's **date pill** (`ui/hubHeader.js`) is an `St.Button`
   styled like the collapsed pill, as tall as the icon buttons beside it.
-  It shows `ClockService.snapshot()`'s `date` and `time` (Froonty's
-  12/24-hour setting, always with the date) and GNOME's unread dot after
+  It shows `ClockService.snapshot()`'s `date` (the top bar clock's date
+  format, from gnome-desktop's catalog) and `time` (Froonty's 12/24-hour
+  setting), always with the date, and GNOME's unread dot after
   the time; it updates on the clock service's `changed` (the top bar's
   WallClock ticks) and disconnects when the hub is destroyed. A press
   opens GNOME's own calendar and notification menu (§5), which closes the
@@ -219,7 +220,7 @@ hub     BinLayout, reactive (stops clicks from reaching the pill)
 - **Every tab can be off** (the Clock tab, the only one without an enable
   key, is gone). The hub then shows no tab and no column, a notice in the
   content and the header as ever; the island takes `expanded-width` ×
-  `expanded-height` (wider when the top row needs it). `hub-last-tab`
+  `expanded-height`. `hub-last-tab`
   falls back to the first tab that is on when the remembered one is gone
   (a stored `clock`) or off.
 

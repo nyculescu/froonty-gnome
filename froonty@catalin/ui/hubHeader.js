@@ -2,13 +2,13 @@
 // The hub's header row, right-aligned (the panic bar is centred over it in
 // a layer of its own, see hub.js):
 //
-//   ……………………………  (Sat 3 Oct 14:05•)  [feature actions]  ⚙️
+//   ……………………………  (Sat Oct 3 14:05•)  [feature actions]  ⚙️
 //
-//   (date time)  a small pill with the date and the time, as the top bar
-//        clock under the island shows them, and GNOME's unread dot after
-//        the time; a press closes the island and opens GNOME's own
-//        calendar and notification menu (absent when this Shell has no
-//        date menu)
+//   (date time)  a small pill with the date in the top bar clock's format
+//        (the one under the island), the time as Froonty shows it, and
+//        GNOME's unread dot after the time; a press closes the island and
+//        opens GNOME's own calendar and notification menu (absent when
+//        this Shell has no date menu)
 //   feature actions  buttons a feature's view provides (`headerActions`),
 //        shown only while its tab is the active one; e.g. Notes' "All notes"
 //   ⚙️   Froonty's settings window
@@ -129,10 +129,11 @@ export class HubHeader {
         this._syncName();
     }
 
-    // The pill: the date and the time as the collapsed pill shows them
-    // (12/24-hour as set in Froonty), always with the date (there is room
-    // here; "Show date when collapsed" is the collapsed pill's), and
-    // GNOME's unread dot after the time, as on the collapsed pill. A press
+    // The pill, in the collapsed pill's style: the date as the top bar
+    // clock writes it (weekday, month and day: ClockService.snapshot().date),
+    // always (there is room here; "Show date when collapsed" is the
+    // collapsed pill's), the time as the collapsed pill shows it (12/24-hour
+    // as set in Froonty), and GNOME's unread dot after the time. A press
     // opens GNOME's own calendar and notification menu, which the island
     // covers; the island closes as it opens (Island._openCalendar).
     _buildCalendarButton() {

@@ -270,6 +270,7 @@
 .froonty-header-clock-date {
     color: rgba(255, 255, 255, 0.7);
     font-weight: bold;
+    font-feature-settings: "tnum";
 }
 
 .froonty-header-clock-time {

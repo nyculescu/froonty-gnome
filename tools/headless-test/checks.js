@@ -301,7 +301,7 @@ async function testPointer(outDir) {
     const size = island()._geometry.expandedSize(island()._hub.activeFeature);
     check('expanded: the first tab (Calendar) at its size, tall enough for every tab',
         island()._hub.activeFeature?.id === firstTabId() && firstTabId() === s.get_string('hub-last-tab') &&
-        isOpenWidth(w, size.width / scale()) &&
+        w === size.width &&
         h >= size.height && tabs.at(-1).y2 <= boxOf(pill()).y2 &&
         (h === size.height || h - (tabs.at(-1).y2 - boxOf(pill()).y1) <= 16 * scale()),
         `${w}x${h} tab=${island()._hub.activeFeature?.id}`);
@@ -456,17 +456,6 @@ function islandFrame() {
         node.get_border_width(St.Side.RIGHT);
 }
 
-// The open island's width for a tab `logical` px wide: that, or wider
-// when the centred panic bar needs room beside the top row's buttons
-// (Hub.minWidth: the date pill, the tab's own buttons, ⚙️).
-function openWidth(logical) {
-    return Math.max(logical * scale(), island()._hub._measureMinWidth() + islandFrame());
-}
-
-// Whether `width` (stage px, as allocated) is openWidth(logical); text
-// makes the top row's width fractional, the allocation is whole pixels.
-const isOpenWidth = (width, logical) => Math.abs(width - openWidth(logical)) < 1;
-
 // The configured width of the tab on screen (logical px; expanded-width
 // while no tab is on).
 const tabWidth = () => island()._geometry.expandedSize(island()._hub.activeFeature).width / scale();
@@ -532,7 +521,7 @@ async function testHub(outDir) {
     // Header, summary, notices, networks: informative, no join controls.
     check('hub: ZeroTier opens its status at the configured size',
         hub.activeFeature?.id === 'zerotier' && zeroTierView?.actor.get_children().length === 4 &&
-        isOpenWidth(zeroTierWidth, 420) &&
+        zeroTierWidth === 420 * scale() &&
         // A minimum: the island grows to show every tab.
         (zeroTierHeight === 280 * scale() ||
             (zeroTierHeight > 280 * scale() &&
@@ -547,7 +536,7 @@ async function testHub(outDir) {
     const [sysmonWidth, sysmonHeight] = pill().get_transformed_size();
     check('hub: Btop opens at the configured size and polls while on screen',
         hub.activeFeature?.id === 'sysmon' && sysmon?.service.polling === true &&
-        isOpenWidth(sysmonWidth, 460) && sysmonHeight === 480 * scale(),
+        sysmonWidth === 460 * scale() && sysmonHeight === 480 * scale(),
         `${sysmonWidth}x${sysmonHeight} polling=${sysmon?.service.polling}`);
     await sleep(2500);
     check('sysmon: a sample reached the tab',
@@ -576,7 +565,7 @@ async function testHub(outDir) {
     await sleep(animationWait() + 2500);
     const [narrowWidth] = pill().get_transformed_size();
     check('sysmon: a width set in Settings resizes the open island; narrow, a thread per row',
-        isOpenWidth(narrowWidth, 380) && sysmon?.view._coreColumns === 1,
+        narrowWidth === 380 * scale() && sysmon?.view._coreColumns === 1,
         `${narrowWidth} ${sysmon?.view._coreColumns} columns`);
     await screenshotTop(outDir, 'sysmon-narrow', 520);
     settings().reset('sysmon-width');
@@ -619,9 +608,9 @@ async function testHub(outDir) {
         // The height is a minimum: the island grows to show every tab.
         const lastTab = boxOf(island()._hub._tabColumn.get_children().at(-1));
         check('hub: island resizes to the feature\'s hubSize',
-            isOpenWidth(w, 420) && h >= 300 * scale() &&
+            w === 420 * scale() && h >= 300 * scale() &&
             (h === 300 * scale() || h - (lastTab.y2 - boxOf(pill()).y1) <= 16 * scale()),
-            `${w}x${h}, expected width ${openWidth(420)}`);
+            `${w}x${h}`);
         check('hub: selected tab is remembered',
             settings().get_string('hub-last-tab') === 'test-fake');
         await screenshotTop(outDir, 'hub-two-tabs');
@@ -653,7 +642,7 @@ async function testHub(outDir) {
         await sleep(animationWait());
         const [cw] = pill().get_transformed_size();
         check('hub: switching away deactivates the service and resizes to the other tab',
-            log.at(-1) === 'inactive' && isOpenWidth(cw, tabWidth()),
+            log.at(-1) === 'inactive' && cw === tabWidth() * scale(),
             `${log.join(',')} width=${cw}`);
         check('hub: another tab hides the feature\'s header button',
             !log.action.mapped && !log.actionDestroyed);
@@ -758,8 +747,8 @@ async function testNotes(outDir) {
 
     const view = hub()._entries.get('notes')?.view;
     const [w, h] = pill().get_transformed_size();
-    check('notes: tab opens and resizes the island to 428x319 (wider if the top row needs it)',
-        view && isOpenWidth(w, 428) && h === 319 * scale(), `${w}x${h}`);
+    check('notes: tab opens and resizes the island to 428x319',
+        view && w === 428 * scale() && h === 319 * scale(), `${w}x${h}`);
     // Settings → Notes → Size applies live; "Default size" resets it.
     settings().set_int('notes-width', 500);
     settings().set_int('notes-height', 400);
@@ -770,8 +759,8 @@ async function testNotes(outDir) {
     await sleep(animationWait());
     const [rw, rh] = pill().get_transformed_size();
     check('notes: the size settings resize the open island, and reset',
-        isOpenWidth(sw, 500) && sh === 400 * scale() &&
-        isOpenWidth(rw, 428) && rh === 319 * scale(), `${sw}x${sh} -> ${rw}x${rh}`);
+        sw === 500 * scale() && sh === 400 * scale() &&
+        rw === 428 * scale() && rh === 319 * scale(), `${sw}x${sh} -> ${rw}x${rh}`);
     check('notes: empty folder shows the empty state',
         view._empty.visible && !view._scroll.visible);
     await screenshotTop(outDir, 'notes-empty');
@@ -859,7 +848,7 @@ async function testNotes(outDir) {
     const [cw] = pill().get_transformed_size();
     check('notes: disabling removes the tab, stops the service, resizes to the first tab',
         !hub()._entries.has('notes') && service._monitor === null &&
-        hub().activeFeature?.id === firstTabId() && isOpenWidth(cw, tabWidth()), `width=${cw}`);
+        hub().activeFeature?.id === firstTabId() && cw === tabWidth() * scale(), `width=${cw}`);
     settings().reset('notes-enabled');
     island().collapse();
     await sleep(animationWait());
@@ -1491,8 +1480,8 @@ async function testNotesHeader(outDir) {
     settings().reset('notes-width');
     await sleep(animationWait() + SETTLE_MS);
     const [back] = pill().get_transformed_size();
-    check('notes header: back to the defaults, the island is 428 px wide again (or as the top row needs)',
-        isOpenWidth(back, 428), `note: ${back} px, the top row needs ${hub()._measureMinWidth()} + ${islandFrame()}`);
+    check('notes header: back to the defaults, the island is 428 px wide again',
+        back === 428 * scale(), `${back}`);
 
     // A click: the island closes (saving the note), the settings window
     // opens on All notes.
@@ -2027,7 +2016,7 @@ async function testClipboard(outDir) {
     check('clipboard: "Plain text" is offered only for formatted text',
         view && !view._plainButton.visible && recorder.currentFormatted === false);
     check('clipboard: the tab opens at its configured size',
-        isOpenWidth(w, 400) && h === 440 * scale(), `${w}x${h}`);
+        w === 400 * scale() && h === 440 * scale(), `${w}x${h}`);
     await screenshotTop(outDir, 'clipboard', 520);
 
     // Click the text entry (the oldest): it is on the clipboard again.
@@ -2153,7 +2142,7 @@ async function testWriting(outDir) {
             view._emptyLabel.text === 'No writing engine is turned on.', view._emptyLabel.text);
         const [w, h] = pill().get_transformed_size();
         check('writing: the tab opens at its configured size',
-            isOpenWidth(w, 460) && h === 540 * scale(), `${w}x${h}`);
+            w === 460 * scale() && h === 540 * scale(), `${w}x${h}`);
         await screenshotTop(outDir, 'writing-empty', 560);
         await clickActor(view._settingsButton);
         const window = await waitForSettingsWindow();
@@ -3191,7 +3180,7 @@ async function testKillProcess(outDir) {
         const [w, h] = pill().get_transformed_size();
         check('kill process: the tab opens at its size and reads processes while on screen',
             island()._hub.activeFeature?.id === 'killprocess' && service?.polling === true &&
-            isOpenWidth(w, 520) && h === 440 * scale(),
+            w === 520 * scale() && h === 440 * scale(),
             `${w}x${h} polling=${service?.polling}`);
         await waitFor(() => service?.processes?.some(p => p.pid === sleeper.pid));
         const listed = pid => service?.processes?.find(p => p.pid === pid) ?? null;
@@ -3490,7 +3479,7 @@ async function testClaude(outDir) {
     check('claude: the tab opens', hub().activeFeature?.id === 'claude' && view && service);
     const [w, h] = pill().get_transformed_size();
     check('claude: island resizes to the tab\'s hubSize',
-        isOpenWidth(w, 380) && h === 465 * scale(), `${w}x${h}`);
+        w === 380 * scale() && h === 465 * scale(), `${w}x${h}`);
 
     // Swap in a network we control, then show the tab again.
     const network = new FakeNetwork();
@@ -4696,13 +4685,22 @@ async function testDatePill(outDir) {
         return header._dateLabel.text === now.date && header._timeLabel.text === now.time &&
             header._dateLabel.visible && header._timeLabel.visible;
     };
-    const DATE = /^\S+ \d{1,2} \S+$/;
+    // The date as GNOME's own top bar clock writes it (its weekday and
+    // date shown): its text starts with the pill's date, then a space and
+    // the time ("Sat Oct 3 14:05" in English).
+    iface.set_boolean('clock-show-date', true);
+    iface.set_boolean('clock-show-weekday', true);
+    const wallClock = Main.panel.statusArea.dateMenu._clock;
+    const asTopBar = () => wallClock.clock.startsWith(header._dateLabel.text) &&
+        /^\s\S/u.test(wallClock.clock.slice(header._dateLabel.text.length)) &&
+        /\d/.test(header._dateLabel.text);
 
     s.set_string('clock-format', '24h');
     await sleep(SETTLE_MS);
-    check('date pill: 24-hour, the date and the time as the clock service says ("Sat 3 Oct" "14:05"), with the date though "Show date when collapsed" is off',
-        await waitFor(matches, 2000) && DATE.test(header._dateLabel.text) &&
-        /^\d{1,2}:\d{2}$/.test(header._timeLabel.text) && !s.get_boolean('show-date'), shown());
+    check('date pill: 24-hour, the date as the top bar clock writes it ("Sat Oct 3" "14:05"), with the date though "Show date when collapsed" is off',
+        await waitFor(() => matches() && asTopBar(), 2000) &&
+        /^\d{1,2}:\d{2}$/.test(header._timeLabel.text) && !s.get_boolean('show-date'),
+        `${shown()} top bar "${wallClock.clock}"`);
     const name = () => {
         const now = clock.snapshot();
         const unread = gnomeUnreadDot() ? ', unread notifications' : '';
@@ -4724,7 +4722,7 @@ async function testDatePill(outDir) {
     s.set_string('clock-format', '12h');
     await sleep(SETTLE_MS);
     check('date pill: 12-hour', await waitFor(matches, 2000) && /[AP]M/.test(header._timeLabel.text) &&
-        DATE.test(header._dateLabel.text) && button.accessible_name.includes(header._timeLabel.text), shown());
+        asTopBar() && button.accessible_name.includes(header._timeLabel.text), shown());
     await screenshotTop(outDir, 'hub-header-pill-12h', 120);
     s.set_string('clock-format', 'system');
     iface.set_string('clock-format', '12h');
@@ -4741,6 +4739,8 @@ async function testDatePill(outDir) {
         system12 && await waitFor(() => matches() && !/[AP]M/.test(header._timeLabel.text), 5000),
         `${shown()} (12-hour shown: ${system12}; with 12h set: ${seen12})`);
     iface.reset('clock-format');
+    iface.reset('clock-show-date');
+    iface.reset('clock-show-weekday');
     s.reset('clock-format');
     await sleep(SETTLE_MS);
 
@@ -4762,8 +4762,37 @@ async function testDatePill(outDir) {
         !isEllipsized(header._dateLabel) && !isEllipsized(header._timeLabel) &&
         Math.abs(b.y1 + b.y2 - g.y1 - g.y2) <= 2,
         `pill ${b.x2 - b.x1}x${b.y2 - b.y1}, ⚙️ ${g.x2 - g.x1}x${g.y2 - g.y1}, radius ${node.get_border_radius(St.Corner.TOPLEFT)}`);
-    check('date pill: keyboard focusable, and hover shows the pill\'s hover',
-        button.can_focus && button.track_hover && button.reactive);
+    // Hover and the focus ring, as the stylesheet gives them.
+    const [pointerX, pointerY] = global.get_pointer();
+    const content = boxOf(hub._content);
+    const contentMiddle = [(content.x1 + content.x2) / 2, (content.y1 + content.y2) / 2];
+    const rest = node.get_background_color();
+    const restBorder = node.get_border_color(St.Side.TOP);
+    await movePointerTo((b.x1 + b.x2) / 2, (b.y1 + b.y2) / 2);
+    await sleep(SETTLE_MS);
+    const hovered = button.get_theme_node().get_background_color();
+    check('date pill: hovered, it lightens',
+        button.can_focus && button.track_hover && button.reactive && button.hover &&
+        hovered.red > rest.red, `rest ${rest.red}, hovered ${hovered.red} (hover=${button.hover})`);
+    await movePointerTo(...contentMiddle);
+    await sleep(SETTLE_MS);
+    button.grab_key_focus();
+    await sleep(SETTLE_MS);
+    const focusNode = button.get_theme_node();
+    check('date pill: focused by keyboard, it shows the focus ring',
+        global.stage.key_focus === button && !button.hover &&
+        focusNode.get_border_color(St.Side.TOP).alpha > restBorder.alpha && focusNode.get_box_shadow() !== null,
+        `border alpha ${restBorder.alpha} -> ${focusNode.get_border_color(St.Side.TOP).alpha}`);
+    const focusPath = await screenshotTop(outDir, 'hub-header-pill-focus', 120);
+    check('date pill: screenshot with the focus ring', true, `note: ${focusPath}`);
+    pill().grab_key_focus();
+    await movePointerTo(pointerX, pointerY);
+    await sleep(SETTLE_MS);
+
+    // At the defaults the top row fits the narrowest island (expanded-
+    // width, 360): the pill does not make the island wider.
+    check('date pill: the top row fits a 360 px island; it does not widen the island',
+        hub.minWidth + islandFrame() <= 360 * scale(), `${hub.minWidth} + ${islandFrame()}`);
     island().collapse();
     await sleep(animationWait());
 
@@ -4843,8 +4872,8 @@ async function testEmptyHub(outDir) {
             parts.every(actor => actor.mapped && actor.width > 0 && actor.height > 0) &&
             hub._panicBar.actor.get_n_children() === 2 && boxOf(hub._panicBar.actor).x2 <= boxOf(hub.calendarButton).x1,
             parts.map(actor => `${describeActor(actor)} ${actor.width}x${actor.height}`).join(', '));
-        check('empty hub: expanded-width × expanded-height (wider if the top row needs it)',
-            isOpenWidth(w, width()) && h === height(), `${w}x${h}`);
+        check('empty hub: expanded-width × expanded-height',
+            w === width() * scale() && h === height(), `${w}x${h}`);
         const path = await screenshotTop(outDir, 'hub-empty', 200);
         check('empty hub: screenshot', true, `note: ${path}`);
 
@@ -4876,7 +4905,7 @@ async function testEmptyHub(outDir) {
         const [w2, h2] = pill().get_transformed_size();
         check('empty hub: the last tab turned off in the open island: the notice, at the empty size',
             island().expanded && notice.mapped && hub.activeFeature === null &&
-            isOpenWidth(w2, width()) && h2 === height(), `${w2}x${h2}`);
+            w2 === width() * scale() && h2 === height(), `${w2}x${h2}`);
         s.set_boolean('notifications-enabled', true);
         s.set_boolean('notes-enabled', true);
         await sleep(animationWait());
@@ -5334,13 +5363,43 @@ async function testNotifications(outDir) {
         await sleep(animationWait());
     }
     const [w, h] = pill().get_transformed_size();
+    // The panic bar: centred on the island where it fits, else moved left
+    // to stay 8 px clear of the header's date pill, never closer than 8 px
+    // to the tabs; the island keeps its width while the bar fits at all.
+    const panicPlace = () => {
+        const hub = island()._hub;
+        const bar = boxOf(hub._panicBar.actor);
+        const isle = boxOf(pill());
+        const header = Math.min(...hub._header.end.get_children().filter(b => b.visible).map(b => boxOf(b).x1));
+        const tabs = boxOf(hub._tabColumn).x2;
+        return {
+            centred: Math.abs((bar.x1 + bar.x2) / 2 - (isle.x1 + isle.x2) / 2) <= 1,
+            clear: header - bar.x2 >= 8 * scale() - 1 && bar.x1 - tabs >= 8 * scale() - 1,
+            againstHeader: Math.abs(header - bar.x2 - 8 * scale()) <= 1,
+            text: `bar [${bar.x1},${bar.x2}] island [${isle.x1},${isle.x2}] tabs end ${tabs} header from ${header}`,
+        };
+    };
+    const at400 = panicPlace();
+    check('notifications: at 400 px the panic bar is centred, or moved left to stay 8 px clear of the date pill',
+        at400.clear && (at400.centred || at400.againstHeader), at400.text);
+    await screenshotTop(outDir, 'notifications-panic-bar', 120);
     s.set_int('notifications-width', 520);
     s.set_int('notifications-height', 360);
     await sleep(animationWait());
     const [w2, h2] = pill().get_transformed_size();
-    check('notifications: 400×440 by default (wider if the top row needs it), and live with the settings',
-        isOpenWidth(w, 400) && h === 440 * scale() && isOpenWidth(w2, 520) && h2 === 360 * scale(),
+    check('notifications: 400×440 by default, and live with the settings',
+        w === 400 * scale() && h === 440 * scale() && w2 === 520 * scale() && h2 === 360 * scale(),
         `${w}x${h} then ${w2}x${h2}`);
+    const at520 = panicPlace();
+    check('notifications: at 520 px the panic bar is centred on the island', at520.centred && at520.clear, at520.text);
+    s.set_int('notifications-width', 320);
+    await sleep(animationWait());
+    const [w3] = pill().get_transformed_size();
+    const at320 = panicPlace();
+    const needs = island()._hub.minWidth + islandFrame();
+    check('notifications: at 320 px (the least) the island is 320 px, or as wide as the panic bar needs beside the tabs and the date pill',
+        at320.clear && (w3 === 320 * scale() || (w3 > 320 * scale() && Math.abs(w3 - needs) <= 1)),
+        `${w3} px, the top row needs ${needs}; ${at320.text}`);
     s.reset('notifications-width');
     s.reset('notifications-height');
     await sleep(animationWait());
@@ -8772,7 +8831,7 @@ async function testBreak(outDir) {
         });
         const [, listWidth] = view2._list.get_preferred_width(-1);
         check('break: at 440 × 480 every button is inside the tab; nothing scrolls sideways',
-            isOpenWidth(w, 440) && h === 480 * scale() && buttons.length >= 5 && outside.length === 0 &&
+            w === 440 * scale() && h === 480 * scale() && buttons.length >= 5 && outside.length === 0 &&
             view2._scroll.hscrollbar_policy === St.PolicyType.NEVER &&
             view2._list.width <= view2._scroll.width + 0.5,
             `${w}x${h} buttons=${buttons.length} outside=${outside.map(x => x.label ?? x.accessible_name)} ` +

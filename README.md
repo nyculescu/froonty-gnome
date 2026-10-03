@@ -39,7 +39,7 @@ feature has a design note in [docs/features/](docs/features/).
   - Feature tabs sit in one column on the left, each named in a tooltip;
     the island grows taller when they need the room.
   - The panic bar is centered at the top. On the right: a small pill with
-    the date and the time ("Sat 3 Oct 14:05", GNOME's unread dot after
+    the date and the time ("Sat Oct 3 14:05", GNOME's unread dot after
     it), which opens GNOME's calendar and notification menu, and ⚙️
     (settings).
   - Every tab can be turned off. With none on, the island still opens,

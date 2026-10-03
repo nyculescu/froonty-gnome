@@ -33,7 +33,7 @@ own list in the island, still with no store of its own:
 ```
  collapsed:      ( 14:35 • )                    • = GNOME's unread dot
  expanded:  ┌────┬───────────────────────────────────────────┐
-            │ 🗓 │   [🎤][🔊]   ( Sat 3 Oct 14:35 • )  ⚙️ │  the date pill opens
+            │ 🗓 │   [🎤][🔊]   ( Sat Oct 3 14:35 • )  ⚙️ │  the date pill opens
             │ …  │   active tab                              │  GNOME's menu
             └────┴───────────────────────────────────────────┘
 ```
@@ -71,11 +71,17 @@ own list in the island, still with no store of its own:
   it replaced a 📅 icon button, and the Clock tab went with it): it is
   one click from every tab, and it stands for the clock the island
   covers, which is what used to open the menu.
-  - It shows the date and the time as the collapsed pill does, "Sat 3 Oct
-    14:35", in Froonty's 12/24-hour setting ("Follow system" follows
-    GNOME's), always with the date: there is room in the header, and
-    "Show date when collapsed" is the collapsed pill's. GNOME's unread
-    dot follows the time, as on the collapsed pill.
+  - It shows the date as the top bar clock under the island writes it,
+    "Sat Oct 3" (gnome-desktop's own translated format, so "Sat 3 Oct" in
+    British English; weekday, month and day, where the collapsed pill
+    has only "Sat 3"), and the time in Froonty's 12/24-hour setting
+    ("Follow system" follows GNOME's): "Sat Oct 3 14:35". Always with the
+    date: there is room in the header, and "Show date when collapsed" is
+    the collapsed pill's. GNOME's unread dot follows the time, as on the
+    collapsed pill. The figures are tabular, so the pill keeps its width
+    from minute to minute; it changes a little when the hour gains a
+    digit (12-hour), the day gains one, or the dot comes and goes, as
+    GNOME's clock does.
   - It looks like the collapsed pill (black, a hairline border, fully
     rounded, the date dimmer than the bold time), as tall as the icon
     buttons beside it.
@@ -87,11 +93,15 @@ own list in the island, still with no store of its own:
     notifications".
   - It follows the clock service (the top bar's own WallClock ticks): no
     timer of its own, and its handler goes with the hub.
-  - It is wider than 📅 was, so the island is wider on narrow tabs: the
-    centred panic bar keeps clear of the header's buttons (`Hub.minWidth`;
-    [notes.md](notes.md)). With the two default panic buttons the island
-    is at least about 430 px wide, and about 498 px on the Notes tab
-    (428 by default), in the test session's fonts.
+  - It is wider than 📅 was. At first the centred panic bar kept clear
+    of it by widening the island (at least about 430 px with the two
+    default panic buttons, about 498 px on the Notes tab), which made
+    the narrow end of each tab's width setting do nothing. Now the panic
+    bar moves left instead, just enough to keep 8 px clear of the
+    header's buttons (`PanicLayout` in `ui/hub.js`), and the island
+    grows only when the bar does not fit between the tab column and
+    those buttons at all (`Hub.minWidth`; [notes.md](notes.md)). Every
+    tab opens at its own width at the defaults.
   - A press (click, touch, Enter, Space) takes the menu's path below.
     Escape and a click outside close the menu as GNOME's own do.
 - **Super+V is GNOME's own.** Froonty adds no shortcut: GNOME's
@@ -155,7 +165,7 @@ shell/dateMenu.js   CalendarMenu: open()/close() (Panel.toggleCalendar,
                     holdBanners() (MessageTray.bannerBlocked)
 ui/island.js        one at a time; holds banners while expanded
 ui/hubHeader.js     the date pill: date, time, dot, name, tooltip
-services/clock.js   snapshot(): date ("Sat 3 Oct"), time, weekday,
+services/clock.js   snapshot(): date ("Sat Oct 3"), time, weekday,
                     longDate; 'changed' on the top bar clock's ticks
 ui/collapsedView.js the dot after the time, balanced by a pad
 ```
