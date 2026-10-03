@@ -50,6 +50,15 @@ export const PANIC_BUTTONS = [
         title: _ => _('Pause all media'),
         description: _ => _('Pauses every player that is playing. Click again to resume the ones it paused.'),
     },
+    {
+        // The Break tab's sit/stand tracker (features/break); the icon is
+        // bundled there (features/break/icons).
+        id: 'sit-stand',
+        icon: 'froonty-stand-symbolic',
+        title: _ => _('Sitting or standing'),
+        description: _ => _('Switches the Break tab’s sit/stand tracker. Needs the Break tab ' +
+            'with sit/stand turned on.'),
+    },
 ];
 
 /**

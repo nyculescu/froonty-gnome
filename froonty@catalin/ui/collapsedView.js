@@ -2,9 +2,13 @@
 // Content of the collapsed pill: the time, optionally preceded by a short
 // date, and the unread-notifications dot of GNOME's clock, which the pill
 // covers. A feature's pill accessory (Media's music) adds a wing on each
-// side, and may briefly show a notice in place of the time (a peek).
+// side, and may briefly show a notice in place of the time (a peek); a
+// feature's cue (a break due, …) shows after the dot:
 //
-//   [leading] [pad] [date time | peek] [dot] [trailing]
+//   [leading] [cue pad][dot pad][date time | peek][dot][cue] [trailing]
+//
+// Each pad is an invisible twin of what is on the other side, so the time
+// stays centred (GNOME's clock balances its dot the same way).
 
 import Clutter from 'gi://Clutter';
 import Pango from 'gi://Pango';
@@ -22,8 +26,8 @@ export class CollapsedView {
             y_align: Clutter.ActorAlign.CENTER,
         });
 
-        // GNOME's clock balances its dot with an empty pad on the other
-        // side, so the time stays centered; so does the pill.
+        this._cuePad = this._addCue(this.actor);
+        this._cuePad.opacity = 0;
         this._unreadPad = this._addDot(this.actor);
         this._unreadPad.opacity = 0;
 
@@ -49,6 +53,9 @@ export class CollapsedView {
         this._unreadDot = this._addDot(this.actor);
         this._accessory = null;
         this._peekText = null;
+        this._cue = this._addCue(this.actor);
+        this._cueText = '';
+        this._cueLook = '';
     }
 
     /** @param {object} clock a ClockService snapshot */
@@ -112,6 +119,35 @@ export class CollapsedView {
         return this._peekText ?? null;
     }
 
+    /**
+     * @param {?object} cue {gicon, styleClass, text, accessibleText}, or
+     *   null for none
+     * @returns {boolean} whether its size may have changed (it appeared,
+     *   went, or changed style or text)
+     */
+    setCue(cue) {
+        const look = cue ? `${cue.styleClass}|${cue.text}` : '';
+        const resized = look !== this._cueLook;
+        this._cueLook = look;
+        for (const widget of [this._cue, this._cuePad]) {
+            widget.visible = Boolean(cue);
+            if (!cue)
+                continue;
+            widget.style_class = `froonty-pill-cue ${cue.styleClass}`;
+            const [icon, text] = widget.get_children();
+            icon.gicon = cue.gicon;
+            text.text = cue.text;
+            text.visible = Boolean(cue.text);
+        }
+        this._cueText = cue?.accessibleText ?? '';
+        return resized;
+    }
+
+    /** Whether a cue is shown (the pill may need to widen). */
+    get hasCue() {
+        return this._cue.visible;
+    }
+
     get accessibleText() {
         let text = this._dateLabel.visible
             ? `${this._dateLabel.text} ${this._timeLabel.text}`
@@ -119,9 +155,9 @@ export class CollapsedView {
         const extra = this._accessory?.accessibleText;
         if (extra)
             text = `${text}, ${extra}`;
-        return this._unreadDot.visible
-            ? `${text}, ${_('unread notifications')}`
-            : text;
+        if (this._unreadDot.visible)
+            text = `${text}, ${_('unread notifications')}`;
+        return this._cueText ? `${text}, ${this._cueText}` : text;
     }
 
     _fade(actor, opacity) {
@@ -151,5 +187,21 @@ export class CollapsedView {
         });
         box.add_child(dot);
         return dot;
+    }
+
+    // An icon and a short text ("25m", "+3m"), styled by its level.
+    _addCue(box) {
+        const cue = new St.BoxLayout({
+            style_class: 'froonty-pill-cue',
+            y_align: Clutter.ActorAlign.CENTER,
+            visible: false,
+        });
+        cue.add_child(new St.Icon({y_align: Clutter.ActorAlign.CENTER}));
+        cue.add_child(new St.Label({
+            style_class: 'froonty-pill-cue-text',
+            y_align: Clutter.ActorAlign.CENTER,
+        }));
+        box.add_child(cue);
+        return cue;
     }
 }

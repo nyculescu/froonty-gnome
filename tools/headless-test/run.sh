@@ -79,7 +79,7 @@ CONF
 
     eval_js() {
         "$GDBUS" call --session --dest org.gnome.Shell --object-path /org/gnome/Shell \
-            --timeout 900 --method org.gnome.Shell.Eval "$1"
+            --timeout 2400 --method org.gnome.Shell.Eval "$1"
     }
 
     ready=

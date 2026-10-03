@@ -13,6 +13,7 @@ import {
 
 // Feature settings tabs, after the general ones. (Imported here, not via
 // features/registry.js: that loads Shell-side modules this process cannot.)
+import {addIconPath as addBreakIconPath, breakPage} from './features/break/prefs.js';
 import {calendarPage} from './features/calendar/prefs.js';
 import {addIconPath, claudePage} from './features/claude/prefs.js';
 import {clipboardPage} from './features/clipboard/prefs.js';
@@ -37,8 +38,10 @@ export default class FroontyPreferences extends ExtensionPreferences {
         const settings = this.getSettings();
         // Keep the settings object alive as long as the window.
         window._settings = settings;
-        // Bundled icons used in feature tabs and preferences.
+        // Bundled icons used in feature tabs and preferences (the Break
+        // tab's also by the Panic buttons page).
         addIconPath();
+        addBreakIconPath();
 
         // With more than one page, Adw.PreferencesWindow shows them as tabs
         // (a view switcher in the header bar).
@@ -56,6 +59,7 @@ export default class FroontyPreferences extends ExtensionPreferences {
             sysmonPage(settings),
             clipboardPage(settings),
             killProcessPage(settings),
+            breakPage(settings),
         ]) {
             window.add(page);
             names.add(page.name);

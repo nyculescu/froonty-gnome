@@ -200,6 +200,38 @@
   the working-tree-only tabs (files, settings keys, CSS, addresses); the
   zip is deleted and the build fails if one is found. Their CSS now sits
   between `local:begin`/`local:end` markers.
+- **Break tab** (off by default; turn it on in Settings → Break). GNOME's
+  own break reminders (Settings → Wellbeing), shown and driven from the
+  island; GNOME keeps the timing. Not medical advice.
+  - GNOME's breaks are off until you choose: the tab offers "Turn on eye
+    and movement breaks" (every 20 min for 20 s, every 30 min for 5 min by
+    default), and Settings → Break shows all of GNOME's break settings.
+  - **A cue on the collapsed pill** when a break is near, due, overdue or
+    urgent (levels 0-4, each with its own shape; "Icon and minutes"
+    adds the minutes), or when it is time to stand up or sit down. The
+    island never opens by itself; a click on the pill opens the tab.
+  - **Reminders in the island instead of GNOME's notifications** (on by
+    default): GNOME's Wellbeing notifications are off while the island is
+    shown (this also hides GNOME's daily screen-time limit alerts), kept
+    off under the lock screen, and turned back on exactly as they were
+    when the tab, the island or Froonty is turned off.
+  - **Take, Delay and Skip**, only when GNOME can act on them; urgency
+    that rises after skips and delays, and a long rest after 2 h at the
+    screen (Froonty's rules, labelled as such); a suggested length.
+  - **Exercise cards** with Workrave's pictures and texts
+    (GPL-3.0-or-later, credited): a stretch when a movement break is near,
+    the 20-20-20 line and eye exercises ("comfort only") when an eye break
+    is due.
+  - **Sit/stand tracker** for a desk with a manual lever: a
+    Sitting/Standing switch and a "Sitting or standing" panic button;
+    standing counted only while you use the computer; 2 h a day as the
+    minimum, an optional build-up (+15 min after meeting it on 4 of 5
+    days, at most weekly, up to 4 h; switch it off, or "Just the minimum
+    today"); a reminder to switch, none to stand once the target is met.
+  - **Today's totals and a history** (98 days), on this computer only, in
+    `~/.local/share/froonty/break` (readable by you only), with "Forget
+    history…". Only when you were at the computer or away, and daily
+    totals, are recorded.
 - **Notes: rendered Markdown.** Notes are drawn formatted while staying
   plain Markdown files. Headings are larger, bold is bold, italic is
   italic, struck text is struck, code is monospace, links are underlined,

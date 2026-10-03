@@ -62,7 +62,13 @@ What changed for Froonty, and how it adapts:
 ## 2. Principles
 
 1. Reuse GNOME Shell facilities; never duplicate a store, a daemon or a
-   calendar that GNOME already has.
+   calendar that GNOME already has. The Break tab shows and drives GNOME's
+   own break engine (`Main.breakManager`, §6.3) instead of timing breaks.
+   It keeps one Mutter idle watch of its own beside the engine's (same
+   rule: 10 s, uninhibitable, and a one-shot active watch while idle),
+   because the engine never says when an idle period starts: in its "IDLE
+   while working" state going idle changes nothing
+   ([features/break.md](features/break.md)).
 2. Event-driven. A timer may only be added with a written justification
    and a configurable interval. The periodic timers are the Btop tab's
    (system monitor) and the Kill Process tab's, each only while its tab
@@ -75,6 +81,16 @@ What changed for Froonty, and how it adapts:
    timeline shows (`m:ss`), and runs only while the tab is on screen and
    the shown song plays with a known length and position
    ([features/media.md](features/media.md#position)).
+   **Exception, written:** the Break tab's one-shot timer has no setting
+   of its own. At most one runs, armed at the next moment the tab or the
+   pill's cue changes by itself (2 min before a break, at it, 60 s and one
+   interval after it, the long-rest crossing, the posture reminder,
+   midnight) and re-armed only by events. GNOME's engine emits nothing at
+   those moments (its `break-due` only fires if the user is active then),
+   and the moments come from the user's own settings (GNOME's intervals,
+   the posture and long-rest minutes), so a separate interval would mean
+   nothing ([features/break.md](features/break.md)). Exercise pictures are
+   still, so there is no frame timer.
 3. No background processes or polling loop. Short-lived local subprocesses
   are limited to the Claude usage refresh, the Btop tab's
   `nvidia-smi` (NVIDIA's driver puts its readings nowhere else; only while
@@ -126,6 +142,12 @@ What changed for Froonty, and how it adapts:
    folder is kept through a screen lock only (what waits survives it), told
    apart by `Main.sessionMode.isLocked`; any other disable removes it, so
    Claude Code's hooks record nothing.
+   Another exception: with the Break tab's reminders in the island,
+   GNOME's Wellbeing notifications stay off while the screen is locked
+   (`disable()` sees `Main.sessionMode.isLocked`). Restoring them there
+   would put break notifications on the lock screen and make them flicker
+   on every unlock. Any other `disable()` restores them, and the Break
+   tab's day totals are saved to a file so they survive the lock.
 
 ## 3. NexNotch review
 
@@ -322,6 +344,10 @@ Consequences:
 | `GIRepository` 3.0 `Repository.enumerate_versions` | Calendar tab: whether the EDS bindings are installed, without importing them (GJS remembers a failed import) |
 | `Gio.Settings` `org.gnome.desktop.calendar` (`week-start-day`, `show-weekdate`; read only) | Calendar tab: GNOME's week start and week numbers |
 | `Gio.AppInfo.launch_default_for_uri_async` | Calendar tab: open an event's day in the web calendar |
+| `Meta.IdleMonitor` (the core idle monitor: `add_idle_watch_full` with `UNINHIBITABLE`, `add_user_active_watch`, `remove_watch`, `get_idletime`) | Break tab: when the user was at the computer or away (`features/break/shared.js`) |
+| `Gio.Credentials` (`get_unix_pid()`) | Break tab: tells a screen unlock (same Shell process: GNOME kept counting) from a new login |
+| GNOME's `Gio.Settings` schemas `org.gnome.desktop.break-reminders` (+ `.eyesight`, `.movement`), `org.gnome.desktop.notifications.application` at `…/application/gnome-wellbeing-panel/` (`enable`), `org.gnome.desktop.screen-time-limits` (`daily-limit-enabled`, read only); each looked up before use | Break tab: GNOME's break settings; its notifications off and back ([features/break.md](features/break.md)) |
+| Clutter actor transforms (`set_pivot_point`, `scale_x = -1`) | Break tab: Workrave's mirrored exercise pictures; the standing bar's fill |
 
 ### 6.2 Shell APIs commonly used by extensions (exported; not formally stable)
 
@@ -346,6 +372,8 @@ Consequences:
 | Attention bar: `Shell.WindowTracker.get_app_from_pid` / `get_window_app`, `Shell.AppSystem.lookup_app`, `Shell.App.get_windows` / `get_name` / `get_id` / `get_app_info`, `global.display` `notify::focus-window` / `focus_window` / `focus_default_window`, `Main.activateWindow`, `Main.overview` `visible` / `showing` / `hidden` | `shell/claudeAttention.js`, `ui/attentionBar.js` (50.1) |
 | `Main.sessionMode.isLocked`: set from the new mode before `updated`, on which the extension system disables extensions at a lock (`ui/sessionMode.js` `_sync()`, `ui/extensionSystem.js` `_sessionUpdated()`, 50.1) | `shell/claudeAttention.js` `screenLocked()`: the island keeps the attention bar's state folder through a screen lock only |
 | `PopupMenu.PopupMenu`, `PopupMenuManager`, `PopupMenuSection`, `PopupBaseMenuItem` (subclassed; `activate()` overridden so flipping a label does not close the menu, `popupMenu.js:787` in 50.1), `PopupMenuItem`, `Ornament`; `BoxPointer.PopupAnimation`; `Main.uiGroup`. Only in `ui/contextMenu.js` (a note tab's label menu) | `ui/popupMenu.js`, `ui/boxpointer.js`, `ui/main.js` (50.1) |
+| `Main.sessionMode.isLocked`: true while extensions are disabled for the lock screen (`unlock-dialog` mode); the Break tab then keeps GNOME's notifications off | `ui/sessionMode.js` (50.1) |
+| `global.backend.get_core_idle_monitor()` (as GNOME's own break engine) | `misc/breakManager.js` (50.1) |
 
 ### 6.3 Private / internal (isolated in `shell/`)
 
@@ -365,6 +393,9 @@ Consequences:
 | `misc/util.js` `fixMarkup`, `misc/dateUtils.js` `formatTimeSpan` | Notifications tab: text and "10 minutes ago" exactly as GNOME's list shows them | `shell/messageTray.js` |
 | `Main.messageTray.visible` (`notify::visible`; true while a banner is on screen, `MessageTray._updateState()`) | Hide the Claude attention bar while a banner shows where it is | `shell/claudeAttention.js` `ClaudeDesktop.busy` |
 | A notification source's `app` (`FdoNotificationDaemonSource` only; the window-attention source has none) | The attention bar follows only the Claude app's source, and web browsers' (`WebBrowser` category); `describe()` gives the app's id | `shell/claudeAttention.js` `notificationFilter()`, `shell/notificationStore.js` |
+
+| `Main.breakManager`: GNOME's break engine, an internal Shell component exported as a `let` (`main.js:95`) and made at startup in every session (`main.js:271-275`), since GNOME 48. Getters `state`, `currentBreakType`, `nextBreakDueTime`; methods `getNextBreakDue()`, `getCurrentTime()`, `getDurationForBreakType()`, `delayBreak()`, `skipBreak()`, `takeBreak()`; signals `notify::state`, `notify::next-break-due-time`, `notify::last-break-end-time`, `break-due`, `break-finished`, `take-break` | Show and drive GNOME's breaks (Take, Delay, Skip) instead of timing them; the state numbers are checked against the installed Shell by a unit test | `shell/breakManager.js` (the only reader), `shell/breakEngine.js` |
+| `Main.breakManager._breakLastEnd`: a private `Map` of break type → last break end | Each type's next break (the public API gives only the earliest one), and telling a delay, a skip or a break taken apart. Without it the tab falls back to the next break only | `shell/breakEngine.js` `read()` |
 
 `statusArea.dateMenu` is a role name set by `PANEL_ITEM_IMPLEMENTATIONS`
 (`panel.js:633`). It is widely relied on, but it is not an API contract.
@@ -455,6 +486,10 @@ Two St/Clutter rules also shaped the island:
 | Shell `Slider`/`BarLevel` style properties or signals change | Media's timeline or volume looks wrong or stops seeking | All in `features/media/view.js` and `volume.js`; the headless tests drag the slider and check the seek |
 | Escape for the open tab first (Media's source list or lyrics) relies on the island's `captured-event` handler running before GrabHelper's, which GrabHelper connects at each grab | Escape closes the island instead of the list | The headless tests check both Escapes |
 | Cover art from untrusted players | Large or broken images | Regular files up to 12 MiB, web covers up to 4 MiB and `image/*` only, decoded asynchronously at the shown size; not `St.TextureCache` (keeps a file monitor per file) |
+| GNOME 51+ changes its break engine (`Main.breakManager`, its signals, its state numbers) | Break tab wrong or empty | All access in `shell/breakEngine.js`; `metadata.json` declares only `"50"`; a unit test runs GNOME's installed class and checks the state numbers and constants |
+| `_breakLastEnd` renamed | Only the next break is listed; delays, skips and taken breaks are not told apart | Fallback mode (unit-tested) |
+| The Wellbeing panel's id (`gnome-wellbeing-panel`) renamed | GNOME's break notifications are no longer hidden: reminded twice | The status reads "GNOME's notifications"; the switch's schema is looked up first |
+| Froonty removed or failing to load while GNOME's Wellbeing notifications are off | They stay off (GNOME Settings has no switch for them) | `break-gnome-saved` records what was changed; the manual `gsettings reset` line is in Settings → Break and [features/break.md](features/break.md) |
 
 ## 8. Lifecycle and resource budget
 
@@ -485,6 +520,7 @@ Two St/Clutter rules also shaped the island:
 | Subprocesses / D-Bus proxies | Btop tab: one `nvidia-smi` per interval while the tab is on screen and an NVIDIA card is awake (about 40 ms). Kill Process tab: one `/usr/bin/kill` per confirmed kill or "Force quit" click, never otherwise. Writing tab (local builds): one `claude -p` per action click (a time limit of 90 s, plus 8 ms per character with Haiku or 15 ms with Sonnet; never started once the click is cancelled), `claude auth status` before the first one each time the tab is shown (10 s), and `systemctl --user start froonty-ollama.service` when Froonty's own Ollama is needed and stopped. Otherwise 0 of Froonty's own. Outside the Shell, after the user's Set up, Claude Code runs Froonty's GJS hook (about 38 ms, 33 MB) per qualifying Notification, Stop and StopFailure, and `sh` (about 1.2 ms) per prompt, model step and session end. The Claude tab reads GIO's process-wide `Gio.NetworkMonitor`, whose NetworkManager backend keeps GIO's own proxy for the life of the Shell | — |
 | Media service | One per Shell while held: by the pill (`media-enabled` and `media-show-in-pill` or `media-track-notice`; by default whenever the island exists), the Media tab while on screen, the "Pause all media" button while the island is open. It holds one `NameOwnerChanged` subscription, at most 16 players × 2 proxies (`g-properties-changed` ×2, `g-signal` ×1), one coalescing idle at most, and one-shots: discovery deadline 1 s, gap 1.5 s, chosen-player grace 5 s, cover grace 1.5 s, new-song debounce 0.5 s, pill notice 3 s, seek hold 1 s, stuck-position check 3 s, Up next check 1.5 s, the next lyric line. **Periodic:** the display tick, at most once a second, only while the tab is on screen and the song plays with a length and a position. Position reads only for the shown song while the tab is on screen. One decoded cover kept (plus up to 8 web covers). Volume row: 2 mixer and 2 stream connections while the tab is on screen. Bars: Clutter eases only while playing, shown, and animations are on | `releaseMedia()` → `MediaService.stop()` → `MprisWatcher.stop()`; the tab's `setActive(false)` |
 | Memory kept across `disable()` | `ctx.memory.media`: `{chosen, followed, latestPlayed}` (strings) | Shell exit |
+| Break tab (off by default) | While `break-enabled` is on, one shared service (`features/break/shared.js`): 6 signal connections on `Main.breakManager`; one `changed` connection on each of GNOME's 5 settings objects it reads (break reminders, eyes, movement, Wellbeing notifications, screen-time limits) and 20 `changed::` on Froonty's; +1 handler on the top bar's WallClock; one Mutter idle watch (10 s) and, while idle, one active watch; at most one one-shot timer (§2, principle 2); two files under `~/.local/share/froonty/break` (0700/0600), written after events, never periodically. The notification takeover (extension-wide): one `changed::selected-breaks` and 3 `changed::` on Froonty's settings. The pill's cue: one connection per cue source | `releaseBreakService()` (extension `disable()`, tab turned off; `BreakService.stop()`); `NotificationTakeover.destroy()` |
 
 ## 9. Testing
 
@@ -634,6 +670,14 @@ input through Clutter virtual devices and cover:
   not-ready reasons, the caret after a long Ctrl+V paste, a result's
   selection kept while typing, the hidden password pasted into a sentence
   refused, and no engine switch mid-run.
+- **Break:** GNOME's real break engine in the test Shell (its settings in
+  the private keyfile, checked first): the offer, a due cue with no grab,
+  Take/Delay/Skip, escalation, a real 12 s away counted, GNOME's
+  notifications off and given back (lock rule simulated by replacing
+  `_isSessionLocked()`), the sit/stand switch and panic button, the state
+  file's modes, a pixel check of a mirrored exercise picture. Unit tests run
+  GNOME's own `BreakManager`, extracted from the installed Shell, on a fake
+  timeline ([features/break.md](features/break.md)).
 - **Kill Process:** protected rows (GNOME Shell, its parent, D-Bus);
   a `sleep` the test started killed through the two-step UI (SIGTERM),
   one that ignores SIGTERM ended by "Force quit" (SIGKILL); a reused

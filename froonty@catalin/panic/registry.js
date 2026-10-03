@@ -10,6 +10,7 @@ import {AudioMuteButton} from './audioMute.js';
 import {CameraBlockButton} from './camera.js';
 import {ClaudeSessionButton} from './claudeSession.js';
 import {PauseMediaButton} from './pauseMedia.js';
+import {SitStandButton} from './sitStand.js';
 import {byId} from './catalog.js';
 
 const FACTORIES = {
@@ -18,6 +19,7 @@ const FACTORIES = {
     'claude-session': (title, actions) => new ClaudeSessionButton(title, actions),
     'block-camera': title => new CameraBlockButton(title),
     'pause-media': (title, actions) => new PauseMediaButton(title, actions),
+    'sit-stand': (title, actions) => new SitStandButton(title, actions),
 };
 
 /**

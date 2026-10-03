@@ -174,6 +174,29 @@ feature has a design note in [docs/features/](docs/features/).
   - It reads `/proc` only while the tab is on screen, every 3 s (1-10 s
     in Settings), and runs `/usr/bin/kill` once per confirmed step. See
     [docs/features/kill-process.md](docs/features/kill-process.md).
+- **Break** tab (off by default; turn it on in Settings → Break): GNOME's
+  own break reminders (Settings → Wellbeing), shown and driven from the
+  island. GNOME times the breaks; Froonty does not run a timer of its own.
+  Not medical advice.
+  - **A cue on the collapsed pill** when an eye or movement break is near,
+    due, overdue or urgent (levels 0-4, each with its own shape), or when
+    it is time to stand up or sit down. The island never opens by itself;
+    a click on the pill opens the tab.
+  - **Take, Delay and Skip**, only when GNOME can act on them, the next
+    breaks, a suggested length, and a long rest after 2 h at the screen
+    (Froonty's rule, after the AOA's advice).
+  - **Reminders in the island instead of GNOME's notifications** (on by
+    default): GNOME's Wellbeing notifications are off while the island is
+    shown, and Froonty turns them back on when the tab, the island or
+    Froonty is turned off. They also carry GNOME's daily screen-time limit
+    alerts.
+  - **Exercise cards** with Workrave's pictures (still) and texts.
+  - **Sit/stand tracker** for a desk with a manual lever: a
+    Sitting/Standing switch (also a panic button), 2 h of standing a day
+    as the minimum, an optional build-up toward more (switch it off, or
+    "Just the minimum today"), and a reminder to switch.
+  - **Today's totals and a history**, on this computer only. See
+    [docs/features/break.md](docs/features/break.md).
 - **ZeroTier** tab (working-tree installs only): whether ZeroTier runs,
   starts with the computer and reaches its network, and how each joined
   network is doing, with Start/Stop. Networks are managed in ZeroTier
@@ -202,7 +225,8 @@ froonty@catalin/             the extension (this directory is what gets installe
 │   ├── geometry.js          pill sizes and position (covers the top bar clock)
 │   ├── animations.js        content cross-fade
 │   ├── chrome.js            registers the island as chrome + Ctrl+Alt+Tab
-│   ├── collapsedView.js     collapsed content (time, optional date, unread dot)
+│   ├── collapsedView.js     collapsed content (time, optional date, unread dot,
+│   │                        a feature's cue)
 │   ├── hub.js               expanded content: tab column, panic bar, header
 │   ├── hubHeader.js         its top row: 📅, the active tab's buttons, ⚙️
 │   ├── contextMenu.js       GNOME popup menus for features (note labels)
@@ -224,15 +248,21 @@ froonty@catalin/             the extension (this directory is what gets installe
 │   │                        the attention bar's hook script, set-up and model
 │   ├── sysmon/              Btop tab (system monitor): /proc and /sys, nvidia-smi
 │   ├── clipboard/           clipboard history: recorder, store, tab
-│   └── killprocess/         Kill Process tab: your processes from /proc, kill(1)
+│   ├── killprocess/         Kill Process tab: your processes from /proc, kill(1)
+│   └── break/               Break tab: GNOME's break engine, the pill's cue,
+│                            ledger, sit/stand, Workrave's exercises (exercises/)
 ├── panic/                   panic button catalog, factories, buttons (mute,
-│                            Claude session, block camera, pause media), prefs
-├── core/                    shared by features: emitter.js, tooltip.js
+│                            Claude session, block camera, pause media,
+│                            sit/stand), prefs
+├── core/                    shared by features: emitter.js, tooltip.js,
+│                            privateFile.js
 ├── services/clock.js        clock ticks from the top bar's GnomeDesktop.WallClock
 └── shell/                   adapters over GNOME Shell APIs
     ├── dateMenu.js          the clock, GNOME's calendar and notification menu
     ├── messageTray.js       GNOME's notifications for the Notifications tab
     ├── notificationStore.js the only code reading or writing them (Shell-free)
+    ├── breakManager.js      Shell internals: GNOME's break engine (Main.breakManager)
+    ├── breakEngine.js       a wrapper over it (Shell-free, unit-tested)
     ├── mixer.js             the Shell's shared audio mixer
     ├── claudeAttention.js   the attention bar's apps, windows, focus, banners
     └── settingsWindow.js    opens or raises the settings window (or its
@@ -321,6 +351,9 @@ its tabs:
 - **Notes:** enable, folder, size, All notes.
 - **Claude:** enable.
 - **Kill Process:** enable, refresh interval, what is never killed, size.
+- **Break:** enable, reminders in the island, the cue, GNOME's own break
+  settings, urgency rules, exercises, sit/stand target and build-up,
+  history, size.
 - **ZeroTier:** enable, allow reading ZeroTier's status.
 - **Writing:** the tab, each engine's switch, status and set-up steps,
   Set up… and Remove for Ollama, Remove everything, size.
@@ -369,6 +402,16 @@ The keys behind it:
 | `writing-ollama-model` | `''` | The local Ollama model |
 | `writing-width` / `writing-height` | 460 / 540 | The island's size on the Writing tab |
 | `prefs-page` | `''` | The settings tab to show next (internal; "Open Settings → Writing") |
+| `break-enabled` | `false` | Show the Break tab and follow GNOME's break reminders |
+| `break-pill-reminders` | `true` | Remind in the island; GNOME's Wellbeing notifications are off meanwhile |
+| `break-pill-cue` | `icon` | `off`, `icon` or `icon-and-time` |
+| `break-escalate-after-skips`, `break-max-delays` | 2, 0 | Froonty's urgency rules (0: never, no limit) |
+| `break-long-rest`, `break-long-rest-after-minutes`, `break-long-rest-minutes` | `true`, 120, 15 | A long rest after this long at the screen |
+| `break-make-up-time`, `break-exercises`, `break-history-days` | `false`, `true`, 98 | |
+| `posture-enabled`, `posture-target-minutes` | `false`, 120 | The sit/stand tracker; the daily minimum |
+| `posture-buildup`, `-step-minutes`, `-ceiling-minutes` | `true`, 15, 240 | The optional build-up |
+| `posture-reminders`, `posture-sit-minutes`, `posture-stand-minutes` | `true`, 45, 15 | Switch reminders |
+| `break-gnome-saved`, `posture-buildup-target` | | What Froonty changed in GNOME; the built-up target (internal) |
 | `hub-last-tab`, `notes-last` | | Remembered selections (internal) |
 
 ## Working-tree only (`make install`)
@@ -420,6 +463,15 @@ Media tab's behaviour is adapted from vorssaint-utils (GPL-3.0-or-later);
 no branding was taken. A few of its rules (the LRC parser, the lrclib
 match, the cover tint, new-song detection) follow its code closely, and
 those files carry its copyright line.
+
+The Break tab's exercise pictures, titles and descriptions are
+**Workrave**'s (<https://github.com/rcaelers/workrave>, commit `f393616`,
+copyright the Workrave authors), copied unchanged: the 18 pictures its 10
+active exercises use, and their text converted to JSON. They are treated as
+GPL-3.0-or-later, inferred from Workrave's licence files; see
+[froonty@catalin/features/break/exercises/README.md](froonty@catalin/features/break/exercises/README.md).
+The Break tab's four pictograms (walk, stand, sit, cup) were drawn for
+Froonty.
 
 Copyright (C) 2026 Catalin Niculescu.
 

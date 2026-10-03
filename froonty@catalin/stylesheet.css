@@ -1015,7 +1015,6 @@
     box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.6);
 }
 
-<<<<<<< HEAD
 /* Notifications feature: GNOME's own notifications, urgent ones (red
    outline) first, then newest first; "Clear N?" is red, as Kill
    Process's confirmation. */
@@ -1785,7 +1784,7 @@
     font-weight: bold;
 }
 /* End of the Media feature */
-=======
+
 /* local:begin writing (working-tree only; tools/pack-public strips it) */
 /* Writing tab: engine choice, the text box, actions, and the result. */
 .froonty-writing {
@@ -1929,4 +1928,200 @@
     color: rgba(255, 255, 255, 0.65);
 }
 /* local:end writing */
->>>>>>> 5852a42 (Writing tab (local builds): Claude Code, LanguageTool and Ollama)
+
+/* Break tab (docs/features/break.md) */
+
+/* The collapsed pill's cue. Never colour alone: each level has its own
+   shape (ring, bare icon, round badge, wide badge with "!"). */
+.froonty-pill-cue {
+    spacing: 3px;
+    color: #ffffff;
+}
+.froonty-pill-cue StIcon {
+    icon-size: 14px;
+}
+.froonty-pill-cue-text {
+    font-size: 0.85em;
+    font-feature-settings: "tnum";
+}
+.froonty-pill-cue-level-0 {
+    color: rgba(255, 255, 255, 0.55);
+}
+.froonty-pill-cue-level-1 {
+    border: 1px solid rgba(255, 255, 255, 0.55);
+    border-radius: 9px;
+    padding: 1px 3px;
+}
+.froonty-pill-cue-level-2,
+.froonty-pill-cue-posture {
+    color: #ffffff;
+}
+.froonty-pill-cue-level-3 {
+    background-color: #f6d32d;
+    color: #000000;
+    border-radius: 9px;
+    padding: 1px 4px;
+}
+.froonty-pill-cue-level-4 {
+    background-color: #ff7800;
+    color: #000000;
+    border: 1px solid #ffffff;
+    border-radius: 9px;
+    padding: 0 6px;
+    font-weight: bold;
+}
+
+.froonty-break {
+    spacing: 4px;
+}
+/* Room on the right for the overlay scrollbar (as Btop's). */
+.froonty-break-sections {
+    spacing: 12px;
+    padding: 2px 14px 4px 4px;
+}
+.froonty-break-section {
+    spacing: 5px;
+}
+.froonty-break-heading {
+    font-size: 0.75em;
+    font-weight: bold;
+    color: rgba(255, 255, 255, 0.55);
+}
+.froonty-break-row {
+    spacing: 8px;
+}
+.froonty-break-row-icon {
+    icon-size: 16px;
+}
+.froonty-break-meter {
+    font-family: monospace;
+    font-size: 1.1em;
+}
+.froonty-break-status {
+    font-weight: bold;
+}
+.froonty-break-dim {
+    font-size: 0.85em;
+    color: rgba(255, 255, 255, 0.65);
+}
+.froonty-break-name {
+    font-weight: bold;
+    font-size: 0.9em;
+}
+.froonty-break-when,
+.froonty-break-progress {
+    font-size: 0.9em;
+    font-feature-settings: "tnum";
+}
+.froonty-break-actions {
+    spacing: 6px;
+}
+.froonty-break-action,
+.froonty-break-toggle-button {
+    padding: 4px 10px;
+    min-height: 20px;
+    border-radius: 14px;
+    font-size: 0.9em;
+    color: #ffffff;
+    background-color: rgba(255, 255, 255, 0.12);
+    transition-duration: 150ms;
+}
+.froonty-break-action:hover,
+.froonty-break-toggle-button:hover {
+    background-color: rgba(255, 255, 255, 0.2);
+}
+.froonty-break-action:focus,
+.froonty-break-toggle-button:focus {
+    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.55);
+}
+.froonty-break-action:insensitive {
+    color: rgba(255, 255, 255, 0.35);
+    background-color: rgba(255, 255, 255, 0.05);
+}
+.froonty-break-action:checked,
+.froonty-break-toggle-button:checked {
+    color: #000000;
+    background-color: #ffffff;
+}
+.froonty-break-toggle {
+    spacing: 2px;
+}
+.froonty-break-toggle-button {
+    border-radius: 0;
+}
+.froonty-break-toggle-button:first-child {
+    border-radius: 14px 0 0 14px;
+}
+.froonty-break-toggle-button:last-child {
+    border-radius: 0 14px 14px 0;
+}
+.froonty-break-bar {
+    height: 6px;
+    border-radius: 3px;
+    background-color: rgba(255, 255, 255, 0.12);
+}
+.froonty-break-bar-fill {
+    border-radius: 3px;
+    background-color: #33d17a;
+}
+.froonty-break-expander {
+    border-radius: 6px;
+    padding: 2px 4px;
+    font-size: 0.85em;
+    color: rgba(255, 255, 255, 0.75);
+}
+.froonty-break-expander:hover,
+.froonty-break-expander:focus {
+    color: #ffffff;
+    background-color: rgba(255, 255, 255, 0.09);
+}
+.froonty-break-expander-content {
+    spacing: 4px;
+}
+.froonty-break-expander StIcon {
+    icon-size: 12px;
+}
+.froonty-break-history {
+    font-size: 0.8em;
+    color: rgba(255, 255, 255, 0.8);
+}
+.froonty-break-notice {
+    font-size: 0.75em;
+    font-style: italic;
+    color: rgba(255, 255, 255, 0.55);
+}
+
+/* Exercise cards: Workrave's pictures, still, in one row. */
+.froonty-break-card {
+    spacing: 5px;
+}
+.froonty-break-frames {
+    spacing: 4px;
+}
+.froonty-break-frame-column {
+    spacing: 2px;
+}
+.froonty-break-frame {
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 4px;
+}
+.froonty-break-caption {
+    font-size: 0.75em;
+    color: rgba(255, 255, 255, 0.65);
+}
+.froonty-break-card-title {
+    font-weight: bold;
+}
+.froonty-break-card-text {
+    font-size: 0.9em;
+}
+.froonty-break-card-foot {
+    spacing: 8px;
+}
+
+/* The sit/stand panic button shows the posture; checked = standing. */
+.froonty-panic-button.froonty-panic-posture:checked,
+.froonty-panic-button.froonty-panic-posture:checked:hover {
+    color: #000000;
+    background-color: #33d17a;
+}

@@ -88,6 +88,11 @@ export class Island {
         // GNOME's own calendar and notification menu: the clock the pill
         // covers would open it.
         this._calendarMenu = new CalendarMenu();
+        // Features' cues on the collapsed pill (a break due, …): id →
+        // {feature, source, id}. The best one shows; a click on the pill
+        // then opens its tab (_onPillClicked). Never expands by itself.
+        this._cueSources = new Map();
+        this._cueTab = null;
 
         this._buildActors();
         addIslandChrome(this._strip, this._pill, () => this.expand());
@@ -110,6 +115,7 @@ export class Island {
 
         this._connectSignals();
         this._syncAccessory();
+        this._syncCueSources();
         this._updateContent();
         this._updateUnread();
         this._syncGeometry();
@@ -135,6 +141,8 @@ export class Island {
         this._stopAttention({removeState: !screenLocked()});
         this._clock.disconnectObject(this);
         this._panelClock.disconnectObject(this);
+        for (const id of [...this._cueSources.keys()])
+            this._releaseCueSource(id);
         // Also lets banners show again if the island held them back.
         this._calendarMenu.disconnectObject(this);
         this._calendarMenu.destroy();
@@ -328,7 +336,7 @@ export class Island {
     }
 
     _connectSignals() {
-        this._pill.connect('clicked', () => this.toggle({pointer: true}));
+        this._pill.connect('clicked', () => this._onPillClicked());
         // A press, key or scroll inside the open island may be deliberate
         // input (_isDeliberate; Hub.noteUserInput). Escape never gets here:
         // GrabHelper's own handler on the strip, which captures first, stops
@@ -372,6 +380,10 @@ export class Island {
             'unread-changed', () => this._updateUnread(),
             this);
         this._hub.connectObject('size-changed', () => this._onHubSizeChanged(), this);
+        for (const feature of FEATURES.filter(f => f.pillCue && f.enabledKey)) {
+            this._settings.connectObject(`changed::${feature.enabledKey}`,
+                () => this._syncCueSources(), this);
+        }
 
         for (const key of GEOMETRY_KEYS) {
             this._settings.connectObject(`changed::${key}`,
@@ -409,6 +421,75 @@ export class Island {
     _updateContent() {
         this._collapsedView.update(this._clock.snapshot());
         this._pill.accessible_name = this._collapsedView.accessibleText;
+        // Minute texts ("25m") follow the clock too.
+        this._updateCue();
+    }
+
+    // A click on the collapsed pill opens the tab its cue is about; hover
+    // and the shortcut keep the last tab.
+    // A cue's tab wins over the music's (expand({pointer})).
+    _onPillClicked() {
+        const cueTab = !this._expanded ? this._cueTab : null;
+        if (cueTab)
+            this._hub.select(cueTab);
+        this.toggle({pointer: !cueTab});
+    }
+
+    // Holds each enabled feature's cue source (and lets go of disabled ones).
+    _syncCueSources() {
+        for (const feature of FEATURES.filter(f => f.pillCue)) {
+            const want = !feature.enabledKey || this._settings.get_boolean(feature.enabledKey);
+            if (want && !this._cueSources.has(feature.id)) {
+                const source = feature.pillCue.acquire(this._settings);
+                const id = source.connect('changed', () => this._updateCue());
+                this._cueSources.set(feature.id, {feature, source, id});
+            } else if (!want && this._cueSources.has(feature.id)) {
+                this._releaseCueSource(feature.id);
+            }
+        }
+        this._updateCue();
+    }
+
+    _releaseCueSource(featureId) {
+        const {feature, source, id} = this._cueSources.get(featureId);
+        source.disconnect(id);
+        feature.pillCue.release();
+        this._cueSources.delete(featureId);
+    }
+
+    // The most urgent cue on the collapsed pill; the pill widens only when
+    // it no longer fits. Eased only when the cue itself changed, never
+    // while the pill is resizing anyway, and re-synced afterwards (the
+    // clock it covers may have changed meanwhile; see _onCoverChanged).
+    _updateCue() {
+        if (!this._collapsedView)
+            return;
+        const now = Date.now();
+        let best = null;
+        for (const {source} of this._cueSources.values()) {
+            const cue = source.current(now);
+            if (cue && (!best || cue.rank > best.rank))
+                best = cue;
+        }
+        const resized = this._collapsedView.setCue(best);
+        this._cueTab = best?.tab ?? null;
+        this._pill.accessible_name = this._collapsedView.accessibleText;
+        if (!resized || this._expanded ||
+            this._pill.get_transition('width') || this._pill.get_transition('height'))
+            return;
+        const {width, height} = this._targetSize(false);
+        if (width !== this._pill.width || height !== this._pill.height) {
+            this._pill.ease({
+                width,
+                height,
+                duration: this._settings.get_int('animation-duration'),
+                mode: RESIZE_MODE,
+                onComplete: () => {
+                    if (!this._expanded)
+                        this._syncGeometry();
+                },
+            });
+        }
     }
 
     // GNOME's clock, under the pill, would show its unread-notifications
@@ -422,7 +503,7 @@ export class Island {
 
     _targetSize(expanded) {
         if (!expanded)
-            return this._geometry.collapsedSize(this._collapsedContentWidth());
+            return this._collapsedSize();
         const size = this._geometry.expandedSize(this._hub.activeFeature, this._hub.activeExtraHeight);
         // Tall enough for every feature tab, in one column. (Off stage
         // there is no theme node, and nothing to show yet.)
@@ -443,14 +524,15 @@ export class Island {
     // usual size.
     _collapsedContentWidth() {
         const accessory = this._accessory;
-        if (!accessory || !(accessory.showing || accessory.peekText) || !this._pill.get_stage())
+        const music = accessory && (accessory.showing || accessory.peekText);
+        if ((!music && !this._collapsedView.hasCue) || !this._pill.get_stage())
             return 0;
         const node = this._pill.get_theme_node();
         const [, natural] = this._collapsedView.actor.get_preferred_width(-1);
         const width = natural + node.get_horizontal_padding() +
             node.get_border_width(St.Side.LEFT) + node.get_border_width(St.Side.RIGHT);
         const scale = this._themeContext.scale_factor;
-        return accessory.peekText ? Math.min(width, PEEK_MAX_WIDTH * scale) : width;
+        return accessory?.peekText ? Math.min(width, PEEK_MAX_WIDTH * scale) : width;
     }
 
     // The accessory of the first feature that wants one (Media's music on
@@ -494,6 +576,12 @@ export class Island {
             duration: this._settings.get_int('animation-duration'),
             mode: RESIZE_MODE,
         });
+    }
+
+    // At least the geometry's (covering the clock), and wide enough for
+    // the collapsed row with music or a cue in it.
+    _collapsedSize() {
+        return this._geometry.collapsedSize(this._collapsedContentWidth());
     }
 
     // Places the strip on the primary monitor and snaps the pill to the

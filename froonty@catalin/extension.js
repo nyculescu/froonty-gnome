@@ -12,6 +12,8 @@ import Shell from 'gi://Shell';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import {Extension, gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 
+import {acquireBreakService, releaseBreakService} from './features/break/shared.js';
+import {NotificationTakeover} from './features/break/takeover.js';
 import {acquireShared, releaseShared} from './features/claude/refresher.js';
 import {acquireRecorder, releaseRecorder} from './features/clipboard/shared.js';
 import {FEATURES} from './features/registry.js';
@@ -55,6 +57,7 @@ export default class FroontyExtension extends Extension {
             'changed::hide-panel-clock', () => this._syncPanelClock(),
             'changed::claude-enabled', () => this._syncClaudeRefresher(),
             'changed::clipboard-enabled', () => this._syncClipboardRecorder(),
+            'changed::break-enabled', () => this._syncBreakService(),
             this);
 
         // One-time checks of features (e.g. a tab whose app is not
@@ -64,14 +67,25 @@ export default class FroontyExtension extends Extension {
                 console.warn(`Froonty: ${feature.id} setup failed: ${e.message}`));
         }
 
+        // "Remind me in the island": GNOME's break notifications are off
+        // while the island shows the reminders (features/break/takeover.js).
+        this._takeover = new NotificationTakeover(this._settings);
         this._syncIsland();
         this._holdsClaudeRefresher = false;
         this._syncClaudeRefresher();
         this._holdsClipboardRecorder = false;
         this._syncClipboardRecorder();
+        this._holdsBreakService = false;
+        this._syncBreakService();
     }
 
     disable() {
+        // Under the lock screen GNOME's break notifications stay off: they
+        // would show on the lock screen and flicker on every unlock. Any
+        // other disable gives them back (DESIGN.md §2, principle 5).
+        const locked = this._isSessionLocked();
+        this._takeover.destroy({restore: !locked});
+        this._takeover = null;
         this._settings.disconnectObject(this);
         if (this._holdsClaudeRefresher)
             releaseShared();
@@ -79,6 +93,9 @@ export default class FroontyExtension extends Extension {
         if (this._holdsClipboardRecorder)
             releaseRecorder();
         this._holdsClipboardRecorder = false;
+        if (this._holdsBreakService)
+            releaseBreakService();
+        this._holdsBreakService = false;
         Main.wm.removeKeybinding(TOGGLE_SHORTCUT_KEY);
         this._destroyIsland();
         this._launcher?.destroy();
@@ -117,6 +134,26 @@ export default class FroontyExtension extends Extension {
             releaseRecorder();
     }
 
+    // The Break tab tracks breaks and posture as long as it is enabled,
+    // not only once its tab has been opened.
+    _syncBreakService() {
+        const want = this._settings.get_boolean('break-enabled');
+        if (want === this._holdsBreakService)
+            return;
+        this._holdsBreakService = want;
+        if (want)
+            acquireBreakService(this._settings);
+        else
+            releaseBreakService();
+    }
+
+    // Extensions are disabled on the session mode's 'updated' after
+    // 'unlock-dialog' is pushed, which has isLocked (ui/sessionMode.js).
+    // A method, so the headless test can stand in for a lock.
+    _isSessionLocked() {
+        return Main.sessionMode.isLocked;
+    }
+
     _onShortcut() {
         if (!this._started)
             this._start();
@@ -137,12 +174,15 @@ export default class FroontyExtension extends Extension {
         this._launcher = null;
         if (this._started && this._settings.get_boolean('island-enabled')) {
             this._createIsland();
-            return;
+        } else {
+            this._destroyIsland();
+            this._launcher = this._started
+                ? new PanelLauncher(_('Froonty settings'), () => this._settingsWindow.open())
+                : new PanelLauncher(_('Start Froonty'), () => this._start());
         }
-        this._destroyIsland();
-        this._launcher = this._started
-            ? new PanelLauncher(_('Froonty settings'), () => this._settingsWindow.open())
-            : new PanelLauncher(_('Start Froonty'), () => this._start());
+        // Without the island (waiting at login, "Show island" off), GNOME
+        // reminds.
+        this._takeover.sync({pillShown: this._island !== null});
     }
 
     _createIsland() {

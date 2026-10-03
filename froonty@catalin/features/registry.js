@@ -3,6 +3,8 @@
 // one-line change here (plus its settings tab in prefs.js, which runs in a
 // separate GTK process and cannot load these Shell-side modules).
 
+// `break` is a reserved word.
+import breakFeature from './break/index.js';
 import calendar from './calendar/index.js';
 import claude from './claude/index.js';
 import clipboard from './clipboard/index.js';
@@ -24,5 +26,6 @@ export const FEATURES = [
     sysmon,
     clipboard,
     killprocess,
+    breakFeature,
     ...LOCAL_FEATURES,
 ];

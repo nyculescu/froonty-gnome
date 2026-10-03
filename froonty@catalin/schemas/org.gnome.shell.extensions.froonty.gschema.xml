@@ -415,6 +415,138 @@
       <description>In logical pixels, while the Kill Process tab is shown.</description>
     </key>
 
+    <!-- Break feature (docs/features/break.md) -->
+    <key name="break-enabled" type="b">
+      <default>false</default>
+      <summary>Show the Break tab and follow GNOME's break reminders</summary>
+      <description>While on, Froonty shows GNOME's own break reminders (Settings → Wellbeing, org.gnome.desktop.break-reminders) in the island and drives them (Take, Delay, Skip); GNOME keeps the timing. It records only when you were at the computer or away, and daily totals, on this computer only (~/.local/share/froonty/break, readable by you only). It never turns GNOME's breaks on by itself: the tab offers it. Off by default. Not medical advice.</description>
+    </key>
+    <key name="break-pill-reminders" type="b">
+      <default>true</default>
+      <summary>Break: remind in the island instead of GNOME's notifications</summary>
+      <description>While the Break tab is on, GNOME's breaks are on and the island is shown, Froonty turns off GNOME's Wellbeing notifications (org.gnome.desktop.notifications.application, gnome-wellbeing-panel, enable; this also hides GNOME's daily screen-time limit alerts) and each break type's countdown, and turns back on what it changed when this, the Break tab, the island or Froonty is turned off. It keeps them off under the lock screen. Should Froonty be removed while it is not running: gsettings reset org.gnome.desktop.notifications.application:/org/gnome/desktop/notifications/application/gnome-wellbeing-panel/ enable</description>
+    </key>
+    <key name="break-pill-cue" type="s">
+      <choices>
+        <choice value="off"/>
+        <choice value="icon"/>
+        <choice value="icon-and-time"/>
+      </choices>
+      <default>'icon'</default>
+      <summary>Break: cue on the collapsed island</summary>
+      <description>"icon": an icon after the time while a break is near, due, overdue or urgent, or a posture switch is due (each level has its own shape: ring, bare icon, round badge, wide badge with "!"); "icon-and-time": the same with the minutes, and the minutes to the next break when all is fine; "off": none (GNOME then reminds). The island never opens by itself.</description>
+    </key>
+    <key name="break-escalate-after-skips" type="i">
+      <range min="0" max="5"/>
+      <default>2</default>
+      <summary>Break: overdue after this many skips or delays in a row</summary>
+      <description>A due break of a type skipped or delayed this many times in a row shows as overdue at once (Froonty's rule). 0: never.</description>
+    </key>
+    <key name="break-max-delays" type="i">
+      <range min="0" max="10"/>
+      <default>0</default>
+      <summary>Break: delays in a row, at most</summary>
+      <description>The Break tab hides its Delay button after this many delays in a row of a type. 0: no limit. GNOME's own notification (shown when Froonty does not remind) keeps its Delay button.</description>
+    </key>
+    <key name="break-make-up-time" type="b">
+      <default>false</default>
+      <summary>Break: suggest making up skipped movement time</summary>
+      <description>After a skipped movement break, the suggested length of the next one grows by the skipped length, at most twice GNOME's length (a heuristic; GNOME's own length is never changed).</description>
+    </key>
+    <key name="break-long-rest" type="b">
+      <default>true</default>
+      <summary>Break: suggest a long rest</summary>
+      <description>After break-long-rest-after-minutes at the computer without an away of break-long-rest-minutes, the cue shows "urgent" and the tab suggests a long rest (Froonty's rule, after the AOA's "15 minutes after two hours"; expert opinion). Works with GNOME's breaks off too.</description>
+    </key>
+    <key name="break-long-rest-after-minutes" type="i">
+      <range min="60" max="240"/>
+      <default>120</default>
+      <summary>Break: long rest after (min) at the computer</summary>
+      <description>Time at the computer (not counting aways of 2 minutes or more) since the last long rest.</description>
+    </key>
+    <key name="break-long-rest-minutes" type="i">
+      <range min="5" max="30"/>
+      <default>15</default>
+      <summary>Break: long rest length (min)</summary>
+      <description>An away at least this long (idle, locked or suspended) counts as a long rest.</description>
+    </key>
+    <key name="break-exercises" type="b">
+      <default>true</default>
+      <summary>Break: show exercise cards</summary>
+      <description>Workrave's pictures and texts (GPL-3.0-or-later): a stretch when a movement break is near or due, eye exercises (comfort only) when an eye break is due.</description>
+    </key>
+    <key name="break-history-days" type="i">
+      <range min="7" max="366"/>
+      <default>98</default>
+      <summary>Break: days of history to keep</summary>
+      <description>One record per day with any activity: time at the computer, longest stretch, breaks taken, delayed and skipped, long rests, standing time and target. 98 days is GNOME's own 14 weeks.</description>
+    </key>
+    <key name="break-width" type="i">
+      <range min="360" max="960"/>
+      <default>440</default>
+      <summary>Break island width</summary>
+      <description>In logical pixels, while the Break tab is shown.</description>
+    </key>
+    <key name="break-height" type="i">
+      <range min="280" max="720"/>
+      <default>480</default>
+      <summary>Break island height</summary>
+      <description>In logical pixels, while the Break tab is shown.</description>
+    </key>
+    <key name="break-gnome-saved" type="s">
+      <default>''</default>
+      <summary>Internal: GNOME settings Froonty changed</summary>
+      <description>JSON: for each GNOME key Froonty set (the Wellbeing notifications' enable, the break types' countdown), its own earlier value (or null when it had none) and the value Froonty set, so it can restore exactly that, and leave a key the user changed since. Empty when nothing is changed.</description>
+    </key>
+    <key name="posture-enabled" type="b">
+      <default>false</default>
+      <summary>Break: track sitting and standing</summary>
+      <description>A Sitting/Standing switch in the Break tab (and an optional panic button) for a desk with a manual lever. Standing time counts only while you use the computer. Off by default.</description>
+    </key>
+    <key name="posture-target-minutes" type="i">
+      <range min="30" max="480"/>
+      <default>120</default>
+      <summary>Break: daily standing target (min), the minimum</summary>
+      <description>The base target: 2 h is a starting minimum from an expert statement (Buckley et al. 2015). "Just the minimum today" in the tab keeps today at this, whatever the build-up.</description>
+    </key>
+    <key name="posture-buildup" type="b">
+      <default>true</default>
+      <summary>Break: build the standing target up</summary>
+      <description>Adds posture-buildup-step-minutes after you meet the target on 4 of your last 5 working days (an hour or more at the computer, not "just the minimum" days), at most once a week, up to posture-buildup-ceiling-minutes. It never steps down by itself. Off: the target is always posture-target-minutes.</description>
+    </key>
+    <key name="posture-buildup-step-minutes" type="i">
+      <range min="5" max="60"/>
+      <default>15</default>
+      <summary>Break: build-up step (min)</summary>
+    </key>
+    <key name="posture-buildup-ceiling-minutes" type="i">
+      <range min="60" max="480"/>
+      <default>240</default>
+      <summary>Break: build the target up to (min)</summary>
+      <description>Buckley et al. 2015 suggest eventually 4 h of standing and light activity; studies of people who stand a lot link more with circulation and low-back problems (observational and uncertain).</description>
+    </key>
+    <key name="posture-buildup-target" type="i">
+      <range min="0" max="480"/>
+      <default>0</default>
+      <summary>Internal: the built-up standing target (min)</summary>
+      <description>Where the build-up has got to; 0 (or less than posture-target-minutes): not built up yet. Settings → Break → "Reset build-up" resets it.</description>
+    </key>
+    <key name="posture-reminders" type="b">
+      <default>true</default>
+      <summary>Break: remind to switch between sitting and standing</summary>
+      <description>A cue on the island after posture-sit-minutes sitting (none once today's target is met) or posture-stand-minutes standing at the computer. It stays until you switch, choose "Not now" or step away for 2 minutes or more.</description>
+    </key>
+    <key name="posture-sit-minutes" type="i">
+      <range min="15" max="120"/>
+      <default>45</default>
+      <summary>Break: stand up after sitting this long (min)</summary>
+    </key>
+    <key name="posture-stand-minutes" type="i">
+      <range min="5" max="60"/>
+      <default>15</default>
+      <summary>Break: sit down after standing this long (min)</summary>
+    </key>
+
     <!-- local-only: the Writing tab (docs/features/writing.md); tools/pack-public strips the writing-* keys and this comment -->
     <key name="writing-enabled" type="b">
       <default>false</default>

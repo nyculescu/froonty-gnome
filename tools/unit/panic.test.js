@@ -29,4 +29,11 @@ test('byId finds entries and returns null for unknown ids', () => {
     eq(Catalog.byId('nope'), null);
 });
 
+test('the Break tab\'s "Sitting or standing" is offered, with its bundled icon', () => {
+    const entry = Catalog.byId('sit-stand');
+    eq(entry.icon, 'froonty-stand-symbolic');
+    eq(entry.title(s => s), 'Sitting or standing');
+    eq(entry.description(s => s).includes('sit/stand'), true);
+});
+
 await done();

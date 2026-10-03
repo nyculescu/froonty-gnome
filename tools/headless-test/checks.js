@@ -204,7 +204,17 @@ function shellFootprint() {
             mixerState: countHandlers(Volume.getMixerControl(), 'state-changed'),
             mixerSink: countHandlers(Volume.getMixerControl(), 'default-sink-changed'),
             mixerSource: countHandlers(Volume.getMixerControl(), 'default-source-changed'),
+            // The Break tab follows GNOME's break engine.
+            ...Object.fromEntries(['notify::state', 'notify::next-break-due-time',
+                'notify::last-break-end-time', 'break-due', 'break-finished', 'take-break']
+                .map(signal => [`breakManager ${signal}`, countHandlers(Main.breakManager, signal)])),
         },
+        // GNOME's Wellbeing notifications: given back whenever Froonty is
+        // turned off outside the lock screen.
+        wellbeingEnable: new Gio.Settings({
+            schema_id: 'org.gnome.desktop.notifications.application',
+            path: '/org/gnome/desktop/notifications/application/gnome-wellbeing-panel/',
+        }).get_user_value('enable')?.print(true) ?? null,
     };
 }
 
@@ -3790,6 +3800,18 @@ async function testLifecycle(outDir) {
     }});
     await waitFor(() => island()?._accessory?.showing, 3000);
     check('media: music shows on the pill before the cycles', island()?._accessory?.showing === true);
+    // The Break tab on, with GNOME's eye breaks on (in the private keyfile
+    // only): its engine signals, idle watch and takeover are cycled too.
+    const breaks = privacyIsIsolated(outDir)[0]
+        ? new Gio.Settings({schema_id: 'org.gnome.desktop.break-reminders'}) : null;
+    const eyes = breaks ? new Gio.Settings({schema_id: 'org.gnome.desktop.break-reminders.eyesight'}) : null;
+    if (breaks) {
+        eyes.set_uint('interval-seconds', 3600);
+        breaks.set_strv('selected-breaks', ['eyesight']);
+        settings().set_boolean('break-enabled', true);
+        settings().set_boolean('posture-enabled', true);
+        await sleep(SETTLE_MS);
+    }
     check('disable succeeds', await setExtensionEnabled(false), stateName());
     const baseline = shellFootprint();
     check('disabled: no strip, clock restored',
@@ -3849,6 +3871,12 @@ async function testLifecycle(outDir) {
     Main.layoutManager.emit('system-modal-opened');
     Main.layoutManager.panelBox.notify('height');
     St.ThemeContext.get_for_stage(global.stage).notify('scale-factor');
+    if (breaks) {
+        breaks.set_strv('selected-breaks', []);
+        Main.breakManager.notify('state');
+        for (const signal of ['break-due', 'break-finished', 'take-break'])
+            Main.breakManager.emit(signal);
+    }
     const probe = extension().stateObj.getSettings();
     probe.set_int('collapsed-width', 200);
     probe.set_boolean('show-date', true);
@@ -3881,6 +3909,13 @@ async function testLifecycle(outDir) {
     await sleep(SETTLE_MS);
     island()._hub.select('clock');
     settings().reset('hub-last-tab');
+    if (breaks) {
+        settings().reset('break-enabled');
+        settings().reset('posture-enabled');
+        breaks.reset('selected-breaks');
+        eyes.reset('interval-seconds');
+        await sleep(SETTLE_MS);
+    }
 }
 
 // ---------------------------------------------------------------- hub layout
@@ -7978,6 +8013,437 @@ async function testMediaChoiceSurvivesLock() {
     }
 }
 
+// ---------------------------------------------------------------- break
+//
+// The Break tab (docs/features/break.md) against GNOME's real break engine
+// (Main.breakManager): the offer, the pill's cue (no expand, no grab), Take,
+// Delay and Skip, GNOME's notifications off and given back, the sit/stand
+// tracker, its panic button, the state file and the lock rule. GNOME's
+// break settings are the private keyfile's only (checked first). A
+// self-contained block.
+
+const BREAK_SCHEMA = 'org.gnome.desktop.break-reminders';
+const WELLBEING = {
+    schema_id: 'org.gnome.desktop.notifications.application',
+    path: '/org/gnome/desktop/notifications/application/gnome-wellbeing-panel/',
+};
+const breakEntry = () => island()?._hub._entries.get('break') ?? null;
+const breakView = () => breakEntry()?.view ?? null;
+const breakCueSource = () => island()?._cueSources.get('break')?.source ?? null;
+const breakService = () => breakCueSource()?._service ?? null;
+const breakCue = () => breakCueSource()?.current() ?? null;
+// The cue the collapsed pill shows (not just what it would compute now).
+const pillCueLevel = level =>
+    island()?._collapsedView._cue.has_style_class_name(`froonty-pill-cue-level-${level}`) ?? false;
+// GNOME's own break notification source (misc/breakManager.js), in the
+// message tray or not.
+const breakSourceInTray = () => {
+    const source = Main.breakManagerDispatcher?._notificationSource?._source ?? null;
+    return source !== null && Main.messageTray.getSources().includes(source);
+};
+
+function resetKeys(settings) {
+    for (const key of settings.settings_schema.list_keys())
+        settings.reset(key);
+}
+
+// Input once a second (a pointer nudge low on the primary monitor, away
+// from the island, the dock and the top bar) until `predicate` holds.
+async function keepActive(timeoutMs, predicate = () => false) {
+    const monitor = Main.layoutManager.primaryMonitor;
+    const x = monitor.x + Math.round(monitor.width / 2);
+    const y = monitor.y + monitor.height - 60;
+    for (let waited = 0; waited <= timeoutMs; waited += 250) {
+        if (waited % 1000 === 0)
+            pointer.notify_absolute_motion(now(), x + (waited % 2000 ? 2 : 0), y);
+        if (predicate())
+            return true;
+        await sleep(250);
+    }
+    return predicate();
+}
+
+async function openBreakTab() {
+    if (!island().expanded) {
+        island().expand();
+        await sleep(animationWait());
+    }
+    if (island()._hub.activeFeature?.id !== 'break') {
+        await clickActor(tabButton('break'));
+        await sleep(animationWait());
+    }
+}
+
+// Scrolls the Break tab so `actor` is on screen (to click it).
+async function scrollIntoView(view, actor) {
+    const [, y] = actor.get_transformed_position();
+    const [, listY] = view._list.get_transformed_position();
+    const adjustment = view._scroll.vadjustment;
+    adjustment.value = Math.max(0, Math.min(adjustment.upper - adjustment.page_size, y - listY - 20));
+    await sleep(SETTLE_MS);
+}
+
+// The rectangle's pixels, through a screenshot.
+async function areaPixbuf(outDir, name, b) {
+    const path = GLib.build_filenamev([outDir, `${name}.png`]);
+    const stream = Gio.File.new_for_path(path).replace(null, false, Gio.FileCreateFlags.NONE, null);
+    await new Shell.Screenshot().screenshot_area(Math.round(b.x1), Math.round(b.y1),
+        Math.round(b.x2 - b.x1), Math.round(b.y2 - b.y1), stream);
+    stream.close(null);
+    return GdkPixbuf.Pixbuf.new_from_file(path);
+}
+
+// Mean colour difference of two same-size pictures, the second one read
+// flipped left to right when `flip`.
+function pixelDifference(a, b, flip) {
+    const [pa, pb] = [a.get_pixels(), b.get_pixels()];
+    const w = Math.min(a.get_width(), b.get_width());
+    const h = Math.min(a.get_height(), b.get_height());
+    let sum = 0;
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            const i = y * a.get_rowstride() + x * a.get_n_channels();
+            const j = y * b.get_rowstride() + (flip ? w - 1 - x : x) * b.get_n_channels();
+            sum += Math.abs(pa[i] - pb[j]) + Math.abs(pa[i + 1] - pb[j + 1]) + Math.abs(pa[i + 2] - pb[j + 2]);
+        }
+    }
+    return sum / (3 * w * h);
+}
+
+const inset = (b, n) => ({x1: b.x1 + n, y1: b.y1 + n, x2: b.x2 - n, y2: b.y2 - n});
+
+async function testBreak(outDir) {
+    const [isolated, where] = privacyIsIsolated(outDir);
+    check('break: GNOME\'s break and notification settings are the private test copy', isolated, where);
+    if (!isolated)
+        return;
+
+    const s = settings();
+    const breaks = new Gio.Settings({schema_id: BREAK_SCHEMA});
+    const eyes = new Gio.Settings({schema_id: `${BREAK_SCHEMA}.eyesight`});
+    const movement = new Gio.Settings({schema_id: `${BREAK_SCHEMA}.movement`});
+    const wellbeing = new Gio.Settings(WELLBEING);
+    const gnomeKeys = [breaks, eyes, movement, wellbeing];
+    const wellbeingUser = () => wellbeing.get_user_value('enable')?.print(true) ?? null;
+    const lastEnd = () => Main.breakManager._breakLastEnd.get('eyesight');
+    gnomeKeys.forEach(resetKeys);
+    // Short eye breaks, so the checks wait seconds, not minutes.
+    eyes.set_uint('interval-seconds', 14);
+    eyes.set_uint('duration-seconds', 10);
+    eyes.set_uint('delay-seconds', 10);
+    movement.set_uint('interval-seconds', 3600);
+    const modalBefore = Main.modalCount;
+
+    try {
+        check('break: off by default: no tab, no cue, GNOME\'s breaks and notifications untouched',
+            !tabButton('break') && !island()._collapsedView.hasCue &&
+            breaks.get_strv('selected-breaks').length === 0 && wellbeingUser() === null,
+            `tab=${Boolean(tabButton('break'))} cue=${island()._collapsedView.hasCue} ` +
+            `selected=${breaks.get_strv('selected-breaks')} wellbeing=${wellbeingUser()}`);
+
+        s.set_boolean('break-enabled', true);
+        await waitFor(() => breakService()?.loaded);
+        check('break: turning it on adds the tab and writes nothing to GNOME',
+            Boolean(tabButton('break')) && breaks.get_strv('selected-breaks').length === 0 &&
+            wellbeingUser() === null && s.get_string('break-gnome-saved') === '');
+
+        await openBreakTab();
+        const view = breakView();
+        check('break: GNOME\'s breaks are off, so the tab offers to turn them on',
+            view?._offer.visible && view._offerButton.visible && !view._status.visible &&
+            view._offerText.text.includes('GNOME’s break reminders are off'),
+            `offer=${view?._offer.visible} text=${view?._offerText.text}`);
+        await screenshotTop(outDir, 'break-offer', 540);
+
+        await clickActor(view._offerButton);
+        await waitFor(() => Main.breakManager.state !== 0);
+        check('break: the offer turns on GNOME\'s eye and movement breaks; Froonty reminds instead',
+            breaks.get_strv('selected-breaks').join() === 'eyesight,movement' &&
+            Main.breakManager.state === 1 && !wellbeing.get_boolean('enable') &&
+            JSON.parse(s.get_string('break-gnome-saved') || '{}')['wellbeing/enable']?.user === null,
+            `selected=${breaks.get_strv('selected-breaks')} state=${Main.breakManager.state} ` +
+            `enable=${wellbeing.get_boolean('enable')} saved=${s.get_string('break-gnome-saved')}`);
+
+        // Another tab, so the pill's click has to come back to Break.
+        await clickActor(tabButton('clock'));
+        island().collapse();
+        await sleep(animationWait());
+
+        const due = await keepActive(20000, () => pillCueLevel(2));
+        await sleep(animationWait());
+        const cue = breakCue();
+        const time = boxOf(island()._collapsedView._timeLabel);
+        const pillBox = boxOf(pill());
+        const covers = pillCoversClock();
+        check('break: a due break shows a cue on the collapsed pill; nothing opens or grabs',
+            due && island()._collapsedView.hasCue && !island().expanded &&
+            Main.modalCount === modalBefore && pill().accessible_name.includes('Eye break due') &&
+            island()._collapsedView._cue.has_style_class_name('froonty-pill-cue-level-2'),
+            `due=${due} cue=${JSON.stringify(cue && {level: cue.level, text: cue.accessibleText})} ` +
+            `expanded=${island().expanded} modal=${Main.modalCount} name=${pill().accessible_name}`);
+        check('break: GNOME\'s break notification is not in the tray; no unread dots',
+            !breakSourceInTray() && !gnomeUnreadDot() && !pillUnreadDot(),
+            `tray=${breakSourceInTray()} gnomeDot=${gnomeUnreadDot()} pillDot=${pillUnreadDot()}`);
+        check('break: the cue keeps the pill over the clock and the time centred',
+            covers.ok && Math.abs((time.x1 + time.x2) / 2 - (pillBox.x1 + pillBox.x2) / 2) <= 1,
+            `${covers.detail} time=[${time.x1},${time.x2}]`);
+        await screenshotTop(outDir, 'break-cue-due', 120);
+
+        // GNOME switches to BREAK_DUE up to a second after the due time.
+        await keepActive(3000, () => Main.breakManager.state === 4);
+        await clickActor(pill());
+        await sleep(animationWait());
+        check('break: clicking the pill opens the Break tab with Take, Delay and Skip',
+            island().expanded && island()._hub.activeFeature?.id === 'break' &&
+            view.takeButton.visible && view.delayButton.visible && view.skipButton.visible,
+            `tab=${island()._hub.activeFeature?.id} take=${view.takeButton.visible} ` +
+            `delay=${view.delayButton.visible} skip=${view.skipButton.visible}`);
+        await screenshotTop(outDir, 'break-due-tab', 540);
+
+        const before = lastEnd();
+        await clickActor(view.delayButton);
+        const level = breakService().model().level.level;
+        check('break: Delay moves the break by 10 s; the cue drops below due; one delay today',
+            Math.abs(lastEnd() - before - 10) <= 1 && level <= 1 &&
+            breakService().state.today.eyesight.delayed === 1,
+            `moved=${lastEnd() - before} level=${level} today=${JSON.stringify(breakService().state.today.eyesight)}`);
+
+        await keepActive(15000, () => Main.breakManager.state === 4 && view.skipButton.visible);
+        await clickActor(view.skipButton);
+        check('break: Skip when due: GNOME is ACTIVE again, one skip today',
+            Main.breakManager.state === 1 && breakService().state.today.eyesight.skipped === 1,
+            `state=${Main.breakManager.state} today=${JSON.stringify(breakService().state.today.eyesight)}`);
+
+        island().collapse();
+        await sleep(animationWait());
+        const overdue = await keepActive(20000, () => pillCueLevel(3));
+        check('break: after a delay and a skip in a row, the next one is overdue at once (level 3)',
+            overdue && breakCue()?.level === 3,
+            `cue=${JSON.stringify(breakCue())}`);
+        await screenshotTop(outDir, 'break-cue-overdue', 120);
+
+        await keepActive(15000, () => Main.breakManager.state === 4);
+        await clickActor(pill());
+        await sleep(animationWait());
+        const brightness = () => Main.layoutManager.uiGroup.get_effect('brightness');
+        await clickActor(view.takeButton);
+        const dimmed = await waitFor(() => brightness()?.enabled === true, 4000);
+        check('break: Take collapses the island and GNOME dims the screen',
+            dimmed && !island().expanded, `dimmed=${dimmed} expanded=${island().expanded}`);
+        await sleep(1500);
+        await screenshotTop(outDir, 'break-take-dim', 120);
+
+        // Away for 12 s (more than the 10 s break), then back.
+        const takenBefore = breakService().state.today.eyesight.taken;
+        await sleep(12500);
+        await movePointerTo(...pillCenter());
+        await sleep(SETTLE_MS);
+        const after = breakService().model();
+        check('break: 12 s away, then back: the eye break is taken, the cue drops, no dimming',
+            breakService().state.today.eyesight.taken === takenBefore + 1 &&
+            after.level.level <= 1 && !brightness()?.enabled,
+            `taken=${breakService().state.today.eyesight.taken} level=${after.level.level} ` +
+            `dim=${brightness()?.enabled}`);
+
+        // Hold breaks off for the rest, so the tab holds still.
+        eyes.set_uint('interval-seconds', 3600);
+        s.set_boolean('posture-enabled', true);
+        await openBreakTab();
+        await scrollIntoView(view, view.standingButton);
+        await clickActor(view.standingButton);
+        const standing = breakService().model().today.standingSeconds;
+        check('break: clicking Standing checks it; the posture is standing',
+            breakService().state.posture.mode === 'standing' && view.standingButton.checked &&
+            !view.sittingButton.checked);
+        await keepActive(4000);
+        const gained = breakService().model().today.standingSeconds - standing;
+        check('break: 4 s at the computer standing adds at least 3 s of standing', gained >= 3,
+            `+${gained.toFixed(1)} s`);
+        for (let i = 0; i < 40 && global.stage.key_focus !== view.sittingButton; i++)
+            await pressKeys(Clutter.KEY_Tab);
+        await pressKeys(Clutter.KEY_space);
+        check('break: Tab and Space switch back to sitting',
+            breakService().state.posture.mode === 'sitting' && view.sittingButton.checked,
+            `focus=${global.stage.key_focus} mode=${breakService().state.posture.mode}`);
+        await screenshotTop(outDir, 'break-posture', 540);
+
+        s.set_strv('panic-buttons', ['sit-stand']);
+        await sleep(SETTLE_MS);
+        const [sitStand] = island()._hub._panicBar._buttons;
+        check('break: the "Sitting or standing" panic button is in the bar, named',
+            sitStand?.actor.accessible_name === 'Sitting or standing: sitting',
+            `${sitStand?.actor.accessible_name}`);
+        await clickActor(sitStand.actor);
+        const iconPath = sitStand.actor.child.gicon?.get_file?.()?.get_path() ?? '';
+        check('break: clicking it stands: checked, the standing pictogram',
+            breakService().state.posture.mode === 'standing' && sitStand.actor.checked &&
+            iconPath.endsWith('froonty-stand-symbolic.svg'),
+            `mode=${breakService().state.posture.mode} checked=${sitStand.actor.checked} icon=${iconPath}`);
+        s.reset('panic-buttons');
+        await sleep(SETTLE_MS);
+
+        const store = breakService()._store;
+        await store.flush();
+        const mode = file => file.query_info('unix::mode', Gio.FileQueryInfoFlags.NONE, null)
+            .get_attribute_uint32('unix::mode') & 0o777;
+        check('break: the state file is 0600 in a 0700 folder under the private data folder',
+            store.stateFile.get_path().startsWith(GLib.build_filenamev([outDir, 'data'])) &&
+            mode(store.stateFile) === 0o600 && mode(store.folder) === 0o700,
+            `${store.stateFile.get_path()} ${mode(store.stateFile).toString(8)} ${mode(store.folder).toString(8)}`);
+
+        // A screen lock: GNOME's notifications stay off under it, and what
+        // Froonty counted survives.
+        island().collapse();
+        await sleep(animationWait());
+        const old = breakService();
+        const counted = JSON.stringify(old.state.today.eyesight);
+        extension().stateObj._isSessionLocked = () => true;
+        await setExtensionEnabled(false);
+        const oldResources = old.resources;
+        await setExtensionEnabled(true);
+        delete extension().stateObj._isSessionLocked;
+        await waitFor(() => breakService()?.loaded);
+        check('break: a screen lock keeps GNOME\'s notifications off; posture and counts survive it',
+            !wellbeing.get_boolean('enable') && breakService() !== old &&
+            breakService().state.posture.mode === 'standing' &&
+            JSON.stringify(breakService().state.today.eyesight) === counted,
+            `enable=${wellbeing.get_boolean('enable')} mode=${breakService()?.state.posture.mode} ` +
+            `counts=${JSON.stringify(breakService()?.state.today.eyesight)} was ${counted}`);
+        check('break: the locked-away service left nothing connected',
+            Object.values(oldResources).every(v => !v), JSON.stringify(oldResources));
+
+        await setExtensionEnabled(false);
+        const restored = wellbeingUser();
+        await setExtensionEnabled(true);
+        await sleep(SETTLE_MS);
+        check('break: turned off unlocked, Froonty gives GNOME\'s notifications back; on again, takes them',
+            restored === null && !wellbeing.get_boolean('enable'),
+            `off=${restored} on=${wellbeing.get_boolean('enable')}`);
+
+        s.set_boolean('island-enabled', false);
+        await sleep(SETTLE_MS);
+        const withoutIsland = wellbeingUser();
+        s.reset('island-enabled');
+        await sleep(SETTLE_MS);
+        check('break: without the island GNOME reminds; with it again, Froonty',
+            withoutIsland === null && !wellbeing.get_boolean('enable'),
+            `hidden=${withoutIsland} shown=${wellbeing.get_boolean('enable')}`);
+
+        // GNOME reminding: low urgency (its "notify" off), so the
+        // notification is not shown as a banner and stays unread.
+        eyes.set_boolean('notify', false);
+        eyes.set_uint('interval-seconds', 14);
+        s.set_boolean('break-pill-reminders', false);
+        await sleep(SETTLE_MS);
+        const gnomeReminds = wellbeingUser() === null &&
+            await keepActive(20000, () => breakSourceInTray() && gnomeUnreadDot() && pillUnreadDot());
+        check('break: "Remind me in the island" off: GNOME\'s notification and both dots are back',
+            gnomeReminds, `enable=${wellbeingUser()} tray=${breakSourceInTray()} ` +
+            `gnomeDot=${gnomeUnreadDot()} pillDot=${pillUnreadDot()}`);
+        s.reset('break-pill-reminders');
+        await sleep(SETTLE_MS);
+        await keepActive(20000, () => Main.breakManager.state === 4);
+        check('break: back on: GNOME\'s break notification leaves the tray',
+            !wellbeing.get_boolean('enable') && !breakSourceInTray() && !gnomeUnreadDot(),
+            `enable=${wellbeing.get_boolean('enable')} tray=${breakSourceInTray()} dot=${gnomeUnreadDot()}`);
+        eyes.reset('notify');
+        eyes.set_uint('interval-seconds', 3600);
+        await keepActive(2000);
+
+        await openBreakTab();
+        const view2 = breakView();
+        breakService().state.exercise.next = 0;
+        view2._showStretch = false;
+        view2._exerciseKey = null;
+        view2._sync();
+        await sleep(SETTLE_MS);
+        check('break: with no break near, the tab offers "Show a stretch"',
+            Boolean(view2.showStretchButton?.mapped), `${view2._exerciseKey}`);
+        await scrollIntoView(view2, view2.showStretchButton);
+        const stretchBox = boxOf(view2.showStretchButton);
+        await screenshotTop(outDir, 'break-before-stretch', 540);
+        await clickActor(view2.showStretchButton);
+        await sleep(SETTLE_MS);
+        const clickDetail = `expanded=${island().expanded} tab=${island()._hub.activeFeature?.id} ` +
+            `button=[${stretchBox.x1},${stretchBox.y1} - ${stretchBox.x2},${stretchBox.y2}] ` +
+            `content=${JSON.stringify(boxOf(island()._hub._content))} ` +
+            `scroll=${view2._scroll.vadjustment.value}`;
+        const card = view2.card;
+        const files = card?.frames.map(f => f.icon.gicon.get_file().get_path()) ?? [];
+        check('break: the first stretch: Workrave\'s pictures, the second one mirrored',
+            card?.exercise.id === 'shoulder-arm-stretch' && files.length === 2 &&
+            files.every(f => GLib.file_test(f, GLib.FileTest.EXISTS)) &&
+            card.frames[0].icon.scale_x === 1 && card.frames[1].icon.scale_x === -1,
+            `${card?.exercise.id} ${files.join(', ')} key=${view2._exerciseKey} ` +
+            `exercises=${view2._exercises.length} shown=${view2._showStretch} ${clickDetail}`);
+        if (!card)
+            throw new Error('no exercise card');
+        // Bring the pictures into view.
+        const [, cardY] = card.get_transformed_position();
+        const [, listY] = view2._list.get_transformed_position();
+        view2._scroll.vadjustment.value = cardY - listY;
+        await sleep(animationWait());
+        const [a, b] = card.frames.map(f => inset(boxOf(f.picture), 3));
+        const half = box => (box.x2 - box.x1) / 2;
+        const inkMirroredLeft = await inkIn(outDir, 'break-frame-1-left', b.x1, b.y1, half(b), b.y2 - b.y1);
+        const inkPlainRight = await inkIn(outDir, 'break-frame-0-right', a.x1 + half(a), a.y1, half(a), a.y2 - a.y1);
+        const plain = await areaPixbuf(outDir, 'break-frame-0', a);
+        const mirrored = await areaPixbuf(outDir, 'break-frame-1', b);
+        const flipped = pixelDifference(plain, mirrored, true);
+        const straight = pixelDifference(plain, mirrored, false);
+        check('break: the mirrored picture is drawn flipped (ink and pixels)',
+            Math.abs(inkMirroredLeft - inkPlainRight) <= 0.15 * Math.max(inkMirroredLeft, inkPlainRight) &&
+            flipped < straight / 2,
+            `ink ${inkMirroredLeft.toFixed(3)} vs ${inkPlainRight.toFixed(3)}; ` +
+            `difference flipped ${flipped.toFixed(1)}, as is ${straight.toFixed(1)}`);
+        await screenshotTop(outDir, 'break-card', 540);
+
+        view2._scroll.vadjustment.value = 0;
+        await sleep(SETTLE_MS);
+        const [w, h] = pill().get_transformed_size();
+        const content = boxOf(island()._hub._content);
+        const buttons = [];
+        const walk = actor => {
+            for (const child of actor.get_children()) {
+                if (child instanceof St.Button && child.mapped)
+                    buttons.push(child);
+                walk(child);
+            }
+        };
+        walk(view2.actor);
+        const outside = buttons.filter(button => {
+            const box = boxOf(button);
+            return box.x1 < content.x1 - 0.5 || box.x2 > content.x2 + 0.5;
+        });
+        const [, listWidth] = view2._list.get_preferred_width(-1);
+        check('break: at 440 × 480 every button is inside the tab; nothing scrolls sideways',
+            w === 440 * scale() && h === 480 * scale() && buttons.length >= 5 && outside.length === 0 &&
+            view2._scroll.hscrollbar_policy === St.PolicyType.NEVER &&
+            view2._list.width <= view2._scroll.width + 0.5,
+            `${w}x${h} buttons=${buttons.length} outside=${outside.map(x => x.label ?? x.accessible_name)} ` +
+            `list=${view2._list.width}/${listWidth} scroll=${view2._scroll.width}`);
+        await screenshotTop(outDir, 'break-tab', 540);
+
+        island().collapse();
+        await sleep(animationWait());
+        s.set_boolean('break-enabled', false);
+        await sleep(SETTLE_MS);
+        check('break: turned off: GNOME\'s notifications are back, its breaks stay on',
+            wellbeingUser() === null && breaks.get_strv('selected-breaks').length === 2 &&
+            !tabButton('break') && !island()._collapsedView.hasCue,
+            `enable=${wellbeingUser()} selected=${breaks.get_strv('selected-breaks')}`);
+    } finally {
+        delete extension().stateObj?._isSessionLocked;
+        for (const key of ['break-enabled', 'break-pill-reminders', 'posture-enabled', 'panic-buttons'])
+            s.reset(key);
+        await sleep(SETTLE_MS);
+        gnomeKeys.forEach(resetKeys);
+        if (island()?.expanded)
+            island().collapse();
+        await sleep(animationWait());
+    }
+}
+
 export async function runAll(outDir) {
     results.length = 0;
     // Pointer-driven checks move the pointer over the pill; keep hover-open
@@ -8018,6 +8484,7 @@ export async function runAll(outDir) {
         await testWritingFixes(outDir);
         await testKillProcess(outDir);
         await testCalendar(outDir);
+        await testBreak(outDir);
         await testSettings(outDir);
         await testCoversPanelClock(outDir);
         await testMonitors();

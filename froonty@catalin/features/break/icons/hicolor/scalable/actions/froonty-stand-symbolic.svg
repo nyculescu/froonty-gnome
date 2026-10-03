@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <!-- Froonty's Break tab: "stand". Drawn for Froonty (own work),
+       GPL-3.0-or-later. Fill #bebebe: the Shell recolours symbolic icons
+       by fill, so it follows the theme. -->
+  <path fill="#bebebe" d="M6.25 2.1A1.75 1.75 0 1 1 9.75 2.1A1.75 1.75 0 1 1 6.25 2.1ZM9.7 5.1L9.7 9.4A1.7 1.7 0 0 1 6.3 9.4L6.3 5.1A1.7 1.7 0 0 1 9.7 5.1ZM6.4 5.46L6 9.86A0.7 0.7 0 0 1 4.6 9.74L5 5.34A0.7 0.7 0 0 1 6.4 5.46ZM11 5.34L11.4 9.74A0.7 0.7 0 0 1 10 9.86L9.6 5.46A0.7 0.7 0 0 1 11 5.34ZM8.05 9.42L7.95 15.02A0.95 0.95 0 0 1 6.05 14.98L6.15 9.38A0.95 0.95 0 0 1 8.05 9.42ZM9.85 9.38L9.95 14.98A0.95 0.95 0 0 1 8.05 15.02L7.95 9.42A0.95 0.95 0 0 1 9.85 9.38Z"/>
+</svg>
