@@ -107,7 +107,7 @@ resizes. Froonty's CSS was written from scratch.
 | Shortcut | `<Super>n` | **Conflicts** with GNOME's `focus-active-notification` (`ui/messageTray.js:779`) | — | Froonty uses `<Super><Alt>i`, free on stock Ubuntu 24.04 |
 | Notifications | `source-added` + `notification-added`; hides `Main.messageTray._bannerBin` (never re-shown in 46); **calls `notification.destroy()` after N s**, which deletes it from GNOME's history | Signals exist; behavior harmful | `Source` `notification-request-banner`, `MessageTray.bannerBlocked`, object-param `Notification` (46 already uses `new Notification({source, title, body})`) | **Rewritten** as the Notifications tab: observe only, never destroy on its own, GNOME's urgency, policy and banners ([features/notifications.md](features/notifications.md)) |
 | MPRIS | Own synchronous proxies with name watching | Works, but blocks the compositor thread at startup | `ui/mpris.js` exports `MprisPlayer` | **Rewrite** in Phase 4 with async proxies or `MprisPlayer` |
-| Calendar | Own month grid; CalendarServer D-Bus; Google Tasks over REST with OAuth | Heavy; duplicates GNOME | `DateMenuButton` (the whole menu), `Calendar.Calendar`, `DBusEventSource` | **Discard.** Open GNOME's own menu (§5) |
+| Calendar | Own month grid; CalendarServer D-Bus; Google Tasks over REST with OAuth | Heavy; duplicates GNOME | `DateMenuButton` (the whole menu), `Calendar.Calendar`, `DBusEventSource`; Evolution Data Server (the user's calendars, GNOME Online Accounts) | **Discard** the fetchers. Open GNOME's own menu (§5). The Calendar tab reads EDS read-only through its own bindings (not CalendarServer: one global time range, no calendar or colour); no account, OAuth or network code of Froonty's ([features/calendar.md](features/calendar.md) §B) |
 | Weather | Soup + wttr.in, always on, every 30 min | Works | `misc/weather.js` `WeatherClient` (GWeather; same locations as GNOME Weather) | **Discard** the fetcher and reuse `WeatherClient` in Phase 6, off by default |
 | Quick actions | `loginctl`/`systemctl` subprocesses; polls `pactl`, `fuser`, `upower` every 15 s | Spawns processes | `misc/systemActions.js` `getDefault()`; `ui/status/*` | **Discard** the polling; use SystemActions if needed |
 | System metrics | Synchronous `/proc` reads every 1 s while visible, 3 s otherwise, never stopped | Works | Nothing equivalent | **Rewritten** as the Btop tab: async reads, only while its tab is on screen, configurable interval |
@@ -269,6 +269,10 @@ Consequences:
 | `Meta.KeyBindingFlags`, `Shell.ActionMode` | Keybinding |
 | `global.compositor.get_laters()`, `Meta.LaterType.BEFORE_REDRAW` | Work after a layout pass, before the next frame: the clock cover's bounds (`shell/dateMenu.js`), the Kill Process list's rows after a scroll |
 | `Adw` 1.5, `Gtk` 4 | Preferences |
+| `ECal` 2.0, `EDataServer` 1.2, `ICalGLib` 3.0 (Evolution Data Server's bindings, `gir1.2-ecal-2.0`; optional, imported at run time by `features/calendar/eds.js` only): `SourceRegistry`, `SourceRegistryWatcher`, `ECal.Client.connect`/`get_view`/`get_timezone`/`get_objects_for_uid` (async), `ClientView` (its `start` is a synchronous D-Bus call, made once per view; `stop`/`set_flags` are too, and never called, §8), `recur_generate_instances_sync` (CPU only), `ICalGLib.RecurIterator` (CPU only) | Calendar tab: the user's calendars and live events, read-only |
+| `GIRepository` 3.0 `Repository.enumerate_versions` | Calendar tab: whether the EDS bindings are installed, without importing them (GJS remembers a failed import) |
+| `Gio.Settings` `org.gnome.desktop.calendar` (`week-start-day`, `show-weekdate`; read only) | Calendar tab: GNOME's week start and week numbers |
+| `Gio.AppInfo.launch_default_for_uri_async` | Calendar tab: open an event's day in the web calendar |
 
 ### 6.2 Shell APIs commonly used by extensions (exported; not formally stable)
 
@@ -281,6 +285,9 @@ Consequences:
 | `GrabHelper` (which uses `Main.pushModal`) | `ui/grabHelper.js` |
 | `EventEmitter`, `connectObject` / `disconnectObject` | `misc/signals.js`, `misc/signalTracker.js` |
 | `Shell.util_translate_time_string` with GNOME Shell's `calendar heading` msgid | `ui/dateMenu.js:175-178` |
+| `Shell.util_translate_time_string` with GNOME Shell's grid msgids (`grid monday` …), `%OB`, `%OB %Y` and `calendar-no-work`; `Shell.util_get_week_start()` (Calendar tab) | `ui/calendar.js` (50.1) |
+| `Shell.AppSystem.lookup_app()` (Online Accounts), `global.create_app_launch_context()` (Calendar tab) | `ui/dateMenu.js` (50.1) does the same |
+| `global.compositor.get_laters()` (`Meta.LaterType.BEFORE_REDRAW`): the Calendar tab's scroll to the selected day, once laid out | `shell/dateMenu.js` uses it too |
 | `global.focus_manager.navigate_from_event` (Tab navigation under a grab, as `PanelMenu.Button` does) | `ui/panelMenu.js` |
 | `Main.panel.addToStatusArea`, `PanelMenu.Button` (top bar icon while the island is hidden) | `ui/panel.js:935`, `ui/panelMenu.js` |
 | `getMixerControl()`: the shared Gvc mixer behind Quick Settings' volume sliders (through `shell/mixer.js`) | `ui/status/volume.js:24` |
@@ -377,6 +384,7 @@ Two St/Clutter rules also shaped the island:
 | File watching | Notes: one inotify folder monitor (`Gio.FileMonitor`), only while the Notes tab has been opened. Claude: one monitor on Claude Code's config file while the Claude tab is on screen, and one more while the island is open with the Claude session panic button | `NotesService.stop()`; `ClaudeService.setActive(false)` |
 | Clipboard | Clipboard tab enabled (off by default): one `owner-changed` connection on `global.display.get_selection()`, one settings connection, and one read per copy (`St.Clipboard`); history and images under `~/.local/share/froonty/clipboard` (0700/0600) | `releaseRecorder()` (extension `disable()`, tab turned off) |
 | Network monitor | Claude: three connections on the shared `Gio.NetworkMonitor` (`network-changed`, `notify::connectivity`, `notify::network-available`) per active reader: the tab while on screen, the panic button while the island is open | `ClaudeService.setActive(false)` |
+| Calendar tab | Nothing at module load or enable but a one-time probe (GIRepository's typelib list). The service, when the tab is first selected: 4 settings handlers (2 Froonty keys, 2 `org.gnome.desktop.calendar`). Once the tab has been shown, until disable: 1 `ESourceRegistry`, 1 `SourceRegistryWatcher` (3 handlers), 1 registry handler, 1 `ECal.Client` per visible calendar (1 handler each). From the first time the tab shows a month until another month or zone (or disable): 1 EDS view per visible calendar (4 handlers each), kept and paused while the tab is not on screen, so opening and closing the island makes **no** EDS call. Each view's `start()` is a **synchronous D-Bus call** to evolution-calendar-factory (libecal offers no other; about 0.3 ms with local calendars), once per calendar and month shown; the months a fast wheel passes through (within 250 ms) get none. Views are never `stop()`ped (also synchronous): they are let go, and libecal disposes of them asynchronously once collected. One asynchronous `get_objects_for_uid` per repeating event (its moved occurrences, which views do not deliver), one `get_timezone` per calendar and unknown zone. Timers: none periodic; one idle to coalesce redraws, one idle shared by every view's expansion (3 ms of work per turn; a series is expanded in slices from a moved start, features/calendar.md §B.6), only while on screen and there is work; a one-shot 250 ms quiet period after a month change; while a calendar loads, redraws at most every 200 ms (a one-shot timeout in place of the idle). libecal, libedataserver, libical(-glib) and libcamel stay mapped once loaded | `CalendarService.stop()` (views let go, in-flight answers cancelled, late views let go, idles and timer removed); `setActive(false)` pauses |
 | Network requests | Claude tab, livenerf row: one `Soup.Session`, made on the first fetch; two GETs (about 28 kB) per visit while online, at most once an hour | `LivenerfService.stop()` (aborts the session) |
 | File reads | Btop tab, per interval while on screen: `/proc/stat`, `/proc/cpuinfo`, `/proc/meminfo`, `/proc/net/dev`, `/proc/self/mounts`, the CPU's package temperature, a few sysfs files per GPU, and one temperature per core only while the threads are unfolded. Sections that are off are not read. Kill Process tab, per interval while on screen: one listing of `/proc` (with owners), `/proc/stat`, and `/proc/<pid>/stat` for each of the user's processes (256 on the development machine; it also gives the thread count), 32 at a time with a pause between batches so frames are drawn in between; `/proc/<pid>/cmdline` once per process; a handful of small reads (the process, and GNOME Shell's parents) right before each signal | `SysmonService.setActive(false)`, `KillProcessService.setActive(false)` cancel a reading in flight |
 | Subprocesses / D-Bus proxies | Btop tab: one `nvidia-smi` per interval while the tab is on screen and an NVIDIA card is awake (about 40 ms). Kill Process tab: one `/usr/bin/kill` per confirmed kill or "Force quit" click, never otherwise. Otherwise 0 of Froonty's own. The Claude tab reads GIO's process-wide `Gio.NetworkMonitor`, whose NetworkManager backend keeps GIO's own proxy for the life of the Shell | — |
@@ -393,8 +401,13 @@ Two test layers:
   the camera switch (on in-memory GSettings backends or a fake, never the
   real settings), the Claude usage parser and service, the Btop tab's
   parsers, sampler (over a fake `/proc` and `/sys`) and polling lifecycle,
-  and the Kill Process tab's parsers, safety rules and kill steps over a
-  fake `/proc` whose `kill` only records its arguments.
+  the Kill Process tab's parsers, safety rules and kill steps over a
+  fake `/proc` whose `kill` only records its arguments, and the Calendar
+  tab's date math, provider links, colours, event model and service
+  over a fake EDS (plus static checks that it never writes to a
+  calendar and makes no synchronous call but one `ClientView.start()`),
+  its expansion scheduler, and its EDS views over the real libecal with
+  a fake calendar (when `gir1.2-ecal-2.0` is installed).
   Each run gets a private `TMPDIR` and `XDG_DATA_HOME`, so trashed test files
   never reach the real Trash.
 - **`make test`** (`tools/headless-test/run.sh`) starts a **fully isolated
@@ -453,6 +466,21 @@ input through Clutter virtual devices and cover:
   acting on a row out of sight and a click never holding the list (over
   a fake service that only records); no reading, and no row filled, while
   hidden. Only processes the test spawned are ever clicked.
+  process id refused; no reading while hidden. Only processes the test
+  spawned are ever clicked.
+- **Calendar tab** (over the test session's own, private Evolution Data
+  Server, checked private first): the hint without the bindings; test
+  calendars and events written by the test (a daily series with an
+  excluded and a moved occurrence, a cancelled event in an Exchange-style
+  zone, all-day, now, next); colours, Now/Next, the series as EDS expands
+  it; live addition, rename and removal; calendars added, hidden in
+  Froonty and unticked in GNOME; navigation and keyboard; links (nothing
+  launched); the EDS views kept and paused while collapsed, and let go
+  without `stop()` on another month; EDS's files unchanged by Froonty; a
+  large calendar (50 series begun years ago, minutely and hourly ones,
+  120 events in an unknown zone) with every expansion turn under a
+  frame; disable while loading
+  ([features/calendar.md](features/calendar.md) §B.8).
 - **Settings window:** open, raise instead of duplicating, focus.
 - **GNOME's calendar and notification menu:** 📅 by pointer and keyboard,
   Super+V over the open island, one modal grab at a time, the menu above

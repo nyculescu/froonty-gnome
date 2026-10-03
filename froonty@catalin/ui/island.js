@@ -235,7 +235,8 @@ export class Island {
                 GLib.build_filenamev([GLib.get_user_data_dir(), 'froonty'])),
             // GNOME's own notifications (null without a message tray).
             notifications: gnomeNotifications(),
-            // A feature closes the island, e.g. after opening something.
+            // Releases the grab, e.g. so a browser or Settings opened from
+            // a tab can take the focus.
             collapse: () => this.collapse(),
         };
         this._hub = new Hub(ctx, FEATURES, {

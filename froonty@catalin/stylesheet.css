@@ -1043,3 +1043,260 @@
 .froonty-notifications-empty-dnd {
     font-size: 0.85em;
 }
+
+/* Calendar tab (features/calendar/): a month grid on the left, the
+   agenda on the right. Event and calendar colours are set from code, as
+   sanitized hex only (color.js). */
+.froonty-calendar-left {
+    width: 216px;
+    spacing: 6px;
+}
+.froonty-calendar-divider {
+    width: 1px;
+    margin: 0 10px;
+    background-color: rgba(255, 255, 255, 0.08);
+}
+.froonty-calendar-right {
+    min-width: 200px;
+    spacing: 4px;
+}
+.froonty-calendar-grid {
+    spacing: 2px;
+}
+.froonty-calendar-grid-header {
+    height: 24px;
+}
+.froonty-calendar-pager {
+    padding: 3px 6px;
+}
+.froonty-calendar-month-label {
+    border-radius: 7px;
+    padding: 2px 8px;
+    font-weight: bold;
+    transition-duration: 150ms;
+}
+.froonty-calendar-month-label:hover,
+.froonty-calendar-month-label:focus {
+    background-color: rgba(255, 255, 255, 0.09);
+}
+.froonty-calendar-month-label:focus {
+    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.45);
+}
+.froonty-calendar-weekday {
+    font-size: 0.75em;
+    font-weight: bold;
+    color: rgba(255, 255, 255, 0.55);
+    padding: 2px 0;
+}
+.froonty-calendar-week-number {
+    width: 20px;
+    font-size: 0.7em;
+    text-align: center;
+    color: rgba(255, 255, 255, 0.4);
+}
+.froonty-calendar-day {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    padding: 0;
+    color: #ffffff;
+    transition-duration: 100ms;
+}
+.froonty-calendar-day-number {
+    font-size: 0.85em;
+    font-feature-settings: "tnum";
+    width: 24px;
+    height: 24px;
+    border-radius: 12px;
+}
+/* The span (a row, or the month) as one band. */
+.froonty-calendar-day.froonty-calendar-day-in-span {
+    border-radius: 0;
+    background-color: rgba(255, 255, 255, 0.07);
+}
+.froonty-calendar-day:hover {
+    background-color: rgba(255, 255, 255, 0.14);
+}
+.froonty-calendar-day:focus {
+    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.45);
+}
+.froonty-calendar-day-weekend {
+    color: rgba(255, 255, 255, 0.6);
+}
+.froonty-calendar-day-other-month {
+    color: rgba(255, 255, 255, 0.35);
+}
+.froonty-calendar-day-selected {
+    box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.6);
+}
+.froonty-calendar-day-today .froonty-calendar-day-number {
+    background-color: -st-accent-color;
+    color: -st-accent-fg-color;
+    font-weight: bold;
+}
+.froonty-calendar-dots {
+    spacing: 2px;
+    margin-bottom: 1px;
+}
+.froonty-calendar-dot {
+    width: 4px;
+    height: 4px;
+    border-radius: 2px;
+}
+.froonty-calendar-providers,
+.froonty-calendar-provider-row {
+    spacing: 4px;
+}
+.froonty-calendar-provider {
+    border-radius: 999px;
+    padding: 3px 9px;
+    font-size: 0.78em;
+    color: rgba(255, 255, 255, 0.8);
+    background-color: rgba(255, 255, 255, 0.07);
+    transition-duration: 150ms;
+}
+.froonty-calendar-provider:hover,
+.froonty-calendar-provider:focus {
+    color: #ffffff;
+    background-color: rgba(255, 255, 255, 0.14);
+}
+.froonty-calendar-provider:focus {
+    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.45);
+}
+.froonty-calendar-provider-content {
+    spacing: 4px;
+}
+.froonty-calendar-provider StIcon {
+    icon-size: 12px;
+}
+.froonty-calendar-switch {
+    spacing: 4px;
+    height: 28px;
+}
+.froonty-calendar-switch-button {
+    border-radius: 999px;
+    padding: 3px 12px;
+    font-size: 0.8em;
+    color: rgba(255, 255, 255, 0.6);
+    transition-duration: 150ms;
+}
+.froonty-calendar-switch-button:hover,
+.froonty-calendar-switch-button:focus {
+    color: #ffffff;
+    background-color: rgba(255, 255, 255, 0.09);
+}
+.froonty-calendar-switch-button:focus {
+    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.45);
+}
+.froonty-calendar-switch-button:checked {
+    color: #ffffff;
+    background-color: rgba(255, 255, 255, 0.16);
+}
+.froonty-calendar-title {
+    font-weight: bold;
+    padding: 2px 4px 0;
+}
+/* Room on the right for the overlay scrollbar. */
+.froonty-calendar-agenda-list {
+    spacing: 4px;
+    padding: 0 14px 4px 0;
+}
+.froonty-calendar-day-header {
+    margin-top: 6px;
+    font-size: 0.75em;
+    font-weight: bold;
+    color: rgba(255, 255, 255, 0.55);
+}
+.froonty-calendar-card {
+    border-radius: 6px;
+    padding: 4px 8px 4px 4px;
+    transition-duration: 150ms;
+}
+.froonty-calendar-card:hover {
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25);
+}
+.froonty-calendar-card:focus {
+    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.45);
+}
+.froonty-calendar-card-row {
+    spacing: 8px;
+}
+.froonty-calendar-card-bar {
+    width: 3px;
+    border-radius: 2px;
+}
+.froonty-calendar-card-content {
+    spacing: 1px;
+}
+.froonty-calendar-card-top {
+    spacing: 6px;
+}
+.froonty-calendar-card-title {
+    font-weight: bold;
+    font-size: 0.9em;
+}
+.froonty-calendar-card-meta {
+    font-size: 0.75em;
+    color: rgba(255, 255, 255, 0.6);
+}
+.froonty-calendar-card-cancelled .froonty-calendar-card-title {
+    text-decoration: line-through;
+    color: rgba(255, 255, 255, 0.6);
+}
+.froonty-calendar-state {
+    border-radius: 999px;
+    padding: 0 6px;
+    font-size: 0.7em;
+    font-weight: bold;
+}
+.froonty-calendar-state-now {
+    background-color: -st-accent-color;
+    color: -st-accent-fg-color;
+}
+.froonty-calendar-state-next {
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    color: rgba(255, 255, 255, 0.85);
+}
+.froonty-calendar-empty,
+.froonty-calendar-more {
+    font-size: 0.85em;
+    color: rgba(255, 255, 255, 0.55);
+}
+.froonty-calendar-more {
+    padding: 4px 0;
+}
+.froonty-calendar-footer {
+    font-size: 0.75em;
+    color: #ffd27a;
+}
+.froonty-calendar-hint {
+    spacing: 8px;
+    max-width: 440px;
+}
+.froonty-calendar-hint-icon {
+    icon-size: 32px;
+    color: rgba(255, 255, 255, 0.6);
+}
+.froonty-calendar-hint-title {
+    font-weight: bold;
+    text-align: center;
+}
+.froonty-calendar-hint-body {
+    font-size: 0.85em;
+    text-align: center;
+    color: rgba(255, 255, 255, 0.7);
+}
+.froonty-calendar-hint-button {
+    border-radius: 999px;
+    padding: 4px 14px;
+    font-size: 0.85em;
+    background-color: rgba(255, 255, 255, 0.1);
+    transition-duration: 150ms;
+}
+.froonty-calendar-hint-button:hover,
+.froonty-calendar-hint-button:focus {
+    background-color: rgba(255, 255, 255, 0.18);
+}
+.froonty-calendar-hint-button:focus {
+    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.45);
+}

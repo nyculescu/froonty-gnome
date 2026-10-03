@@ -112,6 +112,11 @@ export class ClockService extends EventEmitter {
         return time.format(format).trim();
     }
 
+    /** The top bar clock's time zone (GLib.TimeZone). */
+    get timeZone() {
+        return this._timeZone();
+    }
+
     _timeZone() {
         return this._wallClock?.timezone ?? GLib.TimeZone.new_local();
     }

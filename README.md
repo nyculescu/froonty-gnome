@@ -53,6 +53,27 @@ feature has a design note in [docs/features/](docs/features/).
     off for now; its code is kept
     ([details](docs/features/panic-buttons.md#4-block-camera-for-apps-that-ask-gnome)).
 - **Clock** tab: weekday, time and date.
+- **Calendar** tab: the events of every calendar GNOME knows, read-only
+  and live: Google, Microsoft 365, Nextcloud and other accounts in
+  Settings → Online Accounts, and calendars added in GNOME Calendar or
+  Evolution (iCloud, any CalDAV or ICS address).
+  - A month grid with GNOME's week start, week numbers and days off,
+    and up to three calendar-coloured dots per day; a Day / Week / Month
+    switch; the events as cards with "Now" and "Next", repeating events
+    as GNOME expands them.
+  - A click on an event opens its day in the web calendar it comes from
+    (Google, Outlook; iCloud, Nextcloud and Yahoo open their calendar);
+    buttons below the grid open each one on the selected day.
+  - Froonty never adds, changes or removes an event. It reads Evolution
+    Data Server once the tab has been opened, with no polling; while the
+    tab is not on screen it only keeps what EDS sends. A large calendar
+    is expanded a few milliseconds at a time, so it never stalls the
+    desktop.
+  - **Needs `gir1.2-ecal-2.0`** (`sudo apt install gir1.2-ecal-2.0`);
+    without it the tab says so, and it starts off when it is missing on
+    the first start. Microsoft 365 and Exchange calendars also need
+    `evolution-ews-core` (EDS's backends, without the Evolution client).
+    See [docs/features/calendar.md](docs/features/calendar.md).
 - **Notifications** tab: GNOME's own notifications, urgent ones first,
   then newest first, each with its app, how long ago, its title, its
   body and up to three action buttons. Froonty keeps no copy.
@@ -125,8 +146,7 @@ feature has a design note in [docs/features/](docs/features/).
 - **Start at login**, or not. With it off, Froonty waits after login behind
   that icon; a click (or the shortcut) starts it.
 
-> Planned: a Calendar tab (Evolution Data Server; see
-[docs/features/calendar.md](docs/features/calendar.md)), more panic buttons, rendered Markdown in notes and many more inspired from https://github.com/vorssaint/vorssaint-utils
+> Planned: more panic buttons, rendered Markdown in notes and many more inspired from https://github.com/vorssaint/vorssaint-utils
 
 ## Layout
 
@@ -148,6 +168,8 @@ froonty@catalin/             the extension (this directory is what gets installe
 │   └── panelLauncher.js     top bar icon while the island is not shown
 ├── features/                hub tabs, one folder each (registry.js lists them)
 │   ├── clock/
+│   ├── calendar/            Calendar tab: Evolution Data Server (eds.js),
+│   │                        month grid, agenda, provider links
 │   ├── notifications/       GNOME's own notifications (through ctx.notifications)
 │   ├── notes/               Markdown notes: store, service, tabs, editor, prefs
 │   ├── claude/              Claude plan usage, read from Claude Code's config;
@@ -236,6 +258,7 @@ its tabs:
 - **General:** startup, island, hover, shortcut, clock.
 - **Appearance:** size, animation.
 - **Panic buttons:** which buttons, and their order.
+- **Calendar:** enable, Online Accounts, which calendars, size.
 - **Notifications:** enable, size.
 - **Notes:** enable, folder.
 - **Claude:** enable.
@@ -258,6 +281,11 @@ The keys behind it:
 | `corner-radius` | 14 | Clamped to half the height by St |
 | `animation-duration` | 250 ms | GNOME's enable-animations setting still applies |
 | `panic-buttons` | microphone, sound | Panic buttons in bar order, at most 5 |
+| `calendar-enabled` | `true` | Show the Calendar tab; turned off once, on the first start, when `gir1.2-ecal-2.0` is missing |
+| `calendar-hidden-sources` | `[]` | Evolution Data Server calendar ids hidden in the tab |
+| `calendar-granularity` | `week` | `day`, `week` or `month`; chosen in the tab |
+| `calendar-width` / `calendar-height` | 620 / 380 | Logical px, while the Calendar tab is shown |
+| `calendar-eds-checked` | `false` | The first-start check for `gir1.2-ecal-2.0` ran (internal) |
 | `notifications-enabled` | `true` | Show the Notifications tab (GNOME's own notifications) |
 | `notifications-width` / `notifications-height` | 400 / 440 | Logical px, while the Notifications tab is shown |
 | `notes-enabled` | `true` | Show the Notes tab |

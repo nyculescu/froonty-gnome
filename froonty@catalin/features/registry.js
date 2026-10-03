@@ -3,6 +3,7 @@
 // one-line change here (plus its settings tab in prefs.js, which runs in a
 // separate GTK process and cannot load these Shell-side modules).
 
+import calendar from './calendar/index.js';
 import claude from './claude/index.js';
 import clipboard from './clipboard/index.js';
 import clock from './clock/index.js';
@@ -14,6 +15,7 @@ import {LOCAL_FEATURES} from './localFeatures.js';
 
 export const FEATURES = [
     clock,
+    calendar,
     notifications,
     notes,
     claude,

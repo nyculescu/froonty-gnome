@@ -409,32 +409,40 @@ async function clickActor(actor) {
     await clickAt((b.x1 + b.x2) / 2, (b.y1 + b.y2) / 2);
 }
 
+// The tabs the hub should show: every feature without an enable key,
+// and those whose key is on, in registry order. Computed, so features
+// that are on by default can be added without editing these checks.
+async function expectedTabs() {
+    const {FEATURES} = await import(`file://${extension().path}/features/registry.js`);
+    return FEATURES.filter(f => !f.enabledKey || settings().get_boolean(f.enabledKey));
+}
+
 async function testHub(outDir) {
     const hub = island()._hub;
-    settings().set_boolean('notifications-enabled', false);
-    settings().set_boolean('notes-enabled', false);
-    settings().set_boolean('claude-enabled', false);
-    settings().set_boolean('sysmon-enabled', false);
-    settings().set_boolean('zerotier-enabled', false);
+    const {FEATURES} = await import(`file://${extension().path}/features/registry.js`);
+    const wasOn = FEATURES.filter(f => f.enabledKey && settings().get_boolean(f.enabledKey));
+    for (const feature of wasOn)
+        settings().set_boolean(feature.enabledKey, false);
     await sleep(SETTLE_MS);
     check('hub: a single feature hides the tab row', !hub._tabColumn.visible);
     settings().reset('notes-enabled');
     await sleep(SETTLE_MS);
     check('hub: enabling a feature adds its tab',
         hub._tabColumn.visible && hub._tabColumn.get_n_children() === 2);
-    settings().reset('claude-enabled');
-    await sleep(SETTLE_MS);
-    settings().reset('sysmon-enabled');
-    await sleep(SETTLE_MS);
-    settings().reset('zerotier-enabled');
-    await sleep(SETTLE_MS);
-    settings().reset('notifications-enabled');
-    await sleep(SETTLE_MS);
+    for (const feature of wasOn) {
+        if (settings().get_default_value(feature.enabledKey).unpack())
+            settings().reset(feature.enabledKey);
+        else
+            settings().set_boolean(feature.enabledKey, true);
+        await sleep(SETTLE_MS);
+    }
     // Names without GNOME's ", unread notifications" (the Notifications tab's).
-    const tabNames = () => hub._tabColumn.get_children()
-        .map(b => b.accessible_name.replace(/, unread notifications$/, '')).join(',');
-    check('hub: tabs follow the registry order (Clock, Notifications, Notes, Claude, Btop, ZeroTier)',
-        tabNames() === 'Clock,Notifications,Notes,Claude,Btop,ZeroTier', tabNames());
+    const names = hub._tabColumn.get_children()
+        .map(b => b.accessible_name.replace(/, unread notifications$/, ''));
+    const expected = (await expectedTabs()).map(f => f.title);
+    check(`hub: tabs follow the registry order (${expected.join(', ')}); Calendar right after Clock`,
+        names.join(',') === expected.join(',') && names[0] === 'Clock' && names[1] === 'Calendar',
+        names.join(','));
     check('hub: clock is the active tab', hub.activeFeature?.id === 'clock');
     check('hub: tab icons are 20 px (25% over other icon buttons)',
         tabButton('clock').child.get_width() === 20 * scale() &&
@@ -511,14 +519,15 @@ async function testHub(outDir) {
     island().collapse();
     await sleep(animationWait());
 
-    const {FEATURES} = await import(`file://${extension().path}/features/registry.js`);
     const log = [];
+    const tabsBefore = (await expectedTabs()).length;
     FEATURES.push(makeFakeFeature(log));
     try {
         await setExtensionEnabled(false);
         await setExtensionEnabled(true);
         check('hub: a registered feature adds a tab',
-            island()._hub._tabColumn.get_n_children() === 7);
+            island()._hub._tabColumn.get_n_children() === tabsBefore + 1,
+            `${island()._hub._tabColumn.get_n_children()} tabs, ${tabsBefore} before`);
         check('hub: a feature is not created before its tab is selected',
             log.length === 0, log.join(','));
 
@@ -529,10 +538,9 @@ async function testHub(outDir) {
         const [w, h] = pill().get_transformed_size();
         check('hub: selecting a tab creates, starts and activates it',
             log.join(',') === 'start,view,active', log.join(','));
-        // Its height is a minimum: with seven tabs, the column may need
-        // more (as for expanded-height, testPointer).
-        const lastTab = boxOf(island()._hub._tabColumn.get_last_child());
-        check('hub: island resizes to the feature\'s hubSize (taller only for the tabs)',
+        // The height is a minimum: the island grows to show every tab.
+        const lastTab = boxOf(island()._hub._tabColumn.get_children().at(-1));
+        check('hub: island resizes to the feature\'s hubSize',
             w === 420 * scale() && h >= 220 * scale() &&
             (h === 220 * scale() || h - (lastTab.y2 - boxOf(pill()).y1) <= 16 * scale()),
             `${w}x${h}`);
@@ -2774,9 +2782,10 @@ async function testHubLayout(outDir) {
     const hub = island()._hub;
     const tabs = hub._tabColumn.get_children();
     const boxes = tabs.map(boxOf);
+    const expectedCount = (await expectedTabs()).length;
     // One column; the island grows past expanded-height to show every tab.
     check('layout: feature tabs are stacked vertically on the left, all inside the island',
-        tabs.length === 6 && boxes.every(b => Math.abs(b.x1 - boxes[0].x1) < 1) &&
+        tabs.length === expectedCount && boxes.every(b => Math.abs(b.x1 - boxes[0].x1) < 1) &&
         boxes.every((b, i) => i === 0 || b.y1 > boxes[i - 1].y1) &&
         boxes[0].x2 <= boxOf(hub._content).x1 && boxes.at(-1).y2 <= boxOf(pill()).y2,
         `${boxes.map(b => `[${b.x1},${b.y1}]`).join(' ')} island bottom=${boxOf(pill()).y2}`);
@@ -2787,11 +2796,12 @@ async function testHubLayout(outDir) {
         bar.x2 <= boxOf(hub.settingsButton).x1 && bar.x1 > Math.max(...boxes.map(b => b.x2)),
         `bar=[${bar.x1},${bar.x2}] island=[${isle.x1},${isle.x2}]`);
 
-    await movePointerTo((boxes[1].x1 + boxes[1].x2) / 2, (boxes[1].y1 + boxes[1].y2) / 2);
+    const notesBox = boxOf(tabButton('notes'));
+    await movePointerTo((notesBox.x1 + notesBox.x2) / 2, (notesBox.y1 + notesBox.y2) / 2);
     await sleep(SETTLE_MS);
     const tip = hub._tooltip.actor;
     check('layout: hovering a tab shows its feature name to the right',
-        tip.visible && tip.text === 'Notifications' && boxOf(tip).x1 >= boxes[1].x2 - 1,
+        tip.visible && tip.text === 'Notes' && boxOf(tip).x1 >= notesBox.x2 - 1,
         `visible=${tip.visible} text=${tip.text}`);
     await screenshotTop(outDir, 'hub-vertical-tabs');
     await movePointerTo(...pillCenter());
@@ -4326,6 +4336,858 @@ async function testNotificationSafeguards(outDir) {
         tray.queueCount === 0);
 }
 
+// ---------------------------------------------------------------- calendar tab (EDS)
+//
+// The Calendar tab over the real Evolution Data Server: the private one
+// this session's own gnome-shell-calendar-server D-Bus-activates (private
+// bus, XDG dirs under WORK). The test's own data (two test calendars and
+// their events, a few events in the built-in "Personal") is written by
+// the test through async ECal/EDataServer calls, never by Froonty, and
+// only once edsIsolation() has shown that instance to be private.
+
+const calendarEntry = () => island()?._hub._entries.get('calendar') ?? null;
+const FT_MARKERS = ['Froonty test', 'froonty-test'];
+
+// A callback-style async call as a promise (all arguments passed, so the
+// Shell's promisified wrappers call the original).
+function asyncCall(start, finish) {
+    return new Promise((resolve, reject) => {
+        start((source, result) => {
+            try {
+                resolve(finish(source, result));
+            } catch (e) {
+                reject(e);
+            }
+        });
+    });
+}
+const lastOf = result => Array.isArray(result) ? result.at(-1) : result;
+
+async function readTextFile(path) {
+    try {
+        const file = Gio.File.new_for_path(path);
+        const result = await asyncCall(done => file.load_contents_async(null, done),
+            (f, r) => f.load_contents_finish(r));
+        return new TextDecoder().decode(result[1]);
+    } catch {
+        return null;
+    }
+}
+
+// Every file under `root`: path → modification time.
+async function fileTree(root) {
+    const out = new Map();
+    const walk = async dir => {
+        let enumerator;
+        try {
+            enumerator = await asyncCall(done => dir.enumerate_children_async(
+                'standard::name,standard::type,time::modified,time::modified-usec',
+                Gio.FileQueryInfoFlags.NOFOLLOW_SYMLINKS, GLib.PRIORITY_DEFAULT, null, done),
+            (d, r) => d.enumerate_children_finish(r));
+        } catch {
+            return;
+        }
+        for (;;) {
+            const infos = await asyncCall(done => enumerator.next_files_async(64, GLib.PRIORITY_DEFAULT, null, done),
+                (e, r) => e.next_files_finish(r));
+            if (infos.length === 0)
+                break;
+            for (const info of infos) {
+                const child = dir.get_child(info.get_name());
+                if (info.get_file_type() === Gio.FileType.DIRECTORY)
+                    await walk(child);
+                else
+                    out.set(child.get_path(), `${info.get_attribute_uint64('time::modified')}.${info.get_attribute_uint32('time::modified-usec')}`);
+            }
+        }
+        await asyncCall(done => enumerator.close_async(GLib.PRIORITY_DEFAULT, null, done),
+            (e, r) => e.close_finish(r)).catch(() => {});
+    };
+    await walk(Gio.File.new_for_path(root));
+    return out;
+}
+
+// Whether the real home's EDS data mentions the test (read-only).
+async function realHomeMentionsTest() {
+    const home = GLib.get_home_dir();
+    const files = [...(await fileTree(`${home}/.config/evolution/sources`)).keys(),
+        `${home}/.local/share/evolution/calendar/system/calendar.ics`];
+    for (const path of files) {
+        if (FT_MARKERS.some(marker => path.includes(marker)))
+            return path;
+        const text = await readTextFile(path);
+        if (text && FT_MARKERS.some(marker => text.includes(marker)))
+            return path;
+    }
+    return null;
+}
+
+async function busOwnerEnviron(name) {
+    const bus = Gio.DBus.session;
+    await asyncCall(done => bus.call('org.freedesktop.DBus', '/org/freedesktop/DBus', 'org.freedesktop.DBus',
+        'StartServiceByName', new GLib.Variant('(su)', [name, 0]), null, Gio.DBusCallFlags.NONE, 10000, null, done),
+    (c, r) => c.call_finish(r));
+    const reply = await asyncCall(done => bus.call('org.freedesktop.DBus', '/org/freedesktop/DBus', 'org.freedesktop.DBus',
+        'GetConnectionUnixProcessID', new GLib.Variant('(s)', [name]), new GLib.VariantType('(u)'),
+        Gio.DBusCallFlags.NONE, 10000, null, done), (c, r) => c.call_finish(r));
+    const [pid] = reply.deepUnpack();
+    const text = await readTextFile(`/proc/${pid}/environ`) ?? '';
+    return new Map(text.split('\0').filter(Boolean).map(line => {
+        const i = line.indexOf('=');
+        return [line.slice(0, i), line.slice(i + 1)];
+    }));
+}
+
+// The EDS the Shell under test talks to is the private test instance:
+// private XDG dirs and bus for this process and for the D-Bus owners of
+// EDS's registry and calendar factory. Otherwise nothing is written.
+async function edsIsolation(work) {
+    const problems = [];
+    if (GLib.get_user_config_dir() !== `${work}/config`)
+        problems.push(`config dir ${GLib.get_user_config_dir()}`);
+    if (GLib.get_user_data_dir() !== `${work}/data`)
+        problems.push(`data dir ${GLib.get_user_data_dir()}`);
+    if (GLib.getenv('GSETTINGS_BACKEND') !== 'keyfile')
+        problems.push('GSettings backend');
+    const bus = GLib.getenv('DBUS_SESSION_BUS_ADDRESS') ?? '';
+    if (!bus || bus.includes('/run/user/'))
+        problems.push(`session bus ${bus}`);
+    for (const name of ['org.gnome.evolution.dataserver.Sources5', 'org.gnome.evolution.dataserver.Calendar8']) {
+        try {
+            const environ = await busOwnerEnviron(name);
+            if (environ.get('XDG_CONFIG_HOME') !== `${work}/config` || environ.get('XDG_DATA_HOME') !== `${work}/data`)
+                problems.push(`${name}: ${environ.get('XDG_CONFIG_HOME')} ${environ.get('XDG_DATA_HOME')}`);
+        } catch (e) {
+            problems.push(`${name}: ${e.message}`);
+        }
+    }
+    return problems;
+}
+
+const icsTime = time => time.to_utc().format('%Y%m%dT%H%M%SZ');
+const icsDate = time => time.format('%Y%m%d');
+const vevent = lines => `BEGIN:VEVENT\r\n${lines.join('\r\n')}\r\nEND:VEVENT\r\n`;
+
+// Windows-style zone, as Exchange sends it: unknown to libical, known to
+// the calendar once added (EDS gives it to Froonty on request).
+const PACIFIC_VTIMEZONE = 'BEGIN:VTIMEZONE\r\nTZID:Pacific Standard Time\r\nBEGIN:STANDARD\r\n' +
+    'DTSTART:16010101T020000\r\nTZOFFSETFROM:-0700\r\nTZOFFSETTO:-0800\r\n' +
+    'RRULE:FREQ=YEARLY;BYDAY=1SU;BYMONTH=11\r\nEND:STANDARD\r\nBEGIN:DAYLIGHT\r\n' +
+    'DTSTART:16010101T020000\r\nTZOFFSETFROM:-0800\r\nTZOFFSETTO:-0700\r\n' +
+    'RRULE:FREQ=YEARLY;BYDAY=2SU;BYMONTH=3\r\nEND:DAYLIGHT\r\nEND:VTIMEZONE\r\n';
+
+/** The test's own EDS writer (never Froonty's code). */
+class TestEds {
+    constructor(libs) {
+        this.libs = libs;
+        this.registry = null;
+        this.sources = [];
+        this.created = [];
+        this.clients = new Map();
+    }
+
+    async start() {
+        const {EDataServer} = this.libs;
+        this.registry = await asyncCall(done => EDataServer.SourceRegistry.new(null, done),
+            (_s, r) => EDataServer.SourceRegistry.new_finish(r));
+    }
+
+    async addCalendar(name, color) {
+        const {EDataServer} = this.libs;
+        const source = EDataServer.Source.new(null, null);
+        source.set_parent('local-stub');
+        source.set_display_name(name);
+        const extension = source.get_extension('Calendar');
+        extension.set_backend_name('local');
+        extension.set_color(color);
+        await asyncCall(done => this.registry.commit_source(source, null, done),
+            (registry, r) => registry.commit_source_finish(r));
+        const uid = source.get_uid();
+        this.sources.push(uid);
+        return uid;
+    }
+
+    async client(uid) {
+        if (this.clients.has(uid))
+            return this.clients.get(uid);
+        const {ECal} = this.libs;
+        const source = uid === 'system-calendar'
+            ? this.registry.ref_builtin_calendar() : this.registry.ref_source(uid);
+        const client = await asyncCall(done => ECal.Client.connect(source, ECal.ClientSourceType.EVENTS, 30, null, done),
+            (_s, r) => ECal.Client.connect_finish(r));
+        this.clients.set(uid, client);
+        return client;
+    }
+
+    async addZone(uid, zone) {
+        const client = await this.client(uid);
+        await asyncCall(done => client.add_timezone(zone, null, done), (c, r) => c.add_timezone_finish(r));
+    }
+
+    async create(uid, ics) {
+        const {ECal, ICalGLib} = this.libs;
+        const client = await this.client(uid);
+        const created = lastOf(await asyncCall(done => client.create_object(ICalGLib.Component.new_from_string(ics),
+            ECal.OperationFlags.NONE, null, done), (c, r) => c.create_object_finish(r)));
+        this.created.push([uid, created]);
+        return created;
+    }
+
+    async modify(uid, ics, mod) {
+        const {ECal, ICalGLib} = this.libs;
+        const client = await this.client(uid);
+        await asyncCall(done => client.modify_object(ICalGLib.Component.new_from_string(ics),
+            mod ?? ECal.ObjModType.ALL, ECal.OperationFlags.NONE, null, done), (c, r) => c.modify_object_finish(r));
+    }
+
+    async removeEvent(uid, eventUid, rid = null) {
+        const {ECal} = this.libs;
+        const client = await this.client(uid);
+        await asyncCall(done => client.remove_object(eventUid, rid, rid ? ECal.ObjModType.THIS : ECal.ObjModType.ALL,
+            ECal.OperationFlags.NONE, null, done), (c, r) => c.remove_object_finish(r));
+    }
+
+    async setSelected(uid, selected) {
+        const source = this.registry.ref_source(uid);
+        source.get_extension('Calendar').set_selected(selected);
+        await asyncCall(done => source.write(null, done), (s, r) => s.write_finish(r));
+    }
+
+    // Removes every event and calendar the test added.
+    async cleanUp() {
+        for (const [uid, eventUid] of this.created) {
+            try {
+                await this.removeEvent(uid, eventUid);
+            } catch {
+                // Already removed by the test.
+            }
+        }
+        for (const uid of this.sources) {
+            const source = this.registry?.ref_source(uid);
+            if (source)
+                await asyncCall(done => source.remove(null, done), (s, r) => s.remove_finish(r)).catch(() => {});
+        }
+        this.clients.clear();
+    }
+}
+
+// Froonty's occurrences of an event, by its title: [{start, end, allDay}].
+function shownOccurrences(service, title) {
+    return service._store.occurrences(service.calendars.map(c => c.uid))
+        .filter(({item}) => item.title === title)
+        .map(({item, occurrence, calendarUid}) => ({...occurrence, calendarUid, title: item.title,
+            cancelled: item.cancelled}));
+}
+
+const calendarCards = () => calendarEntry()?.view?.agenda.cards ?? [];
+const cardOf = title => calendarCards().find(card => card.entry.item.title === title) ?? null;
+const viewsComplete = service => [...service._views.values()].every(entry => entry.complete);
+// Views over the month shown, delivered, and no month change waiting for
+// the quiet period (service.js RANGE_QUIET_MS).
+const calendarSettled = (service, timeoutMs = 5000) => waitFor(() => service.settled, timeoutMs);
+
+// Scrolls the agenda so a card is in sight (before a pointer click).
+async function revealCard(card) {
+    const adjustment = calendarEntry().view.agenda.scrollView.vadjustment;
+    const y = card.actor.get_allocation_box().y1;
+    adjustment.value = Math.max(0, Math.min(y, adjustment.upper - adjustment.page_size));
+    await sleep(SETTLE_MS);
+}
+
+// The hint, without EDS: a view over a service that says the bindings
+// are missing.
+async function testCalendarHint() {
+    const {CalendarView} = await import(`file://${extension().path}/features/calendar/view.js`);
+    const fake = {state: 'missing', calendars: [], connect: () => 1, disconnect: () => {}};
+    const view = new CalendarView({clock: island()._clock}, fake);
+    check('calendar: without gir1.2-ecal-2.0 the tab says what to install, with Online Accounts',
+        view._hint.visible && !view._body.visible &&
+        view._hintTitle.text.includes('Install gir1.2-ecal-2.0') &&
+        view._hintButton.visible && view._hintButton.label === 'Online Accounts',
+        view._hintTitle.text);
+    view.destroy();
+}
+
+async function testCalendar(outDir) {
+    const work = outDir;
+    const {edsInstalled} = await import(`file://${extension().path}/features/calendar/eds.js`);
+    const {detectProvider} = await import(`file://${extension().path}/features/calendar/providers.js`);
+    await testCalendarHint();
+    if (!await edsInstalled()) {
+        check('calendar: note: ECal not installed; only the hint was tested', true, 'note: ECal not installed');
+        return;
+    }
+
+    const problems = await edsIsolation(work);
+    const homeBefore = await realHomeMentionsTest();
+    check('calendar: EDS is the private test instance', problems.length === 0 && homeBefore === null,
+        [...problems, homeBefore ? `real home already mentions the test: ${homeBefore}` : ''].join('; '));
+    if (problems.length || homeBefore)
+        return;
+
+    const libs = {
+        ECal: (await import('gi://ECal?version=2.0')).default,
+        EDataServer: (await import('gi://EDataServer?version=1.2')).default,
+        ICalGLib: (await import('gi://ICalGLib?version=3.0')).default,
+    };
+    const eds = new TestEds(libs);
+    const s = settings();
+    const desktop = new Gio.Settings({schema_id: 'org.gnome.desktop.calendar'});
+    try {
+        await eds.start();
+        await calendarSteps(outDir, work, eds, libs, detectProvider, desktop);
+        await testCalendarLoad(eds, libs);
+    } finally {
+        desktop.reset('show-weekdate');
+        s.reset('calendar-hidden-sources');
+        s.reset('calendar-granularity');
+        await eds.cleanUp();
+        if (island()?.expanded) {
+            island().collapse();
+            await sleep(animationWait());
+        }
+    }
+    check('calendar: the real home\'s calendars never saw the test', await realHomeMentionsTest() === null);
+    await testCalendarLifecycle();
+}
+
+async function openCalendarTab() {
+    if (!island().expanded) {
+        island().expand();
+        await sleep(animationWait());
+    }
+    if (island()._hub.activeFeature?.id !== 'calendar') {
+        await clickActor(tabButton('calendar'));
+        await sleep(animationWait());
+    }
+}
+
+async function calendarSteps(outDir, work, eds, libs, detectProvider, desktop) {
+    const s = settings();
+    const {ECal, ICalGLib} = libs;
+    check('calendar: on by default (the first start found the bindings), right after Clock',
+        s.get_boolean('calendar-enabled') && s.get_boolean('calendar-eds-checked') &&
+        island()._hub._tabColumn.get_children().indexOf(tabButton('calendar')) === 1);
+    s.set_string('calendar-granularity', 'month');
+
+    // Over the built-in calendars only: what EDS keeps on disk, to compare
+    // after Froonty has browsed (Froonty writes nothing).
+    await openCalendarTab();
+    let service = calendarEntry()?.service;
+    let view = calendarEntry()?.view;
+    await waitFor(() => service?.state === 'ready' && !service.loading, 8000);
+    const [w, h] = pill().get_transformed_size();
+    check('calendar: the tab opens at 620 × 380 and loads EDS',
+        service?.state === 'ready' && w === 620 * scale() && h === 380 * scale(),
+        `${w}x${h} state=${service?.state} ${service?.errorMessage ?? ''}`);
+    check('calendar: GNOME\'s built-in calendars are listed',
+        service.calendars.some(c => c.uid === 'system-calendar') &&
+        service.calendars.some(c => c.uid === 'birthdays'),
+        service.calendars.map(c => `${c.uid}:${c.name}`).join(', '));
+    await sleep(500);
+    const treeRoots = [`${work}/config/evolution/sources`, `${work}/data/evolution/calendar`];
+    const treeBefore = new Map();
+    for (const root of treeRoots)
+        for (const [path, mtime] of await fileTree(root))
+            treeBefore.set(path, mtime);
+
+    // ------------------------------------------------ data
+    const tz = service.timeZone;
+    const hostTzid = tz.get_identifier();
+    const now = GLib.DateTime.new_now(tz);
+    const today = GLib.DateTime.new(tz, now.get_year(), now.get_month(), now.get_day_of_month(), 0, 0, 0);
+    const dayAt = (days, hour, minute = 0) => {
+        const d = today.add_days(days);
+        return GLib.DateTime.new(tz, d.get_year(), d.get_month(), d.get_day_of_month(), hour, minute, 0);
+    };
+    const stamp = `${Date.now()}`;
+    const uidOf = name => `froonty-test-${stamp}-${name}`;
+    const local = (time, hour, minute = 0) => `${icsDate(time)}T${String(hour).padStart(2, '0')}${String(minute).padStart(2, '0')}00`;
+
+    const testUid = await eds.addCalendar('Froonty test calendar', '#e01b24');
+    await waitFor(() => service.calendars.some(c => c.uid === testUid));
+    const hostZone = ICalGLib.Timezone.get_builtin_timezone(hostTzid);
+    await eds.addZone(testUid, hostZone);
+    const pacific = ICalGLib.Timezone.new();
+    pacific.set_component(ICalGLib.Component.new_from_string(PACIFIC_VTIMEZONE));
+    await eds.addZone(testUid, pacific);
+
+    const nowStart = now.add_minutes(-10);
+    await eds.create('system-calendar', vevent([`UID:${uidOf('allday')}`, 'SUMMARY:FT all-day',
+        `DTSTART;VALUE=DATE:${icsDate(today)}`, `DTEND;VALUE=DATE:${icsDate(today.add_days(1))}`]));
+    await eds.create(testUid, vevent([`UID:${uidOf('now')}`, 'SUMMARY:FT now',
+        `DTSTART:${icsTime(nowStart)}`, `DTEND:${icsTime(now.add_minutes(20))}`]));
+    await eds.create(testUid, vevent([`UID:${uidOf('next')}`, 'SUMMARY:FT next', 'LOCATION:Room <b>1</b>',
+        `DTSTART:${icsTime(now.add_minutes(30))}`, `DTEND:${icsTime(now.add_minutes(60))}`]));
+    const standup = uidOf('standup');
+    await eds.create(testUid, vevent([`UID:${standup}`, 'SUMMARY:FT standup',
+        `DTSTART;TZID=${hostTzid}:${local(today, 9)}`, `DTEND;TZID=${hostTzid}:${local(today, 9, 15)}`,
+        'RRULE:FREQ=DAILY;COUNT=5', `EXDATE;TZID=${hostTzid}:${local(today.add_days(2), 9)}`]));
+    await eds.modify(testUid, vevent([`UID:${standup}`, 'SUMMARY:FT standup (moved)',
+        `RECURRENCE-ID;TZID=${hostTzid}:${local(today.add_days(1), 9)}`,
+        `DTSTART;TZID=${hostTzid}:${local(today.add_days(1), 11, 30)}`,
+        `DTEND;TZID=${hostTzid}:${local(today.add_days(1), 11, 45)}`]), ECal.ObjModType.THIS);
+    await eds.create(testUid, vevent([`UID:${uidOf('winzone')}`, 'SUMMARY:FT winzone', 'STATUS:CANCELLED',
+        `DTSTART;TZID=Pacific Standard Time:${local(today, 14)}`,
+        `DTEND;TZID=Pacific Standard Time:${local(today, 15)}`]));
+
+    // ------------------------------------------------ shown
+    const titles = ['FT all-day', 'FT now', 'FT next', 'FT standup', 'FT standup (moved)', 'FT winzone'];
+    const losAngeles = GLib.TimeZone.new_identifier('America/Los_Angeles');
+    const winzoneStart = GLib.DateTime.new(losAngeles, today.get_year(), today.get_month(),
+        today.get_day_of_month(), 14, 0, 0).to_unix();
+    const allShown = await waitFor(() => titles.every(title => shownOccurrences(service, title).length > 0) &&
+        shownOccurrences(service, 'FT winzone')[0]?.start === winzoneStart, 5000);
+    check('calendar: every test event shows, live, without reopening the tab', allShown,
+        titles.map(t => `${t}=${shownOccurrences(service, t).length}`).join(' '));
+    await sleep(SETTLE_MS);
+
+    const colorOf = title => cardOf(title)?.entry.calendar?.color;
+    check('calendar: cards carry their calendar\'s colour',
+        colorOf('FT now') === '#e01b24' && colorOf('FT all-day') === '#62a0ea' &&
+        cardOf('FT now')?.bar.style.includes('#e01b24'),
+        `${colorOf('FT now')} ${colorOf('FT all-day')}`);
+    check('calendar: an all-day event reads "All day"',
+        cardOf('FT all-day')?.meta.text.startsWith('All day'), cardOf('FT all-day')?.meta.text);
+
+    const grid = service._grid();
+    const expectedStandups = [0, 1, 3, 4].map(n => n === 1 ? dayAt(1, 11, 30) : dayAt(n, 9))
+        .map(t => t.to_unix()).filter(t => t >= grid.start && t < grid.end);
+    const standups = [...shownOccurrences(service, 'FT standup'), ...shownOccurrences(service, 'FT standup (moved)')]
+        .map(o => o.start).sort((a, b) => a - b);
+    check('calendar: a repeating event: EDS\'s expansion, the excluded day gone, the moved one moved',
+        JSON.stringify(standups) === JSON.stringify(expectedStandups) &&
+        shownOccurrences(service, 'FT standup (moved)').length === (expectedStandups.includes(dayAt(1, 11, 30).to_unix()) ? 1 : 0),
+        `${standups.map(t => GLib.DateTime.new_from_unix_utc(t).to_timezone(tz).format('%d %H:%M'))} ` +
+        `expected ${expectedStandups.map(t => GLib.DateTime.new_from_unix_utc(t).to_timezone(tz).format('%d %H:%M'))}`);
+
+    const agenda = service.agenda();
+    const timedAfterNow = agenda.days.flatMap(d => d.entries)
+        .filter(e => !e.occurrence.allDay && !e.item.cancelled && e.start > now.to_unix())
+        .sort((a, b) => a.start - b.start);
+    const expectedNext = timedAfterNow[0]?.item.title;
+    const nextCard = calendarCards().find(card => card.entry.state === 'next');
+    check('calendar: "Now" on the event going on, "Next" on the next one',
+        cardOf('FT now')?.state.text === 'Now' && cardOf('FT now')?.state.visible &&
+        nextCard?.entry.item.title === expectedNext && nextCard?.state.text === 'Next' &&
+        (expectedNext !== 'FT next' || cardOf('FT next')?.state.text === 'Next'),
+        `now=${cardOf('FT now')?.state.text} next=${nextCard?.entry.item.title} expected ${expectedNext}`);
+    const winzone = shownOccurrences(service, 'FT winzone')[0];
+    check('calendar: an Exchange-style zone is fetched from the calendar; cancelled is struck through',
+        winzone?.start === winzoneStart && winzone.cancelled &&
+        cardOf('FT winzone')?.actor.has_style_class_name('froonty-calendar-card-cancelled'),
+        `${winzone?.start} vs ${winzoneStart}`);
+    check('calendar: event text is shown as text, never as markup',
+        cardOf('FT next')?.meta.text.includes('Room <b>1</b>') && !cardOf('FT next')?.meta.clutter_text.use_markup,
+        cardOf('FT next')?.meta.text);
+
+    const todayDate = {y: today.get_year(), m: today.get_month(), d: today.get_day_of_month()};
+    const todayCell = view.grid.cellOf(todayDate);
+    const dotStyles = todayCell?._dots.get_children().filter(dot => dot.visible).map(dot => dot.style).join(' ') ?? '';
+    check('calendar: today\'s cell is today, with both calendars\' dots',
+        todayCell?.has_style_class_name('froonty-calendar-day-today') &&
+        dotStyles.includes('#62a0ea') && dotStyles.includes('#e01b24'), dotStyles);
+    check('calendar: no week numbers unless GNOME shows them',
+        !desktop.get_boolean('show-weekdate') && !view.grid._weeks[0].visible);
+    desktop.set_boolean('show-weekdate', true);
+    await sleep(SETTLE_MS);
+    check('calendar: GNOME\'s show-weekdate adds ISO week numbers',
+        view.grid._weeks[0].visible && /^\d+$/.test(view.grid._weeks[0].text), view.grid._weeks[0].text);
+
+    const hub = island()._hub;
+    const content = boxOf(hub._content);
+    const left = boxOf(view.grid.get_parent());
+    const right = boxOf(view.agenda);
+    const inside = b => b.x1 >= content.x1 - 1 && b.x2 <= content.x2 + 1 && b.y1 >= content.y1 - 1 && b.y2 <= content.y2 + 1;
+    check('calendar: grid, divider and agenda sit inside the content, clear of the tabs and ⚙️',
+        inside(left) && inside(right) && left.x2 <= right.x1 &&
+        boxOf(hub._tabColumn).x2 <= left.x1 && boxOf(hub.settingsButton).y2 <= right.y1 + 1,
+        `content=${JSON.stringify(content)} left=${JSON.stringify(left)} right=${JSON.stringify(right)}`);
+    await screenshotTop(outDir, 'calendar', 420);
+
+    // ------------------------------------------------ live
+    const live = uidOf('live');
+    await eds.create(testUid, vevent([`UID:${live}`, 'SUMMARY:FT live',
+        `DTSTART:${icsTime(dayAt(0, 18))}`, `DTEND:${icsTime(dayAt(0, 19))}`]));
+    check('calendar: an event added elsewhere shows within 3 s',
+        await waitFor(() => cardOf('FT live') !== null, 3000));
+    await eds.modify(testUid, vevent([`UID:${live}`, 'SUMMARY:FT live renamed',
+        `DTSTART:${icsTime(dayAt(0, 18))}`, `DTEND:${icsTime(dayAt(0, 19))}`]));
+    check('calendar: renamed elsewhere, the card follows',
+        await waitFor(() => cardOf('FT live renamed') !== null && cardOf('FT live') === null, 3000));
+    await eds.removeEvent(testUid, live);
+    check('calendar: removed elsewhere, the card goes',
+        await waitFor(() => cardOf('FT live renamed') === null, 3000));
+
+    const moved = service._store.items(testUid).find(item => item.title === 'FT standup (moved)');
+    const movedRid = moved?.key.split('\n')[1] ?? '';
+    if (movedRid) {
+        await eds.removeEvent(testUid, standup, movedRid);
+        const day1 = [dayAt(1, 9).to_unix(), dayAt(1, 11, 30).to_unix()];
+        check('calendar: removing the moved occurrence leaves none that day (removal keys match)',
+            await waitFor(() => shownOccurrences(service, 'FT standup (moved)').length === 0 &&
+                !shownOccurrences(service, 'FT standup').some(o => day1.includes(o.start)), 3000),
+            `rid=${movedRid}`);
+    } else {
+        check('calendar: the moved occurrence has a recurrence id', false);
+    }
+
+    const secondUid = await eds.addCalendar('Froonty test calendar 2', 'rgb(46,194,126)');
+    await eds.create(secondUid, vevent([`UID:${uidOf('second')}`, 'SUMMARY:FT second',
+        `DTSTART:${icsTime(dayAt(0, 20))}`, `DTEND:${icsTime(dayAt(0, 21))}`]));
+    check('calendar: a calendar added elsewhere shows with its events, coloured from rgb()',
+        await waitFor(() => cardOf('FT second')?.entry.calendar.color === '#2ec27e', 5000),
+        `${cardOf('FT second')?.entry.calendar.color}`);
+    const views = service.viewCount;
+    settings().set_strv('calendar-hidden-sources', [secondUid]);
+    await sleep(SETTLE_MS);
+    check('calendar: hidden in Froonty\'s settings: gone, its view stopped',
+        cardOf('FT second') === null && service.viewCount === views - 1, `${views} -> ${service.viewCount}`);
+    settings().reset('calendar-hidden-sources');
+    check('calendar: shown again: back', await waitFor(() => cardOf('FT second') !== null, 3000));
+    await eds.setSelected(secondUid, false);
+    check('calendar: unticked in GNOME\'s calendars: gone (GNOME\'s rule)',
+        await waitFor(() => cardOf('FT second') === null && !service.calendars.some(c => c.uid === secondUid), 3000));
+    await eds.setSelected(secondUid, true);
+    check('calendar: ticked again: back', await waitFor(() => cardOf('FT second') !== null, 3000));
+
+    // ------------------------------------------------ navigation
+    const label = () => view.grid.monthButton.label;
+    const thisMonth = label();
+    await clickActor(view.grid.nextButton);
+    await waitFor(() => viewsComplete(service));
+    await sleep(SETTLE_MS);
+    const nextGrid = service._grid();
+    const standupsNext = shownOccurrences(service, 'FT standup').filter(o => o.start >= nextGrid.start && o.start < nextGrid.end);
+    const expectedNextMonth = [0, 3, 4].map(n => dayAt(n, 9).to_unix()).filter(t => t >= nextGrid.start && t < nextGrid.end);
+    check('calendar: › shows the next month, with new views over its weeks',
+        label() !== thisMonth && service.shownMonth.m === (today.get_month() % 12) + 1 &&
+        service.viewCount === service.calendars.length &&
+        JSON.stringify(standupsNext.map(o => o.start).sort()) === JSON.stringify(expectedNextMonth.sort()),
+        `${thisMonth} -> ${label()} views=${service.viewCount}/${service.calendars.length}`);
+    await clickActor(view.grid.monthButton);
+    await sleep(SETTLE_MS);
+    check('calendar: the month\'s name goes back to today',
+        label() === thisMonth && JSON.stringify(service.selected) === JSON.stringify(todayDate));
+    await calendarSettled(service);
+
+    const switchTo = async granularity => {
+        await clickActor(view._switchButtons.get(granularity));
+        await sleep(SETTLE_MS);
+    };
+    await switchTo('day');
+    const dayTitles = calendarCards().map(c => c.entry.item.title);
+    check('calendar: Day lists only the selected day',
+        service.granularity === 'day' && s.get_string('calendar-granularity') === 'day' &&
+        dayTitles.includes('FT all-day') && !dayTitles.includes('FT standup (moved)') &&
+        calendarCards().every(c => JSON.stringify(c.date) === JSON.stringify(todayDate)),
+        dayTitles.join(', '));
+    await switchTo('week');
+    const shaded = view.grid.cells.filter(c => c.has_style_class_name('froonty-calendar-day-in-span'));
+    const row = Math.floor(view.grid.cells.indexOf(todayCell) / 7);
+    check('calendar: Week shades the selected row',
+        shaded.length === 7 && shaded.every(c => Math.floor(view.grid.cells.indexOf(c) / 7) === row));
+    await switchTo('month');
+    const inMonth = view.grid.cells.filter(c => !c.has_style_class_name('froonty-calendar-day-other-month'));
+    check('calendar: Month shades every day of the month',
+        inMonth.every(c => c.has_style_class_name('froonty-calendar-day-in-span')) &&
+        view.grid.cells.filter(c => c.has_style_class_name('froonty-calendar-day-in-span')).length === inMonth.length);
+    const other = view.grid.cells.find(c => c.has_style_class_name('froonty-calendar-day-other-month'));
+    const otherDate = other?.date;
+    await clickActor(other);
+    await sleep(SETTLE_MS);
+    check('calendar: a day of another month shows that month',
+        otherDate && service.shownMonth.m === otherDate.m && service.selected.d === otherDate.d);
+    await clickActor(view.grid.monthButton);
+    await sleep(SETTLE_MS);
+    await calendarSettled(service);
+
+    view.grid.previousButton.grab_key_focus();
+    await pressKeys(Clutter.KEY_Tab);
+    const afterOne = global.stage.key_focus;
+    await pressKeys(Clutter.KEY_Tab);
+    const afterTwo = global.stage.key_focus;
+    await pressKeys(Clutter.KEY_Tab);
+    const firstCell = global.stage.key_focus;
+    const firstDate = firstCell?.date ? {...firstCell.date} : null;
+    await pressKeys(Clutter.KEY_Return);
+    await sleep(SETTLE_MS);
+    check('calendar: Tab goes ‹, month, ›, then the days; Enter picks a day',
+        afterOne === view.grid.monthButton && afterTwo === view.grid.nextButton &&
+        view.grid.cells.includes(firstCell) &&
+        JSON.stringify(service.selected) === JSON.stringify(firstDate),
+        `${afterOne} ${afterTwo} ${firstCell} ${JSON.stringify(firstDate)} selected ${JSON.stringify(service.selected)}`);
+    await clickActor(view.grid.monthButton);
+    await sleep(SETTLE_MS);
+    await calendarSettled(service);
+
+    const treeAfter = new Map();
+    for (const root of treeRoots)
+        for (const [path, mtime] of await fileTree(root))
+            treeAfter.set(path, mtime);
+    // The test's own calendars and events are expected; nothing else may change.
+    const changedFiles = [...new Set([...treeBefore.keys(), ...treeAfter.keys()])]
+        .filter(path => treeBefore.get(path) !== treeAfter.get(path))
+        .filter(path => !path.includes(testUid) && !path.includes(secondUid) && !path.includes('/calendar/system/'));
+    check('calendar: Froonty wrote nothing to EDS (browsing, switching, hiding)',
+        changedFiles.length === 0, changedFiles.join(', '));
+
+    // ------------------------------------------------ links
+    const google = detectProvider({collectionBackend: 'google'});
+    const realDetect = service._detectProvider;
+    const opened = [];
+    service._detectProvider = info => info.uid === testUid ? google : realDetect(info);
+    service.openUri = url => opened.push(url);
+    service.today();
+    await sleep(SETTLE_MS);
+    const nextEntryCard = cardOf('FT next');
+    const nextDay = nextEntryCard?.date;
+    const dayUrl = d => `https://calendar.google.com/calendar/r/day/${d.y}/${d.m}/${d.d}`;
+    if (nextEntryCard) {
+        await revealCard(nextEntryCard);
+        await clickActor(nextEntryCard.actor);
+    }
+    await sleep(animationWait());
+    check('calendar: a card opens its day in the web calendar, after closing the island',
+        nextEntryCard?.clickable && !island().expanded && opened.length === 1 && opened[0] === dayUrl(nextDay),
+        `${opened} expanded=${island().expanded}`);
+    await openCalendarTab();
+    await sleep(SETTLE_MS);
+    await screenshotTop(outDir, 'calendar-links', 420);
+    const pillButton = view.providerButtons?.[0];
+    if (pillButton)
+        await clickActor(pillButton);
+    await sleep(animationWait());
+    check('calendar: the "Google" button opens the selected day',
+        pillButton && opened.length === 2 && opened[1] === dayUrl(todayDate) && !island().expanded,
+        `${opened}`);
+    service._detectProvider = realDetect;
+    delete service.openUri;
+
+    // ------------------------------------------------ collapsed
+    // The views stay, paused: no EDS call on collapse or reopen
+    // (ClientView.start/stop are synchronous D-Bus calls).
+    await openCalendarTab();
+    await calendarSettled(service);
+    const edsViews = () => [...service._views.values()].map(entry => entry.view).filter(Boolean);
+    const before = edsViews();
+    const running = before.filter(edsView => edsView.clientView.is_running()).length;
+    island().collapse();
+    await sleep(animationWait());
+    const scheduler = service._adapter.scheduler;
+    check('calendar: collapsed, the EDS views stay, running and paused',
+        before.length === service.calendars.length && running === before.length &&
+        edsViews().length === before.length && edsViews().every((edsView, i) => edsView === before[i]) &&
+        before.every(edsView => !edsView.released && edsView.clientView.is_running()) && scheduler.paused,
+        `views=${edsViews().length}/${before.length} running before=${running} paused=${scheduler.paused}`);
+    let changes = 0;
+    const changedId = service.connect('changed', () => changes++);
+    await eds.create(testUid, vevent([`UID:${uidOf('hidden')}`, 'SUMMARY:FT while hidden',
+        `DTSTART:${icsTime(dayAt(0, 21))}`, `DTEND:${icsTime(dayAt(0, 22))}`]));
+    await sleep(1000);
+    service.disconnect(changedId);
+    const queued = before.some(edsView => edsView._pendingAdds.size > 0);
+    check('calendar: an event added while collapsed wakes nothing and waits, unexpanded',
+        changes === 0 && queued && shownOccurrences(service, 'FT while hidden').length === 0 && !scheduler.pending,
+        `${changes} changes, queued=${queued}`);
+    await openCalendarTab();
+    check('calendar: reopened, it is there, from the same views',
+        await waitFor(() => cardOf('FT while hidden') !== null, 3000) &&
+        edsViews().every((edsView, i) => edsView === before[i]) && !scheduler.paused);
+    const oldClientViews = before.map(edsView => edsView.clientView);
+    await clickActor(view.grid.nextButton);
+    await calendarSettled(service);
+    // is_running() is the ClientView's own flag, which stop() clears.
+    check('calendar: another month: new views; the old ones let go without a stop() call',
+        before.every(edsView => edsView.released && edsView.clientView === null) &&
+        oldClientViews.every(clientView => clientView.is_running()) &&
+        edsViews().every(edsView => !before.includes(edsView)) && edsViews().length === before.length,
+        `${edsViews().length} views`);
+    await clickActor(view.grid.monthButton);
+    await calendarSettled(service);
+
+    // ------------------------------------------------ hint in the hub
+    const feature = calendarEntry().feature;
+    const create = feature.createService;
+    feature.createService = ctx => {
+        const fresh = create(ctx);
+        fresh._loadEds = async () => ({status: 'missing'});
+        return fresh;
+    };
+    try {
+        s.set_boolean('calendar-enabled', false);
+        await sleep(SETTLE_MS);
+        s.set_boolean('calendar-enabled', true);
+        await sleep(SETTLE_MS);
+        await openCalendarTab();
+        await sleep(SETTLE_MS);
+        view = calendarEntry()?.view;
+        check('calendar: in the hub, missing bindings show the hint',
+            calendarEntry()?.service.state === 'missing' && view?._hint.visible,
+            calendarEntry()?.service.state);
+        await screenshotTop(outDir, 'calendar-hint', 420);
+    } finally {
+        feature.createService = create;
+    }
+    s.set_boolean('calendar-enabled', false);
+    await sleep(SETTLE_MS);
+    s.reset('calendar-enabled');
+    await sleep(SETTLE_MS);
+    await openCalendarTab();
+    service = calendarEntry()?.service;
+    check('calendar: with them, the events are back',
+        await waitFor(() => cardOf('FT now') !== null || cardOf('FT next') !== null, 5000));
+    island().collapse();
+    await sleep(animationWait());
+}
+
+// ---------------------------------------------------------------- calendar load
+//
+// A large calendar over the real EDS (calendar-1, calendar-2): 50 daily or
+// weekday series begun between 2016 and 2023, a minutely series, an
+// hourly one since 2024, and 120 events in a Windows-named zone that the
+// calendar knows and libical does not. Every expansion turn stays under a
+// frame, and every event shows where it should. Written by the test
+// (TestEds), removed by testCalendar's clean-up.
+async function testCalendarLoad(eds, libs) {
+    const {ICalGLib} = libs;
+    if (island()?.expanded) {
+        island().collapse();
+        await sleep(animationWait());
+    }
+    const service = calendarEntry()?.service;
+    if (service?.state !== 'ready') {
+        check('calendar load: the service is ready', false, service?.state);
+        return;
+    }
+    const tz = service.timeZone;
+    const hostTzid = tz.get_identifier();
+    const grid = service._grid();
+    const days = Math.round((grid.end - grid.start) / 86400);
+    const now = GLib.DateTime.new_now(tz);
+    const stamp = `${Date.now()}`;
+    const uid = await eds.addCalendar('Froonty test calendar 3', '#9141ac');
+    const pacific = ICalGLib.Timezone.new();
+    pacific.set_component(ICalGLib.Component.new_from_string(PACIFIC_VTIMEZONE));
+    await eds.addZone(uid, pacific);
+
+    const pad = n => String(n).padStart(2, '0');
+    for (let i = 0; i < 50; i++) {
+        const start = `${2016 + (i % 8)}0104T${pad(8 + (i % 10))}0000`;
+        const end = `${2016 + (i % 8)}0104T${pad(8 + (i % 10))}1500`;
+        await eds.create(uid, vevent([`UID:froonty-test-load-${stamp}-d${i}`, `SUMMARY:FT load ${i}`,
+            `DTSTART;TZID=${hostTzid}:${start}`, `DTEND;TZID=${hostTzid}:${end}`,
+            i % 2 ? 'RRULE:FREQ=DAILY' : 'RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR']));
+    }
+    const minuteStart = GLib.DateTime.new_from_unix_utc(grid.start + 86400 + 9 * 3600);
+    await eds.create(uid, vevent([`UID:froonty-test-load-${stamp}-minutely`, 'SUMMARY:FT load minutely',
+        `DTSTART:${icsTime(minuteStart)}`, `DTEND:${icsTime(minuteStart.add_minutes(1))}`, 'RRULE:FREQ=MINUTELY']));
+    await eds.create(uid, vevent([`UID:froonty-test-load-${stamp}-hourly`, 'SUMMARY:FT load hourly',
+        'DTSTART:20240101T090000Z', 'DTEND:20240101T091500Z', 'RRULE:FREQ=HOURLY']));
+    const losAngeles = GLib.TimeZone.new_identifier('America/Los_Angeles');
+    const pacificDays = Array.from({length: 120}, (_, i) => now.add_days(i % 5));
+    for (const [i, day] of pacificDays.entries()) {
+        await eds.create(uid, vevent([`UID:froonty-test-load-${stamp}-p${i}`, `SUMMARY:FT load pacific ${i}`,
+            `DTSTART;TZID=Pacific Standard Time:${icsDate(day)}T140000`,
+            `DTEND;TZID=Pacific Standard Time:${icsDate(day)}T150000`]));
+    }
+
+    const scheduler = service._adapter.scheduler;
+    scheduler.turns = 0;
+    scheduler.longestTurn = 0;
+    // The main loop's longest stall meanwhile, whatever ran (a note).
+    let last = GLib.get_monotonic_time();
+    let stall = 0;
+    const probe = GLib.timeout_add(GLib.PRIORITY_HIGH, 2, () => {
+        const t = GLib.get_monotonic_time();
+        stall = Math.max(stall, t - last);
+        last = t;
+        return GLib.SOURCE_CONTINUE;
+    });
+    // The tab's redraws meanwhile: how many, and the longest (a note).
+    const tabView = calendarEntry().view;
+    const refresh = tabView._refresh;
+    const redraws = [];
+    tabView._refresh = function (...args) {
+        const t = GLib.get_monotonic_time();
+        refresh.apply(this, args);
+        redraws.push(GLib.get_monotonic_time() - t);
+    };
+    const started = GLib.get_monotonic_time();
+    await openCalendarTab();
+    const pacificRight = () => {
+        const starts = new Map();
+        for (const {item, occurrence} of service._store.occurrences(service.calendars.map(c => c.uid))) {
+            if (item.title?.startsWith('FT load pacific '))
+                starts.set(item.title, occurrence.start);
+        }
+        return pacificDays.filter((day, i) => starts.get(`FT load pacific ${i}`) ===
+            GLib.DateTime.new(losAngeles, day.get_year(), day.get_month(), day.get_day_of_month(), 14, 0, 0).to_unix()).length;
+    };
+    const loaded = await waitFor(() => service.settled && service.calendars.some(c => c.uid === uid) &&
+        shownOccurrences(service, 'FT load minutely').length > 0 && pacificRight() === 120, 30000);
+    const seconds = (GLib.get_monotonic_time() - started) / 1e6;
+    GLib.source_remove(probe);
+    delete tabView._refresh;
+
+    const longest = scheduler.longestTurn / 1000;
+    const longestRedraw = Math.max(0, ...redraws) / 1000;
+    check('calendar load: 50 long-running series, a minutely and an hourly one: every expansion turn under a frame',
+        loaded && longest < 16,
+        `note: ${scheduler.turns} turns, longest ${longest.toFixed(1)} ms; the main loop's longest stall ` +
+        `${(stall / 1000).toFixed(1)} ms; ${redraws.length} redraws of the tab, longest ` +
+        `${longestRedraw.toFixed(1)} ms; loaded in ${seconds.toFixed(1)} s`);
+    // service.js LOADING_REDRAW_MS, plus the visit's own and completions.
+    check('calendar load: the tab redraws at most 5 times a second while the calendar loads',
+        redraws.length <= Math.ceil(seconds * 5) + 6, `${redraws.length} redraws in ${seconds.toFixed(1)} s`);
+    const counts = Array.from({length: 50}, (_, i) => shownOccurrences(service, `FT load ${i}`).length);
+    const weekdays = (() => {
+        let n = 0;
+        for (let t = grid.start + 43200; t < grid.end; t += 86400)
+            n += GLib.DateTime.new_from_unix_utc(t).to_timezone(tz).get_day_of_week() <= 5 ? 1 : 0;
+        return n;
+    })();
+    check('calendar load: each daily series on every day of the grid, each weekday one on its weekdays',
+        counts.every((n, i) => n === (i % 2 ? days : weekdays)), `${counts} (days ${days}, weekdays ${weekdays})`);
+    const minutely = shownOccurrences(service, 'FT load minutely');
+    const hourly = shownOccurrences(service, 'FT load hourly');
+    check('calendar load: the minutely series from its first minute, the hourly one from the grid\'s start, 1000 each',
+        minutely.length === 1000 && minutely[0].start === minuteStart.to_unix() &&
+        minutely[999].start === minuteStart.to_unix() + 999 * 60 &&
+        hourly.length === 1000 && hourly[0].start >= grid.start - 3600 && hourly[0].start <= grid.start + 3600,
+        `${minutely.length} from ${minutely[0]?.start} (${minuteStart.to_unix()}), ${hourly.length} from ${hourly[0]?.start}`);
+    const zones = service._adapter._clients.get(uid)?.zones;
+    check('calendar load: 120 events in a zone libical does not know: all at 14:00 Pacific; the zone fetched once, kept',
+        pacificRight() === 120 && Boolean(zones?.get('Pacific Standard Time')) && zones.size === 1,
+        `${pacificRight()} of 120`);
+    island().collapse();
+    await sleep(animationWait());
+}
+
+// Disable while the tab loads, as a screen lock can: nothing is left
+// running, no error is logged (run.sh greps the Shell log).
+async function testCalendarLifecycle() {
+    settings().set_string('hub-last-tab', 'calendar');
+    const failures = [];
+    for (let i = 0; i < 5; i++) {
+        await setExtensionEnabled(false);
+        await setExtensionEnabled(true);
+        const service = calendarEntry()?.service;
+        island().expand();
+        await sleep(i * 20);
+        await setExtensionEnabled(false);
+        await sleep(i * 50);
+        if (!service || service.viewCount !== 0 || service.clientCount !== 0 || service.registry !== null ||
+            service._changedId !== 0 || service._quietId !== 0 || service._adapter?.scheduler.pending)
+            failures.push(`#${i}: views=${service?.viewCount} clients=${service?.clientCount} registry=${service?.registry}`);
+    }
+    await setExtensionEnabled(true);
+    check('calendar: disabled while loading (5×): no view, connection or registry left', failures.length === 0,
+        failures.join('; '));
+    // Left as the last tab: testLifecycle's cycles (some mid-expand) then
+    // run with the Calendar tab.
+}
+
 export async function runAll(outDir) {
     results.length = 0;
     // Pointer-driven checks move the pointer over the pill; keep hover-open
@@ -4353,6 +5215,7 @@ export async function runAll(outDir) {
         await testClaude(outDir);
         await testClipboard(outDir);
         await testKillProcess(outDir);
+        await testCalendar(outDir);
         await testSettings(outDir);
         await testCoversPanelClock(outDir);
         await testMonitors();

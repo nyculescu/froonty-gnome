@@ -3,6 +3,39 @@
 ## Unreleased
 
 ### Added
+- **Calendar tab**, right after Clock: the events of every calendar GNOME
+  knows, read-only and live. Google, Microsoft 365, Nextcloud and other
+  accounts come from Settings → Online Accounts; iCloud and any CalDAV or
+  ICS calendar from GNOME Calendar or Evolution.
+  - A month grid as GNOME's own (its week start, week numbers and days
+    off), with up to three calendar-coloured dots per day, and a Day /
+    Week / Month switch. Each visit starts on today.
+  - Events as cards in their calendar's colour: time, calendar and place,
+    "Now" and "Next", past ones dimmed, cancelled ones struck through.
+    Repeating events are expanded by GNOME's own calendar library, moved
+    occurrences included.
+  - A click on an event opens its day in the web calendar it comes from
+    (Google, Outlook; iCloud, Nextcloud and Yahoo open their calendar);
+    buttons under the grid open each one on the selected day, and one
+    opens Online Accounts.
+  - Settings → Calendar: show the tab, which calendars it shows, and its
+    size (620 × 380 by default).
+  - Froonty never adds, changes or removes an event or a calendar, and
+    loads nothing until the tab is first opened. Opening and closing the
+    island then costs no calls to Evolution Data Server: while the tab
+    is not on screen, Froonty only keeps what it sends.
+  - A large calendar never stalls the desktop: repeating events are
+    expanded a few milliseconds at a time, and a series begun years ago
+    (or one repeating every minute) is not walked from its start.
+  - Events in a time zone only the calendar knows (Outlook's "Pacific
+    Standard Time") all show at their right time, however many there
+    are.
+  - "Next" marks the next event from now on, not the first one of a
+    day, week or month in the future.
+  - Needs `gir1.2-ecal-2.0`; without it the tab explains what to install
+    (and starts off when it is missing on the first start). Microsoft 365
+    and Exchange calendars also need `evolution-ews-core` (Evolution
+    Data Server's backends, without the Evolution mail client).
 - **Notifications tab** (on by default). GNOME's own notifications in the
   island, urgent ones first, then newest first: each with its app, how
   long ago it came in, its title, up to three lines of its body, its icon
