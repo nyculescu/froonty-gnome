@@ -4,8 +4,10 @@ Status: **second iteration, implemented**, 2026-10-02: every process
 instead of the busiest 30, a thread count, and sorting by threads (user
 request); after its review, the keyboard and the pointer kept apart, a
 row out of sight never acted on, readings in batches, and processes
-whose main thread exited listed. Public (in `make pack` output). **Off
-by default.**
+whose main thread exited listed. 2026-10-03: the core desktop services
+protected too (GNOME's settings daemon, IBus, the accessibility bus,
+mutter's X11 frames; user's question, see the safety rules). Public (in
+`make pack` output). **Off by default.**
 
 All of your own processes, sorted by CPU load, memory or threads, with a
 button to kill each. It is for the moment an app hangs or something eats
@@ -143,8 +145,11 @@ again right before every signal (`ProcessSampler.verify()`):
   Shell, and with it Froonty and the session. The chain is read again
   before each signal, so a parent that changed since the last reading is
   still covered.
-- **Never these session programs** (`PROTECTED_NAMES`), matched on the
-  kernel's name (cut to 15 characters) or on argv[0]'s file name:
+- **Never these session programs and desktop services**
+  (`PROTECTED_NAMES`), matched on the kernel's name (cut to 15
+  characters: `at-spi-bus-launcher` is `at-spi-bus-laun`) or on argv[0]'s
+  file name; `gnome-session` and `gsd-` as prefixes
+  (`PROTECTED_PREFIXES`):
 
   | Program | Why |
   |---|---|
@@ -153,15 +158,65 @@ again right before every signal (`ProcessSampler.verify()`):
   | `gdm-wayland-session`, `gdm-x-session` | The login's session wrapper: its end is a logout |
   | `systemd` (the user's manager), `(sd-pam)` | Every user service, GNOME Shell's included |
   | `Xwayland` | Every X11 window |
+  | `mutter-x11-frames` | The title bars of X11 windows. Mutter starts it again when it crashes, but not when it ends by SIGTERM or SIGKILL, the tab's two signals (read in the installed `libmutter-18.so.0`: the frames client's exit callback skips its restart for signals 15 and 9) |
   | `dbus-daemon`, `dbus-broker`, `dbus-broker-launch` | The session and accessibility buses |
+  | `at-spi-bus-launcher` | The accessibility bus, which every app and GNOME Shell join for screen readers and for Zoom following the focus and caret (`ui/focusCaretTracker.js`). On SIGTERM it ends that bus too (read in the binary: its SIGTERM handler wakes the main loop through a pipe, and once that loop has returned it sends SIGTERM to the bus's `dbus-daemon`) |
+  | `at-spi2-registryd` | The accessibility bus's registry: which apps there are and which events a screen reader or Zoom listens to. The bus starts a new one when next asked, holding none of the old one's registrations; whether running apps and listeners register again was not tried here |
   | `pipewire`, `pipewire-pulse`, `wireplumber` | Sound, screen sharing, the panic mute buttons |
   | `gnome-keyring-daemon` | The session's passwords and keys |
+  | `gsd-*` | GNOME's settings daemon, a process per job: power (screen blanking, suspend, the critical-battery action), media keys and custom shortcuts, keyboard, colour and Night Light, X11 apps' scaling and fonts (`gsd-xsettings`), accessibility settings, airplane mode, smartcard removal, USB protection, apps keeping the screen on, sharing, printers, disk-space warnings, sound, time zone, mobile broadband; `gsd-disk-utility-notify` (failing disks) is named like them. See below |
+  | `ibus-daemon` | Typing through input methods (IBus), in every app and in GNOME Shell's own entries. See below |
+  | `ibus-x11` | The same for X11 apps (XIM; this session sets `XMODIFIERS=@im=ibus`). Started once, when Xwayland starts (`/etc/xdg/Xwayland-session.d/10-ibus-x11`); nothing starts it again |
 
-  The list is short on purpose. Anything else (an app, a `gsd-*` daemon,
-  ibus) is the user's call, even when killing it breaks something until
-  the next login. Protected rows show a lock instead of ⊘. Settings → Kill Process lists the programs.
-  A program that names itself like one of these only loses its kill
-  button.
+  Protected rows show a lock instead of ⊘. Settings → Kill Process
+  lists the programs. A program that names itself like one of these only
+  loses its kill button.
+
+  **Why the settings daemon and IBus** (checked on Ubuntu 26.04, GNOME
+  Shell 50.1, gnome-settings-daemon 50.0, IBus 1.5.34, 2026-10-03, by
+  reading unit files, `systemctl --user show` and GNOME Shell's own code;
+  nothing was killed to find out). The tab's first step is SIGTERM, and
+  systemd restarts a user service only after a failure: a SIGTERM counts
+  as a clean exit (`systemd.service(5)`, `Restart=`, "SuccessExitStatus=").
+  - Every `gsd-*` service has `Restart=on-failure`, refuses a manual start
+    (`RefuseManualStart=true`) and has no D-Bus activation file. One
+    SIGTERM and that job is undone until the next login: no more
+    suspend on a critical battery, volume keys, Night Light, and so on.
+    GNOME counts them as part of the session: each unit runs
+    `ExecStopPost=gnome-session-ctl --exec-stop-check`, which "starts
+    gnome-session-shutdown.target on service failure" (its `--help`;
+    the binary checks for systemd's `start-limit-hit`, 5 failures in
+    10 s here), ending the session.
+  - `ibus-daemon` runs as `org.freedesktop.IBus.session.GNOME.service`,
+    `Restart=on-abnormal`. GNOME Shell starts it itself only when that
+    unit does not exist (`misc/ibusManager.js`, extracted from
+    `libshell-18.so`), and does not start it again when it goes. Without
+    it, an XKB layout still types (the Shell passes keys straight on,
+    `misc/inputMethod.js`), but other input sources (Chinese, Japanese,
+    Korean, …) and IBus's emoji and Unicode entry are gone until the
+    next login.
+
+  **Left killable, on purpose** (the tab is for ending things):
+  - Services that D-Bus or systemd start again when next needed (each
+    has a D-Bus `.service` file): the portals (`xdg-desktop-portal*`,
+    `xdg-document-portal`, `xdg-permission-store`), Evolution Data Server
+    (`evolution-source-registry`, `-calendar-factory`,
+    `-addressbook-factory`), Online Accounts (`goa-daemon`,
+    `goa-identity-service`), GVfs (`gvfsd*`, the volume monitors),
+    `dconf-service`, `gnome-shell-calendar-server`, GNOME Shell's helper
+    services run by `gjs` (notifications, screen saver), `ibus-portal`,
+    and the file indexer `localsearch-3`, which is often the very process
+    eating the CPU. What was under way is lost (a screen share, a mounted
+    network share), not the service.
+  - IBus's other helpers. Engines (`ibus-engine-*`) are started by
+    `ibus-daemon` when used (`ibus-engine-table` is installed here and
+    not running). `ibus-dconf` (IBus's settings) and `ibus-extension-gtk3`
+    (its emoji picker) are not started again (`ibus-daemon` runs without
+    `--restart`), but typing goes on without them.
+  - Apps, including those that look like services: `gnome-terminal-server`
+    (every terminal window), `nautilus`, `evolution-alarm-notify`
+    (calendar reminders), `update-notifier`, the SSH agents (socket
+    activated).
 - **Only a valid process id** (`isValidPid`): a whole number from 2 to
   2²² (`PID_MAX_LIMIT`). 0 and negative ids mean process groups, and `-1`
   means every process the user has; 1 is init.
@@ -381,7 +436,7 @@ killed.
 | File | |
 |---|---|
 | `features/killprocess/parse.js` | Pure parsers: `/proc/<pid>/stat` (thread count included), `status`, `cmdline`; the shown name; page size; CPU share |
-| `features/killprocess/rules.js` | Pure rules: valid process ids, `PROTECTED_NAMES`, GNOME Shell's ancestors, sorting, filtering and the count line |
+| `features/killprocess/rules.js` | Pure rules: valid process ids, `PROTECTED_NAMES` and `PROTECTED_PREFIXES`, GNOME Shell's ancestors, sorting, filtering and the count line |
 | `features/killprocess/kill.js` | Pure: where `kill` may be, and its argument list |
 | `features/killprocess/io.js` | The Btop tab's `SYSTEM_IO` plus a `/proc` listing with owners and a pause between batches of reads; GNOME Shell's own process and user ids |
 | `features/killprocess/sampler.js` | One reading of your processes (in batches), and `verify()` before a signal, over an `io` object (faked in tests) |
@@ -396,8 +451,11 @@ The `/proc/stat` parser is the Btop tab's (`features/sysmon/parse.js`).
 - `tools/unit/killprocess.test.js` (plain gjs, `make unit`): the parsers
   (including this test process's own `/proc/self/stat`, read only), valid
   process ids, `killArgv` refusing anything else (`-1`, `0`, `1`, text,
-  other signals, other paths), the protected names and ancestors, the
-  thread count (field 20, and this process's own against its
+  other signals, other paths), the protected names and ancestors (each
+  core desktop service by its 15-character comm, by argv[0] alone and
+  run from `$PATH`; look-alikes such as `gsdsomething` or `ibus-like`,
+  IBus's engines and helpers, and the services D-Bus starts again,
+  still killable), the thread count (field 20, and this process's own against its
   `/proc/self/status`), a zombie main thread with other threads (live)
   or with one (ended), sorting by CPU, memory or threads with their
   tie-breaks, a thousand processes in and a thousand out (no limit),
@@ -430,7 +488,10 @@ The `/proc/stat` parser is the Btop tab's (`features/sysmon/parse.js`).
   threads counts 5, in its row too; a test Python whose main thread
   called `pthread_exit()` is listed with 2 threads and memory unknown, and
   `verify()` lets it be killed (only read, never signalled); GNOME Shell, its parent and
-  `dbus-daemon` protected, with a lock and no ⊘; `verify()` refuses GNOME
+  `dbus-daemon` protected, with a lock and no ⊘; the user's own session's
+  `gsd-*`, IBus, accessibility and X11 frames processes protected, and
+  its portals, Evolution's registry, the indexer, Online Accounts and
+  GVfs not (as many as run; the log notes how many); `verify()` refuses GNOME
   Shell; typing filters; a reused id is refused for real; a `sleep` the
   test started is killed through the UI (⊘, then "Kill “sleep”?") and ends
   with SIGTERM; "Ended", then gone once the pointer leaves; a `sleep` that
