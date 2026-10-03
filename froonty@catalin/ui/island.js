@@ -10,7 +10,8 @@
 //    └ column  St.BoxLayout, vertical, as wide as the strip, non-reactive.
 //       │      Centers the pill (also while its width animates).
 //       ├ pill St.Button: background, click and Enter/Space activation.
-//       │  └ content  BinLayout stacking the collapsed view and the hub.
+//       │  └ content  BinLayout stacking the collapsed view and the hub,
+//       │             and over them the resize grip's layer (resizeGrip.js).
 //       └ bars  features' bars under the pill (pillBar: the Claude
 //              attention bar), shown only while the island is collapsed.
 
@@ -34,6 +35,7 @@ import {ContextMenu} from './contextMenu.js';
 import {IslandGeometry} from './geometry.js';
 import {HoverOpen} from './hoverOpen.js';
 import {Hub} from './hub.js';
+import {ResizeGrip} from './resizeGrip.js';
 
 const EXPAND_MODE = Clutter.AnimationMode.EASE_OUT_BACK;
 const COLLAPSE_MODE = Clutter.AnimationMode.EASE_OUT_QUAD;
@@ -89,6 +91,9 @@ export class Island {
         // then opens its tab (_onPillClicked). Never expands by itself.
         this._cueSources = new Map();
         this._cueTab = null;
+        // The open tab's size while its resize grip is dragged (logical
+        // px, in place of its hubSizeKeys' values), else null.
+        this._liveHubSize = null;
 
         this._buildActors();
         addIslandChrome(this._strip, this._pill, () => this.expand());
@@ -128,6 +133,8 @@ export class Island {
         // An open context menu holds a modal grab above the island's.
         for (const menu of [...this._menus])
             menu.destroy();
+        // Ends a drag: its stage grab goes, the keys stay as they were.
+        this._resizeGrip.destroy();
 
         // Release the modal grab first. Setting _expanded beforehand turns
         // the resulting onUngrab callback into a no-op instead of starting a
@@ -331,6 +338,12 @@ export class Island {
         });
         content.add_child(this._collapsedView.actor);
         content.add_child(this._hub.actor);
+        this._resizeGrip = new ResizeGrip(this._settings, this._pill, {
+            sizeKeys: () => (this._expanded ? this._hub.activeFeature?.hubSizeKeys ?? null : null),
+            bounds: () => this._resizeBounds(),
+            preview: size => this._previewHubSize(size),
+        });
+        content.add_child(this._resizeGrip.actor);
         this._showViewImmediately();
     }
 
@@ -501,19 +514,70 @@ export class Island {
     _targetSize(expanded) {
         if (!expanded)
             return this._collapsedSize();
-        const size = this._geometry.expandedSize(this._hub.activeFeature, this._hub.activeExtraHeight);
-        // Tall enough for every feature tab, in one column. (Off stage
-        // there is no theme node, and nothing to show yet.)
+        const size = this._geometry.expandedSize(this._hub.activeFeature,
+            this._hub.activeExtraHeight, this._liveHubSize);
+        const needs = this._hubNeeds();
+        return {width: Math.max(size.width, needs.width), height: Math.max(size.height, needs.height)};
+    }
+
+    // The expanded island's smallest size (stage px): tall enough for every
+    // feature tab, in one column; wide enough that the centred panic bar
+    // clears the tab column and the header's buttons. (Off stage there is
+    // no theme node, and nothing to show yet.)
+    _hubNeeds() {
         if (!this._pill.get_stage())
-            return size;
+            return {width: 0, height: 0};
         const node = this._pill.get_theme_node();
-        const tabs = this._hub.minHeight + node.get_vertical_padding() +
-            node.get_border_width(St.Side.TOP) + node.get_border_width(St.Side.BOTTOM);
-        // Wide enough that the centred panic bar clears the tab column and
-        // the header's buttons.
-        const header = this._hub.minWidth + node.get_horizontal_padding() +
-            node.get_border_width(St.Side.LEFT) + node.get_border_width(St.Side.RIGHT);
-        return {width: Math.max(size.width, header), height: Math.max(size.height, tabs)};
+        return {
+            width: this._hub.minWidth + node.get_horizontal_padding() +
+                node.get_border_width(St.Side.LEFT) + node.get_border_width(St.Side.RIGHT),
+            height: this._hub.minHeight + node.get_vertical_padding() +
+                node.get_border_width(St.Side.TOP) + node.get_border_width(St.Side.BOTTOM),
+        };
+    }
+
+    // What the resize grip may give the open tab's keys, in logical px:
+    // at least what the hub needs, at most the room the primary monitor's
+    // work area has around the island (centred on the monitor, from its
+    // top edge down). Media's extras come on top of its height key.
+    _resizeBounds() {
+        const scale = this._themeContext.scale_factor;
+        const needs = this._hubNeeds();
+        const extra = this._hub.activeExtraHeight;
+        const layout = Main.layoutManager;
+        const monitor = layout.primaryMonitor;
+        if (!monitor) {
+            return {
+                width: {need: Math.ceil(needs.width / scale)},
+                height: {need: Math.ceil(needs.height / scale) - extra},
+            };
+        }
+        const area = layout.getWorkAreaForMonitor(layout.primaryIndex);
+        const centerX = monitor.x + monitor.width / 2;
+        const top = monitor.y + this._geometry.topOffset(monitor);
+        return {
+            width: {
+                need: Math.ceil(needs.width / scale),
+                room: Math.floor(2 * Math.min(centerX - area.x, area.x + area.width - centerX) / scale),
+            },
+            height: {
+                need: Math.ceil(needs.height / scale) - extra,
+                room: Math.floor((area.y + area.height - top) / scale) - extra,
+            },
+        };
+    }
+
+    // The resize grip, while dragged: the island takes `size` (the open
+    // tab's keys, logical px) at once, without animation; null goes back
+    // to the keys.
+    _previewHubSize(size) {
+        this._liveHubSize = size;
+        if (!this._expanded)
+            return;
+        this._pill.remove_transition('width');
+        this._pill.remove_transition('height');
+        const {width, height} = this._targetSize(true);
+        this._pill.set_size(width, height);
     }
 
     // While the pill shows music (or a notice), it is as wide as its
@@ -604,6 +668,7 @@ export class Island {
         this._pill.set_size(width, height);
         this._showViewImmediately();
         this._syncPillBars();
+        this._resizeGrip.sync();
     }
 
     // The clock button's size and position change with its content (e.g.
@@ -621,6 +686,8 @@ export class Island {
 
     // Switching tabs resizes the expanded island to the new feature's size.
     _onHubSizeChanged() {
+        // Another tab: the grip shows only for one whose size can be set.
+        this._resizeGrip.sync();
         if (!this._expanded)
             return;
 
@@ -666,6 +733,7 @@ export class Island {
         // The expanded island covers the place where GNOME shows banners.
         this._calendarMenu.holdBanners(expanded);
         this._hub.setShown(expanded);
+        this._resizeGrip.sync(expanded ? this._settings.get_int('animation-duration') : 0);
         if (expanded && !byHover)
             this._hub.noteUserInput();
         this._animate();

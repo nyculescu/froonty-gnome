@@ -36,6 +36,13 @@ feature has a design note in [docs/features/](docs/features/).
   - **Close:** Escape or a click outside.
   - It follows the primary monitor and hides over fullscreen windows.
 - **Hub.** The expanded island.
+  - **Resize it live:** drag the arc in its bottom-right corner. It stays
+    centred: the width changes on both sides, the height downward. The
+    size is kept per tab, in the same numbers as Settings → Size, within
+    their range, the screen's room and what the tabs need; a double-click
+    on the arc goes back to the tab's default size. With the key focus on
+    it (Tab), the arrow keys resize in steps of 10 (Shift: 50). Shown on
+    tabs whose size can be set.
   - Feature tabs sit in one column on the left, each named in a tooltip;
     the island grows taller when they need the room.
   - The panic bar is centered at the top, with 📅 (calendar and

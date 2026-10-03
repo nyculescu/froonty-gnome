@@ -46,11 +46,13 @@ export class IslandGeometry {
      *   the user can change) or hubSize win
      * @param {number} [extraHeight] logical px a feature adds for now
      *   (Media's lyrics or queue); the island then stays on the monitor
+     * @param {?object} [live] {width, height} in logical px in place of
+     *   the hubSizeKeys' values (the resize grip, while dragged)
      */
-    expandedSize(feature, extraHeight = 0) {
+    expandedSize(feature, extraHeight = 0, live = null) {
         const scale = this._themeContext.scale_factor;
         const keys = feature?.hubSizeKeys;
-        const size = keys
+        const size = keys && live ? live : keys
             ? {width: this._settings.get_int(keys.width), height: this._settings.get_int(keys.height)}
             : feature?.hubSize;
         let height = (size?.height ?? this._settings.get_int('expanded-height')) * scale;
