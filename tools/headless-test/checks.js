@@ -4732,11 +4732,14 @@ async function testDatePill(outDir) {
     // GNOME's setting reaches the clock service through GSettings; give
     // a loaded session time.
     const system12 = await waitFor(() => matches() && /[AP]M/.test(header._timeLabel.text), 5000);
+    const seen12 = `GNOME's ${iface.get_string('clock-format')}, the clock service's ` +
+        `${clock._interfaceSettings?.get_string('clock-format')}, Froonty's ${s.get_string('clock-format')}, ` +
+        `snapshot ${clock.snapshot().time}`;
     iface.set_string('clock-format', '24h');
     await sleep(SETTLE_MS);
     check('date pill: "Follow system" follows GNOME\'s 12/24-hour setting',
         system12 && await waitFor(() => matches() && !/[AP]M/.test(header._timeLabel.text), 5000),
-        `${shown()} (12-hour shown: ${system12})`);
+        `${shown()} (12-hour shown: ${system12}; with 12h set: ${seen12})`);
     iface.reset('clock-format');
     s.reset('clock-format');
     await sleep(SETTLE_MS);

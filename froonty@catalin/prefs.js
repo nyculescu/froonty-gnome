@@ -142,13 +142,20 @@ export default class FroontyPreferences extends ExtensionPreferences {
             title: _('Clock format'),
             model: Gtk.StringList.new([_('Follow system'), _('24-hour'), _('12-hour')]),
         });
+        // Showing the setting must not write it back: a change made
+        // elsewhere (the Shell, gsettings) reaches this process late, and
+        // writing back what it shows then would undo a newer one.
+        let syncing = false;
         const syncFormatRow = () => {
             const index = CLOCK_FORMATS.indexOf(settings.get_string('clock-format'));
+            syncing = true;
             formatRow.selected = Math.max(index, 0);
+            syncing = false;
         };
         syncFormatRow();
         formatRow.connect('notify::selected', () => {
-            settings.set_string('clock-format', CLOCK_FORMATS[formatRow.selected]);
+            if (!syncing)
+                settings.set_string('clock-format', CLOCK_FORMATS[formatRow.selected]);
         });
         settings.connect('changed::clock-format', syncFormatRow);
         group.add(formatRow);
