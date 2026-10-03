@@ -285,6 +285,13 @@
     what is never killed, and the tab's size (520 × 440 by default).
 
 ### Changed
+- **The published package has the first submission's tabs only:** Clock,
+  Calendar, Notifications and Notes, with the mute panic buttons. Media,
+  Claude, Btop, Clipboard, Kill Process and Break are in `make install`
+  builds and follow on extensions.gnome.org in later versions; ZeroTier
+  and Writing stay working-tree only. `make pack` keeps only the code the
+  published tabs reach, their settings and styles, and a description of
+  what the package has, and ships `LICENSE`.
 - The camera panic button is switched off for now (its code is kept).
 - Notes: the colour dot is gone from the tabs (more room for names); the
   note's colour still tints its page, the colour button and the All notes
