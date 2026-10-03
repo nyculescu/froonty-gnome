@@ -331,6 +331,15 @@ make install    # compiles schemas, copies into ~/.local/share/gnome-shell/exten
 make pack       # builds the public archive: the first submission's tabs only
 ```
 
+To try Froonty without installing it or touching your session, `make
+devkit` opens a GNOME Shell 50 in a window on your desktop (needs `sudo
+apt install mutter-dev-bin`), isolated as the headless tests are: its own
+D-Bus, settings, data and a virtual speaker and microphone; your notes,
+calendars, extensions, drives and Claude account are not seen. `make
+devkit-public` runs the `make pack` build instead. The sandbox is kept in
+`~/.cache/froonty-devkit` between runs (`tools/devkit.sh --reset` empties
+it); `tools/devkit.sh run notify-send Hello` sends it a notification.
+
 `make install` copies rather than links, so Froonty starts at login even
 when the working tree is on a drive that is mounted later. Run it again
 after each change.

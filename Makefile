@@ -11,7 +11,7 @@ GNOME_EXTENSIONS ?= /usr/bin/gnome-extensions
 # Every source folder of the extension (schemas are packed separately).
 SOURCE_DIRS := $(filter-out schemas,$(notdir $(patsubst %/,%,$(wildcard $(SRC)/*/))))
 
-.PHONY: schemas install uninstall pack unit test log clean
+.PHONY: schemas install uninstall pack unit test log clean devkit devkit-public
 
 schemas: $(SRC)/schemas/gschemas.compiled
 
@@ -46,6 +46,14 @@ unit:
 
 # Isolated headless GNOME Shell 50 runs; do not touch the real session.
 # Both session modes: layout can depend on the theme (Ubuntu uses Yaru).
+# Froonty in a nested GNOME Shell window, isolated from the session
+# (needs mutter-dev-bin); devkit-public runs the make pack build.
+devkit: schemas
+	tools/devkit.sh
+
+devkit-public:
+	tools/devkit.sh --public
+
 test:
 	tools/headless-test/run.sh
 	FROONTY_TEST_MODE=ubuntu tools/headless-test/run.sh
