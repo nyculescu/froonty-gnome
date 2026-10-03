@@ -35,9 +35,9 @@ export default class FroontyExtension extends Extension {
         // toggled) keep what the user had, so disable() deliberately leaves
         // this field alone.
         this._started ??= this._settings.get_boolean('start-at-login');
-        // Choices kept in memory for as long as the Shell runs, across
-        // screen locks (Media's chosen player): plain data, never cleared
-        // by disable().
+        // Plain data features keep in memory (ctx.memory). Kept across
+        // screen locks only when a feature asks for that (keepsMemory);
+        // otherwise disable() drops it.
         this._memory ??= {};
 
         // Always available: starts Froonty while it waits after login,
@@ -94,6 +94,8 @@ export default class FroontyExtension extends Extension {
         this._settingsWindow = null;
         this._panelClock = null;
         this._settings = null;
+        if (!FEATURES.some(f => f.keepsMemory))
+            this._memory = null;
     }
 
     _syncBackground(feature) {

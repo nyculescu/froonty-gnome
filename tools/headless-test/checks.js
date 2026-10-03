@@ -8513,6 +8513,9 @@ async function testPublicBuild() {
     await sleep(animationWait());
 
     check('public build: disable succeeds', await setExtensionEnabled(false), stateName());
+    // No feature keeps memory across disable() in this build.
+    check('public build: disable drops the in-memory data', extension().stateObj._memory === null,
+        JSON.stringify(extension().stateObj._memory));
     const baseline = shellFootprint();
     const failures = [];
     for (let i = 0; i < 10; i++) {

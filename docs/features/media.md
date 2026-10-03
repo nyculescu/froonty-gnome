@@ -313,8 +313,9 @@ DesktopEntry, and `app.activate()` before `Raise`.
 
 Generic hooks outside `features/media/` (any feature may use them):
 
-- `ctx.memory` (plain data kept across screen locks, from `extension.js`)
-  and `ctx.collapse()`.
+- `ctx.memory` (plain data kept across screen locks, from `extension.js`,
+  while a feature declares `keepsMemory: true`, as Media does) and
+  `ctx.collapse()`.
 - A **pill accessory**: the first feature whose `wantsPillAccessory()` is
   true gets wings on the collapsed pill (`createPillAccessory`, rebuilt
   when its `pillAccessoryKeys` change); a pointer open selects its
