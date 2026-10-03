@@ -49,11 +49,8 @@ feature has a design note in [docs/features/](docs/features/).
     mixer.
   - **Claude session usage** shows the session's percentage, large, over a
     faint Claude Spark. A click opens the Claude tab.
-  - **Block camera for apps that ask GNOME** turns off GNOME's own Camera
-    Access switch (Settings → Privacy & Security → Cameras), and turns it
-    back on. Apps that ask GNOME for the camera (mostly Flatpak apps) are
-    refused. It is not a hardware switch: apps that open the camera
-    directly are not blocked, and a camera already in use stays on
+  - The camera button (**Block camera for apps that ask GNOME**) is switched
+    off for now; its code is kept
     ([details](docs/features/panic-buttons.md#4-block-camera-for-apps-that-ask-gnome)).
 - **Clock** tab: weekday, time and date.
 - **Notes** tab: plain Markdown files in `~/.local/share/froonty/notes`.

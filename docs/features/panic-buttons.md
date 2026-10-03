@@ -69,6 +69,12 @@ the island is collapsed. The bar tells its buttons when the hub is shown
 
 ## 4. Block camera for apps that ask GNOME
 
+**Switched off for now (2026-10-02).** The entry is commented out in
+`panic/catalog.js`, so the button is not offered and a saved bar drops it;
+the code below is kept. The local-only hardware block (§4.4) lives on the
+branch `worktree-agent-a74e6dd1bcb4ed20e` and is not merged.
+
+
 Added 2026-10-02 (user request: "camera on/off"), off by default:
 
 | Id | Action | Shown checked (red) when |

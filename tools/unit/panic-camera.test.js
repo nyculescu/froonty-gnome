@@ -55,21 +55,11 @@ function lockedFake(value) {
     };
 }
 
-test('the catalog offers "Block camera for apps that ask GNOME"', () => {
-    const entry = Catalog.byId('block-camera');
-    ok(entry, 'entry exists');
-    eq(entry.icon, 'camera-disabled-symbolic');
-    eq(entry.title(s => s), 'Block camera for apps that ask GNOME');
-    eq(Catalog.sanitize(['block-camera', 'mute-sound']), ['block-camera', 'mute-sound']);
-});
-
-test('its Settings description says what it does not block', () => {
-    const text = Catalog.byId('block-camera').description(s => s);
-    ok(text.includes('Camera Access'), text);
-    ok(text.includes('are not blocked'), text);
-    ok(text.includes('already in use stays on'), text);
-    // Translatable through the caller's gettext, like the title.
-    ok(Catalog.byId('block-camera').description(s => `[${s}]`).startsWith('['));
+// The button is switched off for now (panic/catalog.js): not offered, and
+// a saved bar that still lists it simply drops it.
+test('the camera button is not offered for now', () => {
+    ok(!Catalog.byId('block-camera'), 'not in the catalog');
+    eq(Catalog.sanitize(['block-camera', 'mute-sound']), ['mute-sound']);
 });
 
 test('GNOME 50 has the switch (org.gnome.desktop.privacy disable-camera)', () => {

@@ -3370,7 +3370,8 @@ export async function runAll(outDir) {
         await testKeyboard();
         await testHubLayout(outDir);
         await testPanic(outDir);
-        await testPanicCamera(outDir);
+        // The camera panic button is switched off for now (panic/catalog.js).
+        // await testPanicCamera(outDir);
         await testHoverOpen();
         await testLauncher();
         await testStartup();

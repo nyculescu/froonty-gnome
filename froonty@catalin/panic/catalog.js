@@ -27,18 +27,21 @@ export const PANIC_BUTTONS = [
         icon: 'froonty-claude-symbolic',
         title: _ => _('Claude session usage'),
     },
-    {
-        // GNOME's Camera Access switch; only the camera portal enforces it,
-        // so the title and description say whom it stops
-        // (panic/cameraAccess.js).
-        id: 'block-camera',
-        icon: 'camera-disabled-symbolic',
-        title: _ => _('Block camera for apps that ask GNOME'),
-        description: _ => _('Turns off Camera Access, as Settings → Privacy & Security → ' +
-            'Cameras does. Apps that ask GNOME for the camera (mostly Flatpak apps) are ' +
-            'refused. Apps that open the camera directly, as apps that are not sandboxed ' +
-            'can, are not blocked, and a camera already in use stays on.'),
-    },
+    // The camera button is switched off for now; its code stays in
+    // panic/camera.js and panic/cameraAccess.js. Uncomment to offer it again
+    // (docs/features/panic-buttons.md §4).
+    // {
+    //     // GNOME's Camera Access switch; only the camera portal enforces it,
+    //     // so the title and description say whom it stops
+    //     // (panic/cameraAccess.js).
+    //     id: 'block-camera',
+    //     icon: 'camera-disabled-symbolic',
+    //     title: _ => _('Block camera for apps that ask GNOME'),
+    //     description: _ => _('Turns off Camera Access, as Settings → Privacy & Security → ' +
+    //         'Cameras does. Apps that ask GNOME for the camera (mostly Flatpak apps) are ' +
+    //         'refused. Apps that open the camera directly, as apps that are not sandboxed ' +
+    //         'can, are not blocked, and a camera already in use stays on.'),
+    // },
 ];
 
 /**
