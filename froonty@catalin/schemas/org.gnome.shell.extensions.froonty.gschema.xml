@@ -44,6 +44,25 @@
       <description>At most 5 ids from panic/catalog.js; unknown ids are ignored.</description>
     </key>
 
+    <!-- Notifications feature (docs/features/notifications.md) -->
+    <key name="notifications-enabled" type="b">
+      <default>true</default>
+      <summary>Show the Notifications tab</summary>
+      <description>GNOME's own notifications, newest first, urgent ones on top: click one to open it (GNOME's rule: for an app that gave it no default action, GNOME opens the app and removes all of that app's non-resident notifications), × dismisses it, Clear all (after a confirmation) dismisses them all. Froonty keeps no copy, watches them only while the tab is on screen, and never removes one on its own. Do Not Disturb is GNOME's org.gnome.desktop.notifications show-banners.</description>
+    </key>
+    <key name="notifications-width" type="i">
+      <range min="320" max="960"/>
+      <default>400</default>
+      <summary>Notifications island width</summary>
+      <description>In logical pixels, while the Notifications tab is shown.</description>
+    </key>
+    <key name="notifications-height" type="i">
+      <range min="200" max="720"/>
+      <default>440</default>
+      <summary>Notifications island height</summary>
+      <description>In logical pixels, while the Notifications tab is shown.</description>
+    </key>
+
     <!-- Notes feature (docs/features/notes.md) -->
     <key name="notes-enabled" type="b">
       <default>true</default>

@@ -23,8 +23,10 @@ A click on the clock used to open GNOME's menu: the notification list (with
 Do Not Disturb and Clear), the month calendar, events, world clocks and
 weather. The pill takes that click, and it hid the clock's
 unread-notifications dot. Step A gives both back **without reimplementing
-either**: no calendar, no notification list, no notification store of
-Froonty's own (DESIGN.md §2, principle 1).
+either**: no calendar and no notification store of Froonty's own
+(DESIGN.md §2, principle 1). (The later Notifications tab shows GNOME's
+own list in the island, still with no store of its own:
+[notifications.md](notifications.md).)
 
 ```
  collapsed:      ( 14:35 • )            • = GNOME's unread dot
@@ -91,8 +93,10 @@ Froonty's own (DESIGN.md §2, principle 1).
   clock's own `MessagesIndicator`, which already applies GNOME's rules:
   notifications not yet seen, minus those waiting for their banner, and
   none under Do Not Disturb. Counting sources itself would duplicate them.
-  Observe only: nothing is marked seen, dismissed or destroyed by
-  Froonty.
+  Observe only: step A marks nothing seen, and dismisses or destroys
+  nothing. The Notifications tab's icon carries the same dot, by the same
+  rule; that tab marks what it lists seen only on a deliberate act
+  ([notifications.md](notifications.md) §3).
 - **The dot's look:** a 6 px white dot after the time, like the clock's.
   As GNOME's clock does, an invisible pad of the same size on the other
   side keeps the time centered. The pill's accessible name gains

@@ -17,6 +17,7 @@ import {addIconPath, claudePage} from './features/claude/prefs.js';
 import {clipboardPage} from './features/clipboard/prefs.js';
 import {killProcessPage} from './features/killprocess/prefs.js';
 import {notesPage} from './features/notes/prefs.js';
+import {notificationsPage} from './features/notifications/prefs.js';
 import {sysmonPage} from './features/sysmon/prefs.js';
 import {addLocalPrefs} from './features/localPrefs.js';
 import {panicPage} from './panic/prefs.js';
@@ -40,6 +41,8 @@ export default class FroontyPreferences extends ExtensionPreferences {
         window.add(this._generalPage(settings));
         window.add(this._appearancePage(settings));
         window.add(panicPage(settings));
+        // Feature pages in the hub's tab order (features/registry.js).
+        window.add(notificationsPage(settings));
         window.add(notesPage(settings));
         window.add(claudePage(settings));
         window.add(sysmonPage(settings));

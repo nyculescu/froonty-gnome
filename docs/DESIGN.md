@@ -105,7 +105,7 @@ resizes. Froonty's CSS was written from scratch.
 | Clock | Own `GLib.timeout_add` chain plus logind `PrepareForSleep` resync | Works | `GnomeDesktop.WallClock`, which is suspend- and timezone-safe | **Discard** and use WallClock |
 | Expand/collapse | Hover with 180/300 ms delays; `ease()` width/height; `EASE_OUT_BACK` | Works | Clutter `ease()`; `GrabHelper` for menu-like modality | **Adapt.** Click, keyboard, Escape and outside-click like a GNOME menu |
 | Shortcut | `<Super>n` | **Conflicts** with GNOME's `focus-active-notification` (`ui/messageTray.js:779`) | — | Froonty uses `<Super><Alt>i`, free on stock Ubuntu 24.04 |
-| Notifications | `source-added` + `notification-added`; hides `Main.messageTray._bannerBin` (never re-shown in 46); **calls `notification.destroy()` after N s**, which deletes it from GNOME's history | Signals exist; behavior harmful | `Source` `notification-request-banner`, `MessageTray.bannerBlocked`, object-param `Notification` (46 already uses `new Notification({source, title, body})`) | **Rewrite** in Phase 3: observe only, never destroy, respect urgency and policy |
+| Notifications | `source-added` + `notification-added`; hides `Main.messageTray._bannerBin` (never re-shown in 46); **calls `notification.destroy()` after N s**, which deletes it from GNOME's history | Signals exist; behavior harmful | `Source` `notification-request-banner`, `MessageTray.bannerBlocked`, object-param `Notification` (46 already uses `new Notification({source, title, body})`) | **Rewritten** as the Notifications tab: observe only, never destroy on its own, GNOME's urgency, policy and banners ([features/notifications.md](features/notifications.md)) |
 | MPRIS | Own synchronous proxies with name watching | Works, but blocks the compositor thread at startup | `ui/mpris.js` exports `MprisPlayer` | **Rewrite** in Phase 4 with async proxies or `MprisPlayer` |
 | Calendar | Own month grid; CalendarServer D-Bus; Google Tasks over REST with OAuth | Heavy; duplicates GNOME | `DateMenuButton` (the whole menu), `Calendar.Calendar`, `DBusEventSource` | **Discard.** Open GNOME's own menu (§5) |
 | Weather | Soup + wttr.in, always on, every 30 min | Works | `misc/weather.js` `WeatherClient` (GWeather; same locations as GNOME Weather) | **Discard** the fetcher and reuse `WeatherClient` in Phase 6, off by default |
@@ -260,6 +260,8 @@ Consequences:
 | `Atk.StateType.EXPANDED` | Accessibility |
 | `Gvc` streams (`change_is_muted`, `notify::is-muted`), through the Shell's mixer | Panic buttons: mute microphone / sound |
 | `Gio.Settings` `org.gnome.desktop.privacy` `disable-camera` (`changed::`, `writable-changed::`): GNOME Settings' Camera Access switch, enforced by xdg-desktop-portal's camera portal only | Panic button: block camera for apps that ask GNOME ([features/panic-buttons.md](features/panic-buttons.md) §4) |
+| `Gio.Settings` `org.gnome.desktop.notifications` `show-banners` (`changed::`, `writable-changed::`; inverted, it is GNOME's Do Not Disturb, the key Quick Settings' toggle is bound to) | Notifications tab: shows Do Not Disturb, and its toggle writes it on a click ([features/notifications.md](features/notifications.md)) |
+| `Pango.parse_markup` | Notifications tab: a notification's text without its markup, after GNOME's `fixMarkup` |
 | `Gio.File` async I/O, `Gio.FileMonitor` | Notes: Markdown files, folder watching; Claude: Claude Code's config file |
 | `Gio.NetworkMonitor` (`network-changed`, `notify::connectivity`, `notify::network-available`) | Claude: "Unknown" while offline, from NetworkManager's own check |
 | `Soup` 3 (`Session.send_and_read_async`) | Claude: livenerf's README and chart from `raw.githubusercontent.com` |
@@ -294,15 +296,30 @@ Consequences:
 | `Main.panel.statusArea.dateMenu.menu` (`isOpen`, signal `open-state-changed`) | Collapse the island whenever GNOME's menu opens (📅, Super+V); one modal at a time | `shell/dateMenu.js` `CalendarMenu` |
 | `Main.panel.statusArea.dateMenu._indicator` (`MessagesIndicator`, its `visible`) | Show GNOME's unread-notifications dot on the pill that covers the clock, with GNOME's own rules | `shell/dateMenu.js` `CalendarMenu` |
 | `Main.messageTray.bannerAlignment` / `bannerBlocked` (public setter) | Hold banners back while the expanded island covers their place, as the panel does for an open menu there | `shell/dateMenu.js` `CalendarMenu.holdBanners()` |
+| `Main.messageTray` `getSources()`, signals `source-added` / `source-removed` (`ui/messageTray.js` 697-701, 887-901 in 50.1) | Notifications tab: GNOME's own notifications, followed only while the tab is on screen | `shell/messageTray.js`, `shell/notificationStore.js` |
+| `MessageTray.Source`: `notifications`, `title`, `icon`, signals `notification-added` / `notification-removed` (emitted from inside the notification's `destroy`) | Notifications tab: each app's notifications, its name and icon | `shell/notificationStore.js` |
+| `MessageTray.Notification`: `title`, `body`, `use-body-markup`, `gicon`, `datetime`, `urgency`, `acknowledged` (read, and written only on a deliberate act in the tab), `actions[].label`; signals `notify`, `action-added`, `action-removed`; `activate()`, `actions[i].activate()`, `destroy(DISMISSED)` (only on the user's click) | Notifications tab: rows, and the exact calls GNOME's own list makes (`ui/messageList.js` 726-758) | `shell/notificationStore.js` |
+| `Main.messageTray._notificationQueue` (private field, read only: `includes()`) | Notifications tab: never mark seen a notification still waiting for its banner. GNOME's dot counts unseen minus queued, and while banners are held it does not drop seen ones from the queue (`_updateState()` returns first), so one marked seen there would be subtracted twice and a later unseen one would light no dot. Without the field, every listed one is marked seen (that lag comes back) | `shell/messageTray.js` (passed to the store as `waitingForBanner`) |
+| `MessageTray.Urgency` (`CRITICAL`), `MessageTray.NotificationDestroyedReason` (`DISMISSED`) | Notifications tab: urgent first; dismiss as GNOME's close button does | `shell/messageTray.js` (read when a store is made) |
+| `misc/util.js` `fixMarkup`, `misc/dateUtils.js` `formatTimeSpan` | Notifications tab: text and "10 minutes ago" exactly as GNOME's list shows them | `shell/messageTray.js` |
 
 `statusArea.dateMenu` is a role name set by `PANEL_ITEM_IMPLEMENTATIONS`
 (`panel.js:633`). It is widely relied on, but it is not an API contract.
+
+The message tray's objects are exported, but they are not an extension
+contract either, and they changed between GNOME 45 and 48 (the
+object-param `Notification`; `NotificationMessage` moved from
+`calendar.js` to `messageList.js`, with groups). Only
+`shell/notificationStore.js` reads or writes them; the feature reaches
+them as `ctx.notifications` and never imports `shell/`
+([features/notifications.md](features/notifications.md) §9).
 
 ### 6.4 Settings window (⚙️)
 
 The expanded island has a ⚙️ button in its top-right corner. It opens the
 settings window, a separate window in GNOME Shell's preferences process
-with tabs (General, Appearance, Panic buttons, Notes, Claude). `shell/settingsWindow.js`
+with tabs (General, Appearance, Panic buttons, then one per feature tab
+in the hub's order: Notifications, Notes, Claude, …). `shell/settingsWindow.js`
 works around
 three GNOME Shell 46 behaviors found while testing:
 
@@ -348,6 +365,8 @@ Two St/Clutter rules also shaped the island:
 | Actors | 1 strip (+ children), added as chrome | `Island.destroy()` |
 | GObject signal connections | layoutManager ×2, panelBox ×1 (+1 allocation watch), ThemeContext ×1, dateMenu container ×2 + one allocation watch per ancestor (3), the clock's unread indicator ×2 (`notify::visible`, `destroy`), settings ×7, the top bar's WallClock ×2, desktop interface settings ×1 | `disconnectObject()` in each owner's teardown |
 | GNOME's date menu (JS signals) | 1 (`open-state-changed`), while the island exists | `CalendarMenu.destroy()` from `Island.destroy()` |
+| The pill's `captured-event` | 1, while the island exists: a press, key or scroll in the open island may be deliberate input (the Notifications tab's "seen"; never a modifier alone or a key repeat, and after a hover-open a key only once the focus is inside, a scroll only over the tab's content) | With the pill, in `Island.destroy()` |
+| GNOME's notifications | Notifications tab, **only while it is on screen**: `Main.messageTray` ×2 (`source-added`, `source-removed`); per source ×4 (`notification-added`, `notification-removed`, `notify::title`, `notify::icon`); per notification ×3 (`notify`, `action-added`, `action-removed`); one `org.gnome.desktop.notifications` `Gio.Settings` with 2 handlers (kept, without handlers, until the tab is turned off); one handler on the clock service. Hidden: none. No copy is kept | `NotificationsService.setActive(false)` (`NotificationStore.unwatch()`); `stop()` |
 | Message tray | `bannerBlocked` set only while the island is expanded (and banners are centered) | collapse; `CalendarMenu.destroy()` |
 | Keybinding | 1, for the whole time the extension is enabled | `disable()` |
 | Top bar icon | 1, only while the island is hidden | `_syncIsland()` / `disable()` |
@@ -366,7 +385,10 @@ Two St/Clutter rules also shaped the island:
 
 Two test layers:
 
-- **`make unit`** runs plain-gjs unit tests for Shell-free logic: Notes names,
+- **`make unit`** runs plain-gjs unit tests for Shell-free logic: the
+  Notifications tab's store and service (over GObject fakes of GNOME's
+  tray, sources and notifications; a destroyed one throws on any access),
+  Notes names,
   Markdown edits, metadata, file store and service, the panic catalog and
   the camera switch (on in-memory GSettings backends or a fake, never the
   real settings), the Claude usage parser and service, the Btop tab's
@@ -410,6 +432,19 @@ input through Clutter virtual devices and cover:
 - **Claude:** rows and wording from a private `CLAUDE_CONFIG_DIR`, live
   updates while shown, "Unknown" offline, nothing watched while collapsed,
   a fresh read on reopening.
+- **Notifications:** GNOME's notifications from the test's own sources
+  (and three sent over `org.freedesktop.Notifications`): order, rows,
+  markup, nothing watched while hidden, live arrivals and updates,
+  "seen" only on a deliberate act (hover-open marks nothing), the dot on
+  the tab, a row click, actions, ×, the keyboard, the two-step Clear
+  all, Do Not Disturb, `ActionInvoked` / `NotificationClosed` over D-Bus,
+  five rounds that remove nothing, and no handler left after disable;
+  and the accidents (`testNotificationSafeguards`): keys, modifiers and
+  scrolls after a hover-open, a double click on ×, a held Delete, a
+  double Enter on Clear all, an update over D-Bus while "Clear N?" waits,
+  GNOME's rule for a click without a default action, and the dot while
+  banners are held
+  ([features/notifications.md](features/notifications.md) §8).
 - **Kill Process:** protected rows (GNOME Shell, its parent, D-Bus);
   a `sleep` the test started killed through the two-step UI (SIGTERM),
   one that ignores SIGTERM ended by "Force quit" (SIGKILL); a reused
@@ -428,11 +463,12 @@ input through Clutter virtual devices and cover:
 - **Startup:** with `start-at-login` off, a simulated login waits behind the
   top bar icon, a lock/unlock keeps the state, and the icon or the shortcut
   starts Froonty.
-- **Lifecycle:** 25 enable/disable cycles, some mid-animation, with a
-  before/after "Shell footprint". It covers actors, chrome, Ctrl+Alt+Tab,
-  keybindings, the modal count, top bar entries, and handler counts on every
-  signal source (including the Shell's mixer). The checks prove these counts
-  are sensitive.
+- **Lifecycle:** 25 enable/disable cycles, some mid-animation (with the
+  Notifications tab on screen), with a before/after "Shell footprint". It
+  covers actors, chrome, Ctrl+Alt+Tab, keybindings, the modal count, top
+  bar entries, and handler counts on every signal source (including the
+  Shell's mixer and the message tray). The checks prove these counts are
+  sensitive.
 
 `run.sh` exits non-zero on any failed check, missing results, or Froonty
 error in the Shell log. Screenshots are kept with `--keep`.
@@ -488,7 +524,7 @@ it makes a leak-free `disable()` matter even more.
 
 | Phase | Reuse |
 |---|---|
-| 3 Notifications | **Done:** `Main.panel.toggleCalendar()` (📅), the clock's unread dot, `MessageTray.bannerBlocked` (public setter) while expanded (§5). Not needed so far: `Main.messageTray` `source-added`; `Source` `notification-request-banner` (the signal GNOME's own banner logic uses) |
+| 3 Notifications | **Done:** `Main.panel.toggleCalendar()` (📅), the clock's unread dot, `MessageTray.bannerBlocked` (public setter) while expanded (§5); the Notifications tab over `Main.messageTray` `getSources()` / `source-added` / `source-removed`, observe only, never destroying on its own ([features/notifications.md](features/notifications.md)). Not needed: `Source` `notification-request-banner` (GNOME's own banner logic) |
 | 4 MPRIS | `ui/mpris.js` `MprisPlayer`, or async `Gio.DBusProxy` with `NameOwnerChanged` |
 | 5 Battery | UPower DisplayDevice (`/org/freedesktop/UPower/devices/DisplayDevice`), as `ui/status/system.js` does; `UPowerGlib` is already loaded by the Shell |
 | 5 Volume/OSD | `ui/status/volume.js` `getMixerControl()` (shared Gvc mixer; already used by the panic buttons); `Main.osdWindowManager` |

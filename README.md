@@ -53,6 +53,24 @@ feature has a design note in [docs/features/](docs/features/).
     off for now; its code is kept
     ([details](docs/features/panic-buttons.md#4-block-camera-for-apps-that-ask-gnome)).
 - **Clock** tab: weekday, time and date.
+- **Notifications** tab: GNOME's own notifications, urgent ones first,
+  then newest first, each with its app, how long ago, its title, its
+  body and up to three action buttons. Froonty keeps no copy.
+  - Click one to open it, as in GNOME's list (the island closes). As in
+    GNOME's list, a click on one whose app gave it no "open" action opens
+    the app and removes all of that app's notifications (resident ones
+    stay). × or Delete dismisses one: a double click on × or a held
+    Delete dismisses only one. "Clear all" asks first ("Clear N?"; from
+    the keyboard, the focus goes to "Keep them"), and keeps any its app
+    updated meanwhile.
+  - The tab carries GNOME's unread dot. Opening it on purpose marks what
+    it lists as seen, as GNOME's list does, except those still waiting
+    for their banner. Opening the island by hover alone does not, nor
+    does typing on into your window afterwards (a modifier key, or any
+    key before Tab moves the focus into the island).
+  - A Do Not Disturb toggle, GNOME's own. Nothing is watched while the
+    tab is not on screen, and nothing is ever removed without a click.
+    See [docs/features/notifications.md](docs/features/notifications.md).
 - **Notes** tab: plain Markdown files in `~/.local/share/froonty/notes`.
   - Autosave, colours in the style of Sticky Notes, and a formatting bar.
   - A wrap toggle with horizontal scrolling.
@@ -130,6 +148,7 @@ froonty@catalin/             the extension (this directory is what gets installe
 │   └── panelLauncher.js     top bar icon while the island is not shown
 ├── features/                hub tabs, one folder each (registry.js lists them)
 │   ├── clock/
+│   ├── notifications/       GNOME's own notifications (through ctx.notifications)
 │   ├── notes/               Markdown notes: store, service, tabs, editor, prefs
 │   ├── claude/              Claude plan usage, read from Claude Code's config;
 │   │                        livenerf's Opus 5.5 row, fetched from GitHub
@@ -141,8 +160,9 @@ froonty@catalin/             the extension (this directory is what gets installe
 ├── core/                    shared by features: emitter.js, tooltip.js
 ├── services/clock.js        clock ticks from the top bar's GnomeDesktop.WallClock
 └── shell/                   adapters over GNOME Shell APIs
-    ├── dateMenu.js          the only place touching Shell internals: the
-    │                        clock, GNOME's calendar and notification menu
+    ├── dateMenu.js          the clock, GNOME's calendar and notification menu
+    ├── messageTray.js       GNOME's notifications for the Notifications tab
+    ├── notificationStore.js the only code reading or writing them (Shell-free)
     ├── mixer.js             the Shell's shared audio mixer
     └── settingsWindow.js    opens or raises the settings window
 third_party/livenerf/        git submodule: the benchmark behind the Claude
@@ -216,6 +236,7 @@ its tabs:
 - **General:** startup, island, hover, shortcut, clock.
 - **Appearance:** size, animation.
 - **Panic buttons:** which buttons, and their order.
+- **Notifications:** enable, size.
 - **Notes:** enable, folder.
 - **Claude:** enable.
 - **Kill Process:** enable, refresh interval, what is never killed, size.
@@ -237,6 +258,8 @@ The keys behind it:
 | `corner-radius` | 14 | Clamped to half the height by St |
 | `animation-duration` | 250 ms | GNOME's enable-animations setting still applies |
 | `panic-buttons` | microphone, sound | Panic buttons in bar order, at most 5 |
+| `notifications-enabled` | `true` | Show the Notifications tab (GNOME's own notifications) |
+| `notifications-width` / `notifications-height` | 400 / 440 | Logical px, while the Notifications tab is shown |
 | `notes-enabled` | `true` | Show the Notes tab |
 | `notes-folder` | `''` | Notes folder; empty means `~/.local/share/froonty/notes` |
 | `notes-wrap` | `true` | Wrap long lines in notes; off scrolls horizontally |

@@ -172,6 +172,12 @@ function shellFootprint() {
         actionMode: Main.actionMode,
         stripPresent: strip() !== null,
         statusArea: Object.keys(Main.panel.statusArea).sort().join(','),
+        // The Notifications tab's, only while it is on screen: not higher
+        // merely because Froonty is enabled, hence not under `handlers`.
+        trayHandlers: {
+            sourceAdded: countHandlers(Main.messageTray, 'source-added'),
+            sourceRemoved: countHandlers(Main.messageTray, 'source-removed'),
+        },
         handlers: {
             monitorsChanged: countHandlers(Main.layoutManager, 'monitors-changed'),
             systemModalOpened: countHandlers(Main.layoutManager, 'system-modal-opened'),
@@ -405,6 +411,7 @@ async function clickActor(actor) {
 
 async function testHub(outDir) {
     const hub = island()._hub;
+    settings().set_boolean('notifications-enabled', false);
     settings().set_boolean('notes-enabled', false);
     settings().set_boolean('claude-enabled', false);
     settings().set_boolean('sysmon-enabled', false);
@@ -421,10 +428,13 @@ async function testHub(outDir) {
     await sleep(SETTLE_MS);
     settings().reset('zerotier-enabled');
     await sleep(SETTLE_MS);
-    check('hub: tabs follow the registry order (Clock, Notes, Claude, Btop, ZeroTier)',
-        hub._tabColumn.get_children().map(b => b.accessible_name).join(',') ===
-            'Clock,Notes,Claude,Btop,ZeroTier',
-        hub._tabColumn.get_children().map(b => b.accessible_name).join(','));
+    settings().reset('notifications-enabled');
+    await sleep(SETTLE_MS);
+    // Names without GNOME's ", unread notifications" (the Notifications tab's).
+    const tabNames = () => hub._tabColumn.get_children()
+        .map(b => b.accessible_name.replace(/, unread notifications$/, '')).join(',');
+    check('hub: tabs follow the registry order (Clock, Notifications, Notes, Claude, Btop, ZeroTier)',
+        tabNames() === 'Clock,Notifications,Notes,Claude,Btop,ZeroTier', tabNames());
     check('hub: clock is the active tab', hub.activeFeature?.id === 'clock');
     check('hub: tab icons are 20 px (25% over other icon buttons)',
         tabButton('clock').child.get_width() === 20 * scale() &&
@@ -508,7 +518,7 @@ async function testHub(outDir) {
         await setExtensionEnabled(false);
         await setExtensionEnabled(true);
         check('hub: a registered feature adds a tab',
-            island()._hub._tabColumn.get_n_children() === 6);
+            island()._hub._tabColumn.get_n_children() === 7);
         check('hub: a feature is not created before its tab is selected',
             log.length === 0, log.join(','));
 
@@ -519,8 +529,13 @@ async function testHub(outDir) {
         const [w, h] = pill().get_transformed_size();
         check('hub: selecting a tab creates, starts and activates it',
             log.join(',') === 'start,view,active', log.join(','));
-        check('hub: island resizes to the feature\'s hubSize',
-            w === 420 * scale() && h === 220 * scale(), `${w}x${h}`);
+        // Its height is a minimum: with seven tabs, the column may need
+        // more (as for expanded-height, testPointer).
+        const lastTab = boxOf(island()._hub._tabColumn.get_last_child());
+        check('hub: island resizes to the feature\'s hubSize (taller only for the tabs)',
+            w === 420 * scale() && h >= 220 * scale() &&
+            (h === 220 * scale() || h - (lastTab.y2 - boxOf(pill()).y1) <= 16 * scale()),
+            `${w}x${h}`);
         check('hub: selected tab is remembered',
             settings().get_string('hub-last-tab') === 'test-fake');
         await screenshotTop(outDir, 'hub-two-tabs');
@@ -2670,6 +2685,8 @@ async function testMonitors() {
 }
 
 async function testLifecycle() {
+    // The expanded cycles below run with the Notifications tab on screen.
+    settings().set_string('hub-last-tab', 'notifications');
     check('disable succeeds', await setExtensionEnabled(false), stateName());
     const baseline = shellFootprint();
     check('disabled: no strip, clock restored',
@@ -2745,6 +2762,8 @@ async function testLifecycle() {
 
     check('re-enable succeeds', await setExtensionEnabled(true), stateName());
     await sleep(SETTLE_MS);
+    island()._hub.select('clock');
+    settings().reset('hub-last-tab');
 }
 
 // ---------------------------------------------------------------- hub layout
@@ -2757,7 +2776,7 @@ async function testHubLayout(outDir) {
     const boxes = tabs.map(boxOf);
     // One column; the island grows past expanded-height to show every tab.
     check('layout: feature tabs are stacked vertically on the left, all inside the island',
-        tabs.length === 5 && boxes.every(b => Math.abs(b.x1 - boxes[0].x1) < 1) &&
+        tabs.length === 6 && boxes.every(b => Math.abs(b.x1 - boxes[0].x1) < 1) &&
         boxes.every((b, i) => i === 0 || b.y1 > boxes[i - 1].y1) &&
         boxes[0].x2 <= boxOf(hub._content).x1 && boxes.at(-1).y2 <= boxOf(pill()).y2,
         `${boxes.map(b => `[${b.x1},${b.y1}]`).join(' ')} island bottom=${boxOf(pill()).y2}`);
@@ -2772,7 +2791,7 @@ async function testHubLayout(outDir) {
     await sleep(SETTLE_MS);
     const tip = hub._tooltip.actor;
     check('layout: hovering a tab shows its feature name to the right',
-        tip.visible && tip.text === 'Notes' && boxOf(tip).x1 >= boxes[1].x2 - 1,
+        tip.visible && tip.text === 'Notifications' && boxOf(tip).x1 >= boxes[1].x2 - 1,
         `visible=${tip.visible} text=${tip.text}`);
     await screenshotTop(outDir, 'hub-vertical-tabs');
     await movePointerTo(...pillCenter());
@@ -3358,6 +3377,955 @@ async function testCalendarMenu(outDir) {
     await sleep(animationWait());
 }
 
+// ---------------------------------------------------------------- notifications tab
+
+// The Notifications tab lists GNOME's own notifications. These checks
+// only add, click, dismiss or clear notifications of their own sources
+// (and three of their own sent over org.freedesktop.Notifications), and
+// destroy only those at the end. GNOME's notifications are never read
+// once destroyed (a row's description is read instead): GJS would log it.
+
+const notificationsEntry = () => island()._hub._entries.get('notifications') ?? null;
+const notificationsView = () => notificationsEntry()?.view ?? null;
+const notificationRows = () => notificationsView()?._list.get_children() ?? [];
+const notificationRow = title =>
+    notificationRows().find(row => row.description?.title === title) ?? null;
+const rowTitles = () => notificationRows().map(row => row.description?.title);
+const sameCounts = (a, b, plus = 0) =>
+    Object.keys(a).every(k => a[k] + plus === b[k]);
+
+async function testNotifications(outDir) {
+    const MessageTray = await import('resource:///org/gnome/shell/ui/messageTray.js');
+    const {Urgency, NotificationDestroyedReason: Reason} = MessageTray;
+    const tray = Main.messageTray;
+    const s = settings();
+    const monitor = Main.layoutManager.primaryMonitor;
+    const away = [monitor.x + 60, monitor.y + monitor.height / 2];
+    const modalBefore = Main.modalCount;
+    // Every destruction of the test's notifications, [title, reason], and
+    // every activation: Froonty's acts show up here, and nothing else may.
+    const destroyed = [];
+    const activated = [];
+    const ran = [];
+
+    const sources = [];
+    const alive = source => tray.getSources().includes(source);
+    const newSource = (title, iconName) => {
+        const source = new MessageTray.Source({title, iconName});
+        tray.add(source);
+        sources.push(source);
+        return source;
+    };
+    // GNOME destroys a source once its last notification goes.
+    let mail = newSource('Froonty mail', 'mail-unread-symbolic');
+    const mailSource = () => {
+        if (!alive(mail))
+            mail = newSource('Froonty mail', 'mail-unread-symbolic');
+        return mail;
+    };
+    const build = newSource('Froonty build', 'emblem-system-symbolic');
+    // Every property in the constructor: GNOME re-stamps the time of a
+    // notification whose properties change later. LOW (no banner) unless
+    // asked; CRITICAL ones come acknowledged (a critical banner never
+    // times out).
+    const notify = (source, title, {urgency = Urgency.LOW, seconds = 0, actions = [], ...more} = {}) => {
+        const n = new MessageTray.Notification({
+            source,
+            title,
+            body: `${title}: Froonty headless test`,
+            urgency,
+            datetime: GLib.DateTime.new_now_local().add_seconds(-seconds),
+            ...more,
+        });
+        n.connect('destroy', (_n, reason) => destroyed.push([title, reason]));
+        n.connect('activated', () => activated.push(title));
+        for (const label of actions)
+            n.addAction(label, () => ran.push(label));
+        source.addNotification(n);
+        return n;
+    };
+    const counts = (source, notification) => ({
+        tray: countHandlers(tray, 'source-added'),
+        source: countHandlers(source, 'notification-added'),
+        notification: countHandlers(notification, 'notify'),
+    });
+    const expand = async () => {
+        island().expand();
+        await sleep(animationWait());
+    };
+    const collapse = async () => {
+        island().collapse();
+        await sleep(animationWait());
+    };
+    const dotsOff = () => !gnomeUnreadDot() && !pillUnreadDot() &&
+        !island()._hub._unreadBadge.visible && !notificationsEntry().dot.visible;
+
+    const critical = notify(build, 'Build failed', {urgency: Urgency.CRITICAL, seconds: 1800, acknowledged: true});
+    const recent = notify(mail, 'New mail', {seconds: 120,
+        gicon: new Gio.ThemedIcon({name: 'avatar-default-symbolic'})});
+    const older = notify(mail, 'Older mail', {seconds: 600});
+    const markup = notify(mail, 'Markup', {seconds: 1200, useBodyMarkup: true,
+        body: '<b>Bold</b> & <i>it</i> <x>'});
+    notify(mail, 'Long body', {seconds: 900, body: Array.from({length: 40},
+        (_, i) => `word${i}`).join(' ')});
+
+    // On by default, after Clock (and a Calendar tab, if there is one).
+    let hub = island()._hub;
+    const order = hub._tabColumn.get_children()
+        .map(button => [...hub._entries].find(([, e]) => e.button === button)?.[0]);
+    const expectedPlace = order.indexOf('clock') + (order[order.indexOf('clock') + 1] === 'calendar' ? 2 : 1);
+    check('notifications: on by default, its tab right after Clock (and Calendar)',
+        s.get_default_value('notifications-enabled').unpack() === true &&
+        s.get_boolean('notifications-enabled') && order.indexOf('notifications') === expectedPlace,
+        order.join(','));
+
+    // Nothing watched before the tab is on screen, even with its view made.
+    const base = counts(mail, older);
+    hub.select('notifications');
+    await sleep(SETTLE_MS);
+    check('notifications: nothing is watched before the tab is shown (only GNOME\'s own handlers)',
+        sameCounts(base, counts(mail, older)) && notificationsView() !== null &&
+        !notificationsEntry().service.active,
+        `${JSON.stringify(base)} -> ${JSON.stringify(counts(mail, older))}`);
+    check('notifications: unseen ones put GNOME\'s dot on the tab too, and in its name',
+        gnomeUnreadDot() && notificationsEntry().dot.visible &&
+        notificationsEntry().button.accessible_name === 'Notifications, unread notifications',
+        `gnome=${gnomeUnreadDot()} name="${notificationsEntry().button.accessible_name}"`);
+
+    // Opened by hover: the list shows, nothing is marked seen.
+    s.set_int('hover-open-delay', 350);
+    await movePointerTo(...away);
+    await movePointerTo(...pillCenter());
+    await sleep(800);
+    await movePointerTo(...away);
+    const view = notificationsView();
+    check('notifications: hover-open shows the list and marks nothing seen; the dots stay',
+        island().expanded && rowTitles().length >= 4 && !recent.acknowledged && !older.acknowledged &&
+        gnomeUnreadDot() && pillUnreadDot() && notificationsEntry().dot.visible &&
+        notificationRow('New mail')?._part('new').visible,
+        `expanded=${island().expanded} rows=${rowTitles()} seen=${recent.acknowledged}`);
+    const ours = ['Build failed', 'New mail', 'Older mail', 'Long body', 'Markup'];
+    check('notifications: urgent first, then newest first (30 min critical, 2 min, 10 min, 15 min, 20 min)',
+        rowTitles().filter(t => ours.includes(t)).join(',') === ours.join(',') &&
+        notificationRow('Build failed').has_style_class_name('froonty-notifications-row-urgent') &&
+        !notificationRow('New mail').has_style_class_name('froonty-notifications-row-urgent'),
+        rowTitles().join(','));
+    const shows = (title, n, source) => {
+        const row = notificationRow(title);
+        return row && row._part('app').text === source.title &&
+            row._part('app-icon').gicon?.equal(source.icon) &&
+            row._part('age').text === `· ${view._format.timeAgo(n.datetime)}` &&
+            row._part('title').text === title && row._part('body').text === n.body;
+    };
+    const iconOf = title => notificationRow(title)?._part('icon');
+    check('notifications: each row names its app with its icon, and shows its age, title and body',
+        shows('New mail', recent, mail) && shows('Older mail', older, mail) &&
+        shows('Build failed', critical, build) && notificationRow('New mail')._part('age').text.length > 2,
+        ['New mail', 'Older mail'].map(t => {
+            const row = notificationRow(t);
+            return `${row?._part('app').text}|${row?._part('age').text}|${row?._part('title').text}|${row?._part('body').text}`;
+        }).join(' / '));
+    check('notifications: the notification\'s own icon shows only when it has one',
+        iconOf('New mail')?.visible && iconOf('New mail').gicon?.equal(recent.gicon) &&
+        !iconOf('Older mail')?.visible);
+    const longBody = notificationRow('Long body')?._part('body');
+    const [, wrapped] = longBody?.get_preferred_height(longBody.width) ?? [0, 0];
+    const oneLine = longBody?.get_preferred_height(-1)[1] ?? 0;
+    check('notifications: a long body stops at three lines, its last one ellipsized',
+        longBody && isEllipsized(longBody) && longBody.height < wrapped &&
+        Math.abs(longBody.height - 3 * oneLine) <= 1,
+        `height=${longBody?.height} wrapped=${wrapped} line=${oneLine} ellipsized=${longBody && isEllipsized(longBody)}`);
+    check('notifications: body markup is shown as GNOME\'s list shows it, without the markup',
+        notificationRow('Markup')?._part('body').text === 'Bold & it <x>',
+        notificationRow('Markup')?._part('body').text);
+    await screenshotTop(outDir, 'notifications-list', 520);
+
+    // A modifier alone is not input to the island (the user may be about
+    // to type into their window). After a hover-open the key focus is on
+    // the pill; once Tab moved it into the island, a key is deliberate.
+    // (More in testNotificationSafeguards.)
+    await pressKeys(Clutter.KEY_Shift_L);
+    check('notifications: a modifier-only key after a hover-open marks nothing; the dots stay',
+        island().expanded && !recent.acknowledged && !older.acknowledged && !markup.acknowledged &&
+        gnomeUnreadDot() && pillUnreadDot() && notificationsEntry().dot.visible,
+        `seen=${recent.acknowledged} gnome=${gnomeUnreadDot()} tab=${notificationsEntry().dot.visible}`);
+    await pressKeys(Clutter.KEY_Tab);
+    await pressKeys(Clutter.KEY_x);
+    check('notifications: once Tab moved the focus into the island, a key marks them seen; GNOME\'s, the pill\'s, 📅\'s and the tab\'s dots go',
+        recent.acknowledged && older.acknowledged && markup.acknowledged && dotsOff() &&
+        !notificationRow('New mail')._part('new').visible && destroyed.length === 0,
+        `seen=${recent.acknowledged} gnome=${gnomeUnreadDot()} tab=${notificationsEntry().dot.visible}`);
+    s.set_int('hover-open-delay', 0);
+
+    // Watching only while on screen.
+    const shown = counts(mail, older);
+    await collapse();
+    const collapsed = counts(mail, older);
+    await expand();
+    await clickActor(tabButton('clock'));
+    await sleep(animationWait());
+    const otherTab = counts(mail, older);
+    check('notifications: one handler on the tray, each source and each notification while on screen; none collapsed or on another tab',
+        sameCounts(base, shown, 1) && sameCounts(base, collapsed) && sameCounts(base, otherTab),
+        `base=${JSON.stringify(base)} shown=${JSON.stringify(shown)} collapsed=${JSON.stringify(collapsed)} ` +
+        `other tab=${JSON.stringify(otherTab)}`);
+    await clickActor(tabButton('notifications'));
+    await sleep(animationWait());
+
+    // Live: one arriving while on screen.
+    const live = notify(mail, 'Live', {urgency: Urgency.NORMAL});
+    await sleep(SETTLE_MS);
+    const titlesNow = rowTitles();
+    check('notifications: one arriving while on screen appears in its place with its new-dot; not seen, its banner held',
+        titlesNow.indexOf('Live') === titlesNow.indexOf('Build failed') + 1 &&
+        notificationRow('Live')?._part('new').visible && !live.acknowledged &&
+        tray.queueCount >= 1 && !tray.visible,
+        `${titlesNow} seen=${live.acknowledged} queue=${tray.queueCount} trayVisible=${tray.visible}`);
+
+    // Updated in place: GNOME re-stamps its time, so it moves up.
+    const olderRow = notificationRow('Older mail');
+    older.set({title: 'Older mail, updated', body: 'Updated body'});
+    await sleep(SETTLE_MS);
+    check('notifications: an update in place changes the row\'s text and age, and moves it up',
+        notificationRow('Older mail, updated') === olderRow &&
+        olderRow._part('body').text === 'Updated body' &&
+        olderRow._part('age').text === `· ${view._format.timeAgo(older.datetime)}` &&
+        rowTitles().indexOf('Older mail, updated') === rowTitles().indexOf('Build failed') + 1,
+        rowTitles().join(','));
+    await screenshotTop(outDir, 'notifications-live', 520);
+
+    // Its banner waits. The next key marks the list seen, but not the one
+    // waiting for its banner: GNOME's banner marks it seen once the island
+    // closes (testNotificationSafeguards follows that). Removed here, so
+    // no banner shows during the checks that follow.
+    const liveLow = notify(mail, 'Live, low');
+    await sleep(SETTLE_MS);
+    await pressKeys(Clutter.KEY_x);
+    check('notifications: the next key marks a new one seen, but leaves the one waiting for its banner unseen, with its dot',
+        liveLow.acknowledged && !live.acknowledged && tray._notificationQueue.includes(live) &&
+        notificationRow('Live')?._part('new').visible,
+        `low=${liveLow.acknowledged} live=${live.acknowledged} queue=${tray.queueCount}`);
+    live.destroy(Reason.SOURCE_CLOSED);
+    liveLow.destroy(Reason.SOURCE_CLOSED);
+
+    // Closed by its app (here, the test): its row goes.
+    markup.destroy(Reason.SOURCE_CLOSED);
+    await sleep(SETTLE_MS);
+    check('notifications: one closed by its app leaves the list',
+        !notificationRow('Markup') && island().expanded);
+
+    // A deliberate open marks what it lists seen, and removes nothing.
+    await collapse();
+    const unseen = notify(mail, 'Unseen again', {seconds: 5});
+    await sleep(SETTLE_MS);
+    const dotBefore = gnomeUnreadDot() && pillUnreadDot();
+    const logBefore = destroyed.length;
+    await expand();
+    check('notifications: a deliberate open marks the listed ones seen: every dot goes, every notification stays',
+        dotBefore && unseen.acknowledged && dotsOff() && destroyed.length === logBefore &&
+        notificationRow('Unseen again') && mail.notifications.includes(unseen) &&
+        mail.notifications.includes(recent) && build.notifications.includes(critical),
+        `dot before=${dotBefore} seen=${unseen.acknowledged} log=${JSON.stringify(destroyed)}`);
+
+    // Another tab on screen: a LOW one lights the tab's dot (GNOME's rule).
+    await clickActor(tabButton('clock'));
+    await sleep(animationWait());
+    const low = notify(mail, 'Low while open');
+    await sleep(SETTLE_MS);
+    const entry = notificationsEntry();
+    check('notifications: a LOW one arriving with Clock on screen lights the tab\'s dot and 📅\'s; the tab says so',
+        entry.dot.visible && entry.dot.mapped && island()._hub._unreadBadge.visible &&
+        entry.button.accessible_name.endsWith(', unread notifications') && !low.acknowledged,
+        `tab dot=${entry.dot.visible} name="${entry.button.accessible_name}"`);
+    await screenshotTop(outDir, 'notifications-tab-dot', 520);
+    await clickActor(tabButton('notifications'));
+    await sleep(animationWait());
+    check('notifications: clicking the tab shows it and marks it seen; the dot goes',
+        low.acknowledged && dotsOff() && entry.button.accessible_name === 'Notifications');
+
+    // A click on a row: GNOME's activate(), then the island closes.
+    notify(mailSource(), 'Click me');
+    await sleep(SETTLE_MS);
+    await clickActor(notificationRow('Click me')._part('title'));
+    await sleep(animationWait());
+    check('notifications: a click on a row activates it once; GNOME removes it (dismissed); the island closes, no grab left',
+        activated.filter(t => t === 'Click me').length === 1 &&
+        destroyed.filter(([t]) => t === 'Click me').map(([, r]) => r).join() === `${Reason.DISMISSED}` &&
+        !island().expanded && !island()._grabHelper.grabbed && Main.modalCount === modalBefore,
+        `activated=${activated} destroyed=${JSON.stringify(destroyed)} expanded=${island().expanded} modal=${Main.modalCount}`);
+
+    await expand();
+    const resident = notify(mailSource(), 'Resident', {resident: true});
+    await sleep(SETTLE_MS);
+    await clickActor(notificationRow('Resident')._part('title'));
+    await sleep(animationWait());
+    check('notifications: a resident one stays after a click, as in GNOME',
+        activated.includes('Resident') && mail.notifications.includes(resident) &&
+        !destroyed.some(([t]) => t === 'Resident') && !island().expanded);
+
+    // Actions: at most three buttons; a click runs the app's action.
+    await expand();
+    notify(mailSource(), 'Actions', {actions: ['One', 'Two', 'Three', 'Four']});
+    await sleep(SETTLE_MS);
+    const actionButtons = notificationRow('Actions')?._part('actions').get_children() ?? [];
+    check('notifications: four actions show the first three, with their labels',
+        actionButtons.length === 3 && actionButtons.map(b => b.label).join(',') === 'One,Two,Three',
+        actionButtons.map(b => b.label).join(','));
+    await movePointerTo(...away);
+    await screenshotTop(outDir, 'notifications-urgent-actions', 520);
+    await clickActor(actionButtons[1]);
+    await sleep(animationWait());
+    check('notifications: clicking the second runs the app\'s action; GNOME removes it; the island closes',
+        ran.join(',') === 'Two' && destroyed.some(([t, r]) => t === 'Actions' && r === Reason.DISMISSED) &&
+        !island().expanded && Main.modalCount === modalBefore,
+        `ran=${ran} expanded=${island().expanded}`);
+
+    // × dismisses that one only; the island stays open.
+    await expand();
+    notify(mailSource(), 'Dismiss me');
+    await sleep(SETTLE_MS);
+    const listedBefore = rowTitles().length;
+    await clickActor(notificationRow('Dismiss me')._part('dismiss'));
+    await sleep(SETTLE_MS);
+    check('notifications: × dismisses only that one (reason 2); the others stay; the island stays open',
+        destroyed.filter(([t]) => t === 'Dismiss me').map(([, r]) => r).join() === `${Reason.DISMISSED}` &&
+        rowTitles().length === listedBefore - 1 && !notificationRow('Dismiss me') && island().expanded,
+        `${rowTitles()} expanded=${island().expanded}`);
+
+    // Keyboard: Tab to a row, Delete dismisses it (the focus moves on),
+    // Enter activates the next.
+    notify(mailSource(), 'Key A');
+    notify(mailSource(), 'Key B');
+    await sleep(SETTLE_MS);
+    const mainOf = title => notificationRow(title)?._part('main') ?? null;
+    for (let i = 0; i < 40 && global.stage.key_focus !== mainOf('Key B'); i++)
+        await pressKeys(Clutter.KEY_Tab);
+    check('notifications: Tab reaches a row', global.stage.key_focus === mainOf('Key B'),
+        `focus=${global.stage.key_focus}`);
+    const keyA = mainOf('Key A');
+    await pressKeys(Clutter.KEY_Delete);
+    check('notifications: Delete dismisses it (reason 2), and the focus moves to the next row',
+        destroyed.some(([t, r]) => t === 'Key B' && r === Reason.DISMISSED) &&
+        global.stage.key_focus === keyA && island().expanded,
+        `focus=${global.stage.key_focus} rows=${rowTitles()}`);
+    await pressKeys(Clutter.KEY_Return);
+    await sleep(animationWait());
+    check('notifications: Enter activates it; GNOME removes it; the island closes',
+        activated.includes('Key A') && destroyed.some(([t]) => t === 'Key A') && !island().expanded);
+
+    // "Clear all": two clicks, for exactly what was listed at the first.
+    await expand();
+    let v = notificationsView();
+    const listed = [...v._service.items];
+    const onlyOurs = listed.length > 0 && listed.every(n => sources.includes(n.source));
+    check('notifications: only the test\'s own notifications are listed (Clear all touches nothing else)',
+        onlyOurs, `${listed.length} listed`);
+    if (onlyOurs) {
+        const clearLog = destroyed.length;
+        await clickActor(v._clearButton);
+        check('notifications: "Clear all" asks first: "Clear N?", nothing removed yet',
+            v._confirmButton.visible && v._confirmButton.label === `Clear ${listed.length}?` &&
+            v._keepButton.visible && !v._clearButton.visible && destroyed.length === clearLog,
+            `label=${v._confirmButton.label} destroyed=${destroyed.length - clearLog}`);
+        await screenshotTop(outDir, 'notifications-confirm', 520);
+        await clickActor(v._keepButton);
+        check('notifications: "Keep them" keeps them all',
+            !v._confirmButton.visible && v._clearButton.visible && destroyed.length === clearLog &&
+            v._service.items.length === listed.length);
+
+        await clickActor(v._clearButton);
+        const between = notify(mailSource(), 'Between clicks');
+        await sleep(SETTLE_MS);
+        await clickActor(v._confirmButton);
+        await sleep(SETTLE_MS);
+        const cleared = destroyed.slice(clearLog);
+        check('notifications: confirming clears exactly the first click\'s list, each dismissed; one added since stays',
+            cleared.length === listed.length && cleared.every(([, r]) => r === Reason.DISMISSED) &&
+            !cleared.some(([t]) => t === 'Between clicks') && rowTitles().join() === 'Between clicks' &&
+            island().expanded,
+            `cleared=${JSON.stringify(cleared)} rows=${rowTitles()}`);
+
+        await clickActor(v._clearButton);
+        await collapse();
+        await expand();
+        check('notifications: collapsing drops a pending "Clear all"',
+            !v._confirmButton.visible && !v._keepButton.visible && v._clearButton.visible &&
+            mail.notifications.includes(between));
+        const single = notificationRow('Between clicks');
+        const [, singleHeight] = single?.get_preferred_height(single.width) ?? [0, 0];
+        check('notifications: a lone row keeps its own height (the list does not stretch it)',
+            single && Math.abs(single.height - singleHeight) <= 1 && single.height < v._scroll.height / 2,
+            `row ${single?.height}, natural ${singleHeight}, list ${v._scroll.height}`);
+
+        between.destroy(Reason.SOURCE_CLOSED);
+        await sleep(SETTLE_MS);
+        check('notifications: empty: "No notifications", and no Clear button',
+            v._empty.visible && !v._scroll.visible && !v._clearButton.visible &&
+            v._status.text === '0 notifications', `status=${v._status.text}`);
+        await screenshotTop(outDir, 'notifications-empty', 520);
+    }
+
+    // Do Not Disturb (default session mode only: when it ends, Ubuntu
+    // Dock logs TypeErrors of its own; see testCalendarMenu).
+    const dock = Main.extensionManager.lookup('ubuntu-dock@ubuntu.com');
+    if (dock?.state !== ExtensionState.ACTIVE) {
+        const [isolated, where] = privacyIsIsolated(outDir);
+        check('notifications: GNOME\'s notification settings are the private test copy', isolated, where);
+        if (isolated) {
+            const gnomeSettings = new Gio.Settings({schema_id: 'org.gnome.desktop.notifications'});
+            const whileDnd = notify(mailSource(), 'While Do Not Disturb');
+            gnomeSettings.set_boolean('show-banners', false);
+            await sleep(SETTLE_MS);
+            check('notifications: under Do Not Disturb the header says so, the toggle is on, the list stays',
+                v._status.text.startsWith('Do Not Disturb · ') && v._dndButton.checked &&
+                notificationRow('While Do Not Disturb') !== null, v._status.text);
+            await screenshotTop(outDir, 'notifications-dnd', 520);
+            await clickActor(v._dndButton);
+            check('notifications: the toggle ends Do Not Disturb (GNOME\'s own key)',
+                await waitFor(() => gnomeSettings.get_boolean('show-banners')) && !v._dndButton.checked);
+            gnomeSettings.reset('show-banners');
+            whileDnd.destroy(Reason.SOURCE_CLOSED);
+            await sleep(SETTLE_MS);
+        }
+    }
+
+    await testFdoNotifications(Reason);
+
+    // Size: its own, live from Settings.
+    await expand();
+    if (island()._hub.activeFeature?.id !== 'notifications') {
+        await clickActor(tabButton('notifications'));
+        await sleep(animationWait());
+    }
+    const [w, h] = pill().get_transformed_size();
+    s.set_int('notifications-width', 520);
+    s.set_int('notifications-height', 360);
+    await sleep(animationWait());
+    const [w2, h2] = pill().get_transformed_size();
+    check('notifications: 400×440 by default, and live with the settings',
+        w === 400 * scale() && h === 440 * scale() && w2 === 520 * scale() && h2 === 360 * scale(),
+        `${w}x${h} then ${w2}x${h2}`);
+    s.reset('notifications-width');
+    s.reset('notifications-height');
+    await sleep(animationWait());
+
+    // Never removed behind the user's back.
+    notify(mailSource(), 'Stays');
+    notify(mail, 'Stays too', {urgency: Urgency.CRITICAL, acknowledged: true});
+    await sleep(SETTLE_MS);
+    await collapse();
+    await expand();
+    const kept = [...mail.notifications];
+    const state = () => kept.map(n => alive(mail) && mail.notifications.includes(n)
+        ? `listed:${n.acknowledged}` : 'gone').join(',');
+    const before = state();
+    const keepLog = destroyed.length;
+    for (let i = 0; i < 5; i++) {
+        await collapse();
+        await expand();
+        island()._hub.select('clock');
+        await sleep(SETTLE_MS);
+        island()._hub.select('notifications');
+        await sleep(SETTLE_MS);
+        await setExtensionEnabled(false);
+        await setExtensionEnabled(true);
+        await expand();
+    }
+    check('notifications: open, close, switch tabs and disable/enable while shown, 5 times: nothing removed or changed',
+        state() === before && destroyed.length === keepLog && kept.length === 2,
+        `${before} -> ${state()} destroyed=${JSON.stringify(destroyed.slice(keepLog))}`);
+
+    // Disable while on screen: no handler left; enable and reopen: once.
+    await collapse();
+    const anchor = kept[0];
+    const idle = counts(mail, anchor);
+    await expand();
+    const onScreen = counts(mail, anchor);
+    await setExtensionEnabled(false);
+    const disabled = counts(mail, anchor);
+    await setExtensionEnabled(true);
+    const enabled = counts(mail, anchor);
+    await expand();
+    const reopened = counts(mail, anchor);
+    check('notifications: disable while on screen leaves no handler on the tray, a source or a notification; reopened, once',
+        sameCounts(idle, onScreen, 1) && sameCounts(idle, disabled) && sameCounts(idle, enabled) &&
+        sameCounts(idle, reopened, 1),
+        [idle, onScreen, disabled, enabled, reopened].map(c => JSON.stringify(c)).join(' '));
+
+    // Only the test's own sources; the island as found.
+    await collapse();
+    for (const source of sources) {
+        if (alive(source))
+            source.destroy(Reason.SOURCE_CLOSED);
+    }
+    s.set_int('hover-open-delay', 0);
+    island()._hub.select('clock');
+    s.reset('hub-last-tab');
+    await sleep(SETTLE_MS);
+    hub = island()._hub;
+    check('notifications: the test\'s sources are gone, Clock is shown again',
+        sources.every(source => !alive(source)) && hub.activeFeature?.id === 'clock');
+}
+
+// A real notification over D-Bus, through GNOME's own daemon (the
+// org.gnome.Shell.Notifications service in front of the Shell): its
+// actions reach the app as ActionInvoked and NotificationClosed, which
+// the service sends back to the sender, here the Shell itself.
+async function testFdoNotifications(Reason) {
+    const signals = [];
+    const subscription = Gio.DBus.session.signal_subscribe(null, 'org.freedesktop.Notifications',
+        null, '/org/freedesktop/Notifications', null, Gio.DBusSignalFlags.NONE,
+        (_connection, _sender, _path, _iface, name, params) => signals.push([name, ...params.deepUnpack()]));
+    const sent = [];
+    const send = title => new Promise((resolve, reject) => {
+        Gio.DBus.session.call('org.freedesktop.Notifications', '/org/freedesktop/Notifications',
+            'org.freedesktop.Notifications', 'Notify',
+            new GLib.Variant('(susssasa{sv}i)', ['Froonty test', 0, 'dialog-information-symbolic',
+                title, 'Sent over D-Bus', ['default', 'Open', 'reply', 'Reply'],
+                {urgency: new GLib.Variant('y', 0)}, -1]),
+            new GLib.VariantType('(u)'), Gio.DBusCallFlags.NONE, 5000, null,
+            (connection, result) => {
+                try {
+                    resolve(connection.call_finish(result).deepUnpack()[0]);
+                } catch (e) {
+                    reject(e);
+                }
+            });
+    });
+    // The Shell's object behind it (alive while listed).
+    const shellNotification = title => Main.messageTray.getSources()
+        .flatMap(source => source.notifications).find(n => n.title === title) ?? null;
+    const reasons = new Map();
+    const deliver = async title => {
+        const id = await send(title);
+        await waitFor(() => notificationRow(title) !== null, 3000);
+        // Laid out on the next frame: a click before that misses the row.
+        await sleep(SETTLE_MS);
+        const n = shellNotification(title);
+        n?.connect('destroy', (_n, reason) => reasons.set(title, reason));
+        sent.push(title);
+        return id;
+    };
+    const signalled = (name, id, value) =>
+        waitFor(() => signals.some(([n, i, v]) => n === name && i === id && v === value), 3000);
+
+    try {
+        island().expand();
+        await sleep(animationWait());
+        const replyId = await deliver('Over D-Bus: reply');
+        const buttons = notificationRow('Over D-Bus: reply')?._part('actions').get_children() ?? [];
+        check('notifications: a real notification sent over D-Bus is listed, its "Reply" action a button',
+            buttons.length === 1 && buttons[0].label === 'Reply', buttons.map(b => b.label).join(','));
+        await clickActor(buttons[0]);
+        check('notifications: its "Reply" runs GNOME\'s action, which removes it (dismissed); the island closes',
+            await waitFor(() => reasons.get('Over D-Bus: reply') === Reason.DISMISSED) && !island().expanded,
+            `reason=${reasons.get('Over D-Bus: reply')}`);
+        check('notifications: the app gets ActionInvoked "reply" over D-Bus',
+            await signalled('ActionInvoked', replyId, 'reply'), JSON.stringify(signals));
+
+        island().expand();
+        await sleep(animationWait());
+        const closeId = await deliver('Over D-Bus: dismiss');
+        await clickActor(notificationRow('Over D-Bus: dismiss')._part('dismiss'));
+        check('notifications: × on it: GNOME destroys it dismissed, and the app gets NotificationClosed reason 2',
+            await waitFor(() => reasons.get('Over D-Bus: dismiss') === Reason.DISMISSED) &&
+            await signalled('NotificationClosed', closeId, 2), JSON.stringify(signals));
+
+        const openId = await deliver('Over D-Bus: open');
+        await clickActor(notificationRow('Over D-Bus: open')._part('title'));
+        check('notifications: a click on it: the app gets ActionInvoked "default"',
+            await signalled('ActionInvoked', openId, 'default') &&
+            reasons.get('Over D-Bus: open') === Reason.DISMISSED, JSON.stringify(signals));
+        await sleep(animationWait());
+    } finally {
+        Gio.DBus.session.signal_unsubscribe(subscription);
+        // Should a check have failed half-way: only the test's own.
+        for (const title of sent)
+            shellNotification(title)?.destroy(Reason.SOURCE_CLOSED);
+        island().collapse();
+        await sleep(animationWait());
+    }
+}
+
+// ---------------------------------------------------------------- notifications: safeguards
+//
+// Accidents that must not cost the user a notification or mark one seen
+// unread: keys and scrolls after a hover-open, a double click on ×, a held
+// Delete, a double Enter on "Clear all", an app updating a notification
+// while "Clear N?" waits, a click on an app's notification sent without a
+// default action (GNOME's rule, documented), and GNOME's dot while banners
+// are held. Only the test's own notifications (its own sources, and its
+// own over org.freedesktop.Notifications) are touched; all are removed at
+// the end.
+
+const centerOf = actor => {
+    const b = boxOf(actor);
+    return [(b.x1 + b.x2) / 2, (b.y1 + b.y2) / 2];
+};
+
+// One D-Bus notification: [id, the Shell's object for it].
+async function sendFdoNotification(appName, title, {replaces = 0, actions = [], hints = {}} = {}) {
+    const id = await new Promise((resolve, reject) => {
+        Gio.DBus.session.call('org.freedesktop.Notifications', '/org/freedesktop/Notifications',
+            'org.freedesktop.Notifications', 'Notify',
+            new GLib.Variant('(susssasa{sv}i)', [appName, replaces, 'dialog-information-symbolic',
+                title, 'Sent over D-Bus', actions,
+                {urgency: new GLib.Variant('y', 0), ...hints}, -1]),
+            new GLib.VariantType('(u)'), Gio.DBusCallFlags.NONE, 5000, null,
+            (connection, result) => {
+                try {
+                    resolve(connection.call_finish(result).deepUnpack()[0]);
+                } catch (e) {
+                    reject(e);
+                }
+            });
+    });
+    const shellNotification = () => Main.messageTray.getSources()
+        .flatMap(source => source.notifications).find(n => n.title === title) ?? null;
+    await waitFor(() => shellNotification() !== null && notificationRow(title) !== null, 3000);
+    // Laid out on the next frame: a click before that misses the row.
+    await sleep(SETTLE_MS);
+    return [id, shellNotification()];
+}
+
+async function testNotificationSafeguards(outDir) {
+    const MessageTray = await import('resource:///org/gnome/shell/ui/messageTray.js');
+    const {Urgency, NotificationDestroyedReason: Reason} = MessageTray;
+    const tray = Main.messageTray;
+    const s = settings();
+    const monitor = Main.layoutManager.primaryMonitor;
+    const away = [monitor.x + 60, monitor.y + monitor.height / 2];
+    // Every destruction of the test's notifications, [title, reason].
+    const destroyed = [];
+    const gone = title => destroyed.filter(([t]) => t === title).map(([, r]) => r).join();
+    const sources = [];
+    const fdo = new Map(); // title -> the Shell's notification, for clean-up
+    const alive = source => tray.getSources().includes(source);
+    let own = null;
+    const ownSource = () => {
+        if (!own || !alive(own)) {
+            own = new MessageTray.Source({title: 'Froonty safeguards', iconName: 'mail-unread-symbolic'});
+            tray.add(own);
+            sources.push(own);
+        }
+        return own;
+    };
+    const notify = (title, {urgency = Urgency.LOW, seconds = 0} = {}) => {
+        const source = ownSource();
+        const n = new MessageTray.Notification({
+            source,
+            title,
+            body: `${title}: Froonty headless test`,
+            urgency,
+            datetime: GLib.DateTime.new_now_local().add_seconds(-seconds),
+        });
+        n.connect('destroy', (_n, reason) => destroyed.push([title, reason]));
+        source.addNotification(n);
+        return n;
+    };
+    const sendFdo = async (appName, title, options) => {
+        const [id, n] = await sendFdoNotification(appName, title, options);
+        // An update (replaces_id) is the same object, already followed.
+        if (n && ![...fdo.values()].includes(n))
+            n.connect('destroy', (_n, reason) => destroyed.push([title, reason]));
+        if (n)
+            fdo.set(title, n);
+        return [id, n];
+    };
+    // Between sections: only the test's own go (closed by their "app").
+    const removeOwn = async () => {
+        if (own && alive(own))
+            own.destroy(Reason.SOURCE_CLOSED);
+        await sleep(SETTLE_MS);
+    };
+    const expand = async () => {
+        island().expand();
+        await sleep(animationWait());
+    };
+    const collapse = async () => {
+        island().collapse();
+        await sleep(animationWait());
+    };
+    const onlyOurs = () => notificationsView()._service.items
+        .every(n => sources.includes(n.source) || [...fdo.values()].includes(n));
+    const focus = () => global.stage.key_focus;
+    const signals = [];
+    const subscription = Gio.DBus.session.signal_subscribe(null, 'org.freedesktop.Notifications',
+        null, '/org/freedesktop/Notifications', null, Gio.DBusSignalFlags.NONE,
+        (_connection, _sender, _path, _iface, name, params) => signals.push([name, ...params.deepUnpack()]));
+
+    try {
+        await collapse();
+        island()._hub.select('notifications');
+        await sleep(SETTLE_MS);
+
+        // ------------------------------------------------ after a hover-open
+        // The pointer rests where the pill was (over the open island's
+        // header), the key focus is on the pill: the user may only have
+        // been reading the time while typing into their window.
+        const h1 = notify('Hover: one', {seconds: 30});
+        const h2 = notify('Hover: two', {seconds: 60});
+        await sleep(SETTLE_MS);
+        s.set_int('hover-open-delay', 350);
+        await movePointerTo(...away);
+        const pillSpot = pillCenter();
+        const hoverOpen = async () => {
+            await movePointerTo(...away);
+            await movePointerTo(...pillSpot);
+            await sleep(800);
+        };
+        const unseen = () => !h1.acknowledged && !h2.acknowledged && gnomeUnreadDot() &&
+            pillUnreadDot() && notificationsEntry().dot.visible;
+        await hoverOpen();
+        check('notifications safeguards: hover-open lists them and marks nothing',
+            island().expanded && notificationRow('Hover: one') !== null && unseen() && focus() === pill(),
+            `expanded=${island().expanded} focus=${focus()}`);
+        await pressKeys(Clutter.KEY_Shift_L);
+        await pressKeys(Clutter.KEY_Control_L);
+        await pressKeys(Clutter.KEY_Alt_L);
+        check('notifications safeguards: Shift, Control or Alt alone after a hover-open mark nothing',
+            island().expanded && unseen(), `seen=${h1.acknowledged}`);
+        await pressKeys(Clutter.KEY_x);
+        check('notifications safeguards: a key while the focus is still on the pill (meant for the window below) marks nothing',
+            island().expanded && unseen() && focus() === pill(), `seen=${h1.acknowledged}`);
+        const under = global.stage.get_actor_at_pos(Clutter.PickMode.REACTIVE, ...pillSpot);
+        pointer.notify_discrete_scroll(now(), Clutter.ScrollDirection.DOWN, Clutter.ScrollSource.WHEEL);
+        await sleep(SETTLE_MS);
+        check('notifications safeguards: a scroll where the pill was (the header, not the list) marks nothing',
+            island().expanded && unseen() && under !== null && !island()._hub._content.contains(under),
+            `under=${under && describeActor(under)} seen=${h1.acknowledged}`);
+        await pressKeys(Clutter.KEY_space);
+        await sleep(animationWait());
+        check('notifications safeguards: Space on the pill closes the island and marks nothing',
+            !island().expanded && unseen(), `expanded=${island().expanded} seen=${h1.acknowledged}`);
+
+        await hoverOpen();
+        await pressKeys(Clutter.KEY_Tab);
+        const inside = focus() !== null && focus() !== pill() && pill().contains(focus());
+        check('notifications safeguards: Tab moves the focus into the island, and marks nothing by itself',
+            island().expanded && inside && unseen(), `focus=${focus()} seen=${h1.acknowledged}`);
+        await pressKeys(Clutter.KEY_x);
+        check('notifications safeguards: then a key marks them seen, and the dots go',
+            h1.acknowledged && h2.acknowledged && !gnomeUnreadDot() && !notificationsEntry().dot.visible,
+            `seen=${h1.acknowledged},${h2.acknowledged} gnome=${gnomeUnreadDot()}`);
+        await collapse();
+
+        const h3 = notify('Hover: three', {seconds: 5});
+        await sleep(SETTLE_MS);
+        await hoverOpen();
+        await movePointerTo(...centerOf(notificationRow('Hover: three')._part('title')));
+        await sleep(SETTLE_MS);
+        const stillUnseen = !h3.acknowledged;
+        pointer.notify_discrete_scroll(now(), Clutter.ScrollDirection.DOWN, Clutter.ScrollSource.WHEEL);
+        await sleep(SETTLE_MS);
+        check('notifications safeguards: after a hover-open, moving onto the list marks nothing; a scroll over it does',
+            stillUnseen && h3.acknowledged && island().expanded, `before=${stillUnseen} after=${h3.acknowledged}`);
+        s.set_int('hover-open-delay', 0);
+        await movePointerTo(...away);
+        await screenshotTop(outDir, 'notifications-hover-input', 520);
+        check('notifications safeguards: nothing was removed by any of that',
+            destroyed.length === 0, JSON.stringify(destroyed));
+        await removeOwn();
+
+        // ------------------------------------------------ a double click on ×
+        // × removes its row at once; the next row moves up under the
+        // pointer, its × exactly where the first was.
+        notify('Double C', {seconds: 30});
+        notify('Double B', {seconds: 20});
+        notify('Double A', {seconds: 10});
+        await sleep(SETTLE_MS);
+        check('notifications safeguards: newest first: A, B, C', rowTitles().join() === 'Double A,Double B,Double C',
+            rowTitles().join());
+        const [x, y] = centerOf(notificationRow('Double A')._part('dismiss'));
+        const yB = centerOf(notificationRow('Double B')._part('dismiss'))[1];
+        pointer.notify_absolute_motion(now(), x, y);
+        await sleep(50);
+        for (let i = 0; i < 2; i++) {
+            pointer.notify_button(now(), Clutter.BUTTON_PRIMARY, Clutter.ButtonState.PRESSED);
+            await sleep(30);
+            pointer.notify_button(now(), Clutter.BUTTON_PRIMARY, Clutter.ButtonState.RELEASED);
+            await sleep(i === 0 ? 120 : SETTLE_MS);
+        }
+        const xB = notificationRow('Double B') ? centerOf(notificationRow('Double B')._part('dismiss')) : [];
+        check('notifications safeguards: a double click on × dismisses that one only; the next one, moved under the pointer, stays',
+            gone('Double A') === `${Reason.DISMISSED}` && gone('Double B') === '' && gone('Double C') === '' &&
+            Math.abs(xB[1] - y) < 2 && island().expanded,
+            `destroyed=${JSON.stringify(destroyed.filter(([t]) => t.startsWith('Double')))} ×A y=${y}, ×B y=${yB} then ${xB[1]}`);
+        await sleep(Clutter.Settings.get_default().double_click_time + 100);
+        await clickAt(x, y);
+        check('notifications safeguards: a click there after the double-click time dismisses the next one (on purpose)',
+            gone('Double B') === `${Reason.DISMISSED}` && gone('Double C') === '',
+            JSON.stringify(destroyed.filter(([t]) => t.startsWith('Double'))));
+        await movePointerTo(...away);
+        await removeOwn();
+
+        // ------------------------------------------------ a held Delete
+        for (const [i, seconds] of [[4, 40], [3, 30], [2, 20], [1, 10]])
+            notify(`Delete ${i}`, {seconds});
+        await sleep(SETTLE_MS);
+        const mainOf = title => notificationRow(title)?._part('main') ?? null;
+        for (let i = 0; i < 40 && focus() !== mainOf('Delete 1'); i++)
+            await pressKeys(Clutter.KEY_Tab);
+        let repeats = 0;
+        const probe = pill().connect('captured-event', (_actor, event) => {
+            if (event.type() === Clutter.EventType.KEY_PRESS &&
+                event.get_flags() & Clutter.EventFlags.FLAG_REPEATED)
+                repeats++;
+            return Clutter.EVENT_PROPAGATE;
+        });
+        const focusedFirst = focus() === mainOf('Delete 1');
+        keyboard.notify_keyval(now(), Clutter.KEY_Delete, Clutter.KeyState.PRESSED);
+        await sleep(1500);
+        keyboard.notify_keyval(now(), Clutter.KEY_Delete, Clutter.KeyState.RELEASED);
+        await sleep(SETTLE_MS);
+        pill().disconnect(probe);
+        check('notifications safeguards: Delete held down dismisses one; the keyboard\'s repeats, now on the next row, dismiss nothing more',
+            focusedFirst && repeats > 0 && gone('Delete 1') === `${Reason.DISMISSED}` &&
+            ['Delete 2', 'Delete 3', 'Delete 4'].every(t => gone(t) === '') &&
+            focus() === mainOf('Delete 2') && island().expanded,
+            `focused=${focusedFirst} repeats=${repeats} rows=${rowTitles()} focus=${focus()}`);
+
+        // ------------------------------------------------ Clear all from the keyboard
+        const v = notificationsView();
+        check('notifications safeguards: only the test\'s own notifications are listed (Clear all touches nothing else)',
+            onlyOurs(), `${v._service.items.length} listed`);
+        if (onlyOurs()) {
+            for (let i = 0; i < 40 && focus() !== v._clearButton; i++)
+                await pressKeys(Clutter.KEY_Tab);
+            const before = destroyed.length;
+            const onClear = focus() === v._clearButton;
+            await pressKeys(Clutter.KEY_Return);
+            const keepFocused = focus() === v._keepButton;
+            await pressKeys(Clutter.KEY_Return);
+            check('notifications safeguards: Enter twice on "Clear all": the first asks (the focus on "Keep them"), the second keeps them',
+                onClear && keepFocused && destroyed.length === before && !v._confirmButton.visible &&
+                v._clearButton.visible && focus() === v._clearButton && rowTitles().length === 3,
+                `onClear=${onClear} keepFocused=${keepFocused} destroyed=${destroyed.length - before} focus=${focus()}`);
+            await pressKeys(Clutter.KEY_Return);
+            const asked = v._confirmButton.visible && v._confirmButton.label === 'Clear 3?' &&
+                focus() === v._keepButton;
+            await pressKeys(Clutter.KEY_Shift_L, Clutter.KEY_Tab);
+            const onConfirm = focus() === v._confirmButton;
+            await pressKeys(Clutter.KEY_Return);
+            check('notifications safeguards: confirming from the keyboard takes a move to "Clear 3?" (Shift+Tab), then Enter',
+                asked && onConfirm && ['Delete 2', 'Delete 3', 'Delete 4'].every(t => gone(t) === `${Reason.DISMISSED}`) &&
+                rowTitles().length === 0 && island().expanded,
+                `asked=${asked} onConfirm=${onConfirm} rows=${rowTitles()}`);
+        }
+        await removeOwn();
+
+        // ------------------------------------------------ updated while "Clear N?" waits
+        // As a chat app does: the same notification (replaces_id), new
+        // text, unseen again; GNOME re-stamps it and it moves up.
+        notify('Clear: one', {seconds: 20});
+        notify('Clear: two', {seconds: 10});
+        const [chatId, chat] = await sendFdo('Froonty test chat', 'Chat: 1 new message');
+        if (onlyOurs() && chat) {
+            await clickActor(v._clearButton);
+            const askedFor = v._confirmButton.label;
+            await sendFdo('Froonty test chat', 'Chat: 2 new messages', {replaces: chatId});
+            await sleep(SETTLE_MS);
+            const sameObject = fdo.get('Chat: 2 new messages') === chat;
+            check('notifications safeguards: an app updating one in place while "Clear N?" waits takes it out of the question',
+                askedFor === 'Clear 3?' && sameObject && v._confirmButton.visible &&
+                v._confirmButton.label === 'Clear 2?' && rowTitles()[0] === 'Chat: 2 new messages',
+                `asked=${askedFor} now=${v._confirmButton.label} same=${sameObject} rows=${rowTitles()}`);
+            await screenshotTop(outDir, 'notifications-confirm-updated', 520);
+            await clickActor(v._confirmButton);
+            await sleep(SETTLE_MS);
+            check('notifications safeguards: confirming dismisses the two shown at the first click; the updated one stays',
+                gone('Clear: one') === `${Reason.DISMISSED}` && gone('Clear: two') === `${Reason.DISMISSED}` &&
+                gone('Chat: 1 new message') === '' && rowTitles().join() === 'Chat: 2 new messages',
+                `rows=${rowTitles()} destroyed=${JSON.stringify(destroyed.slice(-3))}`);
+        } else {
+            check('notifications safeguards: the chat notification arrived and only the test\'s are listed', false,
+                `chat=${chat} ours=${onlyOurs()}`);
+        }
+        fdo.get('Chat: 2 new messages')?.destroy(Reason.SOURCE_CLOSED);
+        await removeOwn();
+        await collapse();
+
+        // ------------------------------------------------ no default action
+        // GNOME's daemon: a click on an app's notification sent without a
+        // "default" action opens the app (Source.open()), which removes
+        // every one of its notifications that is not resident. GNOME's own
+        // list does the same; Froonty makes the same call.
+        await expand();
+        const [oneId] = await sendFdo('Froonty test siblings', 'Sibling one');
+        const [twoId] = await sendFdo('Froonty test siblings', 'Sibling two');
+        await sendFdo('Froonty test siblings', 'Sibling resident', {hints: {resident: new GLib.Variant('b', true)}});
+        await sendFdo('Froonty test other app', 'Other app');
+        const sameSource = fdo.get('Sibling one')?.source === fdo.get('Sibling two')?.source &&
+            fdo.get('Sibling one')?.source !== fdo.get('Other app')?.source;
+        const signalsBefore = signals.length;
+        await clickActor(notificationRow('Sibling two')._part('title'));
+        await sleep(animationWait());
+        const closed = id => signals.slice(signalsBefore).some(([n, i, r]) => n === 'NotificationClosed' && i === id && r === 2);
+        await waitFor(() => closed(oneId) && closed(twoId), 3000);
+        // (GNOME's handler destroys it inside the 'activated' emission, and
+        // a disposed object's later handlers do not run: the test's own
+        // 'activated' log cannot see this click.)
+        check('notifications safeguards: a click on one sent without a default action: GNOME removes all of that app\'s that are not resident (as its own list does); the resident one and another app\'s stay',
+            sameSource &&
+            gone('Sibling one') === `${Reason.DISMISSED}` && gone('Sibling two') === `${Reason.DISMISSED}` &&
+            closed(oneId) && closed(twoId) && gone('Sibling resident') === '' && gone('Other app') === '' &&
+            !signals.slice(signalsBefore).some(([n]) => n === 'ActionInvoked') && !island().expanded,
+            `sameSource=${sameSource} destroyed=${JSON.stringify(destroyed.filter(([t]) => /Sibling|Other/.test(t)))} ` +
+            `signals=${JSON.stringify(signals.slice(signalsBefore))}`);
+        for (const title of ['Sibling resident', 'Other app'])
+            fdo.get(title)?.destroy(Reason.SOURCE_CLOSED);
+        await sleep(SETTLE_MS);
+
+        // ------------------------------------------------ GNOME's dot while banners are held
+        // The open island holds banners. One waiting for its banner is not
+        // marked seen by Froonty (GNOME counts unseen minus queued, and
+        // drops seen ones from its queue only once banners are released),
+        // so a later unseen one still lights the dot.
+        await expand();
+        const queued = notify('Held: normal', {urgency: Urgency.NORMAL});
+        const lowBefore = notify('Held: low before');
+        await sleep(SETTLE_MS);
+        const inQueue = tray._notificationQueue.includes(queued) && !tray.visible;
+        await pressKeys(Clutter.KEY_x);
+        check('notifications safeguards: a key marks the list seen, except one waiting for its banner (its row keeps its dot); no dot is due',
+            inQueue && lowBefore.acknowledged && !queued.acknowledged &&
+            notificationRow('Held: normal')?._part('new').visible && !gnomeUnreadDot(),
+            `inQueue=${inQueue} low=${lowBefore.acknowledged} queued=${queued.acknowledged} gnome=${gnomeUnreadDot()}`);
+        await clickActor(tabButton('clock'));
+        await sleep(animationWait());
+        const lowAfter = notify('Held: low after');
+        await sleep(SETTLE_MS);
+        check('notifications safeguards: then, with Clock on screen, a LOW one lights the tab\'s, 📅\'s and GNOME\'s dot',
+            !lowAfter.acknowledged && notificationsEntry().dot.visible && island()._hub._unreadBadge.visible &&
+            gnomeUnreadDot(), `tab=${notificationsEntry().dot.visible} gnome=${gnomeUnreadDot()} queue=${tray.queueCount}`);
+        await collapse();
+        check('notifications safeguards: once the island closes, the held banner shows, and GNOME\'s banner marks it seen',
+            await waitFor(() => queued.acknowledged, 3000) && !lowAfter.acknowledged && pillUnreadDot(),
+            `queued=${queued.acknowledged} low=${lowAfter.acknowledged} pill=${pillUnreadDot()}`);
+        await removeOwn();
+        await sleep(animationWait());
+    } finally {
+        Gio.DBus.session.signal_unsubscribe(subscription);
+        s.set_int('hover-open-delay', 0);
+        for (const n of fdo.values()) {
+            if (tray.getSources().some(source => source.notifications.includes(n)))
+                n.destroy(Reason.SOURCE_CLOSED);
+        }
+        for (const source of sources) {
+            if (alive(source))
+                source.destroy(Reason.SOURCE_CLOSED);
+        }
+        island().collapse();
+        await sleep(animationWait());
+        island()._hub.select('clock');
+        s.reset('hub-last-tab');
+        await sleep(SETTLE_MS);
+    }
+    check('notifications safeguards: the test\'s notifications are gone, Clock is shown again, no banner is up',
+        sources.every(source => !alive(source)) && island()._hub.activeFeature?.id === 'clock' &&
+        tray.queueCount === 0);
+}
+
 export async function runAll(outDir) {
     results.length = 0;
     // Pointer-driven checks move the pointer over the pill; keep hover-open
@@ -3377,6 +4345,8 @@ export async function runAll(outDir) {
         await testStartup();
         await testSettingsButton(outDir);
         await testCalendarMenu(outDir);
+        await testNotifications(outDir);
+        await testNotificationSafeguards(outDir);
         await testHub(outDir);
         await testNotes(outDir);
         await testNotesTabsAndColors(outDir);

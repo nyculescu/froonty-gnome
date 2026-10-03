@@ -8,11 +8,13 @@ import clipboard from './clipboard/index.js';
 import clock from './clock/index.js';
 import killprocess from './killprocess/index.js';
 import notes from './notes/index.js';
+import notifications from './notifications/index.js';
 import sysmon from './sysmon/index.js';
 import {LOCAL_FEATURES} from './localFeatures.js';
 
 export const FEATURES = [
     clock,
+    notifications,
     notes,
     claude,
     sysmon,

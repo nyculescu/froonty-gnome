@@ -9,12 +9,16 @@
 //   └─────┴────────────────────────────────────┘
 //     tab column: one icon per feature; its name shows in a tooltip on hover
 //     📅: GNOME's own calendar and notification menu, with GNOME's unread dot
+//     (as does the tab of a feature that asks for it: unreadDot)
 //
 // A feature's view (and its service, if any) is created the first time its
 // tab is selected, and destroyed when the feature is disabled or the hub is
 // destroyed. Services and views are told (setActive) when the feature is
 // shown or hidden: services can pause work nobody sees, views can take the
-// key focus.
+// key focus. The active view also hears of deliberate input in the open
+// hub (onUserInput): the island opened by click, keyboard or shortcut, or
+// a press, key or scroll inside it (Island._isDeliberate: not a modifier
+// alone, not a hover-open alone).
 
 import Clutter from 'gi://Clutter';
 import St from 'gi://St';
@@ -46,9 +50,10 @@ export class Hub extends EventEmitter {
         this._ctx = ctx;
         this._settings = ctx.settings;
         this._features = features;
-        this._entries = new Map(); // id -> {feature, button, view, service}
+        this._entries = new Map(); // id -> {feature, button, dot, view, service}
         this._activeId = null;
         this._shown = false;
+        this._unread = false;
         this.calendarButton = null;
         this._unreadBadge = null;
 
@@ -84,10 +89,37 @@ export class Hub extends EventEmitter {
         return natural;
     }
 
-    /** @param {boolean} unread whether GNOME's clock would show its dot */
+    /**
+     * Shows GNOME's unread dot on 📅 and on the tabs of features that ask
+     * for it (unreadDot), whose names then say so.
+     *
+     * @param {boolean} unread whether GNOME's clock would show its dot
+     */
     setUnread(unread) {
+        this._unread = unread;
         if (this._unreadBadge)
             this._unreadBadge.visible = unread;
+        for (const entry of this._entries.values())
+            this._syncEntryUnread(entry);
+    }
+
+    /**
+     * The user opened the island on purpose, or pressed, typed or scrolled
+     * in it: the active view may take what it shows as seen.
+     */
+    noteUserInput() {
+        if (this._shown)
+            this._entries.get(this._activeId)?.view?.onUserInput?.();
+    }
+
+    /**
+     * Whether `actor` is in the tabs' content area (a view), not the tab
+     * column or the header row.
+     *
+     * @param {?Clutter.Actor} actor
+     */
+    contentContains(actor) {
+        return !!actor && this._content.contains(actor);
     }
 
     /** Tell the active feature whether the hub is visible. */
@@ -211,6 +243,7 @@ export class Hub extends EventEmitter {
             settings: this._settings,
             selectTab: id => {
                 this.select(id);
+                this.noteUserInput();
                 return this._activeId === id;
             },
         });
@@ -240,24 +273,14 @@ export class Hub extends EventEmitter {
     // covers. While GNOME's clock would show its unread-notifications dot,
     // the button carries the same dot.
     _buildCalendarButton() {
-        this._unreadBadge = new St.Widget({
-            style_class: 'froonty-unread-dot',
-            x_align: Clutter.ActorAlign.END,
-            y_align: Clutter.ActorAlign.START,
-            x_expand: true,
-            y_expand: true,
-            visible: false,
-        });
-        const icon = new St.Widget({layout_manager: new Clutter.BinLayout()});
-        icon.add_child(new St.Icon({icon_name: 'x-office-calendar-symbolic'}));
-        icon.add_child(this._unreadBadge);
-
+        const {child, dot} = iconWithDot({icon_name: 'x-office-calendar-symbolic'});
+        this._unreadBadge = dot;
         const button = new St.Button({
             style_class: 'froonty-icon-button',
             accessible_name: _('Calendar and notifications'),
             can_focus: true,
             track_hover: true,
-            child: icon,
+            child,
         });
         this._tooltip.attach(button, () => button.accessible_name, 'below');
         return button;
@@ -293,21 +316,37 @@ export class Hub extends EventEmitter {
     }
 
     _addEntry(feature) {
+        // An icon name, or a Gio.Icon for one the feature bundles.
+        const iconParams = typeof feature.icon === 'string'
+            ? {icon_name: feature.icon} : {gicon: feature.icon};
+        const {child, dot} = feature.unreadDot
+            ? iconWithDot(iconParams) : {child: new St.Icon(iconParams), dot: null};
         const button = new St.Button({
             style_class: 'froonty-icon-button froonty-tab',
             accessible_name: feature.title,
             can_focus: true,
             track_hover: true,
-            // An icon name, or a Gio.Icon for one the feature bundles.
-            child: new St.Icon(typeof feature.icon === 'string'
-                ? {icon_name: feature.icon} : {gicon: feature.icon}),
+            child,
         });
-        button.connect('clicked', () => this.select(feature.id));
+        button.connect('clicked', () => {
+            this.select(feature.id);
+            this.noteUserInput();
+        });
         this._tooltip.attach(button, () => feature.title, 'right');
 
-        const entry = {feature, button, view: null, service: null};
+        const entry = {feature, button, dot, view: null, service: null};
         this._entries.set(feature.id, entry);
+        this._syncEntryUnread(entry);
         return entry;
+    }
+
+    _syncEntryUnread(entry) {
+        if (!entry.dot)
+            return;
+        entry.dot.visible = this._unread;
+        const title = entry.feature.title;
+        entry.button.accessible_name = this._unread
+            ? _('%s, unread notifications').format(title) : title;
     }
 
     _ensureView(entry) {
@@ -329,4 +368,26 @@ export class Hub extends EventEmitter {
         if (this._activeId === id)
             this._activeId = null;
     }
+}
+
+/**
+ * An icon with GNOME's unread dot in its top-right corner (hidden), as on
+ * the clock: 📅 and the tabs of features with unreadDot.
+ *
+ * @param {object} iconParams St.Icon properties
+ * @returns {{child: St.Widget, dot: St.Widget}}
+ */
+function iconWithDot(iconParams) {
+    const dot = new St.Widget({
+        style_class: 'froonty-unread-dot',
+        x_align: Clutter.ActorAlign.END,
+        y_align: Clutter.ActorAlign.START,
+        x_expand: true,
+        y_expand: true,
+        visible: false,
+    });
+    const child = new St.Widget({layout_manager: new Clutter.BinLayout()});
+    child.add_child(new St.Icon(iconParams));
+    child.add_child(dot);
+    return {child, dot};
 }

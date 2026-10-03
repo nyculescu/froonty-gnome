@@ -883,3 +883,163 @@
 .froonty-killprocess-confirm:focus {
     box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.6);
 }
+
+/* Notifications feature: GNOME's own notifications, urgent ones (red
+   outline) first, then newest first; "Clear N?" is red, as Kill
+   Process's confirmation. */
+.froonty-notifications {
+    spacing: 4px;
+}
+.froonty-notifications-header {
+    spacing: 6px;
+    padding: 0 4px;
+}
+.froonty-notifications-status,
+.froonty-notifications-notice {
+    font-size: 0.85em;
+    color: rgba(255, 255, 255, 0.6);
+}
+.froonty-notifications-notice {
+    padding: 8px 4px;
+}
+/* Room on the right for the overlay scrollbar (the × buttons). */
+.froonty-notifications-list {
+    spacing: 4px;
+    padding: 2px 14px 4px 4px;
+}
+.froonty-notifications-row {
+    border-radius: 7px;
+    border: 1px solid transparent;
+    background-color: rgba(255, 255, 255, 0.05);
+}
+.froonty-notifications-row-urgent {
+    border-color: rgba(224, 69, 76, 0.8);
+}
+.froonty-notifications-entry {
+    border-radius: 7px;
+    padding: 6px 8px;
+    transition-duration: 150ms;
+}
+.froonty-notifications-entry:hover,
+.froonty-notifications-entry:focus {
+    background-color: rgba(255, 255, 255, 0.08);
+}
+.froonty-notifications-entry:focus {
+    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.45);
+}
+.froonty-notifications-content {
+    spacing: 3px;
+}
+.froonty-notifications-meta {
+    spacing: 6px;
+    font-size: 0.75em;
+    color: rgba(255, 255, 255, 0.55);
+}
+.froonty-notifications-app-icon {
+    icon-size: 14px;
+}
+.froonty-notifications-app {
+    font-weight: bold;
+    color: rgba(255, 255, 255, 0.75);
+}
+.froonty-notifications-age {
+    font-feature-settings: "tnum";
+}
+.froonty-notifications-main {
+    spacing: 8px;
+}
+.froonty-notifications-icon {
+    icon-size: 32px;
+}
+.froonty-notifications-title {
+    font-weight: bold;
+    font-size: 0.92em;
+}
+.froonty-notifications-body {
+    font-size: 0.85em;
+    color: rgba(255, 255, 255, 0.8);
+}
+.froonty-notifications-dismiss {
+    padding: 4px 5px;
+}
+.froonty-notifications-dismiss StIcon {
+    icon-size: 12px;
+}
+.froonty-notifications-actions {
+    spacing: 6px;
+    padding: 0 8px 6px 48px;
+}
+.froonty-notifications-action {
+    border-radius: 6px;
+    padding: 3px 10px;
+    font-size: 0.85em;
+    font-weight: bold;
+    color: #ffffff;
+    background-color: rgba(255, 255, 255, 0.10);
+    transition-duration: 150ms;
+}
+.froonty-notifications-action:hover,
+.froonty-notifications-action:focus {
+    background-color: rgba(255, 255, 255, 0.18);
+}
+.froonty-notifications-action:focus {
+    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.45);
+}
+/* "Clear all" and "Keep them": as Clipboard's "Plain text". */
+.froonty-notifications-clear {
+    border-radius: 6px;
+    padding: 2px 8px;
+    font-size: 0.85em;
+    color: #ffffff;
+    background-color: rgba(255, 255, 255, 0.08);
+    transition-duration: 150ms;
+}
+.froonty-notifications-clear:hover,
+.froonty-notifications-clear:focus {
+    background-color: rgba(255, 255, 255, 0.16);
+}
+.froonty-notifications-clear:focus {
+    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.45);
+}
+.froonty-notifications-clear-content {
+    spacing: 5px;
+}
+.froonty-notifications-clear StIcon {
+    icon-size: 14px;
+}
+/* "Clear N?": as Kill Process's confirmation. */
+.froonty-notifications-confirm {
+    border-radius: 7px;
+    padding: 2px 10px;
+    font-size: 0.8em;
+    font-weight: bold;
+    color: #ffffff;
+    background-color: #c01c28;
+    transition-duration: 150ms;
+}
+.froonty-notifications-confirm:hover,
+.froonty-notifications-confirm:focus {
+    background-color: #e01b24;
+}
+.froonty-notifications-confirm:focus {
+    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.6);
+}
+.froonty-notifications-dnd:checked,
+.froonty-notifications-dnd:checked:hover {
+    color: #ffffff;
+    background-color: rgba(255, 255, 255, 0.18);
+}
+.froonty-notifications-dnd:insensitive {
+    color: rgba(255, 255, 255, 0.25);
+}
+.froonty-notifications-empty {
+    spacing: 8px;
+    padding: 24px 4px;
+    color: rgba(255, 255, 255, 0.45);
+}
+.froonty-notifications-empty StIcon {
+    icon-size: 48px;
+}
+.froonty-notifications-empty-dnd {
+    font-size: 0.85em;
+}

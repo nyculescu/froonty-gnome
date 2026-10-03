@@ -3,6 +3,36 @@
 ## Unreleased
 
 ### Added
+- **Notifications tab** (on by default). GNOME's own notifications in the
+  island, urgent ones first, then newest first: each with its app, how
+  long ago it came in, its title, up to three lines of its body, its icon
+  and up to three action buttons. Froonty keeps no copy; it is a view of
+  GNOME's list.
+  - A click on a notification, or on one of its buttons, does what GNOME's
+    list does, and the island closes. That includes GNOME's rule for an
+    app that gave its notification no "open" action: the click opens the
+    app and removes all of that app's notifications that are not
+    resident.
+  - × (or Delete) dismisses one. A double click on × dismisses only that
+    one (for the double-click time, the row that moved up under the
+    pointer ignores the second click), and holding Delete down dismisses
+    only one (key repeats are ignored).
+  - "Clear all" asks first: "Clear N?" beside "Keep them". It clears only
+    what was listed at the first click, as it was then: one its app
+    updated meanwhile stays, and N counts down. From the keyboard, the
+    focus goes to "Keep them", so pressing Enter twice keeps them.
+  - The tab carries GNOME's unread dot, as the pill and 📅 do. Opening
+    the island on purpose with this tab on screen (a click, the keyboard,
+    the shortcut), or pressing, typing or scrolling in it, marks what it
+    lists as seen, as GNOME's list does, except one still waiting for its
+    banner, which shows when the island closes. Opening it by hover alone
+    does not, and neither do a modifier key alone, key repeats, a key
+    while the focus is still on the pill after a hover-open (Tab moves it
+    in), or a scroll outside the list after a hover-open.
+  - A Do Not Disturb toggle, bound to GNOME's own switch.
+  - Nothing is watched while the tab is not on screen, and nothing is
+    ever removed without a click. Settings → Notifications: show the
+    tab, and its size (400 × 440 by default).
 - **Notes: rendered Markdown.** Notes are drawn formatted while staying
   plain Markdown files. Headings are larger, bold is bold, italic is
   italic, struck text is struck, code is monospace, links are underlined,
