@@ -1,6 +1,14 @@
 # Changelog
 
-## Unreleased
+## 0.5.0-rc0 (2026-10-03)
+
+First release candidate of 0.5.0, for GNOME Shell 50 on Ubuntu 26.04
+(Wayland). It builds on 0.4.0-rc0. The published package (extensions.
+gnome.org) now has the first submission's tabs only: Calendar,
+Notifications and Notes, with the date pill and the mute panic buttons.
+`make install` builds keep every tab: Media, Claude, Btop, Clipboard, Kill
+Process and Break follow on extensions.gnome.org in later versions;
+ZeroTier and Writing stay working-tree only.
 
 ### Added
 - **When Claude needs you** (Settings → Claude; the bar is on by

@@ -793,6 +793,13 @@ Release candidate 0.4.0-rc0 (the Clipboard tab with hidden passwords and
 paste as plain text, larger tab icons, the Btop scroll fix): **213/213**
 in both session modes, plus 159 unit tests.
 
+Release candidate 0.5.0-rc0 (Notifications, Calendar, Notes' All notes
+window and labels, Media, Break, the Claude attention bar, the date pill
+in place of the Clock tab, the resize grip; the published package with
+the first submission's tabs only): **669/669** in the default session
+mode and **662/662** in Ubuntu's, plus 646 unit tests and 17 packing
+tests; the published package's own check, **14/14**.
+
 The Ubuntu run found a **GNOME Shell 46 race** in `ui/extensionSystem.js`:
 
 - `enable/disableExtension()` write two keys, and each write starts an async
