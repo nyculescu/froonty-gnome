@@ -69,7 +69,12 @@ What changed for Froonty, and how it adapts:
    is on screen: no event tells when a CPU's load, a GPU's temperature or
    a process's CPU use changes, and readings are only worth anything live
    ([features/sysmon.md](features/sysmon.md),
-   [features/kill-process.md](features/kill-process.md)).
+   [features/kill-process.md](features/kill-process.md)). The Media tab's
+   display tick is not a poll (it reads nothing) and has no setting: it
+   fires at the next whole second of the shown position, the unit the
+   timeline shows (`m:ss`), and runs only while the tab is on screen and
+   the shown song plays with a known length and position
+   ([features/media.md](features/media.md#position)).
 3. No background processes or polling loop. Short-lived local subprocesses
   are limited to the Claude usage refresh, the Btop tab's
   `nvidia-smi` (NVIDIA's driver puts its readings nowhere else; only while
@@ -80,8 +85,12 @@ What changed for Froonty, and how it adapts:
   ZeroTier integration. Its status reads use the installed CLI; explicit actions
   (Start/Stop, allowing status access) use fixed `pkexec` arguments. It is omitted, along with its setting, from
   `make pack` output. The Claude tab's livenerf row is the only direct
-  network access: it GETs two public files from GitHub while the tab is on
-  screen, at most once an hour ([features/claude.md](features/claude.md)).
+  network access by default: it GETs two public files from GitHub while
+  the tab is on screen, at most once an hour
+  ([features/claude.md](features/claude.md)). The Media tab has two
+  opt-in uses, both off by default and declared in the extension's
+  description: covers a player gives as a web address, and lyrics from
+  lrclib.net ([features/media.md](features/media.md#network-and-privacy)).
   The Claude attention bar spawns nothing: after the user's Set up, Claude
   Code (not the Shell) runs Froonty's GJS hook script, which writes one
   small file per waiting session under `$XDG_RUNTIME_DIR/froonty`, and a
@@ -91,12 +100,14 @@ What changed for Froonty, and how it adapts:
 5. `disable()` undoes everything `enable()` did. GNOME Shell 46 calls
    `disable()` on every screen lock (default `session-modes` is `["user"]`,
    `ui/extensionSystem.js:440`), so this path runs many times a day.
-   The one exception is the "started" state behind `start-at-login`: it is
-   kept on the extension object, which lives as long as the Shell process,
-   so a screen unlock does not undo a manual start. The Claude attention
-   bar's state folder is kept through a screen lock only (what waits
-   survives it), told apart by `Main.sessionMode.isLocked`; any other
-   disable removes it, so Claude Code's hooks record nothing.
+   Two exceptions are kept on the extension object, which lives as long
+   as the Shell process: the "started" state behind `start-at-login`, so a
+   screen unlock does not undo a manual start; and in-memory choices
+   (`ctx.memory`: Media's chosen player), so a lock does not forget them.
+   Both are plain data, never GObjects. The Claude attention bar's state
+   folder is kept through a screen lock only (what waits survives it), told
+   apart by `Main.sessionMode.isLocked`; any other disable removes it, so
+   Claude Code's hooks record nothing.
 
 ## 3. NexNotch review
 
@@ -114,7 +125,7 @@ resizes. Froonty's CSS was written from scratch.
 | Expand/collapse | Hover with 180/300 ms delays; `ease()` width/height; `EASE_OUT_BACK` | Works | Clutter `ease()`; `GrabHelper` for menu-like modality | **Adapt.** Click, keyboard, Escape and outside-click like a GNOME menu |
 | Shortcut | `<Super>n` | **Conflicts** with GNOME's `focus-active-notification` (`ui/messageTray.js:779`) | — | Froonty uses `<Super><Alt>i`, free on stock Ubuntu 24.04 |
 | Notifications | `source-added` + `notification-added`; hides `Main.messageTray._bannerBin` (never re-shown in 46); **calls `notification.destroy()` after N s**, which deletes it from GNOME's history | Signals exist; behavior harmful | `Source` `notification-request-banner`, `MessageTray.bannerBlocked`, object-param `Notification` (46 already uses `new Notification({source, title, body})`) | **Rewritten** as the Notifications tab: observe only, never destroy on its own, GNOME's urgency, policy and banners ([features/notifications.md](features/notifications.md)) |
-| MPRIS | Own synchronous proxies with name watching | Works, but blocks the compositor thread at startup | `ui/mpris.js` exports `MprisPlayer` | **Rewrite** in Phase 4 with async proxies or `MprisPlayer` |
+| MPRIS | Own synchronous proxies with name watching | Works, but blocks the compositor thread at startup | `ui/mpris.js` exports `MprisPlayer` | **Done:** own async proxies (`features/media/mpris.js`). `MprisPlayer` was not used: no teardown, no position or seeking, placeholder texts ([features/media.md](features/media.md#code)) |
 | Calendar | Own month grid; CalendarServer D-Bus; Google Tasks over REST with OAuth | Heavy; duplicates GNOME | `DateMenuButton` (the whole menu), `Calendar.Calendar`, `DBusEventSource`; Evolution Data Server (the user's calendars, GNOME Online Accounts) | **Discard** the fetchers. Open GNOME's own menu (§5). The Calendar tab reads EDS read-only through its own bindings (not CalendarServer: one global time range, no calendar or colour); no account, OAuth or network code of Froonty's ([features/calendar.md](features/calendar.md) §B) |
 | Weather | Soup + wttr.in, always on, every 30 min | Works | `misc/weather.js` `WeatherClient` (GWeather; same locations as GNOME Weather) | **Discard** the fetcher and reuse `WeatherClient` in Phase 6, off by default |
 | Quick actions | `loginctl`/`systemctl` subprocesses; polls `pactl`, `fuser`, `upower` every 15 s | Spawns processes | `misc/systemActions.js` `getDefault()`; `ui/status/*` | **Discard** the polling; use SystemActions if needed |
@@ -281,6 +292,11 @@ Consequences:
 | `PangoCairo` | Claude: the labels of livenerf's chart, drawn on an `St.DrawingArea` |
 | `Meta.KeyBindingFlags`, `Shell.ActionMode` | Keybinding |
 | `global.compositor.get_laters()`, `Meta.LaterType.BEFORE_REDRAW` | Work after a layout pass, before the next frame: the clock cover's bounds (`shell/dateMenu.js`), the Kill Process list's rows after a scroll |
+| `Gio.DBusConnection` (`signal_subscribe` with `MATCH_ARG0_NAMESPACE`, async `call`), `Gio.DBusProxy` (async, no interface info, on unique names) | Media: MPRIS players ([features/media.md](features/media.md)) |
+| `GdkPixbuf` (`new_from_stream_at_scale_async`, `scale_simple`), `St.ImageContent.set_bytes` | Media: covers, decoded asynchronously; the tint |
+| `Shell.AppSystem.lookup_app`, `Shell.WindowTracker.get_app_from_pid`, `Shell.App.activate` | Media: a player's app name and icon; "Open player" |
+| `Soup` 3 (`Session.send_async`, `InputStream.read_bytes_async`) | Media, opt-in only: web covers, lrclib.net |
+| `St.Settings` `enable-animations` | Media: the bars stand still with GNOME's animations off |
 | `Adw` 1.5, `Gtk` 4 | Preferences |
 | `ECal` 2.0, `EDataServer` 1.2, `ICalGLib` 3.0 (Evolution Data Server's bindings, `gir1.2-ecal-2.0`; optional, imported at run time by `features/calendar/eds.js` only): `SourceRegistry`, `SourceRegistryWatcher`, `ECal.Client.connect`/`get_view`/`get_timezone`/`get_objects_for_uid` (async), `ClientView` (its `start` is a synchronous D-Bus call, made once per view; `stop`/`set_flags` are too, and never called, §8), `recur_generate_instances_sync` (CPU only), `ICalGLib.RecurIterator` (CPU only) | Calendar tab: the user's calendars and live events, read-only |
 | `GIRepository` 3.0 `Repository.enumerate_versions` | Calendar tab: whether the EDS bindings are installed, without importing them (GJS remembers a failed import) |
@@ -303,7 +319,9 @@ Consequences:
 | `global.compositor.get_laters()` (`Meta.LaterType.BEFORE_REDRAW`): the Calendar tab's scroll to the selected day, once laid out | `shell/dateMenu.js` uses it too |
 | `global.focus_manager.navigate_from_event` (Tab navigation under a grab, as `PanelMenu.Button` does) | `ui/panelMenu.js` |
 | `Main.panel.addToStatusArea`, `PanelMenu.Button` (top bar icon while the island is hidden) | `ui/panel.js:935`, `ui/panelMenu.js` |
-| `getMixerControl()`: the shared Gvc mixer behind Quick Settings' volume sliders (through `shell/mixer.js`) | `ui/status/volume.js:24` |
+| `getMixerControl()`: the shared Gvc mixer behind Quick Settings' volume sliders (through `shell/mixer.js`); also the Media tab's volume row | `ui/status/volume.js:24` |
+| `Slider` (signals `drag-begin`/`drag-end`, `value`) and `BarLevel` (style properties `-barlevel-*`, `-slider-handle-radius`): Media's timeline and volume | `ui/slider.js`, `ui/barLevel.js` (50) |
+| `Spinner` (Media: loading lyrics), `PopupMenu.Switch` (Media: "Find lyrics online") | `ui/animation.js`, `ui/popupMenu.js` (50) |
 | `org.gnome.Shell.Extensions.OpenExtensionPrefs` (public D-Bus API of the prefs service); `global.display` `window-created`, `Meta.Window` `shown` / `get_wm_class()`; `Main.activateWindow` | `Shell/Extensions/js/extensionsService.js`, `ui/main.js:878` |
 | Attention bar: `Shell.WindowTracker.get_app_from_pid` / `get_window_app`, `Shell.AppSystem.lookup_app`, `Shell.App.get_windows` / `get_name` / `get_id` / `get_app_info`, `global.display` `notify::focus-window` / `focus_window` / `focus_default_window`, `Main.activateWindow`, `Main.overview` `visible` / `showing` / `hidden` | `shell/claudeAttention.js`, `ui/attentionBar.js` (50.1) |
 | `Main.sessionMode.isLocked`: set from the new mode before `updated`, on which the extension system disables extensions at a lock (`ui/sessionMode.js` `_sync()`, `ui/extensionSystem.js` `_sessionUpdated()`, 50.1) | `shell/claudeAttention.js` `screenLocked()`: the island keeps the attention bar's state folder through a screen lock only |
@@ -413,6 +431,10 @@ Two St/Clutter rules also shaped the island:
 | VS Code's window title template changes | Several VS Code windows are not told apart: focus does not clear, a click raises the most recent | Documented known gap |
 | Claude Code rewrites `settings.json` from its cached copy | Froonty's hooks disappear | The settings row reads the file again on show and on change; Set up again |
 | Flatpak hosts (sandboxed process ids, private runtime folder) and Flatpak browsers (portal notifications) | No attention entries from them | Not supported; documented |
+| Media players' MPRIS quirks (wrong types, Position always 0, no `Seeked`, cleared metadata between songs, mirror names) | Wrong or flickering media state | Type-checked decoding, never placeholder text; a 3 s check of a stuck position; a 1.5 s gap hold; mirrors merged by process and song; commands re-validated and sent to the unique owner only ([features/media.md](features/media.md)) |
+| Shell `Slider`/`BarLevel` style properties or signals change | Media's timeline or volume looks wrong or stops seeking | All in `features/media/view.js` and `volume.js`; the headless tests drag the slider and check the seek |
+| Escape for the open tab first (Media's source list or lyrics) relies on the island's `captured-event` handler running before GrabHelper's, which GrabHelper connects at each grab | Escape closes the island instead of the list | The headless tests check both Escapes |
+| Cover art from untrusted players | Large or broken images | Regular files up to 12 MiB, web covers up to 4 MiB and `image/*` only, decoded asynchronously at the shown size; not `St.TextureCache` (keeps a file monitor per file) |
 
 ## 8. Lifecycle and resource budget
 
@@ -438,9 +460,11 @@ Two St/Clutter rules also shaped the island:
 | Clipboard | Clipboard tab enabled (off by default): one `owner-changed` connection on `global.display.get_selection()`, one settings connection, and one read per copy (`St.Clipboard`); history and images under `~/.local/share/froonty/clipboard` (0700/0600) | `releaseRecorder()` (extension `disable()`, tab turned off) |
 | Network monitor | Claude: three connections on the shared `Gio.NetworkMonitor` (`network-changed`, `notify::connectivity`, `notify::network-available`) per active reader: the tab while on screen, the panic button while the island is open | `ClaudeService.setActive(false)` |
 | Calendar tab | Nothing at module load or enable but a one-time probe (GIRepository's typelib list). The service, when the tab is first selected: 4 settings handlers (2 Froonty keys, 2 `org.gnome.desktop.calendar`). Once the tab has been shown, until disable: 1 `ESourceRegistry`, 1 `SourceRegistryWatcher` (3 handlers), 1 registry handler, 1 `ECal.Client` per visible calendar (1 handler each). From the first time the tab shows a month until another month or zone (or disable): 1 EDS view per visible calendar (4 handlers each), kept and paused while the tab is not on screen, so opening and closing the island makes **no** EDS call. Each view's `start()` is a **synchronous D-Bus call** to evolution-calendar-factory (libecal offers no other; about 0.3 ms with local calendars), once per calendar and month shown; the months a fast wheel passes through (within 250 ms) get none. Views are never `stop()`ped (also synchronous): they are let go, and libecal disposes of them asynchronously once collected. One asynchronous `get_objects_for_uid` per repeating event (its moved occurrences, which views do not deliver), one `get_timezone` per calendar and unknown zone. Timers: none periodic; one idle to coalesce redraws, one idle shared by every view's expansion (3 ms of work per turn; a series is expanded in slices from a moved start, features/calendar.md §B.6), only while on screen and there is work; a one-shot 250 ms quiet period after a month change; while a calendar loads, redraws at most every 200 ms (a one-shot timeout in place of the idle). libecal, libedataserver, libical(-glib) and libcamel stay mapped once loaded | `CalendarService.stop()` (views let go, in-flight answers cancelled, late views let go, idles and timer removed); `setActive(false)` pauses |
-| Network requests | Claude tab, livenerf row: one `Soup.Session`, made on the first fetch; two GETs (about 28 kB) per visit while online, at most once an hour | `LivenerfService.stop()` (aborts the session) |
+| Network requests | Claude tab, livenerf row: one `Soup.Session`, made on the first fetch; two GETs (about 28 kB) per visit while online, at most once an hour. Media: none by default; with its options on, one `Soup.Session` (made on the first such request) for web covers (while shown) and lrclib.net (while the lyrics are open) | `LivenerfService.stop()` (aborts the session); Media `Fetcher.destroy()` from `MediaService.stop()` |
 | File reads | Btop tab, per interval while on screen: `/proc/stat`, `/proc/cpuinfo`, `/proc/meminfo`, `/proc/net/dev`, `/proc/self/mounts`, the CPU's package temperature, a few sysfs files per GPU, and one temperature per core only while the threads are unfolded. Sections that are off are not read. Kill Process tab, per interval while on screen: one listing of `/proc` (with owners), `/proc/stat`, and `/proc/<pid>/stat` for each of the user's processes (256 on the development machine; it also gives the thread count), 32 at a time with a pause between batches so frames are drawn in between; `/proc/<pid>/cmdline` once per process; a handful of small reads (the process, and GNOME Shell's parents) right before each signal | `SysmonService.setActive(false)`, `KillProcessService.setActive(false)` cancel a reading in flight |
 | Subprocesses / D-Bus proxies | Btop tab: one `nvidia-smi` per interval while the tab is on screen and an NVIDIA card is awake (about 40 ms). Kill Process tab: one `/usr/bin/kill` per confirmed kill or "Force quit" click, never otherwise. Otherwise 0 of Froonty's own. Outside the Shell, after the user's Set up, Claude Code runs Froonty's GJS hook (about 38 ms, 33 MB) per qualifying Notification, Stop and StopFailure, and `sh` (about 1.2 ms) per prompt, model step and session end. The Claude tab reads GIO's process-wide `Gio.NetworkMonitor`, whose NetworkManager backend keeps GIO's own proxy for the life of the Shell | — |
+| Media service | One per Shell while held: by the pill (`media-enabled` and `media-show-in-pill` or `media-track-notice`; by default whenever the island exists), the Media tab while on screen, the "Pause all media" button while the island is open. It holds one `NameOwnerChanged` subscription, at most 16 players × 2 proxies (`g-properties-changed` ×2, `g-signal` ×1), one coalescing idle at most, and one-shots: discovery deadline 1 s, gap 1.5 s, chosen-player grace 5 s, cover grace 1.5 s, new-song debounce 0.5 s, pill notice 3 s, seek hold 1 s, stuck-position check 3 s, Up next check 1.5 s, the next lyric line. **Periodic:** the display tick, at most once a second, only while the tab is on screen and the song plays with a length and a position. Position reads only for the shown song while the tab is on screen. One decoded cover kept (plus up to 8 web covers). Volume row: 2 mixer and 2 stream connections while the tab is on screen. Bars: Clutter eases only while playing, shown, and animations are on | `releaseMedia()` → `MediaService.stop()` → `MprisWatcher.stop()`; the tab's `setActive(false)` |
+| Memory kept across `disable()` | `ctx.memory.media`: `{chosen, followed, latestPlayed}` (strings) | Shell exit |
 
 ## 9. Testing
 
@@ -561,6 +585,16 @@ input through Clutter virtual devices and cover:
   turning it off and on; a screen lock keeping what waits, and Froonty or
   the island turned off removing it
   ([features/claude-attention.md](features/claude-attention.md) §10).
+- **Media:** fake MPRIS players as processes on the private session bus
+  (`tools/headless-test/fake-mpris.js`), with test-only `.desktop` files
+  for a music player and a browser: the tab, cover pixels and tint,
+  transport by pointer and keyboard, slider seeks, the tick, `Seeked`,
+  failures, a restarted player, the source list and the automatic choice,
+  gaps, extras sizes, the pill's music, notice, swipes and bars, web
+  covers off and on (a local fake server), Up next, lyrics (lrclib against
+  a local fake), the volume row, "Pause all media", and 25 cycles with
+  music playing. `make unit` runs the MPRIS client against fakes on a
+  private dbus-daemon.
 - **Kill Process:** protected rows (GNOME Shell, its parent, D-Bus);
   a `sleep` the test started killed through the two-step UI (SIGTERM),
   one that ignores SIGTERM ended by "Force quit" (SIGKILL); a reused
@@ -657,7 +691,7 @@ it makes a leak-free `disable()` matter even more.
 | Phase | Reuse |
 |---|---|
 | 3 Notifications | **Done:** `Main.panel.toggleCalendar()` (📅), the clock's unread dot, `MessageTray.bannerBlocked` (public setter) while expanded (§5); the Notifications tab over `Main.messageTray` `getSources()` / `source-added` / `source-removed`, observe only, never destroying on its own ([features/notifications.md](features/notifications.md)). Not needed: `Source` `notification-request-banner` (GNOME's own banner logic) |
-| 4 MPRIS | `ui/mpris.js` `MprisPlayer`, or async `Gio.DBusProxy` with `NameOwnerChanged` |
+| 4 MPRIS | **Done** as the Media tab ([features/media.md](features/media.md)): own async `Gio.DBusProxy`s on unique names with `NameOwnerChanged` (not `ui/mpris.js` `MprisPlayer`, which has no teardown) |
 | 5 Battery | UPower DisplayDevice (`/org/freedesktop/UPower/devices/DisplayDevice`), as `ui/status/system.js` does; `UPowerGlib` is already loaded by the Shell |
 | 5 Volume/OSD | `ui/status/volume.js` `getMixerControl()` (shared Gvc mixer; already used by the panic buttons); `Main.osdWindowManager` |
 | 6 Weather | `misc/weather.js` `WeatherClient`; off by default |

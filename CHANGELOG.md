@@ -125,6 +125,34 @@
   versions are kept: yours as "<name> (conflict)", which then stays open,
   with a line saying so. A file that was only touched, or rewritten with
   the same text, is no conflict.
+- **Media tab** (on by default; Settings → Media). What music and video
+  players report over MPRIS, with play, pause, skip and seek, the cover,
+  and a choice of player ("Automatic" shows the one playing; browsers are
+  followed too, since much music plays in one). Design adapted from
+  vorssaint-utils (GPL-3.0-or-later).
+  - **Safe controls:** each button acts on the song it was drawn for; the
+    song is checked with the player again before a command is sent, and
+    commands go only to that player's process, never to one that took
+    its name since.
+  - **On the collapsed island:** while a song plays, its cover and moving
+    bars beside the time, and a new song's title for 3 s. A click opens
+    the tab; two fingers left or right on the touchpad change song.
+  - **Lyrics:** the player's own, a `.lrc` file next to a local song, or
+    lrclib.net when "Find lyrics online" is on; Earlier and Later fix the
+    timing.
+  - **Up next:** the player's upcoming songs, with "Play now", for
+    players that share them (few do).
+  - **Volume:** mute and a slider for GNOME's output, as in Quick
+    Settings.
+  - **Nothing leaves the computer by default.** Two options use the
+    internet, both off: covers a player gives as a web address, and
+    lyrics from lrclib.net (the song's title, artist, album and length).
+  - The position is read only while the tab is on screen; its clock
+    ticks once a second only while a song plays there. The chosen player
+    survives a screen lock.
+- **Panic button "Pause all media"** (not in the bar by default). Pauses
+  every player that is playing; a second click plays again the ones it
+  paused.
 - **Notes: rendered Markdown.** Notes are drawn formatted while staying
   plain Markdown files. Headings are larger, bold is bold, italic is
   italic, struck text is struck, code is monospace, links are underlined,

@@ -43,6 +43,9 @@ const EXPAND_MODE = Clutter.AnimationMode.EASE_OUT_BACK;
 const COLLAPSE_MODE = Clutter.AnimationMode.EASE_OUT_QUAD;
 const RESIZE_MODE = Clutter.AnimationMode.EASE_OUT_QUAD;
 
+// The pill's widest notice (a new song's title), logical px.
+const PEEK_MAX_WIDTH = 360;
+
 const GEOMETRY_KEYS = [
     'collapsed-width',
     'collapsed-height',
@@ -60,18 +63,24 @@ export class Island {
      * @param {object} actions
      * @param {Function} actions.openSettings (view) opens Froonty's settings
      *   window on 'settings' or 'all-notes'
+     * @param {object} [actions.memory] the extension's in-memory object
+     *   (survives screen locks), shared with features as ctx.memory
+     * @param {?string} [actions.version] the extension's version-name
      */
-    constructor(settings, clock, panelClock, {openSettings}) {
+    constructor(settings, clock, panelClock, {openSettings, memory = {}, version = null}) {
         this._settings = settings;
         this._clock = clock;
         this._panelClock = panelClock;
         this._openSettingsAction = openSettings;
+        this._memory = memory;
+        this._version = version;
         this._expanded = false;
         // Whether the user is at the open island: opened on purpose, or
         // since a press, or a key or scroll that counts (_isDeliberate).
         this._engaged = false;
         // Context menus features opened (ctx.contextMenu), while they exist.
         this._menus = new Set();
+        this._accessory = null;
         this._themeContext = St.ThemeContext.get_for_stage(global.stage);
         // "When Claude needs you" (docs/features/claude-attention.md).
         this._attention = null;
@@ -96,10 +105,11 @@ export class Island {
         // Opening by hover alone is not a deliberate act (see expand()).
         this._hoverOpen = new HoverOpen(this._pill, settings, {
             isExpanded: () => this._expanded,
-            expand: () => this.expand({byHover: true}),
+            expand: () => this.expand({byHover: true, pointer: true}),
         });
 
         this._connectSignals();
+        this._syncAccessory();
         this._updateContent();
         this._updateUnread();
         this._syncGeometry();
@@ -136,6 +146,9 @@ export class Island {
         this._hoverOpen.destroy();
         removeIslandChrome(this._pill);
 
+        // Before the hub: the accessory holds a feature's shared service.
+        this._destroyAccessory();
+
         // The hub stops feature services and destroys their views.
         this._hub.disconnectObject(this);
         this._hub.destroy();
@@ -153,11 +166,12 @@ export class Island {
         return this._expanded;
     }
 
-    toggle() {
+    /** @param {object} [options] {pointer: opened by a click or hover} */
+    toggle(options = {}) {
         if (this._expanded)
             this.collapse();
         else
-            this.expand();
+            this.expand(options);
     }
 
     /**
@@ -169,8 +183,10 @@ export class Island {
      *
      * @param {object} [options]
      * @param {boolean} [options.byHover] opened by resting on the pill
+     * @param {boolean} [options.pointer] opened by a click or hover: while
+     *   the pill shows music, the Media tab opens (media-pill-opens-tab)
      */
-    expand({byHover = false} = {}) {
+    expand({byHover = false, pointer = false} = {}) {
         if (this._expanded)
             return;
 
@@ -194,6 +210,11 @@ export class Island {
             this._strip.reactive = false;
             return;
         }
+
+        const accessory = this._accessory;
+        if (pointer && accessory && (accessory.showing || accessory.peekText) &&
+            this._settings.get_boolean('media-pill-opens-tab'))
+            this._hub.select(accessory.tabId);
 
         this._setExpanded(true, {byHover});
     }
@@ -284,7 +305,12 @@ export class Island {
             // A GNOME popup menu below `source` (ui/contextMenu.js); it is
             // destroyed with the island at the latest.
             contextMenu: (source, params) => this._trackMenu(new ContextMenu(source, params)),
+            // Plain data kept across screen locks (Media's chosen player).
+            memory: this._memory,
+            // The extension's version-name (Media's User-Agent).
+            version: this._version,
         };
+        this._ctx = ctx;
         this._hub = new Hub(ctx, FEATURES, {
             openSettings: () => this._openSettings('settings'),
             openCalendar: this._calendarMenu.available
@@ -296,7 +322,7 @@ export class Island {
     }
 
     _connectSignals() {
-        this._pill.connect('clicked', () => this.toggle());
+        this._pill.connect('clicked', () => this.toggle({pointer: true}));
         // A press, key or scroll inside the open island may be deliberate
         // input (_isDeliberate; Hub.noteUserInput). Escape never gets here:
         // GrabHelper's own handler on the strip, which captures first, stops
@@ -307,6 +333,21 @@ export class Island {
                 this._hub?.noteUserInput();
             return Clutter.EVENT_PROPAGATE;
         });
+        // Swipes on the collapsed pill (Media: change song).
+        this._pill.connect('scroll-event', (_actor, event) =>
+            !this._expanded && this._accessory?.handleScroll(event)
+                ? Clutter.EVENT_STOP
+                : Clutter.EVENT_PROPAGATE);
+        // Connected before GrabHelper's own handler (made on each grab), so
+        // the open tab can use Escape first (close its source list or
+        // lyrics) before Escape closes the island.
+        this._strip.connect('captured-event', (_actor, event) =>
+            this._expanded && event.type() === Clutter.EventType.KEY_PRESS &&
+            event.get_key_symbol() === Clutter.KEY_Escape && this._hub.handleEscape()
+                ? Clutter.EVENT_STOP
+                : Clutter.EVENT_PROPAGATE);
+        // Over fullscreen windows the strip is unmapped: no music on the pill.
+        this._strip.connect('notify::mapped', () => this._syncAccessoryShown());
         // Tab/arrow focus navigation is normally driven from the stage, which
         // the expanded island's modal grab keeps key events away from, so
         // forward them to the focus manager (as PanelMenu.Button does).
@@ -340,6 +381,12 @@ export class Island {
                     () => this._onHubSizeChanged(), this);
             }
         }
+        // A feature's pill accessory comes and goes with its settings.
+        const accessoryKeys = new Set(FEATURES.flatMap(f => f.pillAccessoryKeys ?? []));
+        for (const key of accessoryKeys) {
+            this._settings.connectObject(`changed::${key}`,
+                () => this._syncAccessory(), this);
+        }
 
         Main.layoutManager.connectObject(
             'monitors-changed', () => this._syncGeometry(),
@@ -369,8 +416,8 @@ export class Island {
 
     _targetSize(expanded) {
         if (!expanded)
-            return this._geometry.collapsedSize();
-        const size = this._geometry.expandedSize(this._hub.activeFeature);
+            return this._geometry.collapsedSize(this._collapsedContentWidth());
+        const size = this._geometry.expandedSize(this._hub.activeFeature, this._hub.activeExtraHeight);
         // Tall enough for every feature tab, in one column. (Off stage
         // there is no theme node, and nothing to show yet.)
         if (!this._pill.get_stage())
@@ -383,6 +430,64 @@ export class Island {
         const header = this._hub.minWidth + node.get_horizontal_padding() +
             node.get_border_width(St.Side.LEFT) + node.get_border_width(St.Side.RIGHT);
         return {width: Math.max(size.width, header), height: Math.max(size.height, tabs)};
+    }
+
+    // While the pill shows music (or a notice), it is as wide as its
+    // content needs (a notice at most PEEK_MAX_WIDTH); otherwise 0, the
+    // usual size.
+    _collapsedContentWidth() {
+        const accessory = this._accessory;
+        if (!accessory || !(accessory.showing || accessory.peekText) || !this._pill.get_stage())
+            return 0;
+        const node = this._pill.get_theme_node();
+        const [, natural] = this._collapsedView.actor.get_preferred_width(-1);
+        const width = natural + node.get_horizontal_padding() +
+            node.get_border_width(St.Side.LEFT) + node.get_border_width(St.Side.RIGHT);
+        const scale = this._themeContext.scale_factor;
+        return accessory.peekText ? Math.min(width, PEEK_MAX_WIDTH * scale) : width;
+    }
+
+    // The accessory of the first feature that wants one (Media's music on
+    // the collapsed pill), rebuilt when its settings change.
+    _syncAccessory() {
+        this._destroyAccessory();
+        const feature = FEATURES.find(f => f.createPillAccessory && f.wantsPillAccessory?.(this._settings));
+        if (feature) {
+            this._accessory = feature.createPillAccessory(this._ctx, {pill: this._pill});
+            this._accessoryId = this._accessory.connect('changed', () => this._onAccessoryChanged());
+            this._collapsedView.setAccessory(this._accessory);
+            this._syncAccessoryShown();
+        }
+        this._onAccessoryChanged();
+    }
+
+    _destroyAccessory() {
+        if (!this._accessory)
+            return;
+        this._accessory.disconnect(this._accessoryId);
+        this._collapsedView.setAccessory(null);
+        this._accessory.destroy();
+        this._accessory = null;
+    }
+
+    _syncAccessoryShown() {
+        this._accessory?.setPillShown(!this._expanded && this._strip.mapped);
+    }
+
+    // Music came or went on the collapsed pill: its width follows (while
+    // expanded, the collapse picks it up).
+    _onAccessoryChanged() {
+        this._collapsedView.setPeek(this._accessory?.peekText ?? null);
+        this._pill.accessible_name = this._collapsedView.accessibleText;
+        if (this._expanded || !this._pill.get_stage() ||
+            this._pill.get_transition('height'))
+            return;
+        const {width} = this._targetSize(false);
+        this._pill.ease({
+            width,
+            duration: this._settings.get_int('animation-duration'),
+            mode: RESIZE_MODE,
+        });
     }
 
     // Places the strip on the primary monitor and snaps the pill to the
@@ -465,6 +570,7 @@ export class Island {
             this._attention?.bar.hide();
         }
         this._engaged = expanded && !byHover;
+        this._syncAccessoryShown();
         // The expanded island covers the place where GNOME shows banners.
         this._calendarMenu.holdBanners(expanded);
         this._hub.setShown(expanded);

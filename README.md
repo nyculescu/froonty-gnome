@@ -8,11 +8,14 @@ Status: **0.4.0-rc0**, a release candidate. See [CHANGELOG.md](CHANGELOG.md).
 
 - No background subprocesses. The polling timers are the Btop (system
   monitor) and Kill Process tabs', each running only while its tab is on
-  screen. The published extension
+  screen; the Media tab's display tick (it reads nothing) runs only while
+  the tab is on screen and a song plays. The published extension
   package omits the working-tree-only ZeroTier controls; `make install`
-  includes them. Froonty also makes one direct network request: the Claude
-  tab's livenerf row fetches two public files from GitHub, at most once an
-  hour while the tab is open.
+  includes them. Froonty also makes one direct network request by
+  default: the Claude tab's livenerf row fetches two public files from
+  GitHub, at most once an hour while the tab is open. Two Media options,
+  off by default, use the internet: covers a player gives as a web
+  address, and lyrics from lrclib.net.
 - GJS and native GNOME Shell APIs only.
 
 See [docs/DESIGN.md](docs/DESIGN.md) for the GNOME Shell API analysis (written for 46; see the note there), the list
@@ -92,6 +95,18 @@ feature has a design note in [docs/features/](docs/features/).
   - A Do Not Disturb toggle, GNOME's own. Nothing is watched while the
     tab is not on screen, and nothing is ever removed without a click.
     See [docs/features/notifications.md](docs/features/notifications.md).
+- **Media** tab: what music and video players report (MPRIS), with play,
+  pause, skip and seek, the cover (tinting the island's accent), and a
+  choice of player ("Automatic" picks the playing one).
+  - While a song plays, the collapsed pill shows its cover and moving bars
+    beside the time, and a new song's title for 3 s; a click opens the
+    tab, a two-finger swipe changes song.
+  - Lyrics (the player's own, a `.lrc` file next to a local song, or
+    lrclib.net when allowed) and the player's upcoming songs, for players
+    that share them.
+  - The output volume, through GNOME's own mixer.
+  - Nothing leaves the computer unless one of its two internet options is
+    turned on. See [docs/features/media.md](docs/features/media.md).
 - **Notes** tab: plain Markdown files in `~/.local/share/froonty/notes`.
   - Autosave, colours in the style of Sticky Notes, and a formatting bar.
   - A wrap toggle with horizontal scrolling.
@@ -195,6 +210,8 @@ froonty@catalin/             the extension (this directory is what gets installe
 │   ├── calendar/            Calendar tab: Evolution Data Server (eds.js),
 │   │                        month grid, agenda, provider links
 │   ├── notifications/       GNOME's own notifications (through ctx.notifications)
+│   ├── media/               MPRIS players: watcher, service, tab, pill music,
+│   │                        lyrics, up next
 │   ├── notes/               Markdown notes: store, service, tabs, editor,
 │   │                        labels, the All notes window page, prefs
 │   ├── claude/              Claude plan usage, read from Claude Code's config;
@@ -204,7 +221,7 @@ froonty@catalin/             the extension (this directory is what gets installe
 │   ├── clipboard/           clipboard history: recorder, store, tab
 │   └── killprocess/         Kill Process tab: your processes from /proc, kill(1)
 ├── panic/                   panic button catalog, factories, buttons (mute,
-│                            Claude session, block camera), prefs
+│                            Claude session, block camera, pause media), prefs
 ├── core/                    shared by features: emitter.js, tooltip.js
 ├── services/clock.js        clock ticks from the top bar's GnomeDesktop.WallClock
 └── shell/                   adapters over GNOME Shell APIs
@@ -289,6 +306,8 @@ its tabs:
 - **Panic buttons:** which buttons, and their order.
 - **Calendar:** enable, Online Accounts, which calendars, size.
 - **Notifications:** enable, size.
+- **Media:** enable, music on the island, players followed, lyrics, up
+  next, cover art from the internet, size.
 - **Notes:** enable, folder, size, All notes.
 - **Claude:** enable.
 - **Kill Process:** enable, refresh interval, what is never killed, size.
@@ -317,6 +336,10 @@ The keys behind it:
 | `calendar-eds-checked` | `false` | The first-start check for `gir1.2-ecal-2.0` ran (internal) |
 | `notifications-enabled` | `true` | Show the Notifications tab (GNOME's own notifications) |
 | `notifications-width` / `notifications-height` | 400 / 440 | Logical px, while the Notifications tab is shown |
+| `media-enabled` | `true` | Show the Media tab |
+| `media-show-in-pill` / `media-track-notice` | `true` | Cover and bars beside the time while music plays; a new song's title for 3 s |
+| `media-include-other-players` | `true` | Follow browsers and video players automatically (off: only when chosen) |
+| `media-remote-art` / `media-lyrics-online` | `false` | The Media tab's two internet options: web covers, lyrics from lrclib.net |
 | `notes-enabled` | `true` | Show the Notes tab |
 | `notes-folder` | `''` | Notes folder; empty means `~/.local/share/froonty/notes` |
 | `notes-wrap` | `true` | Wrap long lines in notes; off scrolls horizontally |
@@ -334,8 +357,11 @@ Froonty is an independent implementation. NexNotch
 (<https://github.com/NexVar/NexNotch>, GPL-3.0-or-later) was used only as a
 behavioral and visual reference; **no NexNotch code was copied or adapted**.
 Details are in [docs/DESIGN.md §3](docs/DESIGN.md#3-nexnotch-review).
-vorssaint-utils (GPL-3.0-or-later) was likewise used as a layout reference
-only; no code or branding was taken.
+vorssaint-utils (GPL-3.0-or-later) was used as a layout reference. The
+Media tab's behaviour is adapted from vorssaint-utils (GPL-3.0-or-later);
+no branding was taken. A few of its rules (the LRC parser, the lrclib
+match, the cover tint, new-song detection) follow its code closely, and
+those files carry its copyright line.
 
 Copyright (C) 2026 Catalin Niculescu.
 

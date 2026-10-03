@@ -9,6 +9,7 @@ import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js'
 import {AudioMuteButton} from './audioMute.js';
 import {CameraBlockButton} from './camera.js';
 import {ClaudeSessionButton} from './claudeSession.js';
+import {PauseMediaButton} from './pauseMedia.js';
 import {byId} from './catalog.js';
 
 const FACTORIES = {
@@ -16,6 +17,7 @@ const FACTORIES = {
     'mute-sound': title => new AudioMuteButton('output', title),
     'claude-session': (title, actions) => new ClaudeSessionButton(title, actions),
     'block-camera': title => new CameraBlockButton(title),
+    'pause-media': (title, actions) => new PauseMediaButton(title, actions),
 };
 
 /**
@@ -23,6 +25,7 @@ const FACTORIES = {
  * @param {object} actions
  * @param {Function} actions.selectTab (featureId) → whether that tab exists
  * @param {Gio.Settings} actions.settings Froonty's settings
+ * @param {object} actions.ctx the feature context (settings, memory)
  * @returns {?object} a panic button, or null for an unknown id
  */
 export function createPanicButton(id, actions) {

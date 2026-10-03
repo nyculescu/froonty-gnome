@@ -1,13 +1,18 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Content of the collapsed pill: the time, optionally preceded by a short
 // date, and the unread-notifications dot of GNOME's clock, which the pill
-// covers.
+// covers. A feature's pill accessory (Media's music) adds a wing on each
+// side, and may briefly show a notice in place of the time (a peek).
+//
+//   [leading] [pad] [date time | peek] [dot] [trailing]
 
 import Clutter from 'gi://Clutter';
 import Pango from 'gi://Pango';
 import St from 'gi://St';
 
 import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
+
+const PEEK_FADE_MS = 200;
 
 export class CollapsedView {
     constructor() {
@@ -22,15 +27,28 @@ export class CollapsedView {
         this._unreadPad = this._addDot(this.actor);
         this._unreadPad.opacity = 0;
 
-        const labels = new St.BoxLayout({
-            style_class: 'froonty-collapsed',
+        // The time and, during a peek, the notice, stacked for a cross-fade.
+        this._center = new St.Widget({
+            layout_manager: new Clutter.BinLayout(),
             y_align: Clutter.ActorAlign.CENTER,
         });
-        this.actor.add_child(labels);
-        this._dateLabel = this._addLabel(labels, 'froonty-collapsed-date');
-        this._timeLabel = this._addLabel(labels, 'froonty-collapsed-time');
+        this.actor.add_child(this._center);
+        this._labels = new St.BoxLayout({
+            style_class: 'froonty-collapsed',
+            x_align: Clutter.ActorAlign.CENTER,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        this._center.add_child(this._labels);
+        this._dateLabel = this._addLabel(this._labels, 'froonty-collapsed-date');
+        this._timeLabel = this._addLabel(this._labels, 'froonty-collapsed-time');
+        this._peekLabel = this._addLabel(this._center, 'froonty-collapsed-peek');
+        this._peekLabel.x_align = Clutter.ActorAlign.CENTER;
+        this._peekLabel.visible = false;
+        this._peekLabel.opacity = 0;
 
         this._unreadDot = this._addDot(this.actor);
+        this._accessory = null;
+        this._peekText = null;
     }
 
     /** @param {object} clock a ClockService snapshot */
@@ -46,13 +64,73 @@ export class CollapsedView {
         this._unreadPad.visible = unread;
     }
 
+    /**
+     * Puts a pill accessory's wings around the time (null removes them).
+     *
+     * @param {?object} accessory {leading, trailing, accessibleText}
+     */
+    setAccessory(accessory) {
+        for (const wing of [this._accessory?.leading, this._accessory?.trailing]) {
+            if (wing?.get_parent() === this.actor)
+                this.actor.remove_child(wing);
+        }
+        this._accessory = accessory;
+        if (accessory?.leading)
+            this.actor.insert_child_at_index(accessory.leading, 0);
+        if (accessory?.trailing)
+            this.actor.add_child(accessory.trailing);
+        if (!accessory)
+            this.setPeek(null);
+    }
+
+    /**
+     * Shows a notice in place of the date and time, or (null) them again.
+     *
+     * @param {?string} text
+     */
+    setPeek(text) {
+        const was = this._peekText ?? null;
+        this._peekText = text || null;
+        if (text) {
+            this._peekLabel.text = text;
+            if (was)
+                return;
+            this._peekLabel.show();
+            this._fade(this._peekLabel, 255);
+            this._fade(this._labels, 0);
+        } else if (was) {
+            // Its width goes at once, so the pill can shrink back.
+            this._peekLabel.remove_transition('opacity');
+            this._peekLabel.opacity = 0;
+            this._peekLabel.hide();
+            this._fade(this._labels, 255);
+        }
+    }
+
+    /** The notice shown in place of the time, or null. */
+    get peekText() {
+        return this._peekText ?? null;
+    }
+
     get accessibleText() {
-        const text = this._dateLabel.visible
+        let text = this._dateLabel.visible
             ? `${this._dateLabel.text} ${this._timeLabel.text}`
             : this._timeLabel.text;
+        const extra = this._accessory?.accessibleText;
+        if (extra)
+            text = `${text}, ${extra}`;
         return this._unreadDot.visible
             ? `${text}, ${_('unread notifications')}`
             : text;
+    }
+
+    _fade(actor, opacity) {
+        actor.remove_transition('opacity');
+        actor.ease({
+            opacity,
+            duration: PEEK_FADE_MS,
+            mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+        });
     }
 
     _addLabel(box, styleClass) {

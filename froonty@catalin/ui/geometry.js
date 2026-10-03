@@ -23,11 +23,20 @@ export class IslandGeometry {
     // The concealed top bar clock is transparent but still clickable, so the
     // collapsed pill always covers it completely: collapsed-width and
     // collapsed-height are minimums.
-    collapsedSize() {
+    /**
+     * @param {number} [contentWidth] stage px the collapsed content needs
+     *   (music beside the time); the pill only ever grows for it
+     */
+    collapsedSize(contentWidth = 0) {
         const scale = this._themeContext.scale_factor;
         const cover = this._coverSize();
+        let width = Math.max(this._settings.get_int('collapsed-width') * scale, cover.width,
+            Math.ceil(contentWidth));
+        // Same parity as the cover keeps the pill on whole pixels.
+        if (width > cover.width && cover.width > 0 && (width - cover.width) % 2 !== 0)
+            width += 1;
         return {
-            width: Math.max(this._settings.get_int('collapsed-width') * scale, cover.width),
+            width,
             height: Math.max(this._settings.get_int('collapsed-height') * scale, cover.height),
         };
     }
@@ -35,16 +44,25 @@ export class IslandGeometry {
     /**
      * @param {?object} feature active hub feature; its hubSizeKeys (settings
      *   the user can change) or hubSize win
+     * @param {number} [extraHeight] logical px a feature adds for now
+     *   (Media's lyrics or queue); the island then stays on the monitor
      */
-    expandedSize(feature) {
+    expandedSize(feature, extraHeight = 0) {
         const scale = this._themeContext.scale_factor;
         const keys = feature?.hubSizeKeys;
         const size = keys
             ? {width: this._settings.get_int(keys.width), height: this._settings.get_int(keys.height)}
             : feature?.hubSize;
+        let height = (size?.height ?? this._settings.get_int('expanded-height')) * scale;
+        if (extraHeight > 0) {
+            height += extraHeight * scale;
+            const monitor = Main.layoutManager.primaryMonitor;
+            if (monitor)
+                height = Math.min(height, monitor.height - this.topOffset(monitor) - 16 * scale);
+        }
         return {
             width: (size?.width ?? this._settings.get_int('expanded-width')) * scale,
-            height: (size?.height ?? this._settings.get_int('expanded-height')) * scale,
+            height,
         };
     }
 

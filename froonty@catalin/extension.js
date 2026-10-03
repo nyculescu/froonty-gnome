@@ -37,6 +37,10 @@ export default class FroontyExtension extends Extension {
         // toggled) keep what the user had, so disable() deliberately leaves
         // this field alone.
         this._started ??= this._settings.get_boolean('start-at-login');
+        // Choices kept in memory for as long as the Shell runs, across
+        // screen locks (Media's chosen player): plain data, never cleared
+        // by disable().
+        this._memory ??= {};
 
         // Always available: starts Froonty while it waits after login,
         // toggles the island, or opens the settings while the island is
@@ -149,6 +153,8 @@ export default class FroontyExtension extends Extension {
         this._clock.start();
         this._island = new Island(this._settings, this._clock, this._panelClock, {
             openSettings: view => this._settingsWindow.open(view),
+            memory: this._memory,
+            version: this.metadata['version-name'] ?? null,
         });
 
         this._syncPanelClock();

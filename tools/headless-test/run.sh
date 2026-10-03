@@ -195,6 +195,17 @@ exit 0
 EOF
 chmod +x "$FROONTY_CLAUDE_CODE"
 
+# Media tab: apps for the fake players (fake-mpris.js) to name, one music
+# player and one browser, never shown in the app grid.
+mkdir -p "$XDG_DATA_HOME/applications"
+printf '[Desktop Entry]\nType=Application\nName=Test Music\nExec=true\nNoDisplay=true\nCategories=Audio;Player;\n' \
+    >"$XDG_DATA_HOME/applications/froonty-test-music.desktop"
+printf '[Desktop Entry]\nType=Application\nName=Test Browser\nExec=true\nNoDisplay=true\nCategories=Network;WebBrowser;\n' \
+    >"$XDG_DATA_HOME/applications/froonty-test-browser.desktop"
+# lrclib.net (Media lyrics, only when allowed): a closed local port, so the
+# Shell under test never goes online; the checks point it at a fake.
+export FROONTY_LRCLIB_URL=http://127.0.0.1:9/api/get
+
 ln -s "$REPO/$UUID" "$XDG_DATA_HOME/gnome-shell/extensions/$UUID"
 ln -s "$HERE/$HELPER" "$XDG_DATA_HOME/gnome-shell/extensions/$HELPER"
 

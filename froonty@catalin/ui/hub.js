@@ -83,6 +83,21 @@ export class Hub extends EventEmitter {
         return this._entries.get(this._activeId)?.feature ?? null;
     }
 
+    /** Logical px the active feature adds to its size for now (Media's extras). */
+    get activeExtraHeight() {
+        return this._entries.get(this._activeId)?.view?.extraHeight ?? 0;
+    }
+
+    /**
+     * Escape in the open island: the active view may close something of
+     * its own first (Media's source list or lyrics).
+     *
+     * @returns {boolean} true when the view used it
+     */
+    handleEscape() {
+        return this._entries.get(this._activeId)?.view?.handleEscape?.() ?? false;
+    }
+
     /**
      * The height the tab column needs (physical pixels), so the island
      * can grow to show every tab; 0 while there is no column.
@@ -260,6 +275,7 @@ export class Hub extends EventEmitter {
         // buttons take input.
         this._panicBar = new PanicBar(this._settings, this._tooltip, {
             settings: this._settings,
+            ctx: this._ctx,
             selectTab: id => {
                 this.select(id);
                 this.noteUserInput();
@@ -373,10 +389,15 @@ export class Hub extends EventEmitter {
         // Header buttons of its own (view contract: owned and destroyed by
         // the view; shown only while its tab is active).
         this._header.addActions(entry.feature.id, entry.view.headerActions ?? []);
+        // A view whose size changes by itself (Media's extras) says so.
+        if (typeof entry.view.connect === 'function')
+            entry.viewSizeId = entry.view.connect('size-changed', () => this.emit('size-changed'));
     }
 
     _removeEntry(id) {
         const entry = this._entries.get(id);
+        if (entry.viewSizeId)
+            entry.view.disconnect(entry.viewSizeId);
         // The view destroys its own header buttons; then their box goes.
         entry.view?.destroy();
         this._header.removeActions(id);

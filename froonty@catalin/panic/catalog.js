@@ -42,6 +42,14 @@ export const PANIC_BUTTONS = [
     //         'refused. Apps that open the camera directly, as apps that are not sandboxed ' +
     //         'can, are not blocked, and a camera already in use stays on.'),
     // },
+    {
+        // Every MPRIS player that plays; a second click resumes the ones it
+        // paused (panic/pauseMedia.js, docs/features/media.md).
+        id: 'pause-media',
+        icon: 'media-playback-pause-symbolic',
+        title: _ => _('Pause all media'),
+        description: _ => _('Pauses every player that is playing. Click again to resume the ones it paused.'),
+    },
 ];
 
 /**

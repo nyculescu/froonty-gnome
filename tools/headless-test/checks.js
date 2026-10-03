@@ -17,6 +17,8 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as Volume from 'resource:///org/gnome/shell/ui/status/volume.js';
 import {ExtensionState} from 'resource:///org/gnome/shell/misc/extensionUtils.js';
 
+import {metadataVariants} from '../unit/fakeMpris.js';
+
 const UUID = 'froonty@catalin';
 const SETTLE_MS = 150;
 
@@ -173,6 +175,10 @@ function shellFootprint() {
         modalCount: Main.modalCount,
         actionMode: Main.actionMode,
         stripPresent: strip() !== null,
+        // The shared Media service: holders, and whether it exists.
+        media: mediaSharedModule
+            ? `${mediaSharedModule.mediaUsers()} users, ${mediaSharedModule.sharedMedia() ? 'running' : 'none'}`
+            : 'not loaded',
         statusArea: Object.keys(Main.panel.statusArea).sort().join(','),
         // The Notifications tab's, only while it is on screen: not higher
         // merely because Froonty is enabled, hence not under `handlers`.
@@ -391,7 +397,9 @@ function makeFakeFeature(log) {
         title: 'Fake',
         icon: 'dialog-information-symbolic',
         enabledKey: null,
-        hubSize: {width: 420, height: 220},
+        // Taller than the tab column (seven tabs with it), so the island
+        // takes exactly this size.
+        hubSize: {width: 420, height: 300},
         createService: () => ({
             start: () => log.push('start'),
             stop: () => log.push('stop'),
@@ -3235,9 +3243,16 @@ async function testMonitors() {
     testGeometry('[after switching back] ');
 }
 
-async function testLifecycle() {
+async function testLifecycle(outDir) {
     // The expanded cycles below run with the Notifications tab on screen.
     settings().set_string('hub-last-tab', 'notifications');
+    mediaWork = outDir;
+    // Music on the pill (cover, bars) through every cycle.
+    const player = await spawnFake('froontycycle', {args: MUSIC, state: {
+        ...playing('Cycle Song', {'mpris:artUrl': coverUrl('froontycycle')}), Position: 5e6,
+    }});
+    await waitFor(() => island()?._accessory?.showing, 3000);
+    check('media: music shows on the pill before the cycles', island()?._accessory?.showing === true);
     check('disable succeeds', await setExtensionEnabled(false), stateName());
     const baseline = shellFootprint();
     check('disabled: no strip, clock restored',
@@ -3310,6 +3325,20 @@ async function testLifecycle() {
     await sleep(SETTLE_MS);
     iface.reset('clock-format');
     check('disabled: no strip after signal/settings pokes', strip() === null);
+    // The player changes now: nothing of Froonty's listens any more.
+    await fakeSet(player, {Metadata: song('After Disable')});
+    await fakeSeeked(player, 9e6);
+    await sleep(SETTLE_MS);
+    check('media: disabled, no Media service and no holder (the bus subscription went with it)',
+        mediaSharedModule.sharedMedia() === null && mediaSharedModule.mediaUsers() === 0);
+    await quitFake(player);
+    // The player changes now: nothing of Froonty's listens any more.
+    await fakeSet(player, {Metadata: song('After Disable')});
+    await fakeSeeked(player, 9e6);
+    await sleep(SETTLE_MS);
+    check('media: disabled, no Media service and no holder (the bus subscription went with it)',
+        mediaSharedModule.sharedMedia() === null && mediaSharedModule.mediaUsers() === 0);
+    await quitFake(player);
 
     check('re-enable succeeds', await setExtensionEnabled(true), stateName());
     await sleep(SETTLE_MS);
@@ -6507,12 +6536,919 @@ async function testClaudeAttentionIsland() {
     }
 }
 
+// ================================================================ media
+// Media tab (docs/features/media.md), checked against fake players
+// (fake-mpris.js) that the checks start as processes on this test
+// Shell's PRIVATE session bus; the user's real players are never touched.
+
+const FAKE_MPRIS = GLib.build_filenamev([
+    GLib.path_get_dirname(GLib.filename_from_uri(import.meta.url)[0]), 'fake-mpris.js']);
+const MPRIS = 'org.mpris.MediaPlayer2.';
+const mediaEntry = () => island()._hub._entries.get('media') ?? null;
+const mediaService = () => mediaEntry()?.service?.service ?? null;
+const mediaView = () => mediaEntry()?.view ?? null;
+const accessory = () => island()?._accessory ?? null;
+let mediaWork = null;
+
+async function mediaShared() {
+    return await import(`file://${extension().path}/features/media/shared.js`);
+}
+
+function busCallAsync(name, path, iface, method, params = null, replyType = null, timeout = 3000) {
+    return new Promise((resolve, reject) => {
+        Gio.DBus.session.call(name, path, iface, method, params,
+            replyType ? new GLib.VariantType(replyType) : null, Gio.DBusCallFlags.NO_AUTO_START,
+            timeout, null, (connection, result) => {
+                try {
+                    resolve(connection.call_finish(result));
+                } catch (e) {
+                    reject(e);
+                }
+            });
+    });
+}
+
+const hasOwner = async name => (await busCallAsync('org.freedesktop.DBus', '/org/freedesktop/DBus',
+    'org.freedesktop.DBus', 'NameHasOwner', new GLib.Variant('(s)', [name]), '(b)')).deepUnpack()[0];
+
+const PROP_TYPES = {
+    PlaybackStatus: 's', Rate: 'd', Position: 'x', Volume: 'd', CanGoNext: 'b', CanGoPrevious: 'b',
+    CanPlay: 'b', CanPause: 'b', CanSeek: 'b', CanControl: 'b', 'x-fail': 'as', 'x-delay': 'i',
+    'x-http-delay': 'i', 'x-ignore-set-position': 'b',
+};
+
+/** Sets a fake's state (fake-mpris.js Set): plain values, typed here. */
+async function fakeSet(fake, values) {
+    const out = {};
+    for (const [key, value] of Object.entries(values)) {
+        if (key === 'Metadata')
+            out[key] = new GLib.Variant('a{sv}', metadataVariants(value));
+        else if (key === 'x-tracks')
+            out[key] = new GLib.Variant('aa{sv}', value.map(m => metadataVariants(m)));
+        else
+            out[key] = new GLib.Variant(PROP_TYPES[key], value);
+    }
+    await busCallAsync(fake.name, '/org/froonty/TestPlayer', 'org.froonty.TestPlayer', 'Set',
+        new GLib.Variant('(a{sv})', [out]));
+}
+
+async function fakeCalls(fake) {
+    const reply = await busCallAsync(fake.name, '/org/froonty/TestPlayer', 'org.froonty.TestPlayer',
+        'Calls', null, '(s)');
+    return JSON.parse(reply.deepUnpack()[0]);
+}
+
+const methodsOf = async fake => (await fakeCalls(fake)).map(c => c.method);
+
+async function waitForAsync(predicate, timeoutMs = 3000) {
+    for (let waited = 0; waited < timeoutMs; waited += 100) {
+        // eslint-disable-next-line no-await-in-loop
+        if (await predicate())
+            return true;
+        // eslint-disable-next-line no-await-in-loop
+        await sleep(100);
+    }
+    return await predicate();
+}
+
+async function clearCalls(fake) {
+    await busCallAsync(fake.name, '/org/froonty/TestPlayer', 'org.froonty.TestPlayer', 'ClearCalls');
+}
+
+async function fakeSeeked(fake, us) {
+    await busCallAsync(fake.name, '/org/froonty/TestPlayer', 'org.froonty.TestPlayer', 'EmitSeeked',
+        new GLib.Variant('(x)', [us]));
+}
+
+/**
+ * Starts a fake player and waits for its name on the bus.
+ *
+ * @param {string} suffix its name after org.mpris.MediaPlayer2.
+ * @param {object} [options] {args: extra fake-mpris.js arguments, state}
+ */
+async function spawnFake(suffix, {args = [], state = null} = {}) {
+    const name = `${MPRIS}${suffix}`;
+    const proc = Gio.Subprocess.new(['/usr/bin/gjs', '-m', FAKE_MPRIS, '--names', name,
+        '--work', mediaWork, ...args], Gio.SubprocessFlags.NONE);
+    const fake = {proc, name, suffix, exited: false};
+    proc.wait_async(null, () => {
+        fake.exited = true;
+    });
+    for (let waited = 0; waited < 8000; waited += 50) {
+        // eslint-disable-next-line no-await-in-loop
+        if (await hasOwner(name).catch(() => false))
+            break;
+        // eslint-disable-next-line no-await-in-loop
+        await sleep(50);
+    }
+    if (state)
+        await fakeSet(fake, state);
+    return fake;
+}
+
+async function quitFake(fake) {
+    if (!fake || fake.exited)
+        return;
+    await busCallAsync(fake.name, '/org/froonty/TestPlayer', 'org.froonty.TestPlayer', 'Quit')
+        .catch(() => {});
+    if (!await waitFor(() => fake.exited, 3000))
+        fake.proc.force_exit();
+}
+
+const coverUrl = suffix => GLib.filename_to_uri(GLib.build_filenamev([mediaWork, `cover-${suffix}.png`]), null);
+const song = (title, extra = {}) => ({
+    'xesam:title': title,
+    'xesam:artist': ['Test Band'],
+    'xesam:album': 'Test Album',
+    'mpris:length': 180e6,
+    'mpris:trackid': `/org/froonty/track/${title.replace(/\W/g, '')}`,
+    ...extra,
+});
+const playing = (title, extra = {}) => ({PlaybackStatus: 'Playing', Metadata: song(title, extra)});
+const MUSIC = ['--desktop-entry', 'froonty-test-music'];
+const BROWSER = ['--desktop-entry', 'froonty-test-browser'];
+
+const seconds = text => {
+    const parts = text.replace('−', '').split(':').map(Number);
+    return parts.reduce((total, part) => total * 60 + part, 0);
+};
+
+// Clicks an actor that has just been shown, once it is laid out.
+async function clickShown(actor) {
+    await waitFor(() => actor.mapped && actor.allocation.get_width() > 0, 2000);
+    await sleep(SETTLE_MS);
+    await clickActor(actor);
+}
+
+async function openMediaTab() {
+    if (!island().expanded) {
+        island().expand();
+        await sleep(animationWait());
+    }
+    if (island()._hub.activeFeature?.id !== 'media') {
+        await clickActor(tabButton('media'));
+        await sleep(animationWait());
+    }
+}
+
+async function leaveMediaTab() {
+    if (!island().expanded) {
+        island().expand();
+        await sleep(animationWait());
+    }
+    await clickActor(tabButton('clock'));
+    await sleep(animationWait());
+    island().collapse();
+    await sleep(animationWait());
+}
+
+// Share of strongly red pixels in a stage rectangle (the fake's cover).
+async function redIn(outDir, name, box) {
+    const path = GLib.build_filenamev([outDir, `${name}.png`]);
+    const stream = Gio.File.new_for_path(path).replace(null, false, Gio.FileCreateFlags.NONE, null);
+    await new Shell.Screenshot().screenshot_area(Math.round(box.x1), Math.round(box.y1),
+        Math.round(box.x2 - box.x1), Math.round(box.y2 - box.y1), stream);
+    stream.close(null);
+    const pixbuf = GdkPixbuf.Pixbuf.new_from_file(path);
+    const pixels = pixbuf.get_pixels();
+    const [n, stride] = [pixbuf.get_n_channels(), pixbuf.get_rowstride()];
+    let red = 0;
+    for (let y = 0; y < pixbuf.get_height(); y++) {
+        for (let x = 0; x < pixbuf.get_width(); x++) {
+            const i = y * stride + x * n;
+            if (pixels[i] > 150 && pixels[i + 1] < 90 && pixels[i + 2] < 90)
+                red++;
+        }
+    }
+    return red / (pixbuf.get_width() * pixbuf.get_height());
+}
+
+// A pointer drag on the slider from one fraction to another.
+async function dragSlider(slider, from, to) {
+    const b = boxOf(slider);
+    const radius = 5 * scale();
+    const at = f => [b.x1 + radius + f * (b.x2 - b.x1 - 2 * radius), (b.y1 + b.y2) / 2];
+    pointer.notify_absolute_motion(now(), ...at(from));
+    await sleep(60);
+    pointer.notify_button(now(), Clutter.BUTTON_PRIMARY, Clutter.ButtonState.PRESSED);
+    await sleep(60);
+    for (let i = 1; i <= 8; i++) {
+        pointer.notify_absolute_motion(now(), ...at(from + (to - from) * i / 8));
+        // eslint-disable-next-line no-await-in-loop
+        await sleep(25);
+    }
+    pointer.notify_button(now(), Clutter.BUTTON_PRIMARY, Clutter.ButtonState.RELEASED);
+    await sleep(SETTLE_MS);
+}
+
+async function testMedia(outDir) {
+    mediaWork = outDir;
+    const s = settings();
+    const fakes = [];
+    try {
+        // H1
+        const names = island()._hub._tabColumn.get_children().map(b => b.accessible_name);
+        check('media: the Media tab is there by default, after Clock',
+            s.get_boolean('media-enabled') && tabButton('media')?.accessible_name === 'Media' &&
+            names[0] === 'Clock' && names[1] === 'Media', names.join(','));
+        island().expand();
+        await sleep(animationWait());
+        await movePointerTo(...(() => {
+            const b = boxOf(tabButton('media'));
+            return [(b.x1 + b.x2) / 2, (b.y1 + b.y2) / 2];
+        })());
+        await sleep(SETTLE_MS);
+        check('media: its tab\'s tooltip says "Media"', island()._hub._tooltip.actor.text === 'Media');
+
+        // H2
+        await clickActor(tabButton('media'));
+        await sleep(animationWait());
+        let view = mediaView();
+        let service = mediaService();
+        await waitFor(() => service?.ready && view._idle.visible, 3000);
+        check('media: with no player, "Nothing playing" once ready; no tick',
+            view._idle.visible && view._nothing.visible && view._nothing.text === 'Nothing playing' &&
+            !view._main.visible && service.ticking === false,
+            `idle=${view._idle.visible} ticking=${service?.ticking}`);
+        await screenshotTop(outDir, 'media-idle', 320);
+        const [w, h] = pill().get_transformed_size();
+        check('media: the tab opens at its size (480 × 248)', w === 480 * scale() && h === 248 * scale(), `${w}x${h}`);
+
+        // H3
+        const a = await spawnFake('froontya', {args: MUSIC, state: {
+            ...playing('First Song', {'mpris:artUrl': coverUrl('froontya')}), Position: 10e6,
+        }});
+        fakes.push(a);
+        const shown = await waitFor(() => view._title.text === 'First Song' && view._art.hasImage, 5000);
+        check('media: a playing player shows its title, artist and cover',
+            shown && view._artist.text === 'Test Band' && view._main.visible && !view._idle.visible,
+            `title=${view._title.text} artist=${view._artist.text} image=${view._art.hasImage}`);
+        check('media: the cover tints the halo and the accent (red)',
+            view._art.tint?.r > 0.8 && view._art.tint?.g < 0.2 && /box-shadow/.test(view._art.style ?? '') &&
+            /rgba\(2\d\d, \d{1,2}, \d{1,2}, 1\)/.test(view.slider.style ?? ''),
+            `tint=${JSON.stringify(view._art.tint)} style=${view.slider.style}`);
+        const red = await redIn(outDir, 'media-art-pixels', boxOf(view._art));
+        const art = boxOf(view._art);
+        check('media: the cover is really drawn (pixel check)', red > 0.6, `${Math.round(red * 100)}% red`);
+        check('media: the cover is square, as tall as the player row, inside the island',
+            Math.abs((art.x2 - art.x1) - (art.y2 - art.y1)) <= 1 &&
+            boxOf(view._controls).y2 <= boxOf(pill()).y2,
+            `art=${art.x2 - art.x1}x${art.y2 - art.y1} row=${view._playerRow.height} ` +
+            `stack=${view._stack.height} level=${view.level} controls=${boxOf(view._controls).y2} pill=${boxOf(pill()).y2} ` +
+            `layout=${JSON.stringify(view._lastLayout)} artFixed=${view._art.natural_width_set}/${view._art.natural_height_set} ` +
+            `artNat=${view._art.get_preferred_width(-1)}/${view._art.get_preferred_height(-1)} ` +
+            `button=${JSON.stringify(boxOf(view.artButton))} buttonNat=${view.artButton.get_preferred_height(-1)} ` +
+            `scale=${view._art.scale_x},${view._art.scale_y}`);
+        await screenshotTop(outDir, 'media-playing', 320);
+
+        // H7 (the focus is checked first, before pointer clicks move it)
+        check('media: play/pause has the key focus when the tab shows',
+            global.stage.key_focus === view.playButton, `${global.stage.key_focus}`);
+        await clearCalls(a);
+        await pressKeys(Clutter.KEY_space);
+        check('media: Space toggles playback',
+            await waitForAsync(async () => (await methodsOf(a)).includes('Pause')),
+            JSON.stringify(await methodsOf(a)));
+        await waitFor(() => !service.playback?.playing);
+        await pressKeys(Clutter.KEY_space);
+        await waitFor(() => service.playback?.playing);
+
+        // H8
+        await waitFor(() => service.ticking, 2000);
+        const before = seconds(view._elapsed.text);
+        await sleep(2200);
+        const after = seconds(view._elapsed.text);
+        check('media: the elapsed time advances while playing (about 2 s in 2.2 s)',
+            after - before >= 1 && after - before <= 3 && service.ticking, `${before} -> ${after}`);
+
+        // H4
+        await clearCalls(a);
+        await clickActor(view.playButton);
+        const paused = await waitFor(() => service.playback?.playing === false, 3000);
+        await sleep(500);
+        check('media: play/pause by pointer sends Pause; paused shows the play icon, the cover shrinks',
+            paused && (await methodsOf(a)).includes('Pause') &&
+            view.playButton.child.icon_name === 'media-playback-start-symbolic' &&
+            view.playButton.accessible_name === 'Play' && Math.abs(view._art.scale_x - 0.94) < 0.01,
+            `icon=${view.playButton.child.icon_name} scale=${view._art.scale_x}`);
+        check('media: no tick while paused', service.ticking === false);
+        await screenshotTop(outDir, 'media-paused', 320);
+        await clickActor(view.playButton);
+        await waitFor(() => service.playback?.playing, 3000);
+
+        // H5
+        await clearCalls(a);
+        await clickActor(view.nextButton);
+        await sleep(SETTLE_MS);
+        await clickActor(view.previousButton);
+        await sleep(SETTLE_MS);
+        check('media: Next and Previous by pointer reach the player',
+            JSON.stringify((await methodsOf(a)).filter(m => m !== 'HTTP')) === '["Next","Previous"]',
+            JSON.stringify(await methodsOf(a)));
+        await fakeSet(a, {CanGoNext: false});
+        check('media: CanGoNext false hides Next', await waitFor(() => !view.nextButton.visible) &&
+            view.previousButton.visible);
+        await fakeSet(a, {CanGoNext: true});
+        await waitFor(() => view.nextButton.visible);
+
+        // H6
+        await fakeSet(a, {PlaybackStatus: 'Paused'});
+        await fakeSeeked(a, 18e6);
+        await waitFor(() => Math.abs(view.slider.value - 0.1) < 0.01);
+        await clearCalls(a);
+        await dragSlider(view.slider, 0.1, 0.5);
+        await sleep(400);
+        const seek = (await fakeCalls(a)).find(c => c.method === 'SetPosition');
+        check('media: dragging the slider to 50% sends SetPosition(trackid, 90 s)',
+            seek && seek.args[0] === '/org/froonty/track/FirstSong' && Math.abs(seek.args[1] - 90e6) <= 2e6,
+            JSON.stringify(await fakeCalls(a)));
+        await fakeSet(a, {Metadata: song('First Song', {
+            'mpris:artUrl': coverUrl('froontya'), 'mpris:trackid': '/org/mpris/MediaPlayer2/TrackList/NoTrack',
+        })});
+        await fakeSeeked(a, 18e6);
+        await waitFor(() => service.playback?.track.trackId === null && Math.abs(view.slider.value - 0.1) < 0.01);
+        await clearCalls(a);
+        await dragSlider(view.slider, 0.1, 0.5);
+        await sleep(400);
+        const relative = (await fakeCalls(a)).find(c => c.method === 'Seek');
+        check('media: without a track id the slider sends Seek(offset)',
+            relative && Math.abs(relative.args[0] - 72e6) <= 3e6, JSON.stringify(await fakeCalls(a)));
+        await fakeSet(a, {PlaybackStatus: 'Playing', Metadata: song('First Song', {'mpris:artUrl': coverUrl('froontya')})});
+        await waitFor(() => service.playback?.track.trackId !== null && service.playback?.playing);
+
+        // H9
+        await fakeSet(a, {Position: 100e6});
+        island().collapse();
+        await sleep(animationWait());
+        check('media: collapsed, no tick', service.ticking === false && !mediaService());
+        island().expand();
+        await sleep(animationWait());
+        view = mediaView();
+        service = mediaService();
+        check('media: reopened, the position is read afresh (1:40)',
+            await waitFor(() => Math.abs(seconds(view._elapsed.text) - 100) <= 2, 3000), view._elapsed.text);
+
+        // H10
+        await fakeSeeked(a, 30e6);
+        check('media: a Seeked signal moves the time at once (0:30)',
+            await waitFor(() => Math.abs(seconds(view._elapsed.text) - 30) <= 1, 500), view._elapsed.text);
+
+        // H11
+        await fakeSet(a, {'x-fail': ['Next']});
+        await clickActor(view.nextButton);
+        check('media: a failed command says "Could not change playback."',
+            await waitFor(() => view._artist.text === 'Could not change playback.'), view._artist.text);
+        await screenshotTop(outDir, 'media-failed', 320);
+        await fakeSet(a, {'x-fail': []});
+        await clickActor(view.nextButton);
+        check('media: the next command clears it', await waitFor(() => view._artist.text === 'Test Band'),
+            view._artist.text);
+
+        // H12
+        const context = service.context();
+        const oldOwner = context.owner;
+        await quitFake(a);
+        fakes.splice(fakes.indexOf(a), 1);
+        const a2 = await spawnFake('froontya', {args: MUSIC, state: playing('First Song')});
+        fakes.push(a2);
+        await waitFor(() => service.playback && service.playback.owner !== oldOwner, 5000);
+        const sent = await service.next(context);
+        await sleep(300);
+        check('media: a restarted player is one source; a press from before does not reach it',
+            service.sources.length === 1 && service.playback?.owner !== oldOwner && sent === false &&
+            !(await methodsOf(a2)).includes('Next'),
+            `sources=${service.sources.length} sent=${sent} calls=${JSON.stringify(await methodsOf(a2))}`);
+
+        // H13: two players, the source list
+        const b = await spawnFake('froontyb', {args: [...BROWSER, '--omit', 'CanGoNext'],
+            state: {PlaybackStatus: 'Paused', Metadata: song('Video One')}});
+        fakes.push(b);
+        check('media: with two players the source chip shows',
+            await waitFor(() => service.sources.length === 2 && view._chip.visible),
+            `${service.sources.length}`);
+        await clickShown(view._chip);
+        await sleep(SETTLE_MS);
+        const rows = () => view._pickerRows.get_children();
+        check('media: the source list lists Automatic, then each player',
+            view.pickerOpen && rows().map(r => r.accessible_name).join(',') === 'Automatic,Test Music,Test Browser',
+            rows().map(r => r.accessible_name).join(','));
+        await screenshotTop(outDir, 'media-picker', 320);
+        await clickShown(rows()[2] ?? view._chip);
+        check('media: picking a player by pointer shows it (its Next shows: CanGoNext missing)',
+            await waitFor(() => service.playback?.key === b.name && view._title.text === 'Video One') &&
+            !view.pickerOpen && service.chosenKey === b.name && view.nextButton.visible,
+            `${service.playback?.key} next=${view.nextButton.visible}`);
+        await clickShown(view._chip);
+        await sleep(SETTLE_MS);
+        rows()[1].grab_key_focus();
+        await pressKeys(Clutter.KEY_Return);
+        check('media: picking a player by keyboard', await waitFor(() => service.playback?.key === a2.name) &&
+            service.chosenKey === a2.name);
+        await clickShown(view._chip);
+        await sleep(SETTLE_MS);
+        await clickShown(rows()[0] ?? view._chip);
+        check('media: Automatic restores the automatic choice', await waitFor(() => service.automatic) &&
+            service.playback?.key === a2.name);
+        await clickShown(view._chip);
+        await sleep(SETTLE_MS);
+        await pressKeys(Clutter.KEY_Escape);
+        check('media: Escape closes the source list first, the island stays',
+            !view.pickerOpen && island().expanded);
+        await pressKeys(Clutter.KEY_Escape);
+        await sleep(animationWait());
+        check('media: then Escape closes the island', !island().expanded);
+        island().expand();
+        await sleep(animationWait());
+        view = mediaView();
+        service = mediaService();
+        await waitFor(() => service.ready && service.playback);
+
+        // H14: the automatic choice
+        await fakeSet(a2, {PlaybackStatus: 'Playing'});
+        await sleep(100);
+        await fakeSet(b, {PlaybackStatus: 'Playing'});
+        check('media: a playing music player beats a playing browser',
+            await waitFor(() => service.playback?.key === a2.name && service.sources.every(x => x.playing)));
+        await fakeSet(a2, {PlaybackStatus: 'Paused'});
+        check('media: with browsers followed, the latest to play wins',
+            await waitFor(() => service.playback?.key === b.name), service.playback?.key);
+        s.set_boolean('media-include-other-players', false);
+        check('media: with browsers not followed, paused music beats a playing browser',
+            await waitFor(() => service.playback?.key === a2.name), service.playback?.key);
+        s.reset('media-include-other-players');
+        await waitFor(() => service.playback?.key === b.name);
+        await fakeSet(b, {PlaybackStatus: 'Paused'});
+        await fakeSet(a2, {PlaybackStatus: 'Playing'});
+        await waitFor(() => service.playback?.key === a2.name);
+
+        // H15: a gap between songs
+        let blank = false;
+        const watchId = service.connect('changed', () => {
+            blank ||= view._idle.visible || !service.playback;
+        });
+        await fakeSet(a2, {Metadata: {}});
+        await sleep(600);
+        await fakeSet(a2, {Metadata: song('Second Song')});
+        await waitFor(() => view._title.text === 'Second Song');
+        service.disconnect(watchId);
+        check('media: a player that clears its song for under 1 s never shows "Nothing playing"',
+            !blank && view._title.text === 'Second Song');
+
+        // H16: size settings, extras
+        s.set_int('media-height', 300);
+        await sleep(animationWait());
+        const [, tall] = pill().get_transformed_size();
+        s.reset('media-height');
+        await sleep(animationWait());
+        await clickActor(view.lyricsChip);
+        await sleep(animationWait() + 200);
+        const [, withExtras] = pill().get_transformed_size();
+        check('media: the size settings apply; lyrics grow the island by 224',
+            tall === 300 * scale() && withExtras === (248 + 224) * scale() && view.extra === 'lyrics',
+            `tall=${tall} extras=${withExtras}`);
+        await screenshotTop(outDir, 'media-lyrics-open', 520);
+        await clickActor(view.lyricsChip);
+        await sleep(animationWait() + 200);
+        check('media: closing them shrinks it back', pill().get_transformed_size()[1] === 248 * scale() &&
+            view.extra === null);
+        await screenshotTop(outDir, 'media-after-extras', 320);
+    } finally {
+        for (const fake of fakes)
+            await quitFake(fake);
+        s.reset('media-include-other-players');
+        s.reset('media-height');
+        await leaveMediaTab();
+    }
+}
+
+async function testMediaPill(outDir) {
+    mediaWork = outDir;
+    const s = settings();
+    const fakes = [];
+    let liftedAnimations = false;
+    const iface = new Gio.Settings({schema_id: 'org.gnome.desktop.interface'});
+    try {
+        island().collapse();
+        await sleep(animationWait());
+        const [baseWidth] = pill().get_transformed_size();
+        const a = await spawnFake('froontypill', {args: MUSIC, state: {
+            ...playing('Pill Song', {'mpris:artUrl': coverUrl('froontypill')}), Position: 20e6,
+        }});
+        fakes.push(a);
+        const acc = accessory();
+        // H17
+        const shown = await waitFor(() => acc?.showing && acc.leading.opacity === 255 && acc._art.hasImage, 5000);
+        await sleep(animationWait());
+        const time = boxOf(island()._collapsedView._timeLabel);
+        const p = boxOf(pill());
+        const content = island()._collapsedContentWidth();
+        check('media: playing, the collapsed pill shows the cover and the bars beside the time',
+            shown && acc.leading.visible && acc.trailing.visible && acc._bars.visible,
+            `showing=${acc?.showing} opacity=${acc?.leading.opacity}`);
+        check('media: the time stays centered (±1 px)',
+            Math.abs((time.x1 + time.x2) / 2 - (p.x1 + p.x2) / 2) <= 1,
+            `time=${(time.x1 + time.x2) / 2} pill=${(p.x1 + p.x2) / 2}`);
+        const expected = island()._geometry.collapsedSize(content).width;
+        check('media: the pill is wider only when needed',
+            p.x2 - p.x1 === expected && (content > baseWidth || expected === baseWidth),
+            `width=${p.x2 - p.x1} base=${baseWidth} content=${content}`);
+        const covers = pillCoversClock();
+        check('media: with music, the pill still covers the top bar clock', covers.ok, covers.detail);
+        await screenshotTop(outDir, 'media-pill', 80);
+        // H18
+        check('media: the pill\'s accessible name includes the song',
+            pill().accessible_name.includes('playing “Pill Song” by Test Band'), pill().accessible_name);
+
+        // H20: a new song's notice
+        await fakeSet(a, {Metadata: song('Next Up', {'mpris:artUrl': coverUrl('froontypill')})});
+        await sleep(200);
+        check('media: no notice before 0.5 s', !acc.peekText);
+        check('media: a new song shows "Title · Artist" on the pill',
+            await waitFor(() => acc.peekText === 'Next Up · Test Band', 1500) &&
+            island()._collapsedView._peekLabel.visible, `${acc.peekText}`);
+        await sleep(300);
+        await screenshotTop(outDir, 'media-pill-peek', 80);
+        check('media: the notice goes after 3 s', await waitFor(() => !acc.peekText, 3500) &&
+            !island()._collapsedView._peekLabel.visible);
+        const peeks = [];
+        const peekId = acc.connect('changed', () => {
+            if (acc.peekText && peeks.at(-1) !== acc.peekText)
+                peeks.push(acc.peekText);
+        });
+        for (const title of ['Skip One', 'Skip Two', 'Skip Three']) {
+            // eslint-disable-next-line no-await-in-loop
+            await fakeSet(a, {Metadata: song(title)});
+            // eslint-disable-next-line no-await-in-loop
+            await sleep(120);
+        }
+        await sleep(1200);
+        acc.disconnect(peekId);
+        check('media: three quick changes give one notice, for the last',
+            peeks.length === 1 && peeks[0] === 'Skip Three · Test Band', JSON.stringify(peeks));
+        await waitFor(() => !acc.peekText, 4000);
+
+        // H21: a click opens the Media tab
+        s.set_string('hub-last-tab', 'clock');
+        await sleep(SETTLE_MS);
+        await clickAt(...pillCenter());
+        await sleep(animationWait());
+        check('media: a click on the pill with music opens the Media tab',
+            island().expanded && island()._hub.activeFeature?.id === 'media');
+        await clickActor(tabButton('clock'));
+        await sleep(animationWait());
+        island().collapse();
+        await sleep(animationWait());
+        s.set_boolean('media-pill-opens-tab', false);
+        await waitFor(() => accessory()?.showing);
+        await clickAt(...pillCenter());
+        await sleep(animationWait());
+        check('media: with media-pill-opens-tab off, the last tab opens',
+            island().expanded && island()._hub.activeFeature?.id === 'clock');
+        s.reset('media-pill-opens-tab');
+        island().collapse();
+        await sleep(animationWait());
+        await waitFor(() => accessory()?.showing);
+
+        // H22: swipes
+        await movePointerTo(...pillCenter());
+        const swipe = async dx => {
+            for (let i = 0; i < 6; i++) {
+                pointer.notify_scroll_continuous(now(), dx / 6, 0,
+                    Clutter.ScrollSource.FINGER, Clutter.ScrollFinishFlags.NONE);
+                // eslint-disable-next-line no-await-in-loop
+                await sleep(16);
+            }
+            pointer.notify_scroll_continuous(now(), 0, 0, Clutter.ScrollSource.FINGER,
+                Clutter.ScrollFinishFlags.HORIZONTAL | Clutter.ScrollFinishFlags.VERTICAL);
+            await sleep(SETTLE_MS);
+        };
+        await clearCalls(a);
+        await swipe(-60);
+        const left = await methodsOf(a);
+        await clearCalls(a);
+        await swipe(60);
+        const right = await methodsOf(a);
+        await clearCalls(a);
+        await swipe(-20);
+        const small = await methodsOf(a);
+        check('media: two fingers left on the pill: Next; right: Previous; 20 px: nothing',
+            JSON.stringify(left) === '["Next"]' && JSON.stringify(right) === '["Previous"]' &&
+            small.length === 0, `${JSON.stringify(left)} ${JSON.stringify(right)} ${JSON.stringify(small)}`);
+
+        // H23: animations off, strip hidden. The headless Shell renders in
+        // software, so GNOME Shell inhibits animations (main.js
+        // _shouldEnableAnimations); lifted here only, and put back.
+        if (!St.Settings.get().enable_animations) {
+            St.Settings.get().uninhibit_animations();
+            liftedAnimations = true;
+        }
+        const bars = () => accessory()._bars._bars;
+        await waitFor(() => accessory()?.showing);
+        const barsState = () => {
+            const b = accessory()._bars;
+            return `moving=${b.moving} animations=${St.Settings.get().enable_animations} ` +
+                `mapped=${b.mapped} playing=${b._playing} enabled=${b._enabled} ` +
+                `transitions=${bars().map(bar => Boolean(bar.get_transition('scale-y')))}`;
+        };
+        check('media: the bars move while playing', accessory()._bars.moving &&
+            bars().some(bar => bar.get_transition('scale-y')), barsState());
+        iface.set_boolean('enable-animations', false);
+        await sleep(SETTLE_MS);
+        check('media: with GNOME\'s animations off, the bars stand still',
+            !accessory()._bars.moving && bars().every(bar => !bar.get_transition('scale-y')));
+        iface.reset('enable-animations');
+        await sleep(SETTLE_MS);
+        strip().hide();
+        await sleep(SETTLE_MS);
+        check('media: over a fullscreen window (strip hidden) the bars stop',
+            !accessory()._bars.moving && bars().every(bar => !bar.get_transition('scale-y')));
+        strip().show();
+        await sleep(animationWait());
+        if (liftedAnimations)
+            St.Settings.get().inhibit_animations();
+        liftedAnimations = false;
+
+        // H19: paused
+        await fakeSet(a, {PlaybackStatus: 'Paused'});
+        check('media: paused, the music leaves the pill and its width returns',
+            await waitFor(() => !accessory().showing && !accessory().leading.visible, 3000) &&
+            await waitFor(() => pill().get_transformed_size()[0] === baseWidth, 2000),
+            `width=${pill().get_transformed_size()[0]} base=${baseWidth}`);
+
+        // H24: covers from the internet
+        const shared = await mediaShared();
+        check('media: with the default settings no web session was ever made',
+            shared.sharedMedia()?.fetcher.session === null);
+        const web = await spawnFake('froontyweb', {args: [...MUSIC, '--http']});
+        fakes.push(web);
+        const [, portBytes] = GLib.file_get_contents(GLib.build_filenamev([outDir, 'fake-froontyweb.port']));
+        const port = Number(new TextDecoder().decode(portBytes));
+        await fakeSet(a, {PlaybackStatus: 'Paused'});
+        await fakeSet(web, playing('Web Song', {'mpris:artUrl': `http://127.0.0.1:${port}/cover.png`}));
+        const media = shared.sharedMedia();
+        await waitFor(() => media.playback?.key === web.name && accessory().showing, 3000);
+        await sleep(800);
+        const httpCount = async () => (await methodsOf(web)).filter(m => m === 'HTTP').length;
+        check('media: a web cover is not fetched while that is off (placeholder)',
+            await httpCount() === 0 && media.art.state === 'blocked' && !accessory()._art.hasImage,
+            `requests=${await httpCount()} art=${media.art.state}`);
+        s.set_boolean('media-remote-art', true);
+        check('media: turned on, it is fetched once',
+            await waitFor(() => media.art.state === 'ready', 4000) && await httpCount() === 1,
+            `requests=${await httpCount()} art=${media.art.state}`);
+        s.set_boolean('media-remote-art', false);
+        await sleep(800);
+        check('media: turned off again, no request and the web cover goes',
+            await httpCount() === 1 && media.art.state === 'blocked', `requests=${await httpCount()}`);
+        s.reset('media-remote-art');
+    } finally {
+        for (const fake of fakes)
+            await quitFake(fake);
+        iface.reset('enable-animations');
+        if (liftedAnimations)
+            St.Settings.get().inhibit_animations();
+        strip()?.show();
+        for (const key of ['media-pill-opens-tab', 'media-remote-art'])
+            s.reset(key);
+        s.set_string('hub-last-tab', 'clock');
+        await sleep(animationWait());
+    }
+}
+
+async function testMediaExtras(outDir) {
+    mediaWork = outDir;
+    const s = settings();
+    const fakes = [];
+    try {
+        // H25, H28: up next
+        const q = await spawnFake('froontyqueue', {args: [...MUSIC, '--track-list'], state: {
+            'x-tracks': [1, 2, 3].map(i => song(`Queue ${i}`, {'mpris:trackid': `/org/froonty/q/${i}`})),
+        }});
+        fakes.push(q);
+        await fakeSet(q, playing('Queue 1', {'mpris:trackid': '/org/froonty/q/1'}));
+        await openMediaTab();
+        const view = mediaView();
+        const service = mediaService();
+        await waitFor(() => service.playback?.track.title === 'Queue 1', 3000);
+        await clickActor(view.queueChip);
+        await sleep(animationWait());
+        const queue = view.panel('queue');
+        check('media: Up next lists the songs after the current one',
+            await waitFor(() => queue.client.state === 'ready', 3000) &&
+            queue.client.rows.map(r => `${r.offset} ${r.title}`).join(',') === '1 Queue 2,2 Queue 3',
+            `${queue.client.state} ${JSON.stringify(queue.client.rows)}`);
+        await screenshotTop(outDir, 'media-queue', 520);
+        await clearCalls(q);
+        const play = queue._rows.get_children()[1].get_children().at(-1);
+        await clickShown(play);
+        check('media: "Play now" sends GoTo and the switch is seen',
+            await waitFor(() => service.playback?.track.title === 'Queue 3', 3000) &&
+            JSON.stringify((await fakeCalls(q)).find(c => c.method === 'GoTo')?.args) === '["/org/froonty/q/3"]',
+            JSON.stringify(await fakeCalls(q)));
+        await sleep(1700);
+        check('media: no "did not switch" notice after a switch', queue.client.notice === null);
+        await pressKeys(Clutter.KEY_Escape);
+        await sleep(animationWait());
+        check('media: Escape closes Up next, the island stays', view.extra === null && island().expanded &&
+            !queue.client.subscribed);
+        await pressKeys(Clutter.KEY_Escape);
+        await sleep(animationWait());
+        check('media: Escape again closes the island', !island().expanded);
+        await quitFake(q);
+
+        // Without a TrackList
+        const plain = await spawnFake('froontyplain', {args: MUSIC, state: {
+            ...playing('Plain Song', {
+                'xesam:asText': '[00:01.00]Line one\n[00:10.00]Line two\n[00:20.00]Line three',
+            }),
+        }});
+        fakes.push(plain);
+        await openMediaTab();
+        const v2 = mediaView();
+        const s2 = mediaService();
+        await waitFor(() => s2.playback?.track.title === 'Plain Song', 3000);
+        await clickActor(v2.queueChip);
+        await sleep(animationWait());
+        check('media: a player without a TrackList says it shares no upcoming songs',
+            await waitFor(() => v2.panel('queue').client.state === 'unsupported') &&
+            v2.panel('queue')._message.text.text === 'This player does not share its upcoming songs.');
+
+        // H26: lyrics from xesam:asText
+        await clickActor(v2.lyricsChip);
+        await sleep(animationWait());
+        await fakeSet(plain, {PlaybackStatus: 'Paused'});
+        await fakeSeeked(plain, 10.5e6);
+        const lyrics = v2.panel('lyrics');
+        check('media: the player\'s LRC lyrics show, the current line follows the position',
+            await waitFor(() => lyrics.service.state === 'ready' && lyrics.activeLine === 1, 3000),
+            `${lyrics.service.state} line=${lyrics.activeLine}`);
+        await screenshotTop(outDir, 'media-lyrics', 520);
+        for (let i = 0; i < 4; i++)
+            // eslint-disable-next-line no-await-in-loop
+            await clickShown(lyrics.later);
+        check('media: Later shifts them (+1.00: line one again)',
+            await waitFor(() => lyrics.activeLine === 0) && lyrics.reset.label === '+1.00', lyrics.reset.label);
+        await clickShown(lyrics.reset);
+        for (let i = 0; i < 4; i++)
+            // eslint-disable-next-line no-await-in-loop
+            await clickShown(lyrics.earlier);
+        await fakeSeeked(plain, 9.5e6);
+        check('media: Earlier shifts them the other way (−1.00 at 9.5 s: line two)',
+            await waitFor(() => lyrics.activeLine === 1) && lyrics.reset.label === '−1.00', lyrics.reset.label);
+        await clickActor(v2.lyricsChip);
+        await sleep(animationWait());
+        await quitFake(plain);
+
+        // H27: online lyrics, only when allowed
+        const web = await spawnFake('froontylrc', {args: [...MUSIC, '--http'], state: playing('Web Lyrics')});
+        fakes.push(web);
+        const [, portBytes] = GLib.file_get_contents(GLib.build_filenamev([outDir, 'fake-froontylrc.port']));
+        GLib.setenv('FROONTY_LRCLIB_URL', `http://127.0.0.1:${Number(new TextDecoder().decode(portBytes))}/api/get`, true);
+        await waitFor(() => s2.playback?.track.title === 'Web Lyrics', 3000);
+        await clickActor(v2.lyricsChip);
+        await sleep(animationWait());
+        const panel = v2.panel('lyrics');
+        await waitFor(() => panel.service.state === 'consent', 3000);
+        const requests = async () => (await fakeCalls(web)).filter(c => c.method === 'HTTP').map(c => c.args[0]);
+        check('media: online lookups off: the consent switch, and no request',
+            panel.service.state === 'consent' && panel._consent.visible && (await requests()).length === 0,
+            `${panel.service.state} ${JSON.stringify(await requests())}`);
+        await screenshotTop(outDir, 'media-lyrics-consent', 520);
+        await clickShown(panel._consent);
+        check('media: allowed, lrclib is asked with the song, and its lines show',
+            await waitFor(() => panel.service.state === 'ready', 4000) &&
+            (await requests()).some(r => r.includes('track_name=Web Lyrics') && r.includes('artist_name=Test Band') &&
+                r.includes('album_name=Test Album') && r.includes('duration=180')) &&
+            panel._lines.get_children().some(l => l.text === 'Online one'),
+            `${panel.service.state} ${JSON.stringify(await requests())}`);
+        await fakeSet(web, {'x-http-delay': 1500});
+        await fakeSet(web, {Metadata: song('Slow Lyrics')});
+        await waitFor(() => panel.service.state === 'loading', 2000);
+        await clickActor(v2.lyricsChip);
+        await sleep(2000);
+        check('media: hiding the lyrics cancels a slow answer',
+            panel.service.lyrics === null && panel.service.state === 'loading');
+        s.reset('media-lyrics-online');
+        GLib.setenv('FROONTY_LRCLIB_URL', 'http://127.0.0.1:9/api/get', true);
+
+        // H29: the volume row
+        const mixer = Volume.getMixerControl();
+        const sink = mixer.get_default_sink();
+        const devices = [...mixer.get_sinks(), ...mixer.get_sources()].map(d => d.name);
+        const isolated = devices.length > 0 && devices.every(n => n?.startsWith('froonty-test'));
+        if (sink && isolated && v2._volume.ready) {
+            const before = sink.is_muted;
+            await clickActor(v2._volume.muteButton);
+            const muted = await waitFor(() => sink.is_muted !== before);
+            await clickActor(v2._volume.muteButton);
+            await waitFor(() => sink.is_muted === before);
+            const slider = boxOf(v2._volume.slider);
+            await clickAt(slider.x1 + (slider.x2 - slider.x1) * 0.3, (slider.y1 + slider.y2) / 2);
+            const volume = sink.volume / mixer.get_vol_max_norm();
+            check('media: the volume row mutes the test speaker and sets its volume',
+                muted && Math.abs(volume - 0.3) < 0.1, `muted=${muted} volume=${volume}`);
+            sink.volume = mixer.get_vol_max_norm();
+            sink.push_volume();
+        } else {
+            check('media: the volume row mutes the test speaker and sets its volume', false,
+                `not isolated or not ready: ${devices.join(', ')} ready=${v2._volume.ready}`);
+        }
+    } finally {
+        for (const fake of fakes)
+            await quitFake(fake);
+        s.reset('media-lyrics-online');
+        GLib.setenv('FROONTY_LRCLIB_URL', 'http://127.0.0.1:9/api/get', true);
+        await leaveMediaTab();
+    }
+}
+
+async function testMediaPanic(outDir) {
+    mediaWork = outDir;
+    const s = settings();
+    const fakes = [];
+    try {
+        const a = await spawnFake('froontypa', {args: MUSIC, state: playing('Panic One')});
+        const b = await spawnFake('froontypb', {args: BROWSER, state: playing('Panic Two')});
+        fakes.push(a, b);
+        s.set_strv('panic-buttons', ['pause-media']);
+        await sleep(SETTLE_MS);
+        island().expand();
+        await sleep(animationWait());
+        const button = island()._hub._panicBar._buttons[0];
+        check('media: "Pause all media" is a panic button',
+            button?.actor.accessible_name === 'Pause all media');
+        await waitFor(() => button.actor.reactive, 3000);
+        await clickActor(button.actor);
+        check('media: it pauses every playing player and stays checked',
+            await waitFor(() => button.actor.checked, 3000) &&
+                (await methodsOf(a)).includes('Pause') && (await methodsOf(b)).includes('Pause'),
+            `${JSON.stringify(await methodsOf(a))} ${JSON.stringify(await methodsOf(b))}`);
+        await sleep(600);
+        await clickActor(button.actor);
+        await sleep(600);
+        check('media: a second click resumes them and unchecks it',
+            !button.actor.checked && (await methodsOf(a)).includes('Play') && (await methodsOf(b)).includes('Play'),
+            `${JSON.stringify(await methodsOf(a))} ${JSON.stringify(await methodsOf(b))}`);
+        await screenshotTop(outDir, 'media-panic');
+    } finally {
+        for (const fake of fakes)
+            await quitFake(fake);
+        s.reset('panic-buttons');
+        island().collapse();
+        await sleep(animationWait());
+    }
+}
+// ================================================================ end of media
+
+// H31-H33 helpers: the footprint counts the shared service's holders.
+let mediaSharedModule = null;
+
+async function testMediaChoiceSurvivesLock() {
+    mediaWork ??= GLib.get_tmp_dir();
+    const s = settings();
+    const fakes = [];
+    try {
+        const a = await spawnFake('froontylocka', {args: MUSIC, state: playing('Lock One')});
+        const b = await spawnFake('froontylockb', {args: BROWSER, state: {PlaybackStatus: 'Paused', Metadata: song('Lock Two')}});
+        fakes.push(a, b);
+        const media = mediaSharedModule.sharedMedia();
+        await waitFor(() => media.sources.length === 2, 3000);
+        media.select(b.name);
+        await waitFor(() => media.playback?.key === b.name);
+        // A screen lock runs disable(); unlock runs enable().
+        await setExtensionEnabled(false);
+        const gone = mediaSharedModule.sharedMedia() === null && mediaSharedModule.mediaUsers() === 0;
+        await setExtensionEnabled(true);
+        const again = mediaSharedModule.sharedMedia();
+        check('media: the chosen player survives a lock (disable, enable)',
+            gone && await waitFor(() => again?.ready && again.playback?.key === b.name, 4000) &&
+            again.chosenKey === b.name, `gone=${gone} chosen=${again?.chosenKey} shown=${again?.playback?.key}`);
+        again.select(null);
+        s.set_boolean('media-enabled', false);
+        await sleep(SETTLE_MS);
+        check('media: turned off live, the tab, the pill\'s music and the service go',
+            !tabButton('media') && island()._accessory === null && mediaSharedModule.sharedMedia() === null,
+            `tab=${Boolean(tabButton('media'))} accessory=${Boolean(island()._accessory)}`);
+        s.reset('media-enabled');
+        await sleep(SETTLE_MS);
+        check('media: turned on again, they come back', Boolean(tabButton('media')) &&
+            island()._accessory !== null && mediaSharedModule.sharedMedia() !== null);
+    } finally {
+        for (const fake of fakes)
+            await quitFake(fake);
+        s.reset('media-enabled');
+        await sleep(SETTLE_MS);
+    }
+}
+
 export async function runAll(outDir) {
     results.length = 0;
     // Pointer-driven checks move the pointer over the pill; keep hover-open
     // out of their way (testHoverOpen enables it explicitly).
     settings().set_int('hover-open-delay', 0);
+    mediaWork = outDir;
     try {
+        mediaSharedModule = await mediaShared();
         testLoaded();
         testGeometry();
         await testPointer(outDir);
@@ -6546,8 +7482,10 @@ export async function runAll(outDir) {
         await testSettings(outDir);
         await testCoversPanelClock(outDir);
         await testMonitors();
-        await testLifecycle();
+        await testLifecycle(outDir);
         testLoaded();
+        check('media: no web session after all checks with default settings',
+            (mediaSharedModule.sharedMedia()?.fetcher.session ?? null) === null);
     } catch (e) {
         check('test run completed without exception', false, `${e}\n${e.stack}`);
     }

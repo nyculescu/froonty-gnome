@@ -227,6 +227,75 @@
       <summary>Btop: each thread unfolded</summary>
     </key>
 
+    <!-- Media feature (docs/features/media.md) -->
+    <key name="media-enabled" type="b">
+      <default>true</default>
+      <summary>Show the Media tab</summary>
+      <description>What music and video players report over MPRIS on the session bus, with play, pause, skip and seek. Needs no extra packages.</description>
+    </key>
+    <key name="media-width" type="i">
+      <range min="360" max="960"/>
+      <default>480</default>
+      <summary>Media island width</summary>
+      <description>In logical pixels, while the Media tab is shown.</description>
+    </key>
+    <key name="media-height" type="i">
+      <range min="200" max="720"/>
+      <default>248</default>
+      <summary>Media island height</summary>
+      <description>In logical pixels, while the Media tab is shown. Lyrics and Up next add 224 while open.</description>
+    </key>
+    <key name="media-show-in-pill" type="b">
+      <default>true</default>
+      <summary>Media: show music while playing</summary>
+      <description>The cover and moving bars beside the time on the collapsed island while a song plays.</description>
+    </key>
+    <key name="media-track-notice" type="b">
+      <default>true</default>
+      <summary>Media: show a new song</summary>
+      <description>The collapsed island shows a new song's title and artist for 3 seconds.</description>
+    </key>
+    <key name="media-pill-opens-tab" type="b">
+      <default>true</default>
+      <summary>Media: open the Media tab from the island</summary>
+      <description>Clicking (or hovering open) the collapsed island while it shows music opens the Media tab.</description>
+    </key>
+    <key name="media-animate-bars" type="b">
+      <default>true</default>
+      <summary>Media: moving bars</summary>
+      <description>While music plays, the bars beside the time and the title move. GNOME then redraws that small area every frame. GNOME's own "Animations" switch also stops them.</description>
+    </key>
+    <key name="media-gestures" type="b">
+      <default>true</default>
+      <summary>Media: swipe to change song</summary>
+      <description>Two fingers left (next) or right (previous) on the touchpad, over the music on the island or the Media tab's player.</description>
+    </key>
+    <key name="media-include-other-players" type="b">
+      <default>true</default>
+      <summary>Media: follow browsers and video players automatically</summary>
+      <description>When off, browsers and video players show only when chosen in the tab; music players are always followed. On by default because much music plays in a browser, and a browser cannot be told apart from a music app over MPRIS.</description>
+    </key>
+    <key name="media-remote-art" type="b">
+      <default>false</default>
+      <summary>Media: cover art from the internet</summary>
+      <description>Some players give their cover as a web address; when on, Froonty downloads it from that address (no cookies, no cache on disk). Off by default.</description>
+    </key>
+    <key name="media-lyrics" type="b">
+      <default>true</default>
+      <summary>Media: lyrics</summary>
+      <description>A Lyrics button in the Media tab: the player's own lyrics, or a .lrc file next to a local song.</description>
+    </key>
+    <key name="media-lyrics-online" type="b">
+      <default>false</default>
+      <summary>Media: find lyrics online</summary>
+      <description>When no lyrics are on this computer, look them up on lrclib.net, which receives the song's title, artist, album and length. Off by default.</description>
+    </key>
+    <key name="media-queue" type="b">
+      <default>true</default>
+      <summary>Media: up next</summary>
+      <description>An Up next button in the Media tab: the player's upcoming songs, for players that share them (MPRIS TrackList).</description>
+    </key>
+
     <!-- Clipboard feature (docs/features/clipboard.md) -->
     <key name="clipboard-enabled" type="b">
       <default>false</default>

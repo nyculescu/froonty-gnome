@@ -1429,3 +1429,356 @@
 .froonty-calendar-hint-button:focus {
     box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.45);
 }
+
+/* ------------------------------------------------------------------ */
+/* Media feature (docs/features/media.md). The accent (slider, bars) and
+   the cover's halo come from the cover's colour, set from code. */
+
+.froonty-media-content,
+.froonty-media-main {
+    spacing: 8px;
+}
+.froonty-media-art-button {
+    padding: 0;
+    border-radius: 16px;
+}
+.froonty-media-art-button:focus {
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.45);
+}
+.froonty-media-art-placeholder {
+    background-color: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.55);
+}
+.froonty-media-details {
+    spacing: 2px;
+}
+.froonty-media-title-row {
+    spacing: 8px;
+}
+.froonty-media-title {
+    font-size: 20px;
+    font-weight: 600;
+}
+.froonty-media-artist {
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.6);
+}
+.froonty-media-artist.froonty-media-failed {
+    color: #ffd27a;
+}
+.froonty-media-compact .froonty-media-title {
+    font-size: 16px;
+}
+.froonty-media-compact .froonty-media-artist {
+    font-size: 12px;
+}
+.froonty-media-chip {
+    max-width: 110px;
+    padding: 1px 7px;
+    border-radius: 999px;
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.6);
+    background-color: rgba(255, 255, 255, 0.06);
+    transition-duration: 150ms;
+}
+.froonty-media-chip:hover,
+.froonty-media-chip:focus {
+    color: #ffffff;
+    background-color: rgba(255, 255, 255, 0.12);
+}
+.froonty-media-chip:focus {
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.45);
+}
+.froonty-media-timeline {
+    height: 30px;
+    spacing: 2px;
+}
+/* GNOME Shell's Slider and BarLevel (ui/slider.js, ui/barLevel.js). */
+.froonty-media-slider {
+    height: 10px;
+    -barlevel-height: 4px;
+    -slider-handle-radius: 5px;
+    -barlevel-background-color: rgba(255, 255, 255, 0.18);
+    -barlevel-active-background-color: #ffffff;
+    -barlevel-overdrive-color: #ffffff;
+    -barlevel-overdrive-separator-width: 0;
+    color: #ffffff;
+}
+.froonty-media-slider:focus {
+    -barlevel-background-color: rgba(255, 255, 255, 0.3);
+}
+.froonty-media-time {
+    font-size: 10px;
+    font-feature-settings: "tnum";
+    color: rgba(255, 255, 255, 0.6);
+}
+.froonty-media-transport {
+    spacing: 22px;
+}
+.froonty-media-compact .froonty-media-transport {
+    spacing: 14px;
+}
+.froonty-media-skip {
+    min-width: 32px;
+    padding: 4px 7px;
+    border-radius: 16px;
+}
+.froonty-media-skip StIcon {
+    icon-size: 18px;
+}
+.froonty-media-compact .froonty-media-skip StIcon {
+    icon-size: 15px;
+}
+.froonty-media-play {
+    width: 44px;
+    height: 44px;
+    border-radius: 22px;
+    color: #000000;
+    background-color: #ffffff;
+    transition-duration: 150ms;
+}
+.froonty-media-play StIcon {
+    icon-size: 18px;
+}
+.froonty-media-play:hover {
+    background-color: rgba(255, 255, 255, 0.85);
+}
+.froonty-media-play:focus {
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.55);
+}
+.froonty-media-play:insensitive {
+    background-color: rgba(255, 255, 255, 0.35);
+}
+.froonty-media-compact .froonty-media-play {
+    width: 36px;
+    height: 36px;
+    border-radius: 18px;
+}
+.froonty-media-compact .froonty-media-play StIcon {
+    icon-size: 15px;
+}
+.froonty-media-readonly {
+    spacing: 8px;
+}
+.froonty-media-readonly-text {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.6);
+}
+.froonty-media-text-button {
+    border-radius: 7px;
+    padding: 2px 10px;
+    font-size: 0.85em;
+    color: #ffffff;
+    background-color: rgba(255, 255, 255, 0.08);
+    transition-duration: 150ms;
+}
+.froonty-media-text-button:hover,
+.froonty-media-text-button:focus {
+    background-color: rgba(255, 255, 255, 0.16);
+}
+.froonty-media-text-button:focus {
+    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.45);
+}
+
+/* Media: nothing playing */
+.froonty-media-idle {
+    spacing: 16px;
+}
+.froonty-media-idle-tile {
+    width: 76px;
+    height: 76px;
+    border-radius: 24px;
+    background-color: rgba(255, 255, 255, 0.06);
+}
+.froonty-media-idle-icon {
+    icon-size: 30px;
+    color: rgba(255, 255, 255, 0.6);
+}
+.froonty-media-idle-text {
+    spacing: 4px;
+    max-width: 260px;
+}
+.froonty-media-nothing {
+    font-size: 17px;
+    font-weight: 600;
+}
+.froonty-media-idle-hint {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+/* Media: the source list, over the player */
+.froonty-media-picker {
+    spacing: 4px;
+    background-color: #000000;
+}
+.froonty-media-picker-header {
+    spacing: 6px;
+}
+.froonty-media-picker-title {
+    font-size: 13px;
+    font-weight: 600;
+}
+.froonty-media-picker-scroll {
+    padding-right: 10px;
+}
+.froonty-media-picker-row {
+    border-radius: 8px;
+    padding: 4px 8px;
+    transition-duration: 150ms;
+}
+.froonty-media-picker-row:hover,
+.froonty-media-picker-row:focus {
+    background-color: rgba(255, 255, 255, 0.09);
+}
+.froonty-media-picker-row:focus {
+    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.45);
+}
+.froonty-media-picker-row-box {
+    spacing: 8px;
+}
+.froonty-media-picker-check {
+    icon-size: 16px;
+}
+
+/* Media: volume and the extras' buttons */
+.froonty-media-controls {
+    spacing: 8px;
+    height: 32px;
+}
+.froonty-media-volume {
+    spacing: 4px;
+}
+.froonty-media-volume-slider {
+    width: 120px;
+    height: 16px;
+    -barlevel-height: 4px;
+    -slider-handle-radius: 6px;
+    -barlevel-background-color: rgba(255, 255, 255, 0.18);
+    -barlevel-active-background-color: #ffffff;
+    -barlevel-overdrive-color: #ffffff;
+    -barlevel-overdrive-separator-width: 0;
+    color: #ffffff;
+}
+.froonty-media-mute:checked {
+    color: #ffffff;
+    background-color: #e0454c;
+}
+.froonty-media-extra-chip {
+    border-radius: 999px;
+    padding: 3px 10px;
+    font-size: 0.85em;
+    color: rgba(255, 255, 255, 0.85);
+    background-color: rgba(255, 255, 255, 0.05);
+    transition-duration: 150ms;
+}
+.froonty-media-extra-chip:hover,
+.froonty-media-extra-chip:focus {
+    color: #ffffff;
+    background-color: rgba(255, 255, 255, 0.1);
+}
+.froonty-media-extra-chip:checked {
+    color: #ffffff;
+    background-color: rgba(255, 255, 255, 0.14);
+}
+.froonty-media-extra-chip:focus {
+    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.45);
+}
+.froonty-media-extra-chip-box {
+    spacing: 5px;
+}
+.froonty-media-extra-chip-box StIcon {
+    icon-size: 14px;
+}
+
+/* Media: lyrics and up next */
+.froonty-media-lyrics,
+.froonty-media-queue {
+    spacing: 4px;
+}
+.froonty-media-lyrics-hint {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.6);
+}
+.froonty-media-lyrics-lines {
+    spacing: 4px;
+    padding: 2px 14px 2px 2px;
+}
+.froonty-media-lyric {
+    font-size: 15px;
+    color: rgba(255, 255, 255, 0.4);
+}
+.froonty-media-lyric.froonty-media-lyric-active {
+    font-size: 18px;
+    color: #ffffff;
+}
+.froonty-media-lyric.froonty-media-lyric-plain {
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.85);
+}
+.froonty-media-lyrics-timing {
+    spacing: 6px;
+}
+.froonty-media-message {
+    spacing: 6px;
+}
+.froonty-media-message-text {
+    font-size: 13px;
+    text-align: center;
+}
+.froonty-media-message-note {
+    font-size: 11px;
+    text-align: center;
+    color: rgba(255, 255, 255, 0.6);
+}
+.froonty-media-consent {
+    border-radius: 8px;
+    padding: 4px 10px;
+    background-color: rgba(255, 255, 255, 0.06);
+}
+.froonty-media-consent:hover,
+.froonty-media-consent:focus {
+    background-color: rgba(255, 255, 255, 0.12);
+}
+.froonty-media-consent-box {
+    spacing: 8px;
+}
+.froonty-media-queue-header {
+    spacing: 6px;
+}
+.froonty-media-queue-title {
+    font-size: 13px;
+    font-weight: 600;
+}
+.froonty-media-queue-rows {
+    spacing: 2px;
+    padding-right: 12px;
+}
+.froonty-media-queue-row {
+    spacing: 8px;
+    padding: 3px 6px;
+    border-radius: 8px;
+}
+.froonty-media-queue-offset {
+    min-width: 18px;
+    font-size: 11px;
+    font-feature-settings: "tnum";
+    color: rgba(255, 255, 255, 0.5);
+}
+.froonty-media-queue-song {
+    font-size: 13px;
+}
+.froonty-media-queue-artist {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.6);
+}
+.froonty-media-queue-notice {
+    font-size: 11px;
+    color: #ffd27a;
+}
+
+/* Media: music on the collapsed pill */
+.froonty-collapsed-peek {
+    font-weight: bold;
+}
+/* End of the Media feature */
