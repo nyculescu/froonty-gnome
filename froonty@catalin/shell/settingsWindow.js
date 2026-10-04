@@ -34,6 +34,10 @@ const PREFS_OBJECT_PATH = '/org/gnome/Shell/Extensions';
 // Stop waiting for the requested window after this long (it normally
 // appears within a second; the service may be starting up).
 const WINDOW_WAIT_SECONDS = 10;
+// A preferences service whose last window just closed still owns its name
+// for a moment, without its object; a new one starts once it has gone.
+const LEAVING_RETRY_MS = 300;
+const LEAVING_RETRIES = 5;
 
 export class SettingsWindow {
     /**
@@ -46,6 +50,7 @@ export class SettingsWindow {
         this._title = title;
         this._settings = settings;
         this._waitTimeoutId = 0;
+        this._retryId = 0;
         // The windows watched for 'shown' while waiting: _stopWaiting() lets
         // go of exactly these, also one unmanaged before it was ever shown.
         this._watched = new Set();
@@ -72,6 +77,10 @@ export class SettingsWindow {
 
     destroy() {
         this._stopWaiting();
+        // A pending retry's promise is left unresolved: nothing more runs.
+        if (this._retryId)
+            GLib.source_remove(this._retryId);
+        this._retryId = 0;
     }
 
     _findWindow() {
@@ -86,16 +95,32 @@ export class SettingsWindow {
     // Extension.openPreferences() makes the same call but drops the returned
     // promise, so a failure would surface as an unhandled rejection.
     async _request() {
-        try {
-            await Gio.DBus.session.call(PREFS_SERVICE, PREFS_OBJECT_PATH,
-                PREFS_SERVICE, 'OpenExtensionPrefs',
-                new GLib.Variant('(ssa{sv})', [this._uuid, '', {}]),
-                null, Gio.DBusCallFlags.NONE, -1, null);
-        } catch (e) {
-            // A second click before the first window has appeared; the
-            // pending watch will still activate that window.
-            if (!e.message.includes('Already showing a prefs dialog'))
-                throw e;
+        for (let attempt = 0; ; attempt++) {
+            try {
+                // eslint-disable-next-line no-await-in-loop
+                await Gio.DBus.session.call(PREFS_SERVICE, PREFS_OBJECT_PATH,
+                    PREFS_SERVICE, 'OpenExtensionPrefs',
+                    new GLib.Variant('(ssa{sv})', [this._uuid, '', {}]),
+                    null, Gio.DBusCallFlags.NONE, -1, null);
+                return;
+            } catch (e) {
+                // A second click before the first window has appeared; the
+                // pending watch will still activate that window.
+                if (e.message.includes('Already showing a prefs dialog'))
+                    return;
+                const leaving = e.matches?.(Gio.DBusError, Gio.DBusError.UNKNOWN_METHOD) ||
+                    e.matches?.(Gio.DBusError, Gio.DBusError.UNKNOWN_OBJECT);
+                if (!leaving || attempt >= LEAVING_RETRIES)
+                    throw e;
+            }
+            // eslint-disable-next-line no-await-in-loop
+            await new Promise(resolve => {
+                this._retryId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, LEAVING_RETRY_MS, () => {
+                    this._retryId = 0;
+                    resolve();
+                    return GLib.SOURCE_REMOVE;
+                });
+            });
         }
     }
 

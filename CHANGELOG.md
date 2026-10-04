@@ -40,6 +40,11 @@
   automatic choice. Pausing a music player while a browser still plays
   now shows the browser, not the paused player.
 
+### Fixed
+- Settings opened again right after its window closed: the request no
+  longer fails while GNOME's preferences service is still leaving (it
+  keeps its name a moment without its object); Froonty retries briefly.
+
 ## 0.5.0-rc0 (2026-10-03)
 
 First release candidate of 0.5.0, for GNOME Shell 50 on Ubuntu 26.04
