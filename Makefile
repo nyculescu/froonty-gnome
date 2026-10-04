@@ -8,15 +8,28 @@ INSTALL_DIR := $(HOME)/.local/share/gnome-shell/extensions/$(UUID)
 GLIB_COMPILE_SCHEMAS ?= /usr/bin/glib-compile-schemas
 GNOME_EXTENSIONS ?= /usr/bin/gnome-extensions
 
-# Every source folder of the extension (schemas are packed separately).
-SOURCE_DIRS := $(filter-out schemas,$(notdir $(patsubst %/,%,$(wildcard $(SRC)/*/))))
+# Every source folder of the extension (schemas are packed separately;
+# third_party holds the fetched MathJax, which the public build leaves out).
+SOURCE_DIRS := $(filter-out schemas third_party,$(notdir $(patsubst %/,%,$(wildcard $(SRC)/*/))))
+MATHJAX := $(SRC)/third_party/mathjax/fetched.json
 
-.PHONY: schemas install uninstall pack unit test log clean devkit devkit-public
+.PHONY: schemas mathjax install uninstall pack unit test log clean devkit devkit-public
 
 schemas: $(SRC)/schemas/gschemas.compiled
 
 $(SRC)/schemas/gschemas.compiled: $(SRC)/schemas/*.gschema.xml
 	$(GLIB_COMPILE_SCHEMAS) --strict $(SRC)/schemas
+
+# The Formulas tab's renderer: MathJax from the npm registry, pinned and
+# hash-checked, into $(SRC)/third_party/mathjax (not in the repository).
+# install and devkit fetch it when it is missing; run it again after
+# tools/fetch-mathjax.py changes its pins. Network is needed only then,
+# never at runtime.
+mathjax:
+	python3 tools/fetch-mathjax.py $(SRC)
+
+$(MATHJAX):
+	python3 tools/fetch-mathjax.py $(SRC)
 
 # Copies the extension into the user's extensions directory. A copy, not a
 # symlink: GNOME Shell loads extensions once, at login, and a link into a
@@ -24,7 +37,7 @@ $(SRC)/schemas/gschemas.compiled: $(SRC)/schemas/*.gschema.xml
 # use) is broken at that moment, so the extension silently does not start.
 # GNOME Shell only loads new code at startup: log out and in.
 # First install: gnome-extensions enable $(UUID)
-install: schemas uninstall
+install: schemas $(MATHJAX) uninstall
 	mkdir -p $(dir $(INSTALL_DIR))
 	cp -r $(SRC) $(INSTALL_DIR)
 
@@ -48,7 +61,7 @@ unit:
 # Both session modes: layout can depend on the theme (Ubuntu uses Yaru).
 # Froonty in a nested GNOME Shell window, isolated from the session
 # (needs mutter-dev-bin); devkit-public runs the make pack build.
-devkit: schemas
+devkit: schemas $(MATHJAX)
 	tools/devkit.sh
 
 devkit-public:

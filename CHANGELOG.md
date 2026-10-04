@@ -33,6 +33,21 @@ ZeroTier and Writing stay working-tree only.
   stays on the collapsed pill and on the date pill.
 
 ### Added
+- **The Formulas tab** (working-tree installs only; `make pack` leaves it
+  out, with MathJax). Write LaTeX with a preview drawn as you type, and
+  MathJax's message ("Missing close brace") when it cannot read the
+  formula; symbol palettes searchable by name (`alpha`, `approx`, `≈`),
+  with each symbol's glyph and its LaTeX in a tooltip; templates
+  (fraction, root, sum, integral, limit, derivative, matrix, cases,
+  aligned equations…) that leave the cursor in their first slot; recent
+  and starred formulas; a short guide. Copy as `$…$`, `$$…$$` or raw, or
+  put `$…$` at the open note's cursor. MathJax 4 runs in a separate `gjs`
+  helper process, started with the first preview and stopped after a
+  minute idle or when Froonty is disabled; the Shell never waits for it.
+  `make install` fetches MathJax once (`make mathjax`): official npm
+  packages, pinned and sha512-checked, into a git-ignored folder; nothing
+  is fetched at runtime. Settings → Formulas: the tab, display style,
+  whether MathJax is installed, Clear recent, size.
 - **Media: pause the other players when one starts playing** (Settings →
   Media, on by default): one plays at a time. Between apps only; a
   browser reports all its tabs as one player.

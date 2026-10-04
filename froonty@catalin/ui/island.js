@@ -323,6 +323,10 @@ export class Island {
                     this._settings.set_string('prefs-page', page);
                 this._openSettings('settings');
             },
+            // Another tab's view (by feature id) if it was opened, else
+            // null: a tab can hand something to another (text for the
+            // open note).
+            featureView: id => this._hub?.viewOf(id) ?? null,
         };
         this._ctx = ctx;
         this._hub = new Hub(ctx, FEATURES, {
