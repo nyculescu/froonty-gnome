@@ -1528,15 +1528,16 @@ async function testNotesHeader(outDir) {
     await sleep(SETTLE_MS);
 
     // Keyboard order: ⚙️ (the side column's last) → the panic buttons left
-    // of the date pill → the date pill → All notes.
-    const order = [...hub()._panicBar.groups[0].get_children(), hub().calendarButton, button];
+    // of the date pill → the date pill → those right of it → All notes.
+    const order = [...hub()._panicBar.groups[0].get_children(), hub().calendarButton,
+        ...hub()._panicBar.groups[1].get_children(), button];
     hub().settingsButton.grab_key_focus();
     const reached = [];
     for (let i = 0; i < order.length; i++) {
         await pressKeys(Clutter.KEY_Tab);
         reached.push(global.stage.key_focus);
     }
-    check('notes header: Tab goes ⚙️ → the panic buttons → the date pill → All notes',
+    check('notes header: Tab goes ⚙️ → the left panic buttons → the date pill → the right ones → All notes',
         reached.every((actor, i) => actor === order[i]), reached.map(describeActor).join(' → '));
     view._entry.clutter_text.grab_key_focus();
     await sleep(SETTLE_MS);
@@ -3675,8 +3676,12 @@ async function testClaude(outDir) {
     const {view, service} = entry;
     check('claude: the tab opens', hub().activeFeature?.id === 'claude' && view && service);
     const [w, h] = pill().get_transformed_size();
-    check('claude: island resizes to the tab\'s hubSize',
-        w === 380 * scale() && h === 465 * scale(), `${w}x${h}`);
+    // Its hubSize, or wider where the date pill, kept over GNOME's clock,
+    // needs room on both sides (the tab's own header buttons at the end).
+    const claudeWidth = Math.max(380 * scale(), hub().minWidth + islandFrame());
+    check('claude: island resizes to the tab\'s hubSize (wider only for the header)',
+        Math.abs(w - claudeWidth) <= 1 && h === 465 * scale() && headerPlacement(hub()).ok,
+        `${w}x${h}, needs ${claudeWidth}`);
 
     // Swap in a network we control, then show the tab again.
     const network = new FakeNetwork();
@@ -7842,8 +7847,8 @@ async function testPublicBuild() {
     check('public build: a single tab, so the side column holds ⚙️ and no tab column',
         !hub._tabColumn.visible && hub._side.visible && hub.settingsButton.visible);
     const [left, right] = hub._panicBar.groups;
-    check('public build: the panic bar has the two mute buttons, left of the date pill',
-        left.get_n_children() === 2 && !right.visible, `${left.get_n_children()} + ${right.get_n_children()}`);
+    check('public build: the panic bar has the two mute buttons, one on each side of the date pill',
+        left.get_n_children() === 1 && right.get_n_children() === 1, `${left.get_n_children()} + ${right.get_n_children()}`);
     check('public build: no bar under the pill', island()._pillBars.size === 0);
     island().expand();
     await sleep(animationWait());
@@ -7918,6 +7923,7 @@ const ONLY_TESTS = {
     testResizeGrip, testMediaPill, testMediaExtras, testMediaPanic, testMediaChoiceSurvivesLock,
     testPointer, testHubLayout, testDatePill, testCalendarMenu, testEmptyHub,
     testSettingsButton, testKillProcess, testCpuLoadButton, testFormulas,
+    testNotesHeader, testClaude,
 };
 
 export async function runAll(outDir) {
