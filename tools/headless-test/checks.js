@@ -6027,8 +6027,10 @@ const mediaView = () => mediaEntry()?.view ?? null;
 const accessory = () => island()?._accessory ?? null;
 let mediaWork = null;
 
+// null in a build without the Media tab (the published package).
 async function mediaShared() {
-    return await import(`file://${extension().path}/features/media/shared.js`);
+    const file = Gio.File.new_for_path(`${extension().path}/features/media/shared.js`);
+    return file.query_exists(null) ? await import(file.get_uri()) : null;
 }
 
 function busCallAsync(name, path, iface, method, params = null, replyType = null, timeout = 3000) {
