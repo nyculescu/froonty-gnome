@@ -18,6 +18,9 @@ import zipfile
 LOCAL_DIRS = (
     "features/writing/", "features/zerotier/", "features/media/", "features/claude/",
     "features/sysmon/", "features/clipboard/", "features/killprocess/", "features/break/",
+    "features/formulas/",
+    # The Formulas tab's MathJax (tools/fetch-mathjax.py).
+    "third_party/",
 )
 # extensions.gnome.org's review guidelines: at most 200 characters a line.
 MAX_LINE = 200
@@ -75,6 +78,11 @@ BANNED = (
     b"Clipboard tab",
     b"Media's",
     b"camera.js",
+    b"features/formulas",
+    b"formulas-enabled",
+    b"froonty-formulas",
+    b"MathJax",
+    b"mathjax",
     b"localFeatures",
     b"localPrefs",
     b"localCatalog",

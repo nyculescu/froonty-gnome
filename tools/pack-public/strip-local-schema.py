@@ -1,16 +1,16 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Remove the working-tree-only keys (ZeroTier, Writing) from a staged schema.
+"""Remove the working-tree-only keys (ZeroTier, Writing, Formulas) from a staged schema.
 
-Keys named zerotier-* and writing-* go, and so do comments starting with
-"local-only". Both features' *-enabled keys must be there, so a renamed
+Keys named zerotier-*, writing-* and formulas-* go, and so do comments
+starting with "local-only". Each feature's *-enabled key must be there, so a renamed
 key cannot slip into a public build unnoticed.
 """
 
 import sys
 import xml.etree.ElementTree as ET
 
-PREFIXES = ("zerotier-", "writing-")
-REQUIRED = ("zerotier-enabled", "writing-enabled")
+PREFIXES = ("zerotier-", "writing-", "formulas-")
+REQUIRED = ("zerotier-enabled", "writing-enabled", "formulas-enabled")
 
 path = sys.argv[1]
 parser = ET.XMLParser(target=ET.TreeBuilder(insert_comments=True))

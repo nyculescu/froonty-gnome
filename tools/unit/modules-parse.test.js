@@ -5,6 +5,7 @@
 // settings process (resource:///…) are expected to fail to link here;
 // only a SyntaxError counts. FROONTY_PARSE_ROOT names another copy (the
 // public package, unzipped, in tools/pack-public/test_pack_public.py).
+// third_party/ (fetched code) is left out.
 
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
@@ -19,6 +20,10 @@ function modules(dir, out = []) {
         Gio.FileQueryInfoFlags.NOFOLLOW_SYMLINKS, null);
     for (let info; (info = children.next_file(null));) {
         const child = dir.get_child(info.get_name());
+        // Fetched third-party code (the Formulas tab's MathJax): not
+        // Froonty's, and importing it would run it.
+        if (info.get_file_type() === Gio.FileType.DIRECTORY && info.get_name() === 'third_party')
+            continue;
         if (info.get_file_type() === Gio.FileType.DIRECTORY)
             modules(child, out);
         else if (info.get_name().endsWith('.js'))

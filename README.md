@@ -9,8 +9,8 @@ Status: **0.5.0-rc0**, a release candidate. See [CHANGELOG.md](CHANGELOG.md).
 - The published extension package (`make pack`, extensions.gnome.org)
   has the first submission's tab only, Notes, with the date pill and the
   mute panic buttons. Media, Claude, Btop, Clipboard,
-  Kill Process and Break follow in later versions; ZeroTier and Writing
-  stay working-tree only. `make install` includes them all.
+  Kill Process and Break follow in later versions; ZeroTier, Writing and
+  Formulas stay working-tree only. `make install` includes them all.
 - The polling timers are the Btop (system monitor) and Kill Process
   tabs', each running only while its tab is on screen; the Media tab's
   display tick (it reads nothing) runs only while the tab is on screen
@@ -185,6 +185,11 @@ feature has a design note in [docs/features/](docs/features/).
 - **Writing** tab (working-tree installs only, off by default):
   Paraphrase, Fix grammar, Shorten, Formal, Casual and Summarise, with the
   engines you switch on; see [Working-tree only](#working-tree-only-make-install).
+- **Formulas** tab (working-tree installs only): LaTeX with a rendered
+  preview, symbols searchable by name (`alpha`, `approx`), templates,
+  recent and starred formulas and a short guide; copy as `$…$` or `$$…$$`,
+  or put it into the open note. Drawn on this computer by MathJax, in a
+  helper process; see [Working-tree only](#working-tree-only-make-install).
 - **Always reachable.** With "Show island" off, a puzzle-piece icon in the
   top bar (and the shortcut) opens the settings.
 - **Start at login**, or not. With it off, Froonty waits after login behind
@@ -221,9 +226,20 @@ Each tab can be turned off on its own page in Settings.
   uninstall.
 
 The tabs that are not in the published package yet (Media, Claude, Btop,
-Clipboard, Kill Process, Break; ZeroTier and Writing stay working-tree
-only) say what they need in Settings, and in their design notes under
-[docs/features/](docs/features/).
+Clipboard, Kill Process, Break; ZeroTier, Writing and Formulas stay
+working-tree only) say what they need in Settings, and in their design
+notes under [docs/features/](docs/features/).
+
+Working-tree installs also need, for the Formulas tab's previews, MathJax:
+`make install` fetches it once when it is missing (`make mathjax` does it
+on demand), with `python3` and an internet connection, from the npm
+registry: four official Apache-2.0 packages (`@mathjax/src`, its
+New Computer Modern font, its mhchem font extension, `mhchemparser`),
+pinned by version and checked against their sha512 hashes, into
+`froonty@catalin/third_party/mathjax` (not in git, about 12.5 MB). Nothing
+is fetched while Froonty runs. Without it the tab still has its symbols,
+templates and guide, and says how to fetch it. See
+[docs/features/formulas.md](docs/features/formulas.md).
 
 ## Layout
 
@@ -259,8 +275,10 @@ froonty@catalin/             the extension (this directory is what gets installe
 │   ├── sysmon/              Btop tab (system monitor): /proc and /sys, nvidia-smi
 │   ├── clipboard/           clipboard history: recorder, store, tab
 │   ├── killprocess/         Kill Process tab: your processes from /proc, kill(1)
-│   └── break/               Break tab: GNOME's break engine, the pill's cue,
-│                            ledger, sit/stand, Workrave's exercises (exercises/)
+│   ├── break/               Break tab: GNOME's break engine, the pill's cue,
+│   │                        ledger, sit/stand, Workrave's exercises (exercises/)
+│   └── formulas/            Formulas tab: palettes, templates, guide; renderer/:
+│                            MathJax in a helper process and its client
 ├── panic/                   panic button catalog, factories, buttons (mute,
 │                            Claude session, block camera, pause media,
 │                            sit/stand), prefs
@@ -268,6 +286,8 @@ froonty@catalin/             the extension (this directory is what gets installe
 ├── core/                    shared by features: emitter.js, tooltip.js,
 │                            privateFile.js
 ├── services/clock.js        clock ticks from the top bar's GnomeDesktop.WallClock
+├── third_party/mathjax/     MathJax for the Formulas tab, fetched by
+│                            tools/fetch-mathjax.py (not in git, not packed)
 └── shell/                   adapters over GNOME Shell APIs
     ├── dateMenu.js          the clock, GNOME's calendar and notification menu
     ├── messageTray.js       GNOME's notifications for the Claude attention bar
@@ -290,7 +310,9 @@ docs/local/                  local notes and build rules (not in git)
 ## Develop
 
 ```sh
-make install    # compiles schemas, copies into ~/.local/share/gnome-shell/extensions
+make install    # compiles schemas, fetches MathJax if missing, copies into
+                # ~/.local/share/gnome-shell/extensions
+make mathjax    # (re)fetches the Formulas tab's MathJax (tools/fetch-mathjax.py)
 make pack       # builds the public archive: the first submission's tab only
 ```
 
@@ -385,6 +407,8 @@ its tabs:
 - **ZeroTier:** enable, allow reading ZeroTier's status.
 - **Writing:** the tab, each engine's switch, status and set-up steps,
   Set up… and Remove for Ollama, Remove everything, size.
+- **Formulas:** enable, preview in display style, whether MathJax is
+  installed, clear the recent formulas, size.
 
 The keys behind it:
 
@@ -422,6 +446,10 @@ The keys behind it:
 | `writing-languagetool-variants` | `en-US,de-DE` | LanguageTool's preferred language variants |
 | `writing-ollama-model` | `''` | The local Ollama model |
 | `writing-width` / `writing-height` | 460 / 540 | The island's size on the Writing tab |
+| `formulas-enabled` | `true` | Show the Formulas tab (local builds) |
+| `formulas-display` | `true` | Preview as a formula on its own line (`$$…$$`); off, as inside a line |
+| `formulas-recent` / `formulas-favorites` | `[]` | The last 20 formulas used; starred ones (at most 100) |
+| `formulas-width` / `formulas-height` | 500 / 560 | The island's size on the Formulas tab |
 | `prefs-page` | `''` | The settings tab to show next (internal; "Open Settings → Writing") |
 | `break-enabled` | `false` | Show the Break tab and follow GNOME's break reminders |
 | `break-pill-reminders` | `true` | Remind in the island; GNOME's Wellbeing notifications are off meanwhile |
@@ -438,7 +466,7 @@ The keys behind it:
 
 ## Working-tree only (`make install`)
 
-Two tabs are in local builds only, until they are ready to publish:
+Three tabs are in local builds only:
 
 - **ZeroTier**: see [docs/features/zerotier.md](docs/features/zerotier.md).
 - **Writing** (off by default): Paraphrase, Fix grammar, Shorten, Formal,
@@ -474,6 +502,18 @@ Two tabs are in local builds only, until they are ready to publish:
   Writing setting, after listing them. Claude Code, an Ollama you installed
   and models you downloaded yourself stay.
 
+- **Formulas**: write LaTeX with a preview drawn as you type, MathJax's
+  own error message in place of the picture when it cannot read the
+  formula, symbol palettes (Greek, operators, relations, arrows, sets and
+  logic, accents, brackets, number sets and fonts, functions, physics and
+  units, statistics, chemistry with `\ce`) searchable by name, templates
+  that leave the cursor in their first slot, recent and starred formulas,
+  and a short guide. Copy as `$…$`, `$$…$$` or raw, or **Into note** puts
+  `$…$` at the open note's cursor. MathJax runs in a separate `gjs`
+  process, started with the first preview and stopped after a minute
+  without one, so GNOME Shell never waits for it. Details:
+  [docs/features/formulas.md](docs/features/formulas.md).
+
 ## License and provenance
 
 Froonty is an independent implementation. NexNotch
@@ -494,6 +534,13 @@ GPL-3.0-or-later, inferred from Workrave's licence files; see
 [froonty@catalin/features/break/exercises/README.md](froonty@catalin/features/break/exercises/README.md).
 The Break tab's four pictograms (walk, stand, sit, cup) were drawn for
 Froonty.
+
+The Formulas tab draws formulas with **MathJax** (<https://www.mathjax.org>,
+Apache-2.0, copyright The MathJax Consortium) and its New Computer Modern
+font and mhchem font extension, and **mhchemParser** (Apache-2.0, Martin
+Hensel), fetched from the npm registry by `tools/fetch-mathjax.py` into a
+folder outside git, with their licence files; they are not in the
+repository or the published package.
 
 Copyright (C) 2026 Catalin Niculescu.
 

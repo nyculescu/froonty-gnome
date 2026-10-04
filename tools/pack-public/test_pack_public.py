@@ -90,6 +90,18 @@ class CheckZipTest(unittest.TestCase):
         self.assert_fails(self.make_zip({"ui/x.js": b"const u = 'https://api.languagetool.org/v2';"}),
                           "api.languagetool.org")
 
+    def test_mathjax_file(self):
+        self.assert_fails(self.make_zip({"third_party/mathjax/src/mjs/mathjax.js": b"export {};"}),
+                          "local-only file")
+
+    def test_formulas_traces(self):
+        self.assert_fails(self.make_zip({"features/formulas/index.js": b"x"}), "local-only file")
+        self.assert_fails(self.make_zip({"schemas/gschemas.compiled": b"\0formulas-enabled\0"}),
+                          "formulas-enabled")
+        self.assert_fails(self.make_zip(replace={"stylesheet.css": b".froonty-formulas-flow { }"}),
+                          "froonty-formulas")
+        self.assert_fails(self.make_zip({"ui/x.js": b"// drawn by MathJax\n"}), "MathJax")
+
     def test_writing_css(self):
         self.assert_fails(self.make_zip(replace={"stylesheet.css": b".froonty-writing { }"}),
                           "froonty-writing")
@@ -149,6 +161,7 @@ class StripLocalTest(unittest.TestCase):
 class PruneCssTest(unittest.TestCase):
     def test_removed_rule(self):
         for selector in (".froonty-claude {", ".froonty-media-title {", ".froonty-break,\n.froonty-sysmon {",
+                         ".froonty-formulas-symbol {",
                          ".froonty-pill-cue-level-2,\n.froonty-pill-cue-posture {",
                          ".froonty-panic-button.froonty-panic-posture:checked {"):
             self.assertTrue(prune.removed_rule(selector + " }"), selector)
@@ -179,8 +192,10 @@ class PackTest(unittest.TestCase):
         out = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, out, True)
         env = dict(os.environ, PACK_OUT_DIR=out)
+        # As the Makefile's SOURCE_DIRS: third_party holds the fetched MathJax.
         dirs = sorted(d for d in os.listdir(os.path.join(ROOT, "froonty@catalin"))
-                      if os.path.isdir(os.path.join(ROOT, "froonty@catalin", d)) and d != "schemas")
+                      if os.path.isdir(os.path.join(ROOT, "froonty@catalin", d))
+                      and d not in ("schemas", "third_party"))
         result = subprocess.run(["bash", os.path.join(ROOT, "tools", "pack-public.sh"), "froonty@catalin", *dirs],
                                 cwd=ROOT, env=env, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
@@ -193,6 +208,9 @@ class PackTest(unittest.TestCase):
             "features/writing", "features/zerotier", "features/media", "features/claude",
             "features/sysmon", "features/clipboard", "features/killprocess", "features/break"))])
         self.assertIn("features/notes/index.js", names)
+        # The Formulas tab and its renderer, fetched or not, stay out.
+        self.assertFalse([n for n in names if n.startswith(("features/formulas", "third_party"))])
+        self.assertFalse([n for n in names if "mathjax" in n.lower()])
         # The Calendar and Notifications tabs are gone; the message tray
         # modules only the local Claude attention bar imports stay out.
         self.assertFalse([n for n in names if n.startswith(("features/calendar", "features/notifications"))])
@@ -221,6 +239,8 @@ class PackTest(unittest.TestCase):
         self.assertNotIn(b"froonty-media-", css)
         self.assertNotIn(b'name="writing-', schema)
         self.assertNotIn(b'name="zerotier-', schema)
+        self.assertNotIn(b'name="formulas-', schema)
+        self.assertNotIn(b"froonty-formulas", css)
         self.assertNotIn(b'name="calendar-', schema)
         self.assertNotIn(b'name="notifications-', schema)
         self.assertNotIn(b"local-only", schema)

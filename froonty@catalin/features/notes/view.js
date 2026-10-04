@@ -177,6 +177,28 @@ export class NotesView {
         this._focusEditor();
     }
 
+    /**
+     * Puts text at the open note's cursor, replacing a selection, as if it
+     * were typed (it saves the same way); the cursor goes after it. For
+     * other tabs (ctx.featureView), so it leaves the key focus alone.
+     *
+     * @param {string} insert
+     * @returns {?string} the note's name; null while no note is open, or
+     *   the open one is read-only
+     */
+    insertText(insert) {
+        if (this._service.selected === null || this._service.readOnly)
+            return null;
+        const {text, start, end} = this._editorState();
+        const chars = [...text];
+        const from = Math.min(start, end);
+        const to = Math.max(start, end);
+        const cursor = from + [...insert].length;
+        this._entry.clutter_text.text = chars.slice(0, from).join('') + insert + chars.slice(to).join('');
+        this._entry.clutter_text.set_selection(cursor, cursor);
+        return this._service.selected;
+    }
+
     async _create() {
         await this._service.create();
         if (this._service)

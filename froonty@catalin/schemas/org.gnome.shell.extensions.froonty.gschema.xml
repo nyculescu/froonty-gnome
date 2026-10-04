@@ -558,6 +558,40 @@
       <description>In logical pixels, while the Writing tab is shown.</description>
     </key>
 
+    <!-- local-only: the Formulas tab (docs/features/formulas.md); tools/pack-public strips the formulas-* keys and this comment -->
+    <key name="formulas-enabled" type="b">
+      <default>true</default>
+      <summary>Show the Formulas tab</summary>
+      <description>Write LaTeX formulas with a rendered preview, symbol palettes, templates and a short guide. Formulas are drawn on this computer by MathJax, in a helper process; nothing leaves the computer.</description>
+    </key>
+    <key name="formulas-display" type="b">
+      <default>true</default>
+      <summary>Formulas: preview in display style</summary>
+      <description>As a formula on a line of its own ($$…$$: larger operators, bounds above and below); off, as inside a line of text ($…$).</description>
+    </key>
+    <key name="formulas-recent" type="as">
+      <default>[]</default>
+      <summary>Formulas: recent formulas</summary>
+      <description>Most recent first, at most 20: those copied, put into a note, or shown when the tab was left.</description>
+    </key>
+    <key name="formulas-favorites" type="as">
+      <default>[]</default>
+      <summary>Formulas: starred formulas</summary>
+      <description>Newest first, at most 100.</description>
+    </key>
+    <key name="formulas-width" type="i">
+      <range min="360" max="960"/>
+      <default>500</default>
+      <summary>Formulas island width</summary>
+      <description>In logical pixels, while the Formulas tab is shown.</description>
+    </key>
+    <key name="formulas-height" type="i">
+      <range min="320" max="720"/>
+      <default>560</default>
+      <summary>Formulas island height</summary>
+      <description>In logical pixels, while the Formulas tab is shown.</description>
+    </key>
+
     <!-- Clock -->
     <key name="show-date" type="b">
       <default>false</default>

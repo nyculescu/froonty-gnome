@@ -5,6 +5,7 @@
 import {addIconPath as addBreakIconPath, breakPage} from './break/prefs.js';
 import {addIconPath as addClaudeIconPath, claudePage} from './claude/prefs.js';
 import {clipboardPage} from './clipboard/prefs.js';
+import {formulasPage} from './formulas/prefs.js';
 import {killProcessPage} from './killprocess/prefs.js';
 import {mediaPage} from './media/prefs.js';
 import {sysmonPage} from './sysmon/prefs.js';
@@ -33,6 +34,7 @@ export function addLocalPrefs(window, settings) {
         breakPage(settings),
         zeroTierPage(settings),
         writingPage(settings, window),
+        formulasPage(settings),
     ];
     for (const page of pages)
         window.add(page);

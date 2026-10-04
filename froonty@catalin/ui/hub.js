@@ -125,6 +125,16 @@ export class Hub extends EventEmitter {
         return this._entries.get(this._activeId)?.feature ?? null;
     }
 
+    /**
+     * The view of a tab opened before (its feature on), or null. Never
+     * creates one.
+     *
+     * @param {string} id the feature's id
+     */
+    viewOf(id) {
+        return this._entries.get(id)?.view ?? null;
+    }
+
     /** Logical px the active feature adds to its size for now (view.extraHeight). */
     get activeExtraHeight() {
         return this._entries.get(this._activeId)?.view?.extraHeight ?? 0;

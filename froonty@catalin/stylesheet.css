@@ -1582,6 +1582,178 @@
 }
 /* local:end writing */
 
+/* local:begin formulas (working-tree only; tools/pack-public strips it) */
+/* Formulas tab: editor, preview, copy buttons, palettes. */
+.froonty-formulas {
+    spacing: 6px;
+}
+.froonty-formulas-editor-scroll {
+    max-height: 96px;
+    border-radius: 10px;
+    background-color: rgba(255, 255, 255, 0.065);
+}
+/* Overrides the theme's StEntry look, as the Notes editor does. */
+.froonty-formulas-editor,
+.froonty-formulas-editor:focus,
+.froonty-formulas-editor:hover,
+.froonty-formulas-search,
+.froonty-formulas-search:focus,
+.froonty-formulas-search:hover {
+    min-height: auto;
+    padding: 6px 10px;
+    border: none;
+    border-radius: 10px;
+    box-shadow: none;
+    background-color: transparent;
+    font-family: monospace;
+    font-size: 0.9em;
+    color: #ffffff;
+    caret-color: #ffffff;
+    selection-background-color: rgba(120, 170, 255, 0.45);
+    selected-color: #ffffff;
+}
+.froonty-formulas-search,
+.froonty-formulas-search:focus,
+.froonty-formulas-search:hover {
+    margin-bottom: 4px;
+    font-family: inherit;
+    background-color: rgba(255, 255, 255, 0.065);
+}
+/* Yaru (light) would draw the hint dark, unreadable on the black island. */
+.froonty-formulas-editor StLabel.hint-text,
+.froonty-formulas-search StLabel.hint-text {
+    color: rgba(255, 255, 255, 0.45);
+}
+.froonty-formulas-preview {
+    min-height: 72px;
+    max-height: 160px;
+    padding: 6px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #ffffff;
+}
+.froonty-formulas-message {
+    font-size: 0.85em;
+    text-align: center;
+}
+.froonty-formulas-hint {
+    font-size: 0.85em;
+    color: rgba(255, 255, 255, 0.55);
+}
+.froonty-formulas-error {
+    color: #ff8b8b;
+}
+.froonty-formulas-tools,
+.froonty-formulas-panels {
+    spacing: 4px;
+}
+.froonty-formulas-button {
+    border-radius: 7px;
+    padding: 3px 9px;
+    font-size: 0.85em;
+    background-color: rgba(255, 255, 255, 0.1);
+    transition-duration: 150ms;
+}
+.froonty-formulas-button:hover,
+.froonty-formulas-button:focus {
+    background-color: rgba(255, 255, 255, 0.18);
+}
+.froonty-formulas-button:focus {
+    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.45);
+}
+.froonty-formulas-button:insensitive {
+    color: rgba(255, 255, 255, 0.35);
+    background-color: rgba(255, 255, 255, 0.04);
+}
+.froonty-formulas-toggle:checked,
+.froonty-formulas-panel-button:checked {
+    background-color: rgba(98, 160, 234, 0.45);
+}
+.froonty-formulas-note {
+    background-color: rgba(98, 160, 234, 0.45);
+}
+.froonty-formulas-star:checked {
+    color: #f6d32d;
+}
+.froonty-formulas-status {
+    padding: 0 2px;
+    font-size: 0.8em;
+    color: #99c1f1;
+}
+.froonty-formulas-status.froonty-formulas-error {
+    color: #ff8b8b;
+}
+.froonty-formulas-panel {
+    margin-top: 2px;
+}
+.froonty-formulas-flow {
+    spacing: 4px;
+}
+.froonty-formulas-heading {
+    margin: 6px 0 3px;
+    font-size: 0.8em;
+    font-weight: bold;
+    color: rgba(255, 255, 255, 0.7);
+}
+.froonty-formulas-symbol {
+    min-width: 30px;
+    padding: 3px 6px;
+    font-size: 1em;
+    text-align: center;
+    background-color: rgba(255, 255, 255, 0.06);
+}
+.froonty-formulas-template {
+    min-width: 76px;
+    padding: 4px 8px;
+    background-color: rgba(255, 255, 255, 0.06);
+}
+.froonty-formulas-template-content {
+    spacing: 2px;
+}
+.froonty-formulas-template-glyph {
+    font-size: 1.1em;
+}
+.froonty-formulas-template-label {
+    font-size: 0.75em;
+    color: rgba(255, 255, 255, 0.7);
+}
+.froonty-formulas-list {
+    spacing: 2px;
+}
+.froonty-formulas-item {
+    spacing: 2px;
+}
+.froonty-formulas-item-text {
+    padding: 4px 8px;
+    border-radius: 7px;
+    font-family: monospace;
+    font-size: 0.85em;
+    background-color: rgba(255, 255, 255, 0.06);
+}
+.froonty-formulas-item-text:hover,
+.froonty-formulas-item-text:focus {
+    background-color: rgba(255, 255, 255, 0.14);
+}
+.froonty-formulas-guide-text {
+    font-size: 0.85em;
+    color: rgba(255, 255, 255, 0.8);
+}
+.froonty-formulas-example {
+    margin: 3px 0 4px;
+    padding: 2px 8px;
+    border-radius: 7px;
+    font-family: monospace;
+    font-size: 0.82em;
+    color: #99c1f1;
+    background-color: rgba(255, 255, 255, 0.06);
+}
+.froonty-formulas-example:hover,
+.froonty-formulas-example:focus {
+    color: #ffffff;
+    background-color: rgba(255, 255, 255, 0.14);
+}
+/* local:end formulas */
+
 /* Break tab (docs/features/break.md) */
 
 /* The collapsed pill's cue (a feature's state after the dot). */

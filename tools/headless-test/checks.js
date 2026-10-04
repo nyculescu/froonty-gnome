@@ -3698,6 +3698,183 @@ async function testClaude(outDir) {
     await sleep(animationWait());
 }
 
+// ---------------------------------------------------------------- formulas
+
+const formulasEntry = () => island()?._hub._entries.get('formulas') ?? null;
+const RENDERER_HELPER = 'features/formulas/renderer/helper.js';
+
+// The renderer helpers running now (their process ids).
+function rendererHelpers() {
+    const pids = [];
+    const proc = Gio.File.new_for_path('/proc');
+    const enumerator = proc.enumerate_children('standard::name', 0, null);
+    for (let info; (info = enumerator.next_file(null));) {
+        if (!/^\d+$/.test(info.get_name()))
+            continue;
+        try {
+            const [, bytes] = GLib.file_get_contents(`/proc/${info.get_name()}/cmdline`);
+            if (new TextDecoder().decode(bytes).includes(RENDERER_HELPER) && processAlive(info.get_name()))
+                pids.push(Number(info.get_name()));
+        } catch (e) {
+            // Gone meanwhile.
+        }
+    }
+    return pids;
+}
+
+async function openTab(id) {
+    if (!island().expanded) {
+        island().expand();
+        await sleep(animationWait());
+    }
+    await clickActor(tabButton(id));
+    await sleep(animationWait());
+    return island()._hub._entries.get(id);
+}
+
+async function testFormulas(outDir) {
+    const s = settings();
+    check('formulas: disable succeeds (baseline)', await setExtensionEnabled(false), stateName());
+    const baseline = shellFootprint();
+    check('formulas: enable succeeds', await setExtensionEnabled(true), stateName());
+    await sleep(SETTLE_MS);
+    check('formulas: on by default, with a tab', s.get_boolean('formulas-enabled') &&
+        Boolean(tabButton('formulas')));
+
+    let {view, service} = await openTab('formulas');
+    const [w, h] = pill().get_transformed_size();
+    check('formulas: the tab opens at its configured size',
+        w === 500 * scale() && h === 560 * scale(), `${w}x${h}`);
+    check('formulas: the editor takes the key focus',
+        global.stage.key_focus === view._editor.clutter_text, `${global.stage.key_focus}`);
+    check('formulas: no renderer runs before the first formula',
+        !service._client.running && rendererHelpers().length === 0, `${rendererHelpers()}`);
+
+    // Typing renders, in the helper process.
+    await typeText('x^2+y^2');
+    const rendered = await waitFor(() => view._image.visible && view._image.content !== null, 10000);
+    const pids = rendererHelpers();
+    check('formulas: typing renders a preview, drawn by one helper process',
+        rendered && view._editor.text === 'x^2+y^2' && !view._message.visible && pids.length === 1 &&
+        pids[0] !== new Gio.Credentials().get_unix_pid(),
+        `rendered=${rendered} text=${view._editor.text} message=${view._message.text} helpers=${pids}`);
+    check('formulas: the preview has the picture\'s size',
+        view._image.width > 10 && view._image.height > 10, `${view._image.width}x${view._image.height}`);
+    await screenshotTop(outDir, 'formulas-preview', 620);
+
+    // A formula MathJax refuses: its message, in place of the picture.
+    view._editor.text = '\\frac{1}{';
+    const errored = await waitFor(() => view._message.visible && view._message.text === 'Missing close brace', 5000);
+    check('formulas: a bad formula shows MathJax\'s error in plain words',
+        errored && !view._image.visible, view._message.text);
+    view._editor.text = '\\nosuch';
+    check('formulas: an unknown command is named',
+        await waitFor(() => view._message.text === 'Undefined control sequence \\nosuch', 5000),
+        view._message.text);
+
+    // Palette search: Enter inserts the first match at the cursor.
+    view._editor.text = 'a  b';
+    view._editor.clutter_text.set_selection(2, 2);
+    view._search.clutter_text.grab_key_focus();
+    await typeText('approx');
+    const first = view._results.get_first_child();
+    check('formulas: searching "approx" lists ≈ first', first?.label === '≈' && !view._sections.visible,
+        `${first?.label}`);
+    await pressKeys(Clutter.KEY_Return);
+    check('formulas: Enter puts \\approx at the editor\'s cursor and empties the search',
+        view._editor.text === 'a \\approx b' && view._search.text === '' && view._sections.visible &&
+        global.stage.key_focus === view._editor.clutter_text, view._editor.text);
+    // A click on a symbol does the same.
+    view._editor.clutter_text.set_selection(-1, -1);
+    const alpha = view._sections.get_children().flatMap(c => c.get_children?.() ?? [])
+        .find(b => b.label === 'α');
+    await clickActor(alpha);
+    check('formulas: clicking α inserts \\alpha', view._editor.text === 'a \\approx b\\alpha',
+        `${view._editor.text} α: mapped=${alpha?.mapped} box=${JSON.stringify(alpha && boxOf(alpha))}`);
+
+    // A template puts the cursor in its first slot.
+    view._editor.text = '';
+    await clickActor(view._panelButtons.get('templates'));
+    const fraction = view._panels.get('templates').get_child().get_first_child().get_first_child();
+    await clickActor(fraction);
+    check('formulas: the fraction template leaves the cursor in its first slot',
+        view._editor.text === '\\frac{}{}' && view._editor.clutter_text.cursor_position === 6,
+        `${view._editor.text} @${view._editor.clutter_text.cursor_position}`);
+    await typeText('1');
+    check('formulas: typing goes into that slot', view._editor.text === '\\frac{1}{}', view._editor.text);
+
+    // Copy, and the recent list.
+    view._editor.text = 'E=mc^2';
+    await sleep(SETTLE_MS);
+    await clickActor(view._copyButtons[0]);
+    check('formulas: $…$ copies the formula between dollars, and keeps it as recent',
+        await clipboardText() === '$E=mc^2$' && s.get_strv('formulas-recent')[0] === 'E=mc^2' &&
+        view._status.text === 'Copied as $…$.', `${await clipboardText()} ${s.get_strv('formulas-recent')}`);
+    await clickActor(view._starButton);
+    check('formulas: ☆ stars it', s.get_strv('formulas-favorites').join() === 'E=mc^2' &&
+        view._starButton.checked);
+
+    // Into note: at the open note's cursor.
+    const notes = await openTab('notes');
+    if (notes.service.selected === null)
+        await notes.service.create();
+    await sleep(SETTLE_MS);
+    notes.view._entry.text = 'Energy:  here';
+    notes.view._entry.clutter_text.set_selection(8, 8);
+    const noteName = notes.service.selected;
+    ({view, service} = await openTab('formulas'));
+    await clickActor(view._noteButton);
+    check('formulas: "Into note" puts $…$ at the note\'s cursor, and says where',
+        notes.view._entry.text === 'Energy: $E=mc^2$ here' && view._status.text === `Put into “${noteName}”.`,
+        `${notes.view._entry.text} | ${view._status.text}`);
+    check('formulas: the note saves it', await waitFor(() =>
+        readNote(`${noteName}.md`) === 'Energy: $E=mc^2$ here', 3000), readNote(`${noteName}.md`));
+    s.set_boolean('notes-enabled', false);
+    await sleep(SETTLE_MS);
+    ({view, service} = await openTab('formulas'));
+    await clickActor(view._noteButton);
+    check('formulas: with the Notes tab off, "Into note" says so',
+        view._status.text.startsWith('The Notes tab is off'), view._status.text);
+    s.reset('notes-enabled');
+    await sleep(SETTLE_MS);
+
+    // Without MathJax, the tab says how to get it.
+    service._fetched = false;
+    const isFetched = service._isFetched;
+    service._isFetched = async () => false;
+    view._editor.text = 'y';
+    check('formulas: without MathJax, the preview says how to fetch it',
+        await waitFor(() => view._message.text.includes('make mathjax'), 3000), view._message.text);
+    service._isFetched = isFetched;
+    view._editor.text = 'z';
+    await waitFor(() => view._image.visible, 5000);
+
+    // The helper goes with the extension; nothing else is left.
+    const helper = rendererHelpers();
+    island().collapse();
+    await sleep(animationWait());
+    check('formulas: disable succeeds', await setExtensionEnabled(false), stateName());
+    const gone = await waitFor(() => rendererHelpers().length === 0, 5000);
+    check('formulas: disable() stops the renderer helper', helper.length === 1 && gone,
+        `before=${helper} after=${rendererHelpers()}`);
+    const after = shellFootprint();
+    const isOurs = actor => /froonty/i.test(actor);
+    const scrub = footprint => ({
+        ...footprint,
+        uiGroupChildren: footprint.uiGroupChildren.filter(isOurs),
+        trackedChrome: footprint.trackedChrome.filter(isOurs),
+    });
+    check('formulas: the shell footprint after disable is as before',
+        JSON.stringify(scrub(after)) === JSON.stringify(scrub(baseline)),
+        footprintDiff(scrub(baseline), scrub(after)));
+    check('formulas: re-enable succeeds', await setExtensionEnabled(true), stateName());
+    await sleep(SETTLE_MS);
+    for (const key of ['formulas-recent', 'formulas-favorites', 'hub-last-tab'])
+        s.reset(key);
+    island().collapse();
+    await sleep(animationWait());
+}
+
 // ---------------------------------------------------------------- settings
 
 const settingsWindows = () => global.display.list_all_windows().filter(w =>
@@ -7457,7 +7634,7 @@ const ONLY_TESTS = {
     testNotes, testMedia, testBreak, testHub, testLifecycle, testPublicBuild,
     testResizeGrip, testMediaPill, testMediaExtras, testMediaPanic, testMediaChoiceSurvivesLock,
     testPointer, testHubLayout, testDatePill, testCalendarMenu, testEmptyHub,
-    testSettingsButton, testKillProcess,
+    testSettingsButton, testKillProcess, testFormulas,
 };
 
 export async function runAll(outDir) {
@@ -7519,6 +7696,7 @@ export async function runAll(outDir) {
         await testWriting(outDir);
         await testWritingFixes(outDir);
         await testKillProcess(outDir);
+        await testFormulas(outDir);
         await testBreak(outDir);
         await testSettings(outDir);
         await testCoversPanelClock(outDir);

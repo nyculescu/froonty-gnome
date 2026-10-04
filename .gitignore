@@ -9,3 +9,8 @@ logo/
 
 # Python bytecode (tools/pack-public tests)
 __pycache__/
+
+# The Formulas tab's renderer, fetched by tools/fetch-mathjax.py (make mathjax)
+froonty@catalin/third_party/mathjax/
+froonty@catalin/third_party/mathjax.old/
+froonty@catalin/third_party/.mathjax-fetch.*
