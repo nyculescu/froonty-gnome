@@ -7457,6 +7457,7 @@ const ONLY_TESTS = {
     testNotes, testMedia, testBreak, testHub, testLifecycle, testPublicBuild,
     testResizeGrip, testMediaPill, testMediaExtras, testMediaPanic, testMediaChoiceSurvivesLock,
     testPointer, testHubLayout, testDatePill, testCalendarMenu, testEmptyHub,
+    testSettingsButton, testKillProcess,
 };
 
 export async function runAll(outDir) {
