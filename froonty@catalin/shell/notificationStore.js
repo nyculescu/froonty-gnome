@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // GNOME's notifications, as GNOME's message tray holds them, for the
-// Notifications tab (docs/features/notifications.md).
+// Claude attention bar (docs/features/claude-attention.md).
 //
 // PRIVATE / INTERNAL API. This is the only code in
 // Froonty that reads or writes GNOME's notification objects (ui/
