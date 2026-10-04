@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **The formatting bar in the All notes window.** The note pane has the
+  island's bar: Bold, Italic, Strikethrough, Heading, Bulleted list,
+  Numbered list, Checklist, Code, Link and Wrap lines, in the same order
+  and with the same edits. Toggles light up for the formatting at the
+  cursor or selection; an edit is one undo step (Ctrl+Z) and saves like
+  typing. Wrap lines and the fold button are the island's settings, so
+  both editors look alike (the window used to wrap always). Read-only
+  notes leave the formatting buttons insensitive. The window still shows
+  the Markdown as plain text.
+
 ## 0.5.0-rc0 (2026-10-03)
 
 First release candidate of 0.5.0, for GNOME Shell 50 on Ubuntu 26.04

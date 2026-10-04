@@ -1,13 +1,21 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // The "All notes" page's note pane (settings window; GTK 4 + libadwaita, so
 // nothing from the Shell side): the open note's header (colour, name,
-// labels and a Labels menu) and a plain-text Markdown editor with undo.
+// labels, a Labels menu and the fold button), the island's formatting bar
+// and a plain-text Markdown editor with undo.
 //
-//   ● Plan                       q4 · work      [Labels ▾]
+//   ● Plan                       q4 · work  [Labels ▾] [⤴]
+//   [B][I][S][H][•][1.][☑][</>][🔗][↩]                     formatting bar
 //   ┌────────────────────────────────────────────────────┐
 //   │ # Q4 plan                                          │  matches of the
 //   │ Ship the café menu by Friday                       │  search marked
 //   └────────────────────────────────────────────────────┘
+//
+// The bar edits the buffer as one user action (one undo step), saved like
+// typing; its toggles follow the cursor. Wrap lines (notes-wrap) and the
+// fold button (notes-show-tools) are the island's settings, so both
+// editors look alike. A read-only note leaves the formatting buttons
+// insensitive.
 //
 // Saving goes through a NoteWriter, as in the island: after a pause in
 // typing, never over a version changed elsewhere (ours is then kept as
@@ -28,11 +36,18 @@ import Pango from 'gi://Pango';
 
 import {gettext as _} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
+import {FormatBar} from './allNotesFormatBar.js';
 import * as Labels from './labels.js';
 import {NoteWriter} from './noteWriter.js';
 import {fold, sourceRange, terms} from './search.js';
 
 const isError = (e, code) => e?.matches?.(Gio.IOErrorEnum, code) ?? false;
+
+// ⤴ / ⤵: the island's bundled symbolic icons, by path.
+const foldIcon = name => new Gio.FileIcon({
+    file: Gio.File.new_for_uri(import.meta.url).get_parent()
+        .get_child('icons').get_child(`froonty-fold-${name}-symbolic.svg`),
+});
 
 // UTF-16 indices of `text` → character offsets (what GtkTextIter counts).
 function charOffsets(text, indices) {
@@ -55,14 +70,16 @@ function charOffsets(text, indices) {
 export class NotePane {
     /**
      * @param {NotesLibrary} library
+     * @param {Gio.Settings} settings
      * @param {object} callbacks
      * @param {Function} callbacks.onConflict (name, copy) ours was kept as `copy`
      * @param {Function} callbacks.onRescued (name, copy) text that could not
      *   be saved in the previous folder was kept as `copy` in the new one
      * @param {Function} callbacks.onError (message)
      */
-    constructor(library, {onConflict, onRescued, onError}) {
+    constructor(library, settings, {onConflict, onRescued, onError}) {
         this._library = library;
+        this._settings = settings;
         this._onConflict = onConflict;
         this._onRescued = onRescued;
         this._onError = onError;
@@ -76,6 +93,7 @@ export class NotePane {
 
         this._buildHeader();
         this._buildEditor();
+        this._buildTools();
         this._stack = new Gtk.Stack({hexpand: true, vexpand: true});
         // Not plain UTF-8 text: shown, never written.
         this._readOnlyBanner = new Adw.Banner({
@@ -83,6 +101,7 @@ export class NotePane {
         });
         const note = new Gtk.Box({orientation: Gtk.Orientation.VERTICAL});
         note.append(this._header);
+        note.append(this._tools);
         note.append(new Gtk.Separator());
         note.append(this._readOnlyBanner);
         note.append(this._scroll);
@@ -97,6 +116,13 @@ export class NotePane {
         }), 'gone');
         this._stack.visible_child_name = 'empty';
         this.widget = this._stack;
+
+        // The formatting buttons edit only an open, editable note.
+        const syncEditable = () => this._formatBar.setEditable(
+            this.name !== null && this._stack.visible_child_name === 'note' && this._view.editable);
+        this._stack.connect('notify::visible-child-name', syncEditable);
+        this._view.connect('notify::editable', syncEditable);
+        syncEditable();
     }
 
     /** The writer for the library's current folder. */
@@ -398,6 +424,107 @@ export class NotePane {
         this._header.append(this._title);
         this._header.append(this._labelsCaption);
         this._header.append(this._labelsButton);
+
+        // Folds the formatting bar away (notes-show-tools, as in the island).
+        this._foldIcon = new Gtk.Image();
+        this._foldButton = new Gtk.Button({
+            child: this._foldIcon,
+            css_classes: ['flat'],
+            valign: Gtk.Align.CENTER,
+        });
+        this._foldButton.connect('clicked', () => this._settings.set_boolean('notes-show-tools',
+            !this._settings.get_boolean('notes-show-tools')));
+        this._header.append(this._foldButton);
+    }
+
+    // The formatting bar, under the header: Wrap lines and the fold button
+    // follow the island's settings.
+    _buildTools() {
+        this._formatBar = new FormatBar(edit => this._applyEdit(edit));
+        this._tools = new Gtk.Box({
+            margin_start: 8,
+            margin_end: 8,
+            margin_bottom: 6,
+        });
+        this._tools.append(this._formatBar.widget);
+
+        const wrap = this._formatBar.wrapButton;
+        this._settings.bind('notes-wrap', wrap, 'active', Gio.SettingsBindFlags.DEFAULT);
+        const applyWrap = () => {
+            this._view.wrap_mode = wrap.active ? Gtk.WrapMode.WORD_CHAR : Gtk.WrapMode.NONE;
+            this._scroll.hscrollbar_policy = wrap.active
+                ? Gtk.PolicyType.NEVER : Gtk.PolicyType.AUTOMATIC;
+        };
+        wrap.connect('notify::active', applyWrap);
+        applyWrap();
+
+        const up = foldIcon('up');
+        const down = foldIcon('down');
+        this._settings.bind('notes-show-tools', this._tools, 'visible', Gio.SettingsBindFlags.GET);
+        const syncFold = () => {
+            const shown = this._tools.visible;
+            this._foldIcon.gicon = shown ? up : down;
+            const name = shown ? _('Hide formatting tools') : _('Show formatting tools');
+            this._foldButton.tooltip_text = name;
+            this._foldButton.update_property([Gtk.AccessibleProperty.LABEL], [name]);
+            this._syncFormatState();
+        };
+        this._tools.connect('notify::visible', syncFold);
+        syncFold();
+    }
+
+    // The editor text and selection, as markdown.js takes them: character
+    // offsets (code points, as GtkTextIter counts), start = the selection's
+    // fixed end, end = the cursor.
+    _editorState() {
+        const buffer = this._buffer;
+        const offset = mark => buffer.get_iter_at_mark(mark).get_offset();
+        return {
+            text: buffer.text,
+            start: offset(buffer.get_selection_bound()),
+            end: offset(buffer.get_insert()),
+        };
+    }
+
+    // Applies a markdown.js edit: only the part of the text that changed is
+    // replaced, as one user action (one undo step); the 'changed' handler
+    // saves it as it does typing. Then the edit's selection, and the focus
+    // back in the editor.
+    _applyEdit(edit) {
+        if (this.name === null || !this._view.editable) {
+            this._syncFormatState();
+            return;
+        }
+        const buffer = this._buffer;
+        const result = edit(this._editorState());
+        const before = [...buffer.text];
+        const after = [...result.text];
+        let head = 0;
+        while (head < before.length && head < after.length && before[head] === after[head])
+            head++;
+        let tail = 0;
+        while (tail < before.length - head && tail < after.length - head &&
+            before[before.length - 1 - tail] === after[after.length - 1 - tail])
+            tail++;
+        if (before.length !== after.length || head < before.length) {
+            buffer.begin_user_action();
+            buffer.delete(buffer.get_iter_at_offset(head),
+                buffer.get_iter_at_offset(before.length - tail));
+            buffer.insert(buffer.get_iter_at_offset(head),
+                after.slice(head, after.length - tail).join(''), -1);
+            buffer.end_user_action();
+        }
+        buffer.select_range(buffer.get_iter_at_offset(result.end),
+            buffer.get_iter_at_offset(result.start));
+        this._view.grab_focus();
+        this._syncFormatState();
+    }
+
+    // Lights the formatting toggles for the cursor. Skipped while the bar is
+    // folded away; unfolding calls it again.
+    _syncFormatState() {
+        if (this._tools?.visible)
+            this._formatBar.update(this._editorState());
     }
 
     // One check button per label: this note's first, then the others. The
@@ -469,6 +596,12 @@ export class NotePane {
         this._buffer.connect('changed', () => {
             if (!this._syncing && this.name !== null)
                 this._writer?.edited(this._buffer.text);
+            this._syncFormatState();
+        });
+        // The cursor or the selection moved.
+        this._buffer.connect('mark-set', (_buffer, _iter, mark) => {
+            if (mark === this._buffer.get_insert() || mark === this._buffer.get_selection_bound())
+                this._syncFormatState();
         });
         this._view = new Gtk.TextView({
             buffer: this._buffer,

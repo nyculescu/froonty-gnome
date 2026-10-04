@@ -53,7 +53,8 @@ const LAST_KEY = 'notes-last';
 const MAX_ROWS = 300;
 
 // Colours of the dots (features/notes/colors.js; stylesheet.css has the
-// island's), chips and the editor's search marks. One provider per process.
+// island's), chips, the formatting bar (lit toggles in accent, as in the
+// island) and the editor's search marks. One provider per process.
 const CSS = `
 .froonty-dot { min-width: 10px; min-height: 10px; border-radius: 5px;
     box-shadow: inset 0 0 0 1px alpha(currentColor, 0.2); }
@@ -66,6 +67,12 @@ const CSS = `
 .froonty-dot-charcoal { background-color: #3b3b3b; }
 .froonty-label-chip { padding: 2px 10px; border-radius: 999px; min-height: 0; }
 .froonty-label-chip .froonty-chip-count { margin-left: 4px; }
+.froonty-format-button { min-width: 24px; min-height: 24px; padding: 2px 6px; }
+.froonty-format-text { font-size: 0.85em; font-weight: bold; }
+.froonty-format-button:checked { background-color: var(--accent-bg-color);
+    color: var(--accent-fg-color); }
+.froonty-format-button:checked:hover {
+    background-color: color-mix(in srgb, var(--accent-bg-color) 85%, white); }
 `;
 let cssAdded = false;
 
@@ -157,7 +164,7 @@ class AllNotesPage {
             dataDir: Gio.File.new_for_path(
                 GLib.build_filenamev([GLib.get_user_data_dir(), 'froonty'])),
         });
-        this._pane = new NotePane(this._library, {
+        this._pane = new NotePane(this._library, settings, {
             onConflict: (name, copy) => {
                 this._toast(_('“%s” changed elsewhere. Your version was kept as “%s”.')
                     .format(name, copy));

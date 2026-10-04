@@ -136,7 +136,8 @@ feature has a design note in [docs/features/](docs/features/).
     stay plain Markdown.
   - **All notes**, a button next to ⚙️ on the Notes tab (tinted with the
     note's colour), opens every note in a window: search them all, filter
-    by labels (all of them, or any), and read or edit them there.
+    by labels (all of them, or any), and read or edit them there, with the
+    same formatting bar as the island.
 - **Claude** tab: your Claude plan's usage (Session, Weekly, Weekly Fable)
   and when each resets, as Claude Code last checked it.
   - It is read from Claude Code's own config file each time the tab opens.
