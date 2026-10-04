@@ -147,8 +147,9 @@ should disappear".
     name, date ("16:03" today, "29 Sep" this year, else with the year), a
     two-line excerpt with the matches in bold, and the note's labels. At
     most 300 rows, then "Showing 300 of N — refine the search".
-  - Note pane: colour, name, labels and a **Labels** menu (an entry and a
-    check per label), then a plain-text editor with GTK's undo. Matches of
+  - Note pane: colour, name, labels, a **Labels** menu (an entry and a
+    check per label) and the fold button, then the island's **formatting
+    bar** (see below), then a plain-text editor with GTK's undo. Matches of
     the search are marked in yellow, and the view scrolls to the first.
     Loading a note or a reload cannot be undone, so undo never reaches into
     another note or version.
@@ -171,6 +172,50 @@ should disappear".
     (see Data).
   - Settings → Notes → **All notes** opens it too.
   - Create, rename and Trash stay in the island (v1).
+
+### Formatting bar in the window (2026-10-03)
+
+User request: "I want to be able to edit in 'All notes' too. Enable that
+bar there too."
+
+```
+● Plan                       q4 · work  [Labels ▾] [⤴]
+[B][I][S][H][•][1.][☑][</>][🔗][↩]
+─────────────────────────────────────────────────────
+# Q4 plan
+```
+
+- **The same buttons, in the same order, as the island's bar:** Bold,
+  Italic, Strikethrough, Heading (`H`), Bulleted list, Numbered list,
+  Checklist, Code (`</>`), Link, then Wrap lines. Same icons (Adwaita's),
+  the names as tooltips and accessible names. The list lives in one pure
+  module, `formatActions.js`, which both bars build from, so they cannot
+  drift apart. Same edits too (`markdown.js`): a bare cursor inside
+  `**hi**` counts as bold, a selection over several lines wraps each line
+  on its own, Link selects the URL.
+- **Toggles show their state** at the cursor or selection, as in the
+  island: GTK toggle buttons, lit in the accent colour when on (a click
+  removes it). They follow clicks, the keyboard, typing and undo. Link is
+  a plain button.
+- **An edit is one undo step** (Ctrl+Z): only the changed part of the text
+  is replaced, inside one user action of the `GtkTextBuffer`, so the
+  search marks and the scroll position elsewhere stay. The edit's
+  selection is kept (inside the markers, or the edited lines), and the
+  focus stays in the editor: the buttons never take it on a click. The
+  edit saves like typing, after the pause.
+- **Wrap lines and the fold button are the island's settings**
+  (`notes-wrap`, `notes-show-tools`), so both editors look alike: wrapping
+  off in the window is off in the island too, and the other way round.
+  Before, the window always wrapped. The fold button (⤴ / ⤵, the same
+  bundled icons, loaded by path in the settings process too) is at the
+  end of the note's header; folded, only the bar goes.
+- **Read-only** notes (not plain UTF-8) and no note open (none picked, or
+  gone): the formatting buttons are insensitive. Wrap lines still works:
+  it changes the view, not the note.
+- No keyboard shortcuts (Ctrl+B and so on): the island has none either.
+- **Not rendered.** The window's editor shows the Markdown as plain text
+  (`**bold**`, not bold), unlike the island since its rendered Markdown;
+  only the search marks are styled. Rendering it is a separate change.
 
 ### Filters
 
@@ -389,6 +434,8 @@ features/notes/
 ├── tabs.js       St: capsule tabs, inline rename, two-step ×, right-click
 ├── labelMenu.js  St: a note's labels in a GNOME popup menu
 ├── headerActions.js  St: "All notes" in the hub header, tinted
+├── formatActions.js  pure: the formatting bar's buttons, in order (both
+│                 bars)
 ├── formatBar.js  St: formatting buttons; lights the active toggles
 ├── view.js       St: composes tabs, fold button, tools row, editor,
 │                 empty state
@@ -396,7 +443,8 @@ features/notes/
 ├── prefs.js      Notes settings tab: enable, folder, All notes
 ├── library.js    window side, no GTK: every note, followed by the monitor
 ├── allNotesPage.js  GTK: the All notes page (search, labels, list)
-└── allNotesNote.js  GTK: its note pane (header, Labels, editor)
+├── allNotesNote.js  GTK: its note pane (header, Labels, bar, editor)
+└── allNotesFormatBar.js  GTK: the window's formatting bar
 ```
 
 `names.js`, `markdown.js`, `labels.js`, `search.js`, `store.js`,
@@ -406,7 +454,11 @@ page itself (`allNotesPage.js`, `allNotesNote.js`) is driven through its
 widgets in `notes-all-notes.gtk.test.js`: search and bold matches, chips
 with All/Any and Clear, the Labels menu writing the file, Enter into the
 first result, a failed save, a folder change (also with a failed save),
-following the island, a conflict copy's labels, read-only notes. It runs
+following the island, a conflict copy's labels, read-only notes, and the
+formatting bar: every action on a selection and on a bare cursor (text,
+selection, lit toggles, saved), Link and undo, toggles following the
+cursor, Bold over several lines, an emoji before the selection, read-only
+and no note, Wrap and the fold button. It runs
 on a private Broadway display (`tools/unit/run.sh`) and imports a copy of
 the modules in which the preferences service's gettext import names a
 stub.

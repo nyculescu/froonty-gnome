@@ -22,6 +22,15 @@
 - **Media: bringing up a player's window shows that player** on the pill
   and in the tab, until another player starts playing; a player picked by
   hand still comes first.
+- **The formatting bar in the All notes window.** The note pane has the
+  island's bar: Bold, Italic, Strikethrough, Heading, Bulleted list,
+  Numbered list, Checklist, Code, Link and Wrap lines, in the same order
+  and with the same edits. Toggles light up for the formatting at the
+  cursor or selection; an edit is one undo step (Ctrl+Z) and saves like
+  typing. Wrap lines and the fold button are the island's settings, so
+  both editors look alike (the window used to wrap always). Read-only
+  notes leave the formatting buttons insensitive. The window still shows
+  the Markdown as plain text.
 
 ### Changed
 - Media: anything that plays comes before anything paused in the
