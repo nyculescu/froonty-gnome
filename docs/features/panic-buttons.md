@@ -70,6 +70,20 @@ island opens, follows it while the island stays open, and does nothing while
 the island is collapsed. The bar tells its buttons when the hub is shown
 (`setActive`, optional on a button).
 
+Added 2026-10-04, off by default, local builds only (it reuses the Btop
+tab's code, which is not published yet):
+
+| Id | What it shows | A click |
+|---|---|---|
+| `cpu-load` | The whole processor's load (0–100, no "%"), as large as the button allows, over a faint processor chip, laid out as `claude-session`; the number in the Btop tab's level colours (green under 20%, lime, yellow, orange, red from 80%); "?" before the first reading | Opens the Btop tab |
+
+Also an indicator: "CPU load: 37%". It reads `/proc/stat` only while the
+island is open: a sample when it opens, the first load a second later,
+then one every Btop refresh interval (`sysmon-interval`). Collapsed, its
+timer is gone and nothing is read. The chip is bundled with the Btop tab
+(`features/sysmon/icons`, `froonty-cpu-symbolic`): Adwaita has no
+processor icon.
+
 ## 4. Block camera for apps that ask GNOME
 
 **Switched off for now (2026-10-02).** The entry is commented out in
@@ -175,6 +189,7 @@ panic/catalog.js    pure: ids, icons, titles, descriptions, MAX 5,
 panic/registry.js   Shell side: id → button factory
 panic/audioMute.js  the two mute buttons (input/output)
 panic/claudeSession.js  Claude session usage (reuses features/claude)
+panic/cpuLoad.js    CPU load (reuses features/sysmon)
 panic/cameraAccess.js   GNOME's Camera Access switch, Gio only
                     (unit-tested)
 panic/camera.js     the "Block camera" button

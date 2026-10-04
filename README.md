@@ -69,6 +69,9 @@ feature has a design note in [docs/features/](docs/features/).
     mixer.
   - **Claude session usage** shows the session's percentage, large, over a
     faint Claude Spark. A click opens the Claude tab.
+  - **CPU load** shows the whole processor's load, large, over a faint
+    processor chip, coloured green to red as the Btop tab's levels. It
+    reads only while the island is open. A click opens the Btop tab.
   - The camera button (**Block camera for apps that ask GNOME**) is switched
     off for now; its code is kept
     ([details](docs/features/panic-buttons.md#4-block-camera-for-apps-that-ask-gnome)).

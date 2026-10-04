@@ -3,11 +3,13 @@
 // tools/pack-public replaces this file with an empty map.
 
 import {ClaudeSessionButton} from './claudeSession.js';
+import {CpuLoadButton} from './cpuLoad.js';
 import {PauseMediaButton} from './pauseMedia.js';
 import {SitStandButton} from './sitStand.js';
 
 export const LOCAL_FACTORIES = {
     'claude-session': (title, actions) => new ClaudeSessionButton(title, actions),
+    'cpu-load': (title, actions) => new CpuLoadButton(title, actions),
     'pause-media': (title, actions) => new PauseMediaButton(title, actions),
     'sit-stand': (title, actions) => new SitStandButton(title, actions),
 };

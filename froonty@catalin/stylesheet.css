@@ -810,6 +810,25 @@
 .froonty-sysmon-cell-4 { color: #ff7800; }
 .froonty-sysmon-cell-5 { color: #e01b24; }
 .froonty-sysmon-cell-empty { color: #5e5c64; }
+/* The CPU load panic button: as the Claude session button, the number in
+   the level colours over a faint processor chip. */
+.froonty-icon-button.froonty-sysmon-cpu {
+    padding: 0;
+}
+.froonty-sysmon-cpu-stack {
+    width: 30px;
+    height: 26px;
+}
+.froonty-sysmon-cpu .froonty-sysmon-cpu-icon {
+    icon-size: 22px;
+    color: rgba(255, 255, 255, 0.28);
+}
+.froonty-sysmon-cpu-number {
+    font-size: 15px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    font-feature-settings: "tnum";
+}
 .froonty-sysmon-detail {
     font-size: 0.78em;
     font-feature-settings: "tnum";

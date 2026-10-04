@@ -3,7 +3,7 @@ import {
     coreInputs, cpuPackageInput, findEfiMount, loadPercent, parseCpuMhz, parseCpuModel,
     parseMeminfo, parseNetDev, parseNvidiaSmi, parseStat, pciDeviceName, rate,
 } from '../../froonty@catalin/features/sysmon/parse.js';
-import {levelCells} from '../../froonty@catalin/features/sysmon/level.js';
+import {levelCells, levelClass} from '../../froonty@catalin/features/sysmon/level.js';
 import {Sampler, SECTIONS} from '../../froonty@catalin/features/sysmon/sampler.js';
 import {SysmonService} from '../../froonty@catalin/features/sysmon/service.js';
 import {done, eq, ok, test} from './test.js';
@@ -155,6 +155,13 @@ test('levels: one cell per 20%, green to red', () => {
     eq(glyphs(1.5), '▂▄▆▇█');
     eq(levelCells(1).map(cell => cell.styleClass), [1, 2, 3, 4, 5].map(n => `froonty-sysmon-cell-${n}`));
     eq(levelCells(0.2)[1].styleClass, 'froonty-sysmon-cell-empty');
+});
+
+test('levels: a whole number takes the colour of its 20% band (the CPU load button)', () => {
+    const cell = percent => Number(levelClass(percent).at(-1));
+    eq([0, 19, 20, 39, 40, 59, 60, 79, 80, 99, 100].map(cell), [1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 5]);
+    eq(cell(-3), 1, 'below 0');
+    eq(cell(140), 5, 'over 100');
 });
 
 // A fake /proc and /sys: `files` maps paths to text, `links` to targets.

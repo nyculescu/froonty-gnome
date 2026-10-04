@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <!-- A processor: a die in a package with three pins on each side. Fill
+       #bebebe: the Shell recolours symbolic icons by fill. -->
+  <path fill="#bebebe" fill-rule="evenodd" d="M5 3h6a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm0 1.5a.5.5 0 0 0-.5.5v6a.5.5 0 0 0 .5.5h6a.5.5 0 0 0 .5-.5V5a.5.5 0 0 0-.5-.5H5Zm1.5 2h3v3h-3v-3ZM5.5 0h1v2.5h-1V0Zm2 0h1v2.5h-1V0Zm2 0h1v2.5h-1V0Zm-4 13.5h1V16h-1v-2.5Zm2 0h1V16h-1v-2.5Zm2 0h1V16h-1v-2.5ZM0 5.5h2.5v1H0v-1Zm0 2h2.5v1H0v-1Zm0 2h2.5v1H0v-1Zm13.5-4H16v1h-2.5v-1Zm0 2H16v1h-2.5v-1Zm0 2H16v1h-2.5v-1Z"/>
+</svg>

@@ -21,3 +21,13 @@ export function levelCells(fraction) {
         ? {glyph, styleClass: `froonty-sysmon-cell-${i + 1}`}
         : {glyph: EMPTY, styleClass: 'froonty-sysmon-cell-empty'});
 }
+
+/**
+ * The colour class of one share as a whole, for a number drawn in it (the
+ * CPU load panic button): the cell its 20% band ends in, so 0-19% is
+ * green and 80-100% red.
+ */
+export function levelClass(percent) {
+    const cell = Math.min(LEVEL_GLYPHS.length, Math.floor(Math.max(0, percent) / 20) + 1);
+    return `froonty-sysmon-cell-${cell}`;
+}

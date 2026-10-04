@@ -3510,6 +3510,71 @@ async function testKillProcess(outDir) {
     check('kill process: turning it off removes the tab', !tabButton('killprocess'));
 }
 
+const cpuButton = () => island()._hub._panicBar._buttons
+    .find(b => b.actor.has_style_class_name('froonty-sysmon-cpu')) ?? null;
+
+// The CPU load panic button: the load in the level colours, read only
+// while the island is open; a click opens the Btop tab.
+async function testCpuLoadButton() {
+    settings().set_strv('panic-buttons', ['mute-microphone', 'cpu-load']);
+    settings().set_int('sysmon-interval', 1);
+    await sleep(SETTLE_MS);
+    let button = cpuButton();
+    check('cpu button: offered, a "?" over the chip while collapsed, nothing read',
+        button !== null && button._number.text === '?' && button._timeoutId === 0 &&
+        button.actor.accessible_name === 'CPU load: unknown',
+        `${button?._number.text} timer=${button?._timeoutId} ${button?.actor.accessible_name}`);
+
+    // /proc/stat's "cpu" line: busy 200 of 1000, then +850 of +1000 (85%),
+    // then +350 of +1000 (35%).
+    const stats = ['cpu  100 0 100 800 0 0 0 0', 'cpu  500 0 550 950 0 0 0 0',
+        'cpu  700 0 700 1600 0 0 0 0'];
+    const reads = [];
+    button._io = {read: async path => {
+        reads.push(path);
+        return stats[Math.min(reads.length - 1, stats.length - 1)];
+    }};
+    island().expand();
+    await sleep(animationWait());
+    check('cpu button: a second after opening, the load, red from 80%',
+        await waitFor(() => button._number.text === '85', 3000) &&
+        button._number.has_style_class_name('froonty-sysmon-cell-5') &&
+        button.actor.accessible_name === 'CPU load: 85%',
+        `${button._number.text} ${button._number.style_class} ${button.actor.accessible_name}`);
+    check('cpu button: then every refresh interval, lime at 35%',
+        await waitFor(() => button._number.text === '35', 3000) &&
+        button._number.has_style_class_name('froonty-sysmon-cell-2') &&
+        !button._number.has_style_class_name('froonty-sysmon-cell-5'),
+        `${button._number.text} ${button._number.style_class}`);
+    island().collapse();
+    await sleep(animationWait());
+    const readsWhenClosed = reads.length;
+    await sleep(2500);
+    check('cpu button: collapsed, it stops reading', button._timeoutId === 0 &&
+        reads.length === readsWhenClosed, `timer=${button._timeoutId} reads ${readsWhenClosed} -> ${reads.length}`);
+
+    // A fresh button reads the real /proc/stat.
+    settings().set_strv('panic-buttons', ['mute-microphone']);
+    await sleep(SETTLE_MS);
+    settings().set_strv('panic-buttons', ['mute-microphone', 'cpu-load']);
+    await sleep(SETTLE_MS);
+    button = cpuButton();
+    island().expand();
+    await sleep(animationWait());
+    check('cpu button: the machine\'s own load, 0 to 100',
+        await waitFor(() => /^\d+$/.test(button._number.text), 3000) &&
+        Number(button._number.text) <= 100, button._number.text);
+    await clickActor(button.actor);
+    await sleep(animationWait());
+    check('cpu button: a click opens the Btop tab', island()._hub.activeFeature?.id === 'sysmon',
+        island()._hub.activeFeature?.id);
+    island().collapse();
+    await sleep(animationWait());
+    settings().reset('panic-buttons');
+    settings().reset('sysmon-interval');
+    await sleep(SETTLE_MS);
+}
+
 async function testClaude(outDir) {
     const hub = () => island()._hub;
     writeClaudeConfig(claudeConfig());
@@ -7459,7 +7524,7 @@ const ONLY_TESTS = {
     testNotes, testMedia, testBreak, testHub, testLifecycle, testPublicBuild,
     testResizeGrip, testMediaPill, testMediaExtras, testMediaPanic, testMediaChoiceSurvivesLock,
     testPointer, testHubLayout, testDatePill, testCalendarMenu, testEmptyHub,
-    testSettingsButton, testKillProcess,
+    testSettingsButton, testKillProcess, testCpuLoadButton,
 };
 
 export async function runAll(outDir) {
@@ -7521,6 +7586,7 @@ export async function runAll(outDir) {
         await testWriting(outDir);
         await testWritingFixes(outDir);
         await testKillProcess(outDir);
+        await testCpuLoadButton();
         await testBreak(outDir);
         await testSettings(outDir);
         await testCoversPanelClock(outDir);

@@ -27,6 +27,13 @@ export const LOCAL_PANIC_BUTTONS = [
         title: _ => _('Claude session usage'),
     },
     {
+        // Not an action: the CPU load at a glance; a click opens the Btop
+        // tab. The icon is bundled (features/sysmon/icons).
+        id: 'cpu-load',
+        icon: 'froonty-cpu-symbolic',
+        title: _ => _('CPU load'),
+    },
+    {
         // Every MPRIS player that plays; a second click resumes the ones it
         // paused (panic/pauseMedia.js, docs/features/media.md).
         id: 'pause-media',

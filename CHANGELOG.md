@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **CPU load panic button** (Settings → Panic buttons, local builds): the
+  processor's load, large, over a faint processor chip, as the Claude
+  session button shows its number, coloured green to red as the Btop
+  tab's levels. It reads only while the island is open; a click opens the
+  Btop tab.
+
 ## 0.6.0-rc0 (2026-10-04)
 
 First release candidate of 0.6.0, for GNOME Shell 50 on Ubuntu 26.04
