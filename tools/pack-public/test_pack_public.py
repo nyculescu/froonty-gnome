@@ -193,7 +193,11 @@ class PackTest(unittest.TestCase):
             "features/writing", "features/zerotier", "features/media", "features/claude",
             "features/sysmon", "features/clipboard", "features/killprocess", "features/break"))])
         self.assertIn("features/notes/index.js", names)
-        self.assertIn("features/calendar/index.js", names)
+        # The Calendar and Notifications tabs are gone; the message tray
+        # modules only the local Claude attention bar imports stay out.
+        self.assertFalse([n for n in names if n.startswith(("features/calendar", "features/notifications"))])
+        self.assertNotIn("shell/messageTray.js", names)
+        self.assertNotIn("shell/notificationStore.js", names)
         self.assertIn("LICENSE", names)
         self.assertNotIn("panic/camera.js", names)
         self.assertNotIn("features/localFeatures.js", names)
@@ -217,6 +221,8 @@ class PackTest(unittest.TestCase):
         self.assertNotIn(b"froonty-media-", css)
         self.assertNotIn(b'name="writing-', schema)
         self.assertNotIn(b'name="zerotier-', schema)
+        self.assertNotIn(b'name="calendar-', schema)
+        self.assertNotIn(b'name="notifications-', schema)
         self.assertNotIn(b"local-only", schema)
         self.assertNotIn(b"froonty-writing", css)
         self.assertIn(b"froonty-pill", css)

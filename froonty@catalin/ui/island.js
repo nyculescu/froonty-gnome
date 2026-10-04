@@ -27,7 +27,6 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 import {FEATURES} from '../features/registry.js';
 import {CalendarMenu} from '../shell/dateMenu.js';
-import {gnomeNotifications} from '../shell/messageTray.js';
 import {crossfade, showOnly} from './animations.js';
 import {addIslandChrome, removeIslandChrome} from './chrome.js';
 import {CollapsedView} from './collapsedView.js';
@@ -73,9 +72,6 @@ export class Island {
         this._memory = memory;
         this._version = version;
         this._expanded = false;
-        // Whether the user is at the open island: opened on purpose, or
-        // since a press, or a key or scroll that counts (_isDeliberate).
-        this._engaged = false;
         // Context menus features opened (ctx.contextMenu), while they exist.
         this._menus = new Set();
         this._accessory = null;
@@ -108,10 +104,9 @@ export class Island {
             actionMode: Shell.ActionMode.POPUP,
         });
 
-        // Opening by hover alone is not a deliberate act (see expand()).
         this._hoverOpen = new HoverOpen(this._pill, settings, {
             isExpanded: () => this._expanded,
-            expand: () => this.expand({byHover: true, pointer: true}),
+            expand: () => this.expand({pointer: true}),
         });
 
         this._connectSignals();
@@ -191,18 +186,14 @@ export class Island {
     }
 
     /**
-     * Opens the island. A click, the keyboard, the shortcut or Ctrl+Alt+Tab
-     * is a deliberate act, and the hub hears of it (Hub.noteUserInput: the
-     * Notifications tab takes what it lists as seen); opening by hover is
-     * not, until the user clicks in the island, moves the key focus into
-     * it and types, or scrolls its tab's content (_isDeliberate).
+     * Opens the island (a click, a hover, the keyboard, the shortcut or
+     * Ctrl+Alt+Tab).
      *
      * @param {object} [options]
-     * @param {boolean} [options.byHover] opened by resting on the pill
      * @param {boolean} [options.pointer] opened by a click or hover: the
      *   tab of a pill accessory that asks for it (opensTab) opens
      */
-    expand({byHover = false, pointer = false} = {}) {
+    expand({pointer = false} = {}) {
         if (this._expanded)
             return;
 
@@ -230,7 +221,7 @@ export class Island {
         if (pointer && this._accessory?.opensTab)
             this._hub.select(this._accessory.tabId);
 
-        this._setExpanded(true, {byHover});
+        this._setExpanded(true);
     }
 
     collapse() {
@@ -313,8 +304,6 @@ export class Island {
             clock: this._clock,
             dataDir: Gio.File.new_for_path(
                 GLib.build_filenamev([GLib.get_user_data_dir(), 'froonty'])),
-            // GNOME's own notifications (null without a message tray).
-            notifications: gnomeNotifications(),
             // Releases the grab, e.g. so a browser or Settings opened from
             // a tab can take the focus.
             collapse: () => this.collapse(),
@@ -354,16 +343,6 @@ export class Island {
 
     _connectSignals() {
         this._pill.connect('clicked', () => this._onPillClicked());
-        // A press, key or scroll inside the open island may be deliberate
-        // input (_isDeliberate; Hub.noteUserInput). Escape never gets here:
-        // GrabHelper's own handler on the strip, which captures first, stops
-        // it; clicks outside the pill target the strip. The handler dies
-        // with the pill.
-        this._pill.connect('captured-event', (_actor, event) => {
-            if (this._expanded && this._isDeliberate(event))
-                this._hub?.noteUserInput();
-            return Clutter.EVENT_PROPAGATE;
-        });
         // Swipes on the collapsed pill go to its accessory.
         this._pill.connect('scroll-event', (_actor, event) =>
             !this._expanded && this._accessory?.handleScroll(event)
@@ -708,7 +687,7 @@ export class Island {
         });
     }
 
-    _setExpanded(expanded, {byHover = false} = {}) {
+    _setExpanded(expanded) {
         if (this._expanded === expanded)
             return;
 
@@ -736,56 +715,12 @@ export class Island {
             for (const bar of this._pillBars.values())
                 bar.hide();
         }
-        this._engaged = expanded && !byHover;
         this._syncAccessoryShown();
         // The expanded island covers the place where GNOME shows banners.
         this._calendarMenu.holdBanners(expanded);
         this._hub.setShown(expanded);
         this._resizeGrip.sync(expanded ? this._settings.get_int('animation-duration') : 0);
-        if (expanded && !byHover)
-            this._hub.noteUserInput();
         this._animate();
-    }
-
-    /**
-     * Whether `event`, in the open island, shows the user is at it.
-     *
-     * - A press or a touch: always.
-     * - A key: never a modifier alone, nor the keyboard's auto-repeat.
-     *   After a hover-open the key focus is still on the pill and the user
-     *   may still be typing into their window: a key counts only once the
-     *   focus is inside the island (Tab moves it there; Tab itself does
-     *   not count, nor does Space or Enter, which close it).
-     * - A scroll: after a hover-open, only over the tab's own content (the
-     *   pointer rests where the pill was, over the island's header).
-     *
-     * Once one counts, so do the others, as after a deliberate open.
-     */
-    _isDeliberate(event) {
-        switch (event.type()) {
-        case Clutter.EventType.BUTTON_PRESS:
-        case Clutter.EventType.TOUCH_BEGIN:
-            break;
-        case Clutter.EventType.KEY_PRESS: {
-            if (event.get_flags() & Clutter.EventFlags.FLAG_REPEATED ||
-                isModifierKey(event.get_key_symbol()))
-                return false;
-            const focus = global.stage.get_key_focus();
-            if (!this._engaged &&
-                (!focus || focus === this._pill || !this._pill.contains(focus)))
-                return false;
-            break;
-        }
-        case Clutter.EventType.SCROLL:
-            if (!this._engaged &&
-                !this._hub.contentContains(global.stage.get_event_actor(event)))
-                return false;
-            break;
-        default:
-            return false;
-        }
-        this._engaged = true;
-        return true;
     }
 
     _animate() {
@@ -829,18 +764,4 @@ export class Island {
         const hub = this._hub.actor;
         return this._expanded ? [hub, collapsed] : [collapsed, hub];
     }
-}
-
-/**
- * Shift, Control, Caps Lock, Meta, Alt, Super and Hyper; the ISO level
- * and group keys (AltGr is ISO_Level3_Shift); Mode_switch and Num_Lock.
- * Pressed alone, they are not input to the island.
- *
- * @param {number} keyval
- * @returns {boolean}
- */
-function isModifierKey(keyval) {
-    return (keyval >= Clutter.KEY_Shift_L && keyval <= Clutter.KEY_Hyper_R) ||
-        (keyval >= Clutter.KEY_ISO_Lock && keyval <= Clutter.KEY_ISO_Level5_Lock) ||
-        keyval === Clutter.KEY_Mode_switch || keyval === Clutter.KEY_Num_Lock;
 }

@@ -12,7 +12,7 @@ moves left just enough to keep clear of the date pill and ⚙️), and each
 button shows its name in a tooltip on hover. You choose and order the buttons in Settings → Panic
 buttons.
 
-The feature tabs (Calendar, Notes, …) moved to a **vertical column on
+The feature tabs (Notes, Media, …) moved to a **vertical column on
 the left**. Each tab shows its feature's name in a tooltip on hover. (Its
 first tab was a Clock tab until 2026-10-03; the date and the time are now
 in a pill left of ⚙️, which opens GNOME's calendar menu.)

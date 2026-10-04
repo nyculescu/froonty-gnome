@@ -87,9 +87,9 @@ export class AttentionHost {
         const service = new AttentionService({
             settings: this._settings,
             desktop,
-            // GNOME's notifications, through the Notifications tab's
-            // store (shell/messageTray.js), filtered to the Claude app and
-            // web browsers.
+            // GNOME's notifications, through Froonty's store over GNOME's
+            // message tray (shell/messageTray.js), filtered to the Claude
+            // app and web browsers.
             notifications: gnomeNotifications(),
         });
         const bar = new AttentionBar({

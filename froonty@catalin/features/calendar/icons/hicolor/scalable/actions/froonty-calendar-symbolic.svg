@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
-  <!-- Froonty's own drawing: a calendar page (two rings, a header band)
-       with two agenda lines. Fill #bebebe: the Shell recolours symbolic
-       icons by fill, so the tab follows the theme. -->
-  <path fill="#bebebe" fill-rule="evenodd" d="M4 0h1.5v2h5V0H12v2h1a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h1V0ZM2.5 6v8a.5.5 0 0 0 .5.5h10a.5.5 0 0 0 .5-.5V6h-11Z"/>
-  <path fill="#bebebe" d="M4 8h1.5v1.5H4V8Zm3 0h5v1.5H7V8Zm-3 3h1.5v1.5H4V11Zm3 0h5v1.5H7V11Z"/>
-</svg>

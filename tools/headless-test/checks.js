@@ -181,8 +181,9 @@ function shellFootprint() {
             ? `${mediaSharedModule.mediaUsers()} users, ${mediaSharedModule.sharedMedia() ? 'running' : 'none'}`
             : 'not loaded',
         statusArea: Object.keys(Main.panel.statusArea).sort().join(','),
-        // The Notifications tab's, only while it is on screen: not higher
-        // merely because Froonty is enabled, hence not under `handlers`.
+        // The Claude attention bar's notification store, only while it
+        // watches GNOME's notifications: not higher merely because Froonty
+        // is enabled, hence not under `handlers`.
         trayHandlers: {
             sourceAdded: countHandlers(Main.messageTray, 'source-added'),
             sourceRemoved: countHandlers(Main.messageTray, 'source-removed'),
@@ -295,11 +296,11 @@ async function testPointer(outDir) {
     check('the clock follows the top bar\'s WallClock (no clock of its own to dispose)',
         extension().stateObj._clock?._wallClock === Main.panel.statusArea.dateMenu._clock);
     // The first open shows the first tab (hub-last-tab's default, the
-    // Calendar tab), at its size. The height is a minimum: the island grows
+    // Notes tab), at its size. The height is a minimum: the island grows
     // to show every tab.
     const tabs = island()._hub._tabColumn.get_children().map(boxOf);
     const size = island()._geometry.expandedSize(island()._hub.activeFeature);
-    check('expanded: the first tab (Calendar) at its size, tall enough for every tab',
+    check('expanded: the first tab (Notes) at its size, tall enough for every tab',
         island()._hub.activeFeature?.id === firstTabId() && firstTabId() === s.get_string('hub-last-tab') &&
         w === size.width &&
         h >= size.height && tabs.at(-1).y2 <= boxOf(pill()).y2 &&
@@ -445,9 +446,15 @@ function makeFakeFeature(log) {
 const tabButton = id => island()._hub._entries.get(id)?.button;
 
 // The first tab that is on, in registry order: the one the hub falls back
-// to, and "another tab" for the checks (the Calendar tab by default).
+// to, and "another tab" for the checks of tabs after it (the Notes tab by
+// default).
 const firstTabId = () => island()._hub._features
     .find(f => !f.enabledKey || settings().get_boolean(f.enabledKey))?.id ?? null;
+
+// The first tab that is on other than `id` (the Media tab, for Notes, by
+// default), or null.
+const otherTabId = id => island()._hub._features
+    .find(f => f.id !== id && (!f.enabledKey || settings().get_boolean(f.enabledKey)))?.id ?? null;
 
 // The island's padding and border, left and right (stage px).
 function islandFrame() {
@@ -487,7 +494,7 @@ async function testHub(outDir) {
     await sleep(SETTLE_MS);
     check('hub: a single feature hides the tab row (and the notice goes)',
         !hub._tabColumn.visible && hub.activeFeature?.id === 'notes' && !hub._empty.visible);
-    settings().reset('notifications-enabled');
+    settings().reset('zerotier-enabled');
     await sleep(SETTLE_MS);
     check('hub: enabling a feature adds its tab',
         hub._tabColumn.visible && hub._tabColumn.get_n_children() === 2);
@@ -498,12 +505,11 @@ async function testHub(outDir) {
             settings().set_boolean(feature.enabledKey, true);
         await sleep(SETTLE_MS);
     }
-    // Names without GNOME's ", unread notifications" (the Notifications tab's).
-    const names = hub._tabColumn.get_children()
-        .map(b => b.accessible_name.replace(/, unread notifications$/, ''));
+    const names = hub._tabColumn.get_children().map(b => b.accessible_name);
     const expected = (await expectedTabs()).map(f => f.title);
-    check(`hub: tabs follow the registry order (${expected.join(', ')}); Calendar first, no Clock tab`,
-        names.join(',') === expected.join(',') && names[0] === 'Calendar' && !names.includes('Clock'),
+    check(`hub: tabs follow the registry order (${expected.join(', ')}); Notes first, no Clock, Calendar or Notifications tab`,
+        names.join(',') === expected.join(',') && names[0] === 'Notes' &&
+        !['Clock', 'Calendar', 'Notifications'].some(name => names.includes(name)),
         names.join(','));
     check('hub: the tab shown before stays shown as the others come back',
         hub.activeFeature?.id === 'notes', hub.activeFeature?.id);
@@ -511,9 +517,9 @@ async function testHub(outDir) {
     island().expand();
     await sleep(animationWait());
     check('hub: tab icons are 20 px (25% over other icon buttons)',
-        tabButton('calendar').child.get_width() === 20 * scale() &&
+        tabButton('notes').child.get_width() === 20 * scale() &&
         hub.settingsButton.child.get_width() === 16 * scale(),
-        `${tabButton('calendar').child.get_width()} / ${hub.settingsButton.child.get_width()}`);
+        `${tabButton('notes').child.get_width()} / ${hub.settingsButton.child.get_width()}`);
     await clickActor(tabButton('zerotier'));
     await sleep(animationWait());
     const zeroTierView = hub._entries.get('zerotier')?.view;
@@ -664,19 +670,22 @@ async function testHub(outDir) {
     check('hub: a remembered tab that no longer exists falls back to the first',
         island()._hub.activeFeature?.id === firstTabId(), island()._hub.activeFeature?.id);
 
-    // The Clock tab is gone: a "clock" remembered from before opens the
-    // first tab that is on, which is remembered instead.
-    settings().set_string('hub-last-tab', 'clock');
-    await setExtensionEnabled(false);
-    await setExtensionEnabled(true);
-    island().expand();
-    await sleep(animationWait());
-    check('hub: a remembered "clock" (the removed Clock tab) opens the first tab, remembered instead',
-        island()._hub.activeFeature?.id === firstTabId() && firstTabId() === 'calendar' &&
-        settings().get_string('hub-last-tab') === 'calendar' && !island()._hub._empty.visible,
-        `${island()._hub.activeFeature?.id} last=${settings().get_string('hub-last-tab')}`);
-    island().collapse();
-    await sleep(animationWait());
+    // The Clock, Calendar and Notifications tabs are gone: one of them
+    // remembered from before opens the first tab that is on, which is
+    // remembered instead.
+    for (const removed of ['clock', 'calendar', 'notifications']) {
+        settings().set_string('hub-last-tab', removed);
+        await setExtensionEnabled(false);
+        await setExtensionEnabled(true);
+        island().expand();
+        await sleep(animationWait());
+        check(`hub: a remembered "${removed}" (a removed tab) opens the first tab (Notes), remembered instead`,
+            island()._hub.activeFeature?.id === firstTabId() && firstTabId() === 'notes' &&
+            settings().get_string('hub-last-tab') === 'notes' && !island()._hub._empty.visible,
+            `${island()._hub.activeFeature?.id} last=${settings().get_string('hub-last-tab')}`);
+        island().collapse();
+        await sleep(animationWait());
+    }
 }
 
 // ---------------------------------------------------------------- notes
@@ -1401,7 +1410,7 @@ async function testNotesHeader(outDir) {
     const modalBefore = Main.modalCount;
     island().expand();
     await sleep(animationWait());
-    await clickActor(tabButton(firstTabId()));
+    await clickActor(tabButton(otherTabId('notes')));
     await sleep(animationWait());
     const {view, service} = hub()._entries.get('notes');
     const button = view._allNotes.actor;
@@ -3877,8 +3886,6 @@ async function testMonitors() {
 }
 
 async function testLifecycle(outDir) {
-    // The expanded cycles below run with the Notifications tab on screen.
-    settings().set_string('hub-last-tab', 'notifications');
     mediaWork = outDir;
     // Music on the pill (cover, bars) through every cycle.
     const player = await spawnFake('froontycycle', {args: MUSIC, state: {
@@ -4040,6 +4047,8 @@ async function testHubLayout(outDir) {
     island().expand();
     await sleep(animationWait());
     const hub = island()._hub;
+    hub.select('notes');
+    await sleep(animationWait());
     const tabs = hub._tabColumn.get_children();
     const boxes = tabs.map(boxOf);
     const expectedCount = (await expectedTabs()).length;
@@ -4049,14 +4058,32 @@ async function testHubLayout(outDir) {
         boxes.every((b, i) => i === 0 || b.y1 > boxes[i - 1].y1) &&
         boxes[0].x2 <= boxOf(hub._content).x1 && boxes.at(-1).y2 <= boxOf(pill()).y2,
         `${boxes.map(b => `[${b.x1},${b.y1}]`).join(' ')} island bottom=${boxOf(pill()).y2}`);
-    const bar = boxOf(hub._panicBar.actor);
-    const isle = boxOf(pill());
-    const leftmost = Math.min(...hub._header.end.get_children()
-        .filter(b => b.visible).map(b => boxOf(b).x1));
-    check('layout: the panic bar is centered on the island, clear of tabs and the header buttons',
-        Math.abs((bar.x1 + bar.x2) / 2 - (isle.x1 + isle.x2) / 2) <= 1 &&
-        bar.x2 <= leftmost && bar.x1 > Math.max(...boxes.map(b => b.x2)),
-        `bar=[${bar.x1},${bar.x2}] island=[${isle.x1},${isle.x2}] header from ${leftmost}`);
+    // The panic bar: centred on the island where that keeps it 8 px clear
+    // of the header's buttons; else (the Notes tab at its default width,
+    // the first tab) moved left just enough (HubLayout).
+    const panicPlace = () => {
+        const bar = boxOf(hub._panicBar.actor);
+        const isle = boxOf(pill());
+        const leftmost = Math.min(...hub._header.end.get_children()
+            .filter(b => b.visible).map(b => boxOf(b).x1));
+        const offset = (bar.x1 + bar.x2) / 2 - (isle.x1 + isle.x2) / 2;
+        return {
+            centred: Math.abs(offset) <= 1,
+            shifted: offset < 0 && Math.abs((leftmost - bar.x2) - 8 * scale()) <= 1,
+            clear: bar.x2 <= leftmost && bar.x1 > Math.max(...boxes.map(box => box.x2)),
+            detail: `bar=[${bar.x1},${bar.x2}] island=[${isle.x1},${isle.x2}] header from ${leftmost}`,
+        };
+    };
+    const narrow = panicPlace();
+    check('layout: the panic bar is centred on the island, or moved left just clear of the header buttons; clear of the tabs',
+        (narrow.centred || narrow.shifted) && narrow.clear, narrow.detail);
+    settings().set_int('notes-width', 620);
+    await sleep(animationWait());
+    const wide = panicPlace();
+    check('layout: on a wide tab the panic bar is centred on the island, clear of tabs and the header buttons',
+        wide.centred && wide.clear, wide.detail);
+    settings().reset('notes-width');
+    await sleep(animationWait());
 
     const notesBox = boxOf(tabButton('notes'));
     await movePointerTo((notesBox.x1 + notesBox.x2) / 2, (notesBox.y1 + notesBox.y2) / 2);
@@ -4251,19 +4278,22 @@ async function testResizeGrip(outDir) {
 
     // Each tab keeps its own size.
     const hub = island()._hub;
-    const other = ['calendar', 'notifications'].find(id => hub._entries.has(id));
-    const otherKeys = hub._entries.get(other).feature.hubSizeKeys;
-    hub.select(other);
-    await sleep(animationWait());
-    const [ow] = pill().get_transformed_size();
-    hub.select('notes');
-    await sleep(animationWait());
-    const [nw] = pill().get_transformed_size();
-    check('resize grip: another tab keeps its own size; back on Notes, Notes\' size',
-        s.get_user_value(otherKeys.width) === null &&
-        ow === Math.max(s.get_int(otherKeys.width) * sc, island()._hubNeeds().width) &&
-        nw === Math.max(s.get_int(keys.width) * sc, island()._hubNeeds().width),
-        `${other}=${ow} notes=${nw}`);
+    const other = [...hub._entries.values()].map(e => e.feature)
+        .find(f => f.id !== 'notes' && f.hubSizeKeys)?.id;
+    if (other) {
+        const otherKeys = hub._entries.get(other).feature.hubSizeKeys;
+        hub.select(other);
+        await sleep(animationWait());
+        const [ow] = pill().get_transformed_size();
+        hub.select('notes');
+        await sleep(animationWait());
+        const [nw] = pill().get_transformed_size();
+        check('resize grip: another tab keeps its own size; back on Notes, Notes\' size',
+            s.get_user_value(otherKeys.width) === null &&
+            ow === Math.max(s.get_int(otherKeys.width) * sc, island()._hubNeeds().width) &&
+            nw === Math.max(s.get_int(keys.width) * sc, island()._hubNeeds().width),
+            `${other}=${ow} notes=${nw}`);
+    }
 
     // None on a tab of a fixed size.
     const fixed = [...hub._entries.values()].map(e => e.feature)
@@ -5208,7 +5238,7 @@ async function testEmptyHub(outDir) {
         check('empty hub: the last tab turned off in the open island: the notice, at the empty size',
             island().expanded && notice.mapped && hub.activeFeature === null &&
             w2 === width() * scale() && h2 === height(), `${w2}x${h2}`);
-        s.set_boolean('notifications-enabled', true);
+        s.set_boolean('zerotier-enabled', true);
         s.set_boolean('notes-enabled', true);
         await sleep(animationWait());
         check('empty hub: two tabs on: the column is back',
@@ -5235,1846 +5265,6 @@ async function testEmptyHub(outDir) {
     check('empty hub: every tab is back, the first one shown',
         island()._hub._entries.size === (await expectedTabs()).length &&
         island()._hub.activeFeature?.id === firstTabId());
-}
-
-// ---------------------------------------------------------------- notifications tab
-
-// The Notifications tab lists GNOME's own notifications. These checks
-// only add, click, dismiss or clear notifications of their own sources
-// (and three of their own sent over org.freedesktop.Notifications), and
-// destroy only those at the end. GNOME's notifications are never read
-// once destroyed (a row's description is read instead): GJS would log it.
-
-const notificationsEntry = () => island()._hub._entries.get('notifications') ?? null;
-const notificationsView = () => notificationsEntry()?.view ?? null;
-const notificationRows = () => notificationsView()?._list.get_children() ?? [];
-const notificationRow = title =>
-    notificationRows().find(row => row.description?.title === title) ?? null;
-const rowTitles = () => notificationRows().map(row => row.description?.title);
-const sameCounts = (a, b, plus = 0) =>
-    Object.keys(a).every(k => a[k] + plus === b[k]);
-
-async function testNotifications(outDir) {
-    const MessageTray = await import('resource:///org/gnome/shell/ui/messageTray.js');
-    const {Urgency, NotificationDestroyedReason: Reason} = MessageTray;
-    const tray = Main.messageTray;
-    const s = settings();
-    const monitor = Main.layoutManager.primaryMonitor;
-    const away = [monitor.x + 60, monitor.y + monitor.height / 2];
-    const modalBefore = Main.modalCount;
-    // The Claude attention bar's own store (the Claude app's notifications)
-    // holds a tray handler for as long as Froonty runs; it is off here, so
-    // the handler counts below are the tab's alone (testClaudeAttention
-    // checks that store).
-    s.set_boolean('claude-attention-app', false);
-    s.set_boolean('claude-attention-browsers', false);
-    // Every destruction of the test's notifications, [title, reason], and
-    // every activation: Froonty's acts show up here, and nothing else may.
-    const destroyed = [];
-    const activated = [];
-    const ran = [];
-
-    const sources = [];
-    const alive = source => tray.getSources().includes(source);
-    const newSource = (title, iconName) => {
-        const source = new MessageTray.Source({title, iconName});
-        tray.add(source);
-        sources.push(source);
-        return source;
-    };
-    // GNOME destroys a source once its last notification goes.
-    let mail = newSource('Froonty mail', 'mail-unread-symbolic');
-    const mailSource = () => {
-        if (!alive(mail))
-            mail = newSource('Froonty mail', 'mail-unread-symbolic');
-        return mail;
-    };
-    const build = newSource('Froonty build', 'emblem-system-symbolic');
-    // Every property in the constructor: GNOME re-stamps the time of a
-    // notification whose properties change later. LOW (no banner) unless
-    // asked; CRITICAL ones come acknowledged (a critical banner never
-    // times out).
-    const notify = (source, title, {urgency = Urgency.LOW, seconds = 0, actions = [], ...more} = {}) => {
-        const n = new MessageTray.Notification({
-            source,
-            title,
-            body: `${title}: Froonty headless test`,
-            urgency,
-            datetime: GLib.DateTime.new_now_local().add_seconds(-seconds),
-            ...more,
-        });
-        n.connect('destroy', (_n, reason) => destroyed.push([title, reason]));
-        n.connect('activated', () => activated.push(title));
-        for (const label of actions)
-            n.addAction(label, () => ran.push(label));
-        source.addNotification(n);
-        return n;
-    };
-    const counts = (source, notification) => ({
-        tray: countHandlers(tray, 'source-added'),
-        source: countHandlers(source, 'notification-added'),
-        notification: countHandlers(notification, 'notify'),
-    });
-    const expand = async () => {
-        island().expand();
-        await sleep(animationWait());
-    };
-    const collapse = async () => {
-        island().collapse();
-        await sleep(animationWait());
-    };
-    const dotsOff = () => !gnomeUnreadDot() && !pillUnreadDot() &&
-        !island()._hub._header.unreadBadge.visible && !notificationsEntry().dot.visible;
-
-    const critical = notify(build, 'Build failed', {urgency: Urgency.CRITICAL, seconds: 1800, acknowledged: true});
-    const recent = notify(mail, 'New mail', {seconds: 120,
-        gicon: new Gio.ThemedIcon({name: 'avatar-default-symbolic'})});
-    const older = notify(mail, 'Older mail', {seconds: 600});
-    const markup = notify(mail, 'Markup', {seconds: 1200, useBodyMarkup: true,
-        body: '<b>Bold</b> & <i>it</i> <x>'});
-    notify(mail, 'Long body', {seconds: 900, body: Array.from({length: 40},
-        (_, i) => `word${i}`).join(' ')});
-
-    // On by default, after the Calendar tab, if there is one: first or
-    // second.
-    let hub = island()._hub;
-    const order = hub._tabColumn.get_children()
-        .map(button => [...hub._entries].find(([, e]) => e.button === button)?.[0]);
-    const expectedPlace = order[0] === 'calendar' ? 1 : 0;
-    check('notifications: on by default, its tab right after Calendar',
-        s.get_default_value('notifications-enabled').unpack() === true &&
-        s.get_boolean('notifications-enabled') && order.indexOf('notifications') === expectedPlace,
-        order.join(','));
-
-    // Nothing watched before the tab is on screen, even with its view made.
-    const base = counts(mail, older);
-    hub.select('notifications');
-    await sleep(SETTLE_MS);
-    check('notifications: nothing is watched before the tab is shown (only GNOME\'s own handlers)',
-        sameCounts(base, counts(mail, older)) && notificationsView() !== null &&
-        !notificationsEntry().service.active,
-        `${JSON.stringify(base)} -> ${JSON.stringify(counts(mail, older))}`);
-    check('notifications: unseen ones put GNOME\'s dot on the tab too, and in its name',
-        gnomeUnreadDot() && notificationsEntry().dot.visible &&
-        notificationsEntry().button.accessible_name === 'Notifications, unread notifications',
-        `gnome=${gnomeUnreadDot()} name="${notificationsEntry().button.accessible_name}"`);
-
-    // Opened by hover: the list shows, nothing is marked seen.
-    s.set_int('hover-open-delay', 350);
-    await movePointerTo(...away);
-    await movePointerTo(...pillCenter());
-    await sleep(800);
-    await movePointerTo(...away);
-    const view = notificationsView();
-    check('notifications: hover-open shows the list and marks nothing seen; the dots stay',
-        island().expanded && rowTitles().length >= 4 && !recent.acknowledged && !older.acknowledged &&
-        gnomeUnreadDot() && pillUnreadDot() && notificationsEntry().dot.visible &&
-        notificationRow('New mail')?._part('new').visible,
-        `expanded=${island().expanded} rows=${rowTitles()} seen=${recent.acknowledged}`);
-    const ours = ['Build failed', 'New mail', 'Older mail', 'Long body', 'Markup'];
-    check('notifications: urgent first, then newest first (30 min critical, 2 min, 10 min, 15 min, 20 min)',
-        rowTitles().filter(t => ours.includes(t)).join(',') === ours.join(',') &&
-        notificationRow('Build failed').has_style_class_name('froonty-notifications-row-urgent') &&
-        !notificationRow('New mail').has_style_class_name('froonty-notifications-row-urgent'),
-        rowTitles().join(','));
-    const shows = (title, n, source) => {
-        const row = notificationRow(title);
-        return row && row._part('app').text === source.title &&
-            row._part('app-icon').gicon?.equal(source.icon) &&
-            row._part('age').text === `· ${view._format.timeAgo(n.datetime)}` &&
-            row._part('title').text === title && row._part('body').text === n.body;
-    };
-    const iconOf = title => notificationRow(title)?._part('icon');
-    check('notifications: each row names its app with its icon, and shows its age, title and body',
-        shows('New mail', recent, mail) && shows('Older mail', older, mail) &&
-        shows('Build failed', critical, build) && notificationRow('New mail')._part('age').text.length > 2,
-        ['New mail', 'Older mail'].map(t => {
-            const row = notificationRow(t);
-            return `${row?._part('app').text}|${row?._part('age').text}|${row?._part('title').text}|${row?._part('body').text}`;
-        }).join(' / '));
-    check('notifications: the notification\'s own icon shows only when it has one',
-        iconOf('New mail')?.visible && iconOf('New mail').gicon?.equal(recent.gicon) &&
-        !iconOf('Older mail')?.visible);
-    const longBody = notificationRow('Long body')?._part('body');
-    const [, wrapped] = longBody?.get_preferred_height(longBody.width) ?? [0, 0];
-    const oneLine = longBody?.get_preferred_height(-1)[1] ?? 0;
-    check('notifications: a long body stops at three lines, its last one ellipsized',
-        longBody && isEllipsized(longBody) && longBody.height < wrapped &&
-        Math.abs(longBody.height - 3 * oneLine) <= 1,
-        `height=${longBody?.height} wrapped=${wrapped} line=${oneLine} ellipsized=${longBody && isEllipsized(longBody)}`);
-    check('notifications: body markup is shown as GNOME\'s list shows it, without the markup',
-        notificationRow('Markup')?._part('body').text === 'Bold & it <x>',
-        notificationRow('Markup')?._part('body').text);
-    await screenshotTop(outDir, 'notifications-list', 520);
-
-    // A modifier alone is not input to the island (the user may be about
-    // to type into their window). After a hover-open the key focus is on
-    // the pill; once Tab moved it into the island, a key is deliberate.
-    // (More in testNotificationSafeguards.)
-    await pressKeys(Clutter.KEY_Shift_L);
-    check('notifications: a modifier-only key after a hover-open marks nothing; the dots stay',
-        island().expanded && !recent.acknowledged && !older.acknowledged && !markup.acknowledged &&
-        gnomeUnreadDot() && pillUnreadDot() && notificationsEntry().dot.visible,
-        `seen=${recent.acknowledged} gnome=${gnomeUnreadDot()} tab=${notificationsEntry().dot.visible}`);
-    await pressKeys(Clutter.KEY_Tab);
-    await pressKeys(Clutter.KEY_x);
-    check('notifications: once Tab moved the focus into the island, a key marks them seen; GNOME\'s, the pill\'s, the date pill\'s and the tab\'s dots go',
-        recent.acknowledged && older.acknowledged && markup.acknowledged && dotsOff() &&
-        !notificationRow('New mail')._part('new').visible && destroyed.length === 0,
-        `seen=${recent.acknowledged} gnome=${gnomeUnreadDot()} tab=${notificationsEntry().dot.visible}`);
-    s.set_int('hover-open-delay', 0);
-
-    // Watching only while on screen.
-    const shown = counts(mail, older);
-    await collapse();
-    const collapsed = counts(mail, older);
-    await expand();
-    await clickActor(tabButton(firstTabId()));
-    await sleep(animationWait());
-    const otherTab = counts(mail, older);
-    check('notifications: one handler on the tray, each source and each notification while on screen; none collapsed or on another tab',
-        sameCounts(base, shown, 1) && sameCounts(base, collapsed) && sameCounts(base, otherTab),
-        `base=${JSON.stringify(base)} shown=${JSON.stringify(shown)} collapsed=${JSON.stringify(collapsed)} ` +
-        `other tab=${JSON.stringify(otherTab)}`);
-    await clickActor(tabButton('notifications'));
-    await sleep(animationWait());
-
-    // Live: one arriving while on screen.
-    const live = notify(mail, 'Live', {urgency: Urgency.NORMAL});
-    await sleep(SETTLE_MS);
-    const titlesNow = rowTitles();
-    check('notifications: one arriving while on screen appears in its place with its new-dot; not seen, its banner held',
-        titlesNow.indexOf('Live') === titlesNow.indexOf('Build failed') + 1 &&
-        notificationRow('Live')?._part('new').visible && !live.acknowledged &&
-        tray.queueCount >= 1 && !tray.visible,
-        `${titlesNow} seen=${live.acknowledged} queue=${tray.queueCount} trayVisible=${tray.visible}`);
-
-    // Updated in place: GNOME re-stamps its time, so it moves up.
-    const olderRow = notificationRow('Older mail');
-    older.set({title: 'Older mail, updated', body: 'Updated body'});
-    await sleep(SETTLE_MS);
-    check('notifications: an update in place changes the row\'s text and age, and moves it up',
-        notificationRow('Older mail, updated') === olderRow &&
-        olderRow._part('body').text === 'Updated body' &&
-        olderRow._part('age').text === `· ${view._format.timeAgo(older.datetime)}` &&
-        rowTitles().indexOf('Older mail, updated') === rowTitles().indexOf('Build failed') + 1,
-        rowTitles().join(','));
-    await screenshotTop(outDir, 'notifications-live', 520);
-
-    // Its banner waits. The next key marks the list seen, but not the one
-    // waiting for its banner: GNOME's banner marks it seen once the island
-    // closes (testNotificationSafeguards follows that). Removed here, so
-    // no banner shows during the checks that follow.
-    const liveLow = notify(mail, 'Live, low');
-    await sleep(SETTLE_MS);
-    await pressKeys(Clutter.KEY_x);
-    check('notifications: the next key marks a new one seen, but leaves the one waiting for its banner unseen, with its dot',
-        liveLow.acknowledged && !live.acknowledged && tray._notificationQueue.includes(live) &&
-        notificationRow('Live')?._part('new').visible,
-        `low=${liveLow.acknowledged} live=${live.acknowledged} queue=${tray.queueCount}`);
-    live.destroy(Reason.SOURCE_CLOSED);
-    liveLow.destroy(Reason.SOURCE_CLOSED);
-
-    // Closed by its app (here, the test): its row goes.
-    markup.destroy(Reason.SOURCE_CLOSED);
-    await sleep(SETTLE_MS);
-    check('notifications: one closed by its app leaves the list',
-        !notificationRow('Markup') && island().expanded);
-
-    // A deliberate open marks what it lists seen, and removes nothing.
-    await collapse();
-    const unseen = notify(mail, 'Unseen again', {seconds: 5});
-    await sleep(SETTLE_MS);
-    const dotBefore = gnomeUnreadDot() && pillUnreadDot();
-    const logBefore = destroyed.length;
-    await expand();
-    check('notifications: a deliberate open marks the listed ones seen: every dot goes, every notification stays',
-        dotBefore && unseen.acknowledged && dotsOff() && destroyed.length === logBefore &&
-        notificationRow('Unseen again') && mail.notifications.includes(unseen) &&
-        mail.notifications.includes(recent) && build.notifications.includes(critical),
-        `dot before=${dotBefore} seen=${unseen.acknowledged} log=${JSON.stringify(destroyed)}`);
-
-    // Another tab on screen: a LOW one lights the tab's dot (GNOME's rule).
-    await clickActor(tabButton(firstTabId()));
-    await sleep(animationWait());
-    const low = notify(mail, 'Low while open');
-    await sleep(SETTLE_MS);
-    const entry = notificationsEntry();
-    check('notifications: a LOW one arriving with another tab on screen lights the tab\'s dot and the date pill\'s; the tab says so',
-        entry.dot.visible && entry.dot.mapped && island()._hub._header.unreadBadge.visible &&
-        entry.button.accessible_name.endsWith(', unread notifications') && !low.acknowledged,
-        `tab dot=${entry.dot.visible} name="${entry.button.accessible_name}"`);
-    await screenshotTop(outDir, 'notifications-tab-dot', 520);
-    await clickActor(tabButton('notifications'));
-    await sleep(animationWait());
-    check('notifications: clicking the tab shows it and marks it seen; the dot goes',
-        low.acknowledged && dotsOff() && entry.button.accessible_name === 'Notifications');
-
-    // A click on a row: GNOME's activate(), then the island closes.
-    notify(mailSource(), 'Click me');
-    await sleep(SETTLE_MS);
-    await clickActor(notificationRow('Click me')._part('title'));
-    await sleep(animationWait());
-    check('notifications: a click on a row activates it once; GNOME removes it (dismissed); the island closes, no grab left',
-        activated.filter(t => t === 'Click me').length === 1 &&
-        destroyed.filter(([t]) => t === 'Click me').map(([, r]) => r).join() === `${Reason.DISMISSED}` &&
-        !island().expanded && !island()._grabHelper.grabbed && Main.modalCount === modalBefore,
-        `activated=${activated} destroyed=${JSON.stringify(destroyed)} expanded=${island().expanded} modal=${Main.modalCount}`);
-
-    await expand();
-    const resident = notify(mailSource(), 'Resident', {resident: true});
-    await sleep(SETTLE_MS);
-    await clickActor(notificationRow('Resident')._part('title'));
-    await sleep(animationWait());
-    check('notifications: a resident one stays after a click, as in GNOME',
-        activated.includes('Resident') && mail.notifications.includes(resident) &&
-        !destroyed.some(([t]) => t === 'Resident') && !island().expanded);
-
-    // Actions: at most three buttons; a click runs the app's action.
-    await expand();
-    notify(mailSource(), 'Actions', {actions: ['One', 'Two', 'Three', 'Four']});
-    await sleep(SETTLE_MS);
-    const actionButtons = notificationRow('Actions')?._part('actions').get_children() ?? [];
-    check('notifications: four actions show the first three, with their labels',
-        actionButtons.length === 3 && actionButtons.map(b => b.label).join(',') === 'One,Two,Three',
-        actionButtons.map(b => b.label).join(','));
-    await movePointerTo(...away);
-    await screenshotTop(outDir, 'notifications-urgent-actions', 520);
-    await clickActor(actionButtons[1]);
-    await sleep(animationWait());
-    check('notifications: clicking the second runs the app\'s action; GNOME removes it; the island closes',
-        ran.join(',') === 'Two' && destroyed.some(([t, r]) => t === 'Actions' && r === Reason.DISMISSED) &&
-        !island().expanded && Main.modalCount === modalBefore,
-        `ran=${ran} expanded=${island().expanded}`);
-
-    // × dismisses that one only; the island stays open.
-    await expand();
-    notify(mailSource(), 'Dismiss me');
-    await sleep(SETTLE_MS);
-    const listedBefore = rowTitles().length;
-    await clickActor(notificationRow('Dismiss me')._part('dismiss'));
-    await sleep(SETTLE_MS);
-    check('notifications: × dismisses only that one (reason 2); the others stay; the island stays open',
-        destroyed.filter(([t]) => t === 'Dismiss me').map(([, r]) => r).join() === `${Reason.DISMISSED}` &&
-        rowTitles().length === listedBefore - 1 && !notificationRow('Dismiss me') && island().expanded,
-        `${rowTitles()} expanded=${island().expanded}`);
-
-    // Keyboard: Tab to a row, Delete dismisses it (the focus moves on),
-    // Enter activates the next.
-    notify(mailSource(), 'Key A');
-    notify(mailSource(), 'Key B');
-    await sleep(SETTLE_MS);
-    const mainOf = title => notificationRow(title)?._part('main') ?? null;
-    for (let i = 0; i < 40 && global.stage.key_focus !== mainOf('Key B'); i++)
-        await pressKeys(Clutter.KEY_Tab);
-    check('notifications: Tab reaches a row', global.stage.key_focus === mainOf('Key B'),
-        `focus=${global.stage.key_focus}`);
-    const keyA = mainOf('Key A');
-    await pressKeys(Clutter.KEY_Delete);
-    check('notifications: Delete dismisses it (reason 2), and the focus moves to the next row',
-        destroyed.some(([t, r]) => t === 'Key B' && r === Reason.DISMISSED) &&
-        global.stage.key_focus === keyA && island().expanded,
-        `focus=${global.stage.key_focus} rows=${rowTitles()}`);
-    await pressKeys(Clutter.KEY_Return);
-    await sleep(animationWait());
-    check('notifications: Enter activates it; GNOME removes it; the island closes',
-        activated.includes('Key A') && destroyed.some(([t]) => t === 'Key A') && !island().expanded);
-
-    // "Clear all": two clicks, for exactly what was listed at the first.
-    await expand();
-    let v = notificationsView();
-    const listed = [...v._service.items];
-    const onlyOurs = listed.length > 0 && listed.every(n => sources.includes(n.source));
-    check('notifications: only the test\'s own notifications are listed (Clear all touches nothing else)',
-        onlyOurs, `${listed.length} listed`);
-    if (onlyOurs) {
-        const clearLog = destroyed.length;
-        await clickActor(v._clearButton);
-        check('notifications: "Clear all" asks first: "Clear N?", nothing removed yet',
-            v._confirmButton.visible && v._confirmButton.label === `Clear ${listed.length}?` &&
-            v._keepButton.visible && !v._clearButton.visible && destroyed.length === clearLog,
-            `label=${v._confirmButton.label} destroyed=${destroyed.length - clearLog}`);
-        await screenshotTop(outDir, 'notifications-confirm', 520);
-        await clickActor(v._keepButton);
-        check('notifications: "Keep them" keeps them all',
-            !v._confirmButton.visible && v._clearButton.visible && destroyed.length === clearLog &&
-            v._service.items.length === listed.length);
-
-        await clickActor(v._clearButton);
-        const between = notify(mailSource(), 'Between clicks');
-        await sleep(SETTLE_MS);
-        await clickActor(v._confirmButton);
-        await sleep(SETTLE_MS);
-        const cleared = destroyed.slice(clearLog);
-        check('notifications: confirming clears exactly the first click\'s list, each dismissed; one added since stays',
-            cleared.length === listed.length && cleared.every(([, r]) => r === Reason.DISMISSED) &&
-            !cleared.some(([t]) => t === 'Between clicks') && rowTitles().join() === 'Between clicks' &&
-            island().expanded,
-            `cleared=${JSON.stringify(cleared)} rows=${rowTitles()}`);
-
-        await clickActor(v._clearButton);
-        await collapse();
-        await expand();
-        check('notifications: collapsing drops a pending "Clear all"',
-            !v._confirmButton.visible && !v._keepButton.visible && v._clearButton.visible &&
-            mail.notifications.includes(between));
-        const single = notificationRow('Between clicks');
-        const [, singleHeight] = single?.get_preferred_height(single.width) ?? [0, 0];
-        check('notifications: a lone row keeps its own height (the list does not stretch it)',
-            single && Math.abs(single.height - singleHeight) <= 1 && single.height < v._scroll.height / 2,
-            `row ${single?.height}, natural ${singleHeight}, list ${v._scroll.height}`);
-
-        between.destroy(Reason.SOURCE_CLOSED);
-        await sleep(SETTLE_MS);
-        check('notifications: empty: "No notifications", and no Clear button',
-            v._empty.visible && !v._scroll.visible && !v._clearButton.visible &&
-            v._status.text === '0 notifications', `status=${v._status.text}`);
-        await screenshotTop(outDir, 'notifications-empty', 520);
-    }
-
-    // Do Not Disturb (default session mode only: when it ends, Ubuntu
-    // Dock logs TypeErrors of its own; see testCalendarMenu).
-    const dock = Main.extensionManager.lookup('ubuntu-dock@ubuntu.com');
-    if (dock?.state !== ExtensionState.ACTIVE) {
-        const [isolated, where] = privacyIsIsolated(outDir);
-        check('notifications: GNOME\'s notification settings are the private test copy', isolated, where);
-        if (isolated) {
-            const gnomeSettings = new Gio.Settings({schema_id: 'org.gnome.desktop.notifications'});
-            const whileDnd = notify(mailSource(), 'While Do Not Disturb');
-            gnomeSettings.set_boolean('show-banners', false);
-            await sleep(SETTLE_MS);
-            check('notifications: under Do Not Disturb the header says so, the toggle is on, the list stays',
-                v._status.text.startsWith('Do Not Disturb · ') && v._dndButton.checked &&
-                notificationRow('While Do Not Disturb') !== null, v._status.text);
-            await screenshotTop(outDir, 'notifications-dnd', 520);
-            await clickActor(v._dndButton);
-            check('notifications: the toggle ends Do Not Disturb (GNOME\'s own key)',
-                await waitFor(() => gnomeSettings.get_boolean('show-banners')) && !v._dndButton.checked);
-            gnomeSettings.reset('show-banners');
-            whileDnd.destroy(Reason.SOURCE_CLOSED);
-            await sleep(SETTLE_MS);
-        }
-    }
-
-    await testFdoNotifications(Reason);
-
-    // Size: its own, live from Settings.
-    await expand();
-    if (island()._hub.activeFeature?.id !== 'notifications') {
-        await clickActor(tabButton('notifications'));
-        await sleep(animationWait());
-    }
-    const [w, h] = pill().get_transformed_size();
-    // The panic bar: centred on the island where it fits, else moved left
-    // to stay 8 px clear of the header's date pill, never closer than 8 px
-    // to the tabs; the island keeps its width while the bar fits at all.
-    const panicPlace = () => {
-        const hub = island()._hub;
-        const bar = boxOf(hub._panicBar.actor);
-        const isle = boxOf(pill());
-        const header = Math.min(...hub._header.end.get_children().filter(b => b.visible).map(b => boxOf(b).x1));
-        const tabs = boxOf(hub._tabColumn).x2;
-        return {
-            centred: Math.abs((bar.x1 + bar.x2) / 2 - (isle.x1 + isle.x2) / 2) <= 1,
-            clear: header - bar.x2 >= 8 * scale() - 1 && bar.x1 - tabs >= 8 * scale() - 1,
-            againstHeader: Math.abs(header - bar.x2 - 8 * scale()) <= 1,
-            text: `bar [${bar.x1},${bar.x2}] island [${isle.x1},${isle.x2}] tabs end ${tabs} header from ${header}`,
-        };
-    };
-    const at400 = panicPlace();
-    check('notifications: at 400 px the panic bar is centred, or moved left to stay 8 px clear of the date pill',
-        at400.clear && (at400.centred || at400.againstHeader), at400.text);
-    await screenshotTop(outDir, 'notifications-panic-bar', 120);
-    s.set_int('notifications-width', 520);
-    s.set_int('notifications-height', 360);
-    await sleep(animationWait());
-    const [w2, h2] = pill().get_transformed_size();
-    check('notifications: 400×440 by default, and live with the settings',
-        w === 400 * scale() && h === 440 * scale() && w2 === 520 * scale() && h2 === 360 * scale(),
-        `${w}x${h} then ${w2}x${h2}`);
-    const at520 = panicPlace();
-    check('notifications: at 520 px the panic bar is centred on the island', at520.centred && at520.clear, at520.text);
-    s.set_int('notifications-width', 320);
-    await sleep(animationWait());
-    const [w3] = pill().get_transformed_size();
-    const at320 = panicPlace();
-    const needs = island()._hub.minWidth + islandFrame();
-    check('notifications: at 320 px (the least) the island is 320 px, or as wide as the panic bar needs beside the tabs and the date pill',
-        at320.clear && (w3 === 320 * scale() || (w3 > 320 * scale() && Math.abs(w3 - needs) <= 1)),
-        `${w3} px, the top row needs ${needs}; ${at320.text}`);
-    s.reset('notifications-width');
-    s.reset('notifications-height');
-    await sleep(animationWait());
-
-    // Never removed behind the user's back.
-    notify(mailSource(), 'Stays');
-    notify(mail, 'Stays too', {urgency: Urgency.CRITICAL, acknowledged: true});
-    await sleep(SETTLE_MS);
-    await collapse();
-    await expand();
-    const kept = [...mail.notifications];
-    const state = () => kept.map(n => alive(mail) && mail.notifications.includes(n)
-        ? `listed:${n.acknowledged}` : 'gone').join(',');
-    const before = state();
-    const keepLog = destroyed.length;
-    for (let i = 0; i < 5; i++) {
-        await collapse();
-        await expand();
-        island()._hub.select(firstTabId());
-        await sleep(SETTLE_MS);
-        island()._hub.select('notifications');
-        await sleep(SETTLE_MS);
-        await setExtensionEnabled(false);
-        await setExtensionEnabled(true);
-        await expand();
-    }
-    check('notifications: open, close, switch tabs and disable/enable while shown, 5 times: nothing removed or changed',
-        state() === before && destroyed.length === keepLog && kept.length === 2,
-        `${before} -> ${state()} destroyed=${JSON.stringify(destroyed.slice(keepLog))}`);
-
-    // Disable while on screen: no handler left; enable and reopen: once.
-    await collapse();
-    const anchor = kept[0];
-    const idle = counts(mail, anchor);
-    await expand();
-    const onScreen = counts(mail, anchor);
-    await setExtensionEnabled(false);
-    const disabled = counts(mail, anchor);
-    await setExtensionEnabled(true);
-    const enabled = counts(mail, anchor);
-    await expand();
-    const reopened = counts(mail, anchor);
-    check('notifications: disable while on screen leaves no handler on the tray, a source or a notification; reopened, once',
-        sameCounts(idle, onScreen, 1) && sameCounts(idle, disabled) && sameCounts(idle, enabled) &&
-        sameCounts(idle, reopened, 1),
-        [idle, onScreen, disabled, enabled, reopened].map(c => JSON.stringify(c)).join(' '));
-
-    // Only the test's own sources; the island as found.
-    await collapse();
-    for (const source of sources) {
-        if (alive(source))
-            source.destroy(Reason.SOURCE_CLOSED);
-    }
-    s.set_int('hover-open-delay', 0);
-    island()._hub.select(firstTabId());
-    s.reset('hub-last-tab');
-    s.reset('claude-attention-app');
-    s.reset('claude-attention-browsers');
-    await sleep(SETTLE_MS);
-    hub = island()._hub;
-    check('notifications: the test\'s sources are gone, the first tab is shown again',
-        sources.every(source => !alive(source)) && hub.activeFeature?.id === firstTabId());
-}
-
-// A real notification over D-Bus, through GNOME's own daemon (the
-// org.gnome.Shell.Notifications service in front of the Shell): its
-// actions reach the app as ActionInvoked and NotificationClosed, which
-// the service sends back to the sender, here the Shell itself.
-async function testFdoNotifications(Reason) {
-    const signals = [];
-    const subscription = Gio.DBus.session.signal_subscribe(null, 'org.freedesktop.Notifications',
-        null, '/org/freedesktop/Notifications', null, Gio.DBusSignalFlags.NONE,
-        (_connection, _sender, _path, _iface, name, params) => signals.push([name, ...params.deepUnpack()]));
-    const sent = [];
-    const send = title => new Promise((resolve, reject) => {
-        Gio.DBus.session.call('org.freedesktop.Notifications', '/org/freedesktop/Notifications',
-            'org.freedesktop.Notifications', 'Notify',
-            new GLib.Variant('(susssasa{sv}i)', ['Froonty test', 0, 'dialog-information-symbolic',
-                title, 'Sent over D-Bus', ['default', 'Open', 'reply', 'Reply'],
-                {urgency: new GLib.Variant('y', 0)}, -1]),
-            new GLib.VariantType('(u)'), Gio.DBusCallFlags.NONE, 5000, null,
-            (connection, result) => {
-                try {
-                    resolve(connection.call_finish(result).deepUnpack()[0]);
-                } catch (e) {
-                    reject(e);
-                }
-            });
-    });
-    // The Shell's object behind it (alive while listed).
-    const shellNotification = title => Main.messageTray.getSources()
-        .flatMap(source => source.notifications).find(n => n.title === title) ?? null;
-    const reasons = new Map();
-    const deliver = async title => {
-        const id = await send(title);
-        await waitFor(() => notificationRow(title) !== null, 3000);
-        // Laid out on the next frame: a click before that misses the row.
-        await sleep(SETTLE_MS);
-        const n = shellNotification(title);
-        n?.connect('destroy', (_n, reason) => reasons.set(title, reason));
-        sent.push(title);
-        return id;
-    };
-    const signalled = (name, id, value) =>
-        waitFor(() => signals.some(([n, i, v]) => n === name && i === id && v === value), 3000);
-
-    try {
-        island().expand();
-        await sleep(animationWait());
-        const replyId = await deliver('Over D-Bus: reply');
-        const buttons = notificationRow('Over D-Bus: reply')?._part('actions').get_children() ?? [];
-        check('notifications: a real notification sent over D-Bus is listed, its "Reply" action a button',
-            buttons.length === 1 && buttons[0].label === 'Reply', buttons.map(b => b.label).join(','));
-        await clickActor(buttons[0]);
-        check('notifications: its "Reply" runs GNOME\'s action, which removes it (dismissed); the island closes',
-            await waitFor(() => reasons.get('Over D-Bus: reply') === Reason.DISMISSED) && !island().expanded,
-            `reason=${reasons.get('Over D-Bus: reply')}`);
-        check('notifications: the app gets ActionInvoked "reply" over D-Bus',
-            await signalled('ActionInvoked', replyId, 'reply'), JSON.stringify(signals));
-
-        island().expand();
-        await sleep(animationWait());
-        const closeId = await deliver('Over D-Bus: dismiss');
-        await clickActor(notificationRow('Over D-Bus: dismiss')._part('dismiss'));
-        check('notifications: × on it: GNOME destroys it dismissed, and the app gets NotificationClosed reason 2',
-            await waitFor(() => reasons.get('Over D-Bus: dismiss') === Reason.DISMISSED) &&
-            await signalled('NotificationClosed', closeId, 2), JSON.stringify(signals));
-
-        const openId = await deliver('Over D-Bus: open');
-        await clickActor(notificationRow('Over D-Bus: open')._part('title'));
-        check('notifications: a click on it: the app gets ActionInvoked "default"',
-            await signalled('ActionInvoked', openId, 'default') &&
-            reasons.get('Over D-Bus: open') === Reason.DISMISSED, JSON.stringify(signals));
-        await sleep(animationWait());
-    } finally {
-        Gio.DBus.session.signal_unsubscribe(subscription);
-        // Should a check have failed half-way: only the test's own.
-        for (const title of sent)
-            shellNotification(title)?.destroy(Reason.SOURCE_CLOSED);
-        island().collapse();
-        await sleep(animationWait());
-    }
-}
-
-// ---------------------------------------------------------------- notifications: safeguards
-//
-// Accidents that must not cost the user a notification or mark one seen
-// unread: keys and scrolls after a hover-open, a double click on ×, a held
-// Delete, a double Enter on "Clear all", an app updating a notification
-// while "Clear N?" waits, a click on an app's notification sent without a
-// default action (GNOME's rule, documented), and GNOME's dot while banners
-// are held. Only the test's own notifications (its own sources, and its
-// own over org.freedesktop.Notifications) are touched; all are removed at
-// the end.
-
-const centerOf = actor => {
-    const b = boxOf(actor);
-    return [(b.x1 + b.x2) / 2, (b.y1 + b.y2) / 2];
-};
-
-// One D-Bus notification: [id, the Shell's object for it].
-async function sendFdoNotification(appName, title, {replaces = 0, actions = [], hints = {}} = {}) {
-    const id = await new Promise((resolve, reject) => {
-        Gio.DBus.session.call('org.freedesktop.Notifications', '/org/freedesktop/Notifications',
-            'org.freedesktop.Notifications', 'Notify',
-            new GLib.Variant('(susssasa{sv}i)', [appName, replaces, 'dialog-information-symbolic',
-                title, 'Sent over D-Bus', actions,
-                {urgency: new GLib.Variant('y', 0), ...hints}, -1]),
-            new GLib.VariantType('(u)'), Gio.DBusCallFlags.NONE, 5000, null,
-            (connection, result) => {
-                try {
-                    resolve(connection.call_finish(result).deepUnpack()[0]);
-                } catch (e) {
-                    reject(e);
-                }
-            });
-    });
-    const shellNotification = () => Main.messageTray.getSources()
-        .flatMap(source => source.notifications).find(n => n.title === title) ?? null;
-    await waitFor(() => shellNotification() !== null && notificationRow(title) !== null, 3000);
-    // Laid out on the next frame: a click before that misses the row.
-    await sleep(SETTLE_MS);
-    return [id, shellNotification()];
-}
-
-async function testNotificationSafeguards(outDir) {
-    const MessageTray = await import('resource:///org/gnome/shell/ui/messageTray.js');
-    const {Urgency, NotificationDestroyedReason: Reason} = MessageTray;
-    const tray = Main.messageTray;
-    const s = settings();
-    const monitor = Main.layoutManager.primaryMonitor;
-    const away = [monitor.x + 60, monitor.y + monitor.height / 2];
-    // Every destruction of the test's notifications, [title, reason].
-    const destroyed = [];
-    const gone = title => destroyed.filter(([t]) => t === title).map(([, r]) => r).join();
-    const sources = [];
-    const fdo = new Map(); // title -> the Shell's notification, for clean-up
-    const alive = source => tray.getSources().includes(source);
-    let own = null;
-    const ownSource = () => {
-        if (!own || !alive(own)) {
-            own = new MessageTray.Source({title: 'Froonty safeguards', iconName: 'mail-unread-symbolic'});
-            tray.add(own);
-            sources.push(own);
-        }
-        return own;
-    };
-    const notify = (title, {urgency = Urgency.LOW, seconds = 0} = {}) => {
-        const source = ownSource();
-        const n = new MessageTray.Notification({
-            source,
-            title,
-            body: `${title}: Froonty headless test`,
-            urgency,
-            datetime: GLib.DateTime.new_now_local().add_seconds(-seconds),
-        });
-        n.connect('destroy', (_n, reason) => destroyed.push([title, reason]));
-        source.addNotification(n);
-        return n;
-    };
-    const sendFdo = async (appName, title, options) => {
-        const [id, n] = await sendFdoNotification(appName, title, options);
-        // An update (replaces_id) is the same object, already followed.
-        if (n && ![...fdo.values()].includes(n))
-            n.connect('destroy', (_n, reason) => destroyed.push([title, reason]));
-        if (n)
-            fdo.set(title, n);
-        return [id, n];
-    };
-    // Between sections: only the test's own go (closed by their "app").
-    const removeOwn = async () => {
-        if (own && alive(own))
-            own.destroy(Reason.SOURCE_CLOSED);
-        await sleep(SETTLE_MS);
-    };
-    const expand = async () => {
-        island().expand();
-        await sleep(animationWait());
-    };
-    const collapse = async () => {
-        island().collapse();
-        await sleep(animationWait());
-    };
-    const onlyOurs = () => notificationsView()._service.items
-        .every(n => sources.includes(n.source) || [...fdo.values()].includes(n));
-    const focus = () => global.stage.key_focus;
-    const signals = [];
-    const subscription = Gio.DBus.session.signal_subscribe(null, 'org.freedesktop.Notifications',
-        null, '/org/freedesktop/Notifications', null, Gio.DBusSignalFlags.NONE,
-        (_connection, _sender, _path, _iface, name, params) => signals.push([name, ...params.deepUnpack()]));
-
-    try {
-        await collapse();
-        island()._hub.select('notifications');
-        await sleep(SETTLE_MS);
-
-        // ------------------------------------------------ after a hover-open
-        // The pointer rests where the pill was (over the open island's
-        // header), the key focus is on the pill: the user may only have
-        // been reading the time while typing into their window.
-        const h1 = notify('Hover: one', {seconds: 30});
-        const h2 = notify('Hover: two', {seconds: 60});
-        await sleep(SETTLE_MS);
-        s.set_int('hover-open-delay', 350);
-        await movePointerTo(...away);
-        const pillSpot = pillCenter();
-        const hoverOpen = async () => {
-            await movePointerTo(...away);
-            await movePointerTo(...pillSpot);
-            await sleep(800);
-        };
-        const unseen = () => !h1.acknowledged && !h2.acknowledged && gnomeUnreadDot() &&
-            pillUnreadDot() && notificationsEntry().dot.visible;
-        await hoverOpen();
-        check('notifications safeguards: hover-open lists them and marks nothing',
-            island().expanded && notificationRow('Hover: one') !== null && unseen() && focus() === pill(),
-            `expanded=${island().expanded} focus=${focus()}`);
-        await pressKeys(Clutter.KEY_Shift_L);
-        await pressKeys(Clutter.KEY_Control_L);
-        await pressKeys(Clutter.KEY_Alt_L);
-        check('notifications safeguards: Shift, Control or Alt alone after a hover-open mark nothing',
-            island().expanded && unseen(), `seen=${h1.acknowledged}`);
-        await pressKeys(Clutter.KEY_x);
-        check('notifications safeguards: a key while the focus is still on the pill (meant for the window below) marks nothing',
-            island().expanded && unseen() && focus() === pill(), `seen=${h1.acknowledged}`);
-        const under = global.stage.get_actor_at_pos(Clutter.PickMode.REACTIVE, ...pillSpot);
-        pointer.notify_discrete_scroll(now(), Clutter.ScrollDirection.DOWN, Clutter.ScrollSource.WHEEL);
-        await sleep(SETTLE_MS);
-        check('notifications safeguards: a scroll where the pill was (the header, not the list) marks nothing',
-            island().expanded && unseen() && under !== null && !island()._hub._content.contains(under),
-            `under=${under && describeActor(under)} seen=${h1.acknowledged}`);
-        await pressKeys(Clutter.KEY_space);
-        await sleep(animationWait());
-        check('notifications safeguards: Space on the pill closes the island and marks nothing',
-            !island().expanded && unseen(), `expanded=${island().expanded} seen=${h1.acknowledged}`);
-
-        await hoverOpen();
-        await pressKeys(Clutter.KEY_Tab);
-        const inside = focus() !== null && focus() !== pill() && pill().contains(focus());
-        check('notifications safeguards: Tab moves the focus into the island, and marks nothing by itself',
-            island().expanded && inside && unseen(), `focus=${focus()} seen=${h1.acknowledged}`);
-        await pressKeys(Clutter.KEY_x);
-        check('notifications safeguards: then a key marks them seen, and the dots go',
-            h1.acknowledged && h2.acknowledged && !gnomeUnreadDot() && !notificationsEntry().dot.visible,
-            `seen=${h1.acknowledged},${h2.acknowledged} gnome=${gnomeUnreadDot()}`);
-        await collapse();
-
-        const h3 = notify('Hover: three', {seconds: 5});
-        await sleep(SETTLE_MS);
-        await hoverOpen();
-        await movePointerTo(...centerOf(notificationRow('Hover: three')._part('title')));
-        await sleep(SETTLE_MS);
-        const stillUnseen = !h3.acknowledged;
-        pointer.notify_discrete_scroll(now(), Clutter.ScrollDirection.DOWN, Clutter.ScrollSource.WHEEL);
-        await sleep(SETTLE_MS);
-        check('notifications safeguards: after a hover-open, moving onto the list marks nothing; a scroll over it does',
-            stillUnseen && h3.acknowledged && island().expanded, `before=${stillUnseen} after=${h3.acknowledged}`);
-        s.set_int('hover-open-delay', 0);
-        await movePointerTo(...away);
-        await screenshotTop(outDir, 'notifications-hover-input', 520);
-        check('notifications safeguards: nothing was removed by any of that',
-            destroyed.length === 0, JSON.stringify(destroyed));
-        await removeOwn();
-
-        // ------------------------------------------------ a double click on ×
-        // × removes its row at once; the next row moves up under the
-        // pointer, its × exactly where the first was.
-        notify('Double C', {seconds: 30});
-        notify('Double B', {seconds: 20});
-        notify('Double A', {seconds: 10});
-        await sleep(SETTLE_MS);
-        check('notifications safeguards: newest first: A, B, C', rowTitles().join() === 'Double A,Double B,Double C',
-            rowTitles().join());
-        const [x, y] = centerOf(notificationRow('Double A')._part('dismiss'));
-        const yB = centerOf(notificationRow('Double B')._part('dismiss'))[1];
-        pointer.notify_absolute_motion(now(), x, y);
-        await sleep(50);
-        for (let i = 0; i < 2; i++) {
-            pointer.notify_button(now(), Clutter.BUTTON_PRIMARY, Clutter.ButtonState.PRESSED);
-            await sleep(30);
-            pointer.notify_button(now(), Clutter.BUTTON_PRIMARY, Clutter.ButtonState.RELEASED);
-            await sleep(i === 0 ? 120 : SETTLE_MS);
-        }
-        const xB = notificationRow('Double B') ? centerOf(notificationRow('Double B')._part('dismiss')) : [];
-        check('notifications safeguards: a double click on × dismisses that one only; the next one, moved under the pointer, stays',
-            gone('Double A') === `${Reason.DISMISSED}` && gone('Double B') === '' && gone('Double C') === '' &&
-            Math.abs(xB[1] - y) < 2 && island().expanded,
-            `destroyed=${JSON.stringify(destroyed.filter(([t]) => t.startsWith('Double')))} ×A y=${y}, ×B y=${yB} then ${xB[1]}`);
-        await sleep(Clutter.Settings.get_default().double_click_time + 100);
-        await clickAt(x, y);
-        check('notifications safeguards: a click there after the double-click time dismisses the next one (on purpose)',
-            gone('Double B') === `${Reason.DISMISSED}` && gone('Double C') === '',
-            JSON.stringify(destroyed.filter(([t]) => t.startsWith('Double'))));
-        await movePointerTo(...away);
-        await removeOwn();
-
-        // ------------------------------------------------ a held Delete
-        for (const [i, seconds] of [[4, 40], [3, 30], [2, 20], [1, 10]])
-            notify(`Delete ${i}`, {seconds});
-        await sleep(SETTLE_MS);
-        const mainOf = title => notificationRow(title)?._part('main') ?? null;
-        for (let i = 0; i < 40 && focus() !== mainOf('Delete 1'); i++)
-            await pressKeys(Clutter.KEY_Tab);
-        let repeats = 0;
-        const probe = pill().connect('captured-event', (_actor, event) => {
-            if (event.type() === Clutter.EventType.KEY_PRESS &&
-                event.get_flags() & Clutter.EventFlags.FLAG_REPEATED)
-                repeats++;
-            return Clutter.EVENT_PROPAGATE;
-        });
-        const focusedFirst = focus() === mainOf('Delete 1');
-        keyboard.notify_keyval(now(), Clutter.KEY_Delete, Clutter.KeyState.PRESSED);
-        await sleep(1500);
-        keyboard.notify_keyval(now(), Clutter.KEY_Delete, Clutter.KeyState.RELEASED);
-        await sleep(SETTLE_MS);
-        pill().disconnect(probe);
-        check('notifications safeguards: Delete held down dismisses one; the keyboard\'s repeats, now on the next row, dismiss nothing more',
-            focusedFirst && repeats > 0 && gone('Delete 1') === `${Reason.DISMISSED}` &&
-            ['Delete 2', 'Delete 3', 'Delete 4'].every(t => gone(t) === '') &&
-            focus() === mainOf('Delete 2') && island().expanded,
-            `focused=${focusedFirst} repeats=${repeats} rows=${rowTitles()} focus=${focus()}`);
-
-        // ------------------------------------------------ Clear all from the keyboard
-        const v = notificationsView();
-        check('notifications safeguards: only the test\'s own notifications are listed (Clear all touches nothing else)',
-            onlyOurs(), `${v._service.items.length} listed`);
-        if (onlyOurs()) {
-            for (let i = 0; i < 40 && focus() !== v._clearButton; i++)
-                await pressKeys(Clutter.KEY_Tab);
-            const before = destroyed.length;
-            const onClear = focus() === v._clearButton;
-            await pressKeys(Clutter.KEY_Return);
-            const keepFocused = focus() === v._keepButton;
-            await pressKeys(Clutter.KEY_Return);
-            check('notifications safeguards: Enter twice on "Clear all": the first asks (the focus on "Keep them"), the second keeps them',
-                onClear && keepFocused && destroyed.length === before && !v._confirmButton.visible &&
-                v._clearButton.visible && focus() === v._clearButton && rowTitles().length === 3,
-                `onClear=${onClear} keepFocused=${keepFocused} destroyed=${destroyed.length - before} focus=${focus()}`);
-            await pressKeys(Clutter.KEY_Return);
-            const asked = v._confirmButton.visible && v._confirmButton.label === 'Clear 3?' &&
-                focus() === v._keepButton;
-            await pressKeys(Clutter.KEY_Shift_L, Clutter.KEY_Tab);
-            const onConfirm = focus() === v._confirmButton;
-            await pressKeys(Clutter.KEY_Return);
-            check('notifications safeguards: confirming from the keyboard takes a move to "Clear 3?" (Shift+Tab), then Enter',
-                asked && onConfirm && ['Delete 2', 'Delete 3', 'Delete 4'].every(t => gone(t) === `${Reason.DISMISSED}`) &&
-                rowTitles().length === 0 && island().expanded,
-                `asked=${asked} onConfirm=${onConfirm} rows=${rowTitles()}`);
-        }
-        await removeOwn();
-
-        // ------------------------------------------------ updated while "Clear N?" waits
-        // As a chat app does: the same notification (replaces_id), new
-        // text, unseen again; GNOME re-stamps it and it moves up.
-        notify('Clear: one', {seconds: 20});
-        notify('Clear: two', {seconds: 10});
-        const [chatId, chat] = await sendFdo('Froonty test chat', 'Chat: 1 new message');
-        if (onlyOurs() && chat) {
-            await clickActor(v._clearButton);
-            const askedFor = v._confirmButton.label;
-            await sendFdo('Froonty test chat', 'Chat: 2 new messages', {replaces: chatId});
-            await sleep(SETTLE_MS);
-            const sameObject = fdo.get('Chat: 2 new messages') === chat;
-            check('notifications safeguards: an app updating one in place while "Clear N?" waits takes it out of the question',
-                askedFor === 'Clear 3?' && sameObject && v._confirmButton.visible &&
-                v._confirmButton.label === 'Clear 2?' && rowTitles()[0] === 'Chat: 2 new messages',
-                `asked=${askedFor} now=${v._confirmButton.label} same=${sameObject} rows=${rowTitles()}`);
-            await screenshotTop(outDir, 'notifications-confirm-updated', 520);
-            await clickActor(v._confirmButton);
-            await sleep(SETTLE_MS);
-            check('notifications safeguards: confirming dismisses the two shown at the first click; the updated one stays',
-                gone('Clear: one') === `${Reason.DISMISSED}` && gone('Clear: two') === `${Reason.DISMISSED}` &&
-                gone('Chat: 1 new message') === '' && rowTitles().join() === 'Chat: 2 new messages',
-                `rows=${rowTitles()} destroyed=${JSON.stringify(destroyed.slice(-3))}`);
-        } else {
-            check('notifications safeguards: the chat notification arrived and only the test\'s are listed', false,
-                `chat=${chat} ours=${onlyOurs()}`);
-        }
-        fdo.get('Chat: 2 new messages')?.destroy(Reason.SOURCE_CLOSED);
-        await removeOwn();
-        await collapse();
-
-        // ------------------------------------------------ no default action
-        // GNOME's daemon: a click on an app's notification sent without a
-        // "default" action opens the app (Source.open()), which removes
-        // every one of its notifications that is not resident. GNOME's own
-        // list does the same; Froonty makes the same call.
-        await expand();
-        const [oneId] = await sendFdo('Froonty test siblings', 'Sibling one');
-        const [twoId] = await sendFdo('Froonty test siblings', 'Sibling two');
-        await sendFdo('Froonty test siblings', 'Sibling resident', {hints: {resident: new GLib.Variant('b', true)}});
-        await sendFdo('Froonty test other app', 'Other app');
-        const sameSource = fdo.get('Sibling one')?.source === fdo.get('Sibling two')?.source &&
-            fdo.get('Sibling one')?.source !== fdo.get('Other app')?.source;
-        const signalsBefore = signals.length;
-        await clickActor(notificationRow('Sibling two')._part('title'));
-        await sleep(animationWait());
-        const closed = id => signals.slice(signalsBefore).some(([n, i, r]) => n === 'NotificationClosed' && i === id && r === 2);
-        await waitFor(() => closed(oneId) && closed(twoId), 3000);
-        // (GNOME's handler destroys it inside the 'activated' emission, and
-        // a disposed object's later handlers do not run: the test's own
-        // 'activated' log cannot see this click.)
-        check('notifications safeguards: a click on one sent without a default action: GNOME removes all of that app\'s that are not resident (as its own list does); the resident one and another app\'s stay',
-            sameSource &&
-            gone('Sibling one') === `${Reason.DISMISSED}` && gone('Sibling two') === `${Reason.DISMISSED}` &&
-            closed(oneId) && closed(twoId) && gone('Sibling resident') === '' && gone('Other app') === '' &&
-            !signals.slice(signalsBefore).some(([n]) => n === 'ActionInvoked') && !island().expanded,
-            `sameSource=${sameSource} destroyed=${JSON.stringify(destroyed.filter(([t]) => /Sibling|Other/.test(t)))} ` +
-            `signals=${JSON.stringify(signals.slice(signalsBefore))}`);
-        for (const title of ['Sibling resident', 'Other app'])
-            fdo.get(title)?.destroy(Reason.SOURCE_CLOSED);
-        await sleep(SETTLE_MS);
-
-        // ------------------------------------------------ GNOME's dot while banners are held
-        // The open island holds banners. One waiting for its banner is not
-        // marked seen by Froonty (GNOME counts unseen minus queued, and
-        // drops seen ones from its queue only once banners are released),
-        // so a later unseen one still lights the dot.
-        await expand();
-        const queued = notify('Held: normal', {urgency: Urgency.NORMAL});
-        const lowBefore = notify('Held: low before');
-        await sleep(SETTLE_MS);
-        const inQueue = tray._notificationQueue.includes(queued) && !tray.visible;
-        await pressKeys(Clutter.KEY_x);
-        check('notifications safeguards: a key marks the list seen, except one waiting for its banner (its row keeps its dot); no dot is due',
-            inQueue && lowBefore.acknowledged && !queued.acknowledged &&
-            notificationRow('Held: normal')?._part('new').visible && !gnomeUnreadDot(),
-            `inQueue=${inQueue} low=${lowBefore.acknowledged} queued=${queued.acknowledged} gnome=${gnomeUnreadDot()}`);
-        await clickActor(tabButton(firstTabId()));
-        await sleep(animationWait());
-        const lowAfter = notify('Held: low after');
-        await sleep(SETTLE_MS);
-        check('notifications safeguards: then, with another tab on screen, a LOW one lights the tab\'s, the date pill\'s and GNOME\'s dot',
-            !lowAfter.acknowledged && notificationsEntry().dot.visible && island()._hub._header.unreadBadge.visible &&
-            gnomeUnreadDot(), `tab=${notificationsEntry().dot.visible} gnome=${gnomeUnreadDot()} queue=${tray.queueCount}`);
-        await collapse();
-        check('notifications safeguards: once the island closes, the held banner shows, and GNOME\'s banner marks it seen',
-            await waitFor(() => queued.acknowledged, 3000) && !lowAfter.acknowledged && pillUnreadDot(),
-            `queued=${queued.acknowledged} low=${lowAfter.acknowledged} pill=${pillUnreadDot()}`);
-        await removeOwn();
-        await sleep(animationWait());
-    } finally {
-        Gio.DBus.session.signal_unsubscribe(subscription);
-        s.set_int('hover-open-delay', 0);
-        for (const n of fdo.values()) {
-            if (tray.getSources().some(source => source.notifications.includes(n)))
-                n.destroy(Reason.SOURCE_CLOSED);
-        }
-        for (const source of sources) {
-            if (alive(source))
-                source.destroy(Reason.SOURCE_CLOSED);
-        }
-        island().collapse();
-        await sleep(animationWait());
-        island()._hub.select(firstTabId());
-        s.reset('hub-last-tab');
-        await sleep(SETTLE_MS);
-    }
-    check('notifications safeguards: the test\'s notifications are gone, the first tab is shown again, no banner is up',
-        sources.every(source => !alive(source)) && island()._hub.activeFeature?.id === firstTabId() &&
-        tray.queueCount === 0);
-}
-
-// ---------------------------------------------------------------- calendar tab (EDS)
-//
-// The Calendar tab over the real Evolution Data Server: the private one
-// this session's own gnome-shell-calendar-server D-Bus-activates (private
-// bus, XDG dirs under WORK). The test's own data (two test calendars and
-// their events, a few events in the built-in "Personal") is written by
-// the test through async ECal/EDataServer calls, never by Froonty, and
-// only once edsIsolation() has shown that instance to be private.
-
-const calendarEntry = () => island()?._hub._entries.get('calendar') ?? null;
-const FT_MARKERS = ['Froonty test', 'froonty-test'];
-
-// A callback-style async call as a promise (all arguments passed, so the
-// Shell's promisified wrappers call the original).
-function asyncCall(start, finish) {
-    return new Promise((resolve, reject) => {
-        start((source, result) => {
-            try {
-                resolve(finish(source, result));
-            } catch (e) {
-                reject(e);
-            }
-        });
-    });
-}
-const lastOf = result => Array.isArray(result) ? result.at(-1) : result;
-
-async function readTextFile(path) {
-    try {
-        const file = Gio.File.new_for_path(path);
-        const result = await asyncCall(done => file.load_contents_async(null, done),
-            (f, r) => f.load_contents_finish(r));
-        return new TextDecoder().decode(result[1]);
-    } catch {
-        return null;
-    }
-}
-
-// Every file under `root`: path → modification time.
-async function fileTree(root) {
-    const out = new Map();
-    const walk = async dir => {
-        let enumerator;
-        try {
-            enumerator = await asyncCall(done => dir.enumerate_children_async(
-                'standard::name,standard::type,time::modified,time::modified-usec',
-                Gio.FileQueryInfoFlags.NOFOLLOW_SYMLINKS, GLib.PRIORITY_DEFAULT, null, done),
-            (d, r) => d.enumerate_children_finish(r));
-        } catch {
-            return;
-        }
-        for (;;) {
-            const infos = await asyncCall(done => enumerator.next_files_async(64, GLib.PRIORITY_DEFAULT, null, done),
-                (e, r) => e.next_files_finish(r));
-            if (infos.length === 0)
-                break;
-            for (const info of infos) {
-                const child = dir.get_child(info.get_name());
-                if (info.get_file_type() === Gio.FileType.DIRECTORY)
-                    await walk(child);
-                else
-                    out.set(child.get_path(), `${info.get_attribute_uint64('time::modified')}.${info.get_attribute_uint32('time::modified-usec')}`);
-            }
-        }
-        await asyncCall(done => enumerator.close_async(GLib.PRIORITY_DEFAULT, null, done),
-            (e, r) => e.close_finish(r)).catch(() => {});
-    };
-    await walk(Gio.File.new_for_path(root));
-    return out;
-}
-
-// Whether the real home's EDS data mentions the test (read-only).
-async function realHomeMentionsTest() {
-    const home = GLib.get_home_dir();
-    const files = [...(await fileTree(`${home}/.config/evolution/sources`)).keys(),
-        `${home}/.local/share/evolution/calendar/system/calendar.ics`];
-    for (const path of files) {
-        if (FT_MARKERS.some(marker => path.includes(marker)))
-            return path;
-        const text = await readTextFile(path);
-        if (text && FT_MARKERS.some(marker => text.includes(marker)))
-            return path;
-    }
-    return null;
-}
-
-async function busOwnerEnviron(name) {
-    const bus = Gio.DBus.session;
-    await asyncCall(done => bus.call('org.freedesktop.DBus', '/org/freedesktop/DBus', 'org.freedesktop.DBus',
-        'StartServiceByName', new GLib.Variant('(su)', [name, 0]), null, Gio.DBusCallFlags.NONE, 10000, null, done),
-    (c, r) => c.call_finish(r));
-    const reply = await asyncCall(done => bus.call('org.freedesktop.DBus', '/org/freedesktop/DBus', 'org.freedesktop.DBus',
-        'GetConnectionUnixProcessID', new GLib.Variant('(s)', [name]), new GLib.VariantType('(u)'),
-        Gio.DBusCallFlags.NONE, 10000, null, done), (c, r) => c.call_finish(r));
-    const [pid] = reply.deepUnpack();
-    const text = await readTextFile(`/proc/${pid}/environ`) ?? '';
-    return new Map(text.split('\0').filter(Boolean).map(line => {
-        const i = line.indexOf('=');
-        return [line.slice(0, i), line.slice(i + 1)];
-    }));
-}
-
-// The EDS the Shell under test talks to is the private test instance:
-// private XDG dirs and bus for this process and for the D-Bus owners of
-// EDS's registry and calendar factory. Otherwise nothing is written.
-async function edsIsolation(work) {
-    const problems = [];
-    if (GLib.get_user_config_dir() !== `${work}/config`)
-        problems.push(`config dir ${GLib.get_user_config_dir()}`);
-    if (GLib.get_user_data_dir() !== `${work}/data`)
-        problems.push(`data dir ${GLib.get_user_data_dir()}`);
-    if (GLib.getenv('GSETTINGS_BACKEND') !== 'keyfile')
-        problems.push('GSettings backend');
-    const bus = GLib.getenv('DBUS_SESSION_BUS_ADDRESS') ?? '';
-    if (!bus || bus.includes('/run/user/'))
-        problems.push(`session bus ${bus}`);
-    for (const name of ['org.gnome.evolution.dataserver.Sources5', 'org.gnome.evolution.dataserver.Calendar8']) {
-        try {
-            const environ = await busOwnerEnviron(name);
-            if (environ.get('XDG_CONFIG_HOME') !== `${work}/config` || environ.get('XDG_DATA_HOME') !== `${work}/data`)
-                problems.push(`${name}: ${environ.get('XDG_CONFIG_HOME')} ${environ.get('XDG_DATA_HOME')}`);
-        } catch (e) {
-            problems.push(`${name}: ${e.message}`);
-        }
-    }
-    return problems;
-}
-
-const icsTime = time => time.to_utc().format('%Y%m%dT%H%M%SZ');
-const icsDate = time => time.format('%Y%m%d');
-const vevent = lines => `BEGIN:VEVENT\r\n${lines.join('\r\n')}\r\nEND:VEVENT\r\n`;
-
-// Windows-style zone, as Exchange sends it: unknown to libical, known to
-// the calendar once added (EDS gives it to Froonty on request).
-const PACIFIC_VTIMEZONE = 'BEGIN:VTIMEZONE\r\nTZID:Pacific Standard Time\r\nBEGIN:STANDARD\r\n' +
-    'DTSTART:16010101T020000\r\nTZOFFSETFROM:-0700\r\nTZOFFSETTO:-0800\r\n' +
-    'RRULE:FREQ=YEARLY;BYDAY=1SU;BYMONTH=11\r\nEND:STANDARD\r\nBEGIN:DAYLIGHT\r\n' +
-    'DTSTART:16010101T020000\r\nTZOFFSETFROM:-0800\r\nTZOFFSETTO:-0700\r\n' +
-    'RRULE:FREQ=YEARLY;BYDAY=2SU;BYMONTH=3\r\nEND:DAYLIGHT\r\nEND:VTIMEZONE\r\n';
-
-/** The test's own EDS writer (never Froonty's code). */
-class TestEds {
-    constructor(libs) {
-        this.libs = libs;
-        this.registry = null;
-        this.sources = [];
-        this.created = [];
-        this.clients = new Map();
-    }
-
-    async start() {
-        const {EDataServer} = this.libs;
-        this.registry = await asyncCall(done => EDataServer.SourceRegistry.new(null, done),
-            (_s, r) => EDataServer.SourceRegistry.new_finish(r));
-    }
-
-    async addCalendar(name, color) {
-        const {EDataServer} = this.libs;
-        const source = EDataServer.Source.new(null, null);
-        source.set_parent('local-stub');
-        source.set_display_name(name);
-        const extension = source.get_extension('Calendar');
-        extension.set_backend_name('local');
-        extension.set_color(color);
-        await asyncCall(done => this.registry.commit_source(source, null, done),
-            (registry, r) => registry.commit_source_finish(r));
-        const uid = source.get_uid();
-        this.sources.push(uid);
-        return uid;
-    }
-
-    async client(uid) {
-        if (this.clients.has(uid))
-            return this.clients.get(uid);
-        const {ECal} = this.libs;
-        const source = uid === 'system-calendar'
-            ? this.registry.ref_builtin_calendar() : this.registry.ref_source(uid);
-        const client = await asyncCall(done => ECal.Client.connect(source, ECal.ClientSourceType.EVENTS, 30, null, done),
-            (_s, r) => ECal.Client.connect_finish(r));
-        this.clients.set(uid, client);
-        return client;
-    }
-
-    async addZone(uid, zone) {
-        const client = await this.client(uid);
-        await asyncCall(done => client.add_timezone(zone, null, done), (c, r) => c.add_timezone_finish(r));
-    }
-
-    async create(uid, ics) {
-        const {ECal, ICalGLib} = this.libs;
-        const client = await this.client(uid);
-        const created = lastOf(await asyncCall(done => client.create_object(ICalGLib.Component.new_from_string(ics),
-            ECal.OperationFlags.NONE, null, done), (c, r) => c.create_object_finish(r)));
-        this.created.push([uid, created]);
-        return created;
-    }
-
-    async modify(uid, ics, mod) {
-        const {ECal, ICalGLib} = this.libs;
-        const client = await this.client(uid);
-        await asyncCall(done => client.modify_object(ICalGLib.Component.new_from_string(ics),
-            mod ?? ECal.ObjModType.ALL, ECal.OperationFlags.NONE, null, done), (c, r) => c.modify_object_finish(r));
-    }
-
-    async removeEvent(uid, eventUid, rid = null) {
-        const {ECal} = this.libs;
-        const client = await this.client(uid);
-        await asyncCall(done => client.remove_object(eventUid, rid, rid ? ECal.ObjModType.THIS : ECal.ObjModType.ALL,
-            ECal.OperationFlags.NONE, null, done), (c, r) => c.remove_object_finish(r));
-    }
-
-    async setSelected(uid, selected) {
-        const source = this.registry.ref_source(uid);
-        source.get_extension('Calendar').set_selected(selected);
-        await asyncCall(done => source.write(null, done), (s, r) => s.write_finish(r));
-    }
-
-    // Removes every event and calendar the test added.
-    async cleanUp() {
-        for (const [uid, eventUid] of this.created) {
-            try {
-                await this.removeEvent(uid, eventUid);
-            } catch {
-                // Already removed by the test.
-            }
-        }
-        for (const uid of this.sources) {
-            const source = this.registry?.ref_source(uid);
-            if (source)
-                await asyncCall(done => source.remove(null, done), (s, r) => s.remove_finish(r)).catch(() => {});
-        }
-        this.clients.clear();
-    }
-}
-
-// Froonty's occurrences of an event, by its title: [{start, end, allDay}].
-function shownOccurrences(service, title) {
-    return service._store.occurrences(service.calendars.map(c => c.uid))
-        .filter(({item}) => item.title === title)
-        .map(({item, occurrence, calendarUid}) => ({...occurrence, calendarUid, title: item.title,
-            cancelled: item.cancelled}));
-}
-
-const calendarCards = () => calendarEntry()?.view?.agenda.cards ?? [];
-const cardOf = title => calendarCards().find(card => card.entry.item.title === title) ?? null;
-const viewsComplete = service => [...service._views.values()].every(entry => entry.complete);
-// Views over the month shown, delivered, and no month change waiting for
-// the quiet period (service.js RANGE_QUIET_MS).
-const calendarSettled = (service, timeoutMs = 5000) => waitFor(() => service.settled, timeoutMs);
-
-// Scrolls the agenda so a card is in sight (before a pointer click).
-async function revealCard(card) {
-    const adjustment = calendarEntry().view.agenda.scrollView.vadjustment;
-    const y = card.actor.get_allocation_box().y1;
-    adjustment.value = Math.max(0, Math.min(y, adjustment.upper - adjustment.page_size));
-    await sleep(SETTLE_MS);
-}
-
-// The hint, without EDS: a view over a service that says the bindings
-// are missing.
-async function testCalendarHint() {
-    const {CalendarView} = await import(`file://${extension().path}/features/calendar/view.js`);
-    const fake = {state: 'missing', calendars: [], connect: () => 1, disconnect: () => {}};
-    const view = new CalendarView({clock: island()._clock}, fake);
-    check('calendar: without gir1.2-ecal-2.0 the tab says what to install, with Online Accounts',
-        view._hint.visible && !view._body.visible &&
-        view._hintTitle.text.includes('Install gir1.2-ecal-2.0') &&
-        view._hintButton.visible && view._hintButton.label === 'Online Accounts',
-        view._hintTitle.text);
-    view.destroy();
-}
-
-async function testCalendar(outDir) {
-    const work = outDir;
-    const {edsInstalled} = await import(`file://${extension().path}/features/calendar/eds.js`);
-    const {detectProvider} = await import(`file://${extension().path}/features/calendar/providers.js`);
-    await testCalendarHint();
-    if (!await edsInstalled()) {
-        check('calendar: note: ECal not installed; only the hint was tested', true, 'note: ECal not installed');
-        return;
-    }
-
-    const problems = await edsIsolation(work);
-    const homeBefore = await realHomeMentionsTest();
-    check('calendar: EDS is the private test instance', problems.length === 0 && homeBefore === null,
-        [...problems, homeBefore ? `real home already mentions the test: ${homeBefore}` : ''].join('; '));
-    if (problems.length || homeBefore)
-        return;
-
-    const libs = {
-        ECal: (await import('gi://ECal?version=2.0')).default,
-        EDataServer: (await import('gi://EDataServer?version=1.2')).default,
-        ICalGLib: (await import('gi://ICalGLib?version=3.0')).default,
-    };
-    const eds = new TestEds(libs);
-    const s = settings();
-    const desktop = new Gio.Settings({schema_id: 'org.gnome.desktop.calendar'});
-    try {
-        await eds.start();
-        await calendarSteps(outDir, work, eds, libs, detectProvider, desktop);
-        await testCalendarLoad(eds, libs);
-    } finally {
-        desktop.reset('show-weekdate');
-        s.reset('calendar-hidden-sources');
-        s.reset('calendar-granularity');
-        await eds.cleanUp();
-        if (island()?.expanded) {
-            island().collapse();
-            await sleep(animationWait());
-        }
-    }
-    check('calendar: the real home\'s calendars never saw the test', await realHomeMentionsTest() === null);
-    await testCalendarLifecycle();
-}
-
-async function openCalendarTab() {
-    if (!island().expanded) {
-        island().expand();
-        await sleep(animationWait());
-    }
-    if (island()._hub.activeFeature?.id !== 'calendar') {
-        await clickActor(tabButton('calendar'));
-        await sleep(animationWait());
-    }
-}
-
-async function calendarSteps(outDir, work, eds, libs, detectProvider, desktop) {
-    const s = settings();
-    const {ECal, ICalGLib} = libs;
-    check('calendar: on by default (the first start found the bindings), the first tab',
-        s.get_boolean('calendar-enabled') && s.get_boolean('calendar-eds-checked') &&
-        island()._hub._tabColumn.get_children().indexOf(tabButton('calendar')) === 0);
-    s.set_string('calendar-granularity', 'month');
-
-    // Over the built-in calendars only: what EDS keeps on disk, to compare
-    // after Froonty has browsed (Froonty writes nothing).
-    await openCalendarTab();
-    let service = calendarEntry()?.service;
-    let view = calendarEntry()?.view;
-    await waitFor(() => service?.state === 'ready' && !service.loading, 8000);
-    const [w, h] = pill().get_transformed_size();
-    check('calendar: the tab opens at 620 × 380 and loads EDS',
-        service?.state === 'ready' && w === 620 * scale() && h === 380 * scale(),
-        `${w}x${h} state=${service?.state} ${service?.errorMessage ?? ''}`);
-    check('calendar: GNOME\'s built-in calendars are listed',
-        service.calendars.some(c => c.uid === 'system-calendar') &&
-        service.calendars.some(c => c.uid === 'birthdays'),
-        service.calendars.map(c => `${c.uid}:${c.name}`).join(', '));
-    await sleep(500);
-    const treeRoots = [`${work}/config/evolution/sources`, `${work}/data/evolution/calendar`];
-    const treeBefore = new Map();
-    for (const root of treeRoots)
-        for (const [path, mtime] of await fileTree(root))
-            treeBefore.set(path, mtime);
-
-    // ------------------------------------------------ data
-    const tz = service.timeZone;
-    const hostTzid = tz.get_identifier();
-    const now = GLib.DateTime.new_now(tz);
-    const today = GLib.DateTime.new(tz, now.get_year(), now.get_month(), now.get_day_of_month(), 0, 0, 0);
-    const dayAt = (days, hour, minute = 0) => {
-        const d = today.add_days(days);
-        return GLib.DateTime.new(tz, d.get_year(), d.get_month(), d.get_day_of_month(), hour, minute, 0);
-    };
-    const stamp = `${Date.now()}`;
-    const uidOf = name => `froonty-test-${stamp}-${name}`;
-    const local = (time, hour, minute = 0) => `${icsDate(time)}T${String(hour).padStart(2, '0')}${String(minute).padStart(2, '0')}00`;
-
-    const testUid = await eds.addCalendar('Froonty test calendar', '#e01b24');
-    await waitFor(() => service.calendars.some(c => c.uid === testUid));
-    const hostZone = ICalGLib.Timezone.get_builtin_timezone(hostTzid);
-    await eds.addZone(testUid, hostZone);
-    const pacific = ICalGLib.Timezone.new();
-    pacific.set_component(ICalGLib.Component.new_from_string(PACIFIC_VTIMEZONE));
-    await eds.addZone(testUid, pacific);
-
-    const nowStart = now.add_minutes(-10);
-    await eds.create('system-calendar', vevent([`UID:${uidOf('allday')}`, 'SUMMARY:FT all-day',
-        `DTSTART;VALUE=DATE:${icsDate(today)}`, `DTEND;VALUE=DATE:${icsDate(today.add_days(1))}`]));
-    await eds.create(testUid, vevent([`UID:${uidOf('now')}`, 'SUMMARY:FT now',
-        `DTSTART:${icsTime(nowStart)}`, `DTEND:${icsTime(now.add_minutes(20))}`]));
-    await eds.create(testUid, vevent([`UID:${uidOf('next')}`, 'SUMMARY:FT next', 'LOCATION:Room <b>1</b>',
-        `DTSTART:${icsTime(now.add_minutes(30))}`, `DTEND:${icsTime(now.add_minutes(60))}`]));
-    const standup = uidOf('standup');
-    await eds.create(testUid, vevent([`UID:${standup}`, 'SUMMARY:FT standup',
-        `DTSTART;TZID=${hostTzid}:${local(today, 9)}`, `DTEND;TZID=${hostTzid}:${local(today, 9, 15)}`,
-        'RRULE:FREQ=DAILY;COUNT=5', `EXDATE;TZID=${hostTzid}:${local(today.add_days(2), 9)}`]));
-    await eds.modify(testUid, vevent([`UID:${standup}`, 'SUMMARY:FT standup (moved)',
-        `RECURRENCE-ID;TZID=${hostTzid}:${local(today.add_days(1), 9)}`,
-        `DTSTART;TZID=${hostTzid}:${local(today.add_days(1), 11, 30)}`,
-        `DTEND;TZID=${hostTzid}:${local(today.add_days(1), 11, 45)}`]), ECal.ObjModType.THIS);
-    await eds.create(testUid, vevent([`UID:${uidOf('winzone')}`, 'SUMMARY:FT winzone', 'STATUS:CANCELLED',
-        `DTSTART;TZID=Pacific Standard Time:${local(today, 14)}`,
-        `DTEND;TZID=Pacific Standard Time:${local(today, 15)}`]));
-
-    // ------------------------------------------------ shown
-    const titles = ['FT all-day', 'FT now', 'FT next', 'FT standup', 'FT standup (moved)', 'FT winzone'];
-    const losAngeles = GLib.TimeZone.new_identifier('America/Los_Angeles');
-    const winzoneStart = GLib.DateTime.new(losAngeles, today.get_year(), today.get_month(),
-        today.get_day_of_month(), 14, 0, 0).to_unix();
-    const allShown = await waitFor(() => titles.every(title => shownOccurrences(service, title).length > 0) &&
-        shownOccurrences(service, 'FT winzone')[0]?.start === winzoneStart, 5000);
-    check('calendar: every test event shows, live, without reopening the tab', allShown,
-        titles.map(t => `${t}=${shownOccurrences(service, t).length}`).join(' '));
-    await sleep(SETTLE_MS);
-
-    const colorOf = title => cardOf(title)?.entry.calendar?.color;
-    check('calendar: cards carry their calendar\'s colour',
-        colorOf('FT now') === '#e01b24' && colorOf('FT all-day') === '#62a0ea' &&
-        cardOf('FT now')?.bar.style.includes('#e01b24'),
-        `${colorOf('FT now')} ${colorOf('FT all-day')}`);
-    check('calendar: an all-day event reads "All day"',
-        cardOf('FT all-day')?.meta.text.startsWith('All day'), cardOf('FT all-day')?.meta.text);
-
-    const grid = service._grid();
-    const expectedStandups = [0, 1, 3, 4].map(n => n === 1 ? dayAt(1, 11, 30) : dayAt(n, 9))
-        .map(t => t.to_unix()).filter(t => t >= grid.start && t < grid.end);
-    const standups = [...shownOccurrences(service, 'FT standup'), ...shownOccurrences(service, 'FT standup (moved)')]
-        .map(o => o.start).sort((a, b) => a - b);
-    check('calendar: a repeating event: EDS\'s expansion, the excluded day gone, the moved one moved',
-        JSON.stringify(standups) === JSON.stringify(expectedStandups) &&
-        shownOccurrences(service, 'FT standup (moved)').length === (expectedStandups.includes(dayAt(1, 11, 30).to_unix()) ? 1 : 0),
-        `${standups.map(t => GLib.DateTime.new_from_unix_utc(t).to_timezone(tz).format('%d %H:%M'))} ` +
-        `expected ${expectedStandups.map(t => GLib.DateTime.new_from_unix_utc(t).to_timezone(tz).format('%d %H:%M'))}`);
-
-    const agenda = service.agenda();
-    const timedAfterNow = agenda.days.flatMap(d => d.entries)
-        .filter(e => !e.occurrence.allDay && !e.item.cancelled && e.start > now.to_unix())
-        .sort((a, b) => a.start - b.start);
-    const expectedNext = timedAfterNow[0]?.item.title;
-    const nextCard = calendarCards().find(card => card.entry.state === 'next');
-    check('calendar: "Now" on the event going on, "Next" on the next one',
-        cardOf('FT now')?.state.text === 'Now' && cardOf('FT now')?.state.visible &&
-        nextCard?.entry.item.title === expectedNext && nextCard?.state.text === 'Next' &&
-        (expectedNext !== 'FT next' || cardOf('FT next')?.state.text === 'Next'),
-        `now=${cardOf('FT now')?.state.text} next=${nextCard?.entry.item.title} expected ${expectedNext}`);
-    const winzone = shownOccurrences(service, 'FT winzone')[0];
-    check('calendar: an Exchange-style zone is fetched from the calendar; cancelled is struck through',
-        winzone?.start === winzoneStart && winzone.cancelled &&
-        cardOf('FT winzone')?.actor.has_style_class_name('froonty-calendar-card-cancelled'),
-        `${winzone?.start} vs ${winzoneStart}`);
-    check('calendar: event text is shown as text, never as markup',
-        cardOf('FT next')?.meta.text.includes('Room <b>1</b>') && !cardOf('FT next')?.meta.clutter_text.use_markup,
-        cardOf('FT next')?.meta.text);
-
-    const todayDate = {y: today.get_year(), m: today.get_month(), d: today.get_day_of_month()};
-    const todayCell = view.grid.cellOf(todayDate);
-    const dotStyles = todayCell?._dots.get_children().filter(dot => dot.visible).map(dot => dot.style).join(' ') ?? '';
-    check('calendar: today\'s cell is today, with both calendars\' dots',
-        todayCell?.has_style_class_name('froonty-calendar-day-today') &&
-        dotStyles.includes('#62a0ea') && dotStyles.includes('#e01b24'), dotStyles);
-    check('calendar: no week numbers unless GNOME shows them',
-        !desktop.get_boolean('show-weekdate') && !view.grid._weeks[0].visible);
-    desktop.set_boolean('show-weekdate', true);
-    await sleep(SETTLE_MS);
-    check('calendar: GNOME\'s show-weekdate adds ISO week numbers',
-        view.grid._weeks[0].visible && /^\d+$/.test(view.grid._weeks[0].text), view.grid._weeks[0].text);
-
-    const hub = island()._hub;
-    const content = boxOf(hub._content);
-    const left = boxOf(view.grid.get_parent());
-    const right = boxOf(view.agenda);
-    const inside = b => b.x1 >= content.x1 - 1 && b.x2 <= content.x2 + 1 && b.y1 >= content.y1 - 1 && b.y2 <= content.y2 + 1;
-    check('calendar: grid, divider and agenda sit inside the content, clear of the tabs and ⚙️',
-        inside(left) && inside(right) && left.x2 <= right.x1 &&
-        boxOf(hub._tabColumn).x2 <= left.x1 && boxOf(hub.settingsButton).y2 <= right.y1 + 1,
-        `content=${JSON.stringify(content)} left=${JSON.stringify(left)} right=${JSON.stringify(right)}`);
-    await screenshotTop(outDir, 'calendar', 420);
-
-    // ------------------------------------------------ live
-    const live = uidOf('live');
-    await eds.create(testUid, vevent([`UID:${live}`, 'SUMMARY:FT live',
-        `DTSTART:${icsTime(dayAt(0, 18))}`, `DTEND:${icsTime(dayAt(0, 19))}`]));
-    check('calendar: an event added elsewhere shows within 3 s',
-        await waitFor(() => cardOf('FT live') !== null, 3000));
-    await eds.modify(testUid, vevent([`UID:${live}`, 'SUMMARY:FT live renamed',
-        `DTSTART:${icsTime(dayAt(0, 18))}`, `DTEND:${icsTime(dayAt(0, 19))}`]));
-    check('calendar: renamed elsewhere, the card follows',
-        await waitFor(() => cardOf('FT live renamed') !== null && cardOf('FT live') === null, 3000));
-    await eds.removeEvent(testUid, live);
-    check('calendar: removed elsewhere, the card goes',
-        await waitFor(() => cardOf('FT live renamed') === null, 3000));
-
-    const moved = service._store.items(testUid).find(item => item.title === 'FT standup (moved)');
-    const movedRid = moved?.key.split('\n')[1] ?? '';
-    if (movedRid) {
-        await eds.removeEvent(testUid, standup, movedRid);
-        const day1 = [dayAt(1, 9).to_unix(), dayAt(1, 11, 30).to_unix()];
-        check('calendar: removing the moved occurrence leaves none that day (removal keys match)',
-            await waitFor(() => shownOccurrences(service, 'FT standup (moved)').length === 0 &&
-                !shownOccurrences(service, 'FT standup').some(o => day1.includes(o.start)), 3000),
-            `rid=${movedRid}`);
-    } else {
-        check('calendar: the moved occurrence has a recurrence id', false);
-    }
-
-    const secondUid = await eds.addCalendar('Froonty test calendar 2', 'rgb(46,194,126)');
-    await eds.create(secondUid, vevent([`UID:${uidOf('second')}`, 'SUMMARY:FT second',
-        `DTSTART:${icsTime(dayAt(0, 20))}`, `DTEND:${icsTime(dayAt(0, 21))}`]));
-    check('calendar: a calendar added elsewhere shows with its events, coloured from rgb()',
-        await waitFor(() => cardOf('FT second')?.entry.calendar.color === '#2ec27e', 5000),
-        `${cardOf('FT second')?.entry.calendar.color}`);
-    const views = service.viewCount;
-    settings().set_strv('calendar-hidden-sources', [secondUid]);
-    await sleep(SETTLE_MS);
-    check('calendar: hidden in Froonty\'s settings: gone, its view stopped',
-        cardOf('FT second') === null && service.viewCount === views - 1, `${views} -> ${service.viewCount}`);
-    settings().reset('calendar-hidden-sources');
-    check('calendar: shown again: back', await waitFor(() => cardOf('FT second') !== null, 3000));
-    await eds.setSelected(secondUid, false);
-    check('calendar: unticked in GNOME\'s calendars: gone (GNOME\'s rule)',
-        await waitFor(() => cardOf('FT second') === null && !service.calendars.some(c => c.uid === secondUid), 3000));
-    await eds.setSelected(secondUid, true);
-    check('calendar: ticked again: back', await waitFor(() => cardOf('FT second') !== null, 3000));
-
-    // ------------------------------------------------ navigation
-    const label = () => view.grid.monthButton.label;
-    const thisMonth = label();
-    await clickActor(view.grid.nextButton);
-    await waitFor(() => viewsComplete(service));
-    await sleep(SETTLE_MS);
-    const nextGrid = service._grid();
-    const standupsNext = shownOccurrences(service, 'FT standup').filter(o => o.start >= nextGrid.start && o.start < nextGrid.end);
-    const expectedNextMonth = [0, 3, 4].map(n => dayAt(n, 9).to_unix()).filter(t => t >= nextGrid.start && t < nextGrid.end);
-    check('calendar: › shows the next month, with new views over its weeks',
-        label() !== thisMonth && service.shownMonth.m === (today.get_month() % 12) + 1 &&
-        service.viewCount === service.calendars.length &&
-        JSON.stringify(standupsNext.map(o => o.start).sort()) === JSON.stringify(expectedNextMonth.sort()),
-        `${thisMonth} -> ${label()} views=${service.viewCount}/${service.calendars.length}`);
-    await clickActor(view.grid.monthButton);
-    await sleep(SETTLE_MS);
-    check('calendar: the month\'s name goes back to today',
-        label() === thisMonth && JSON.stringify(service.selected) === JSON.stringify(todayDate));
-    await calendarSettled(service);
-
-    const switchTo = async granularity => {
-        await clickActor(view._switchButtons.get(granularity));
-        await sleep(SETTLE_MS);
-    };
-    await switchTo('day');
-    const dayTitles = calendarCards().map(c => c.entry.item.title);
-    check('calendar: Day lists only the selected day',
-        service.granularity === 'day' && s.get_string('calendar-granularity') === 'day' &&
-        dayTitles.includes('FT all-day') && !dayTitles.includes('FT standup (moved)') &&
-        calendarCards().every(c => JSON.stringify(c.date) === JSON.stringify(todayDate)),
-        dayTitles.join(', '));
-    await switchTo('week');
-    const shaded = view.grid.cells.filter(c => c.has_style_class_name('froonty-calendar-day-in-span'));
-    const row = Math.floor(view.grid.cells.indexOf(todayCell) / 7);
-    check('calendar: Week shades the selected row',
-        shaded.length === 7 && shaded.every(c => Math.floor(view.grid.cells.indexOf(c) / 7) === row));
-    await switchTo('month');
-    const inMonth = view.grid.cells.filter(c => !c.has_style_class_name('froonty-calendar-day-other-month'));
-    check('calendar: Month shades every day of the month',
-        inMonth.every(c => c.has_style_class_name('froonty-calendar-day-in-span')) &&
-        view.grid.cells.filter(c => c.has_style_class_name('froonty-calendar-day-in-span')).length === inMonth.length);
-    const other = view.grid.cells.find(c => c.has_style_class_name('froonty-calendar-day-other-month'));
-    const otherDate = other?.date;
-    await clickActor(other);
-    await sleep(SETTLE_MS);
-    check('calendar: a day of another month shows that month',
-        otherDate && service.shownMonth.m === otherDate.m && service.selected.d === otherDate.d);
-    await clickActor(view.grid.monthButton);
-    await sleep(SETTLE_MS);
-    await calendarSettled(service);
-
-    view.grid.previousButton.grab_key_focus();
-    await pressKeys(Clutter.KEY_Tab);
-    const afterOne = global.stage.key_focus;
-    await pressKeys(Clutter.KEY_Tab);
-    const afterTwo = global.stage.key_focus;
-    await pressKeys(Clutter.KEY_Tab);
-    const firstCell = global.stage.key_focus;
-    const firstDate = firstCell?.date ? {...firstCell.date} : null;
-    await pressKeys(Clutter.KEY_Return);
-    await sleep(SETTLE_MS);
-    check('calendar: Tab goes ‹, month, ›, then the days; Enter picks a day',
-        afterOne === view.grid.monthButton && afterTwo === view.grid.nextButton &&
-        view.grid.cells.includes(firstCell) &&
-        JSON.stringify(service.selected) === JSON.stringify(firstDate),
-        `${afterOne} ${afterTwo} ${firstCell} ${JSON.stringify(firstDate)} selected ${JSON.stringify(service.selected)}`);
-    await clickActor(view.grid.monthButton);
-    await sleep(SETTLE_MS);
-    await calendarSettled(service);
-
-    const treeAfter = new Map();
-    for (const root of treeRoots)
-        for (const [path, mtime] of await fileTree(root))
-            treeAfter.set(path, mtime);
-    // The test's own calendars and events are expected; nothing else may change.
-    const changedFiles = [...new Set([...treeBefore.keys(), ...treeAfter.keys()])]
-        .filter(path => treeBefore.get(path) !== treeAfter.get(path))
-        .filter(path => !path.includes(testUid) && !path.includes(secondUid) && !path.includes('/calendar/system/'));
-    check('calendar: Froonty wrote nothing to EDS (browsing, switching, hiding)',
-        changedFiles.length === 0, changedFiles.join(', '));
-
-    // ------------------------------------------------ links
-    const google = detectProvider({collectionBackend: 'google'});
-    const realDetect = service._detectProvider;
-    const opened = [];
-    service._detectProvider = info => info.uid === testUid ? google : realDetect(info);
-    service.openUri = url => opened.push(url);
-    service.today();
-    await sleep(SETTLE_MS);
-    const nextEntryCard = cardOf('FT next');
-    const nextDay = nextEntryCard?.date;
-    const dayUrl = d => `https://calendar.google.com/calendar/r/day/${d.y}/${d.m}/${d.d}`;
-    if (nextEntryCard) {
-        await revealCard(nextEntryCard);
-        await clickActor(nextEntryCard.actor);
-    }
-    await sleep(animationWait());
-    check('calendar: a card opens its day in the web calendar, after closing the island',
-        nextEntryCard?.clickable && !island().expanded && opened.length === 1 && opened[0] === dayUrl(nextDay),
-        `${opened} expanded=${island().expanded}`);
-    await openCalendarTab();
-    await sleep(SETTLE_MS);
-    await screenshotTop(outDir, 'calendar-links', 420);
-    const pillButton = view.providerButtons?.[0];
-    if (pillButton)
-        await clickActor(pillButton);
-    await sleep(animationWait());
-    check('calendar: the "Google" button opens the selected day',
-        pillButton && opened.length === 2 && opened[1] === dayUrl(todayDate) && !island().expanded,
-        `${opened}`);
-    service._detectProvider = realDetect;
-    delete service.openUri;
-
-    // ------------------------------------------------ collapsed
-    // The views stay, paused: no EDS call on collapse or reopen
-    // (ClientView.start/stop are synchronous D-Bus calls).
-    await openCalendarTab();
-    await calendarSettled(service);
-    const edsViews = () => [...service._views.values()].map(entry => entry.view).filter(Boolean);
-    const before = edsViews();
-    const running = before.filter(edsView => edsView.clientView.is_running()).length;
-    island().collapse();
-    await sleep(animationWait());
-    const scheduler = service._adapter.scheduler;
-    check('calendar: collapsed, the EDS views stay, running and paused',
-        before.length === service.calendars.length && running === before.length &&
-        edsViews().length === before.length && edsViews().every((edsView, i) => edsView === before[i]) &&
-        before.every(edsView => !edsView.released && edsView.clientView.is_running()) && scheduler.paused,
-        `views=${edsViews().length}/${before.length} running before=${running} paused=${scheduler.paused}`);
-    let changes = 0;
-    const changedId = service.connect('changed', () => changes++);
-    await eds.create(testUid, vevent([`UID:${uidOf('hidden')}`, 'SUMMARY:FT while hidden',
-        `DTSTART:${icsTime(dayAt(0, 21))}`, `DTEND:${icsTime(dayAt(0, 22))}`]));
-    await sleep(1000);
-    service.disconnect(changedId);
-    const queued = before.some(edsView => edsView._pendingAdds.size > 0);
-    check('calendar: an event added while collapsed wakes nothing and waits, unexpanded',
-        changes === 0 && queued && shownOccurrences(service, 'FT while hidden').length === 0 && !scheduler.pending,
-        `${changes} changes, queued=${queued}`);
-    await openCalendarTab();
-    check('calendar: reopened, it is there, from the same views',
-        await waitFor(() => cardOf('FT while hidden') !== null, 3000) &&
-        edsViews().every((edsView, i) => edsView === before[i]) && !scheduler.paused);
-    const oldClientViews = before.map(edsView => edsView.clientView);
-    await clickActor(view.grid.nextButton);
-    await calendarSettled(service);
-    // is_running() is the ClientView's own flag, which stop() clears.
-    check('calendar: another month: new views; the old ones let go without a stop() call',
-        before.every(edsView => edsView.released && edsView.clientView === null) &&
-        oldClientViews.every(clientView => clientView.is_running()) &&
-        edsViews().every(edsView => !before.includes(edsView)) && edsViews().length === before.length,
-        `${edsViews().length} views`);
-    await clickActor(view.grid.monthButton);
-    await calendarSettled(service);
-
-    // ------------------------------------------------ hint in the hub
-    const feature = calendarEntry().feature;
-    const create = feature.createService;
-    feature.createService = ctx => {
-        const fresh = create(ctx);
-        fresh._loadEds = async () => ({status: 'missing'});
-        return fresh;
-    };
-    try {
-        s.set_boolean('calendar-enabled', false);
-        await sleep(SETTLE_MS);
-        s.set_boolean('calendar-enabled', true);
-        await sleep(SETTLE_MS);
-        await openCalendarTab();
-        await sleep(SETTLE_MS);
-        view = calendarEntry()?.view;
-        check('calendar: in the hub, missing bindings show the hint',
-            calendarEntry()?.service.state === 'missing' && view?._hint.visible,
-            calendarEntry()?.service.state);
-        await screenshotTop(outDir, 'calendar-hint', 420);
-    } finally {
-        feature.createService = create;
-    }
-    s.set_boolean('calendar-enabled', false);
-    await sleep(SETTLE_MS);
-    s.reset('calendar-enabled');
-    await sleep(SETTLE_MS);
-    await openCalendarTab();
-    service = calendarEntry()?.service;
-    check('calendar: with them, the events are back',
-        await waitFor(() => cardOf('FT now') !== null || cardOf('FT next') !== null, 5000));
-    island().collapse();
-    await sleep(animationWait());
-}
-
-// ---------------------------------------------------------------- calendar load
-//
-// A large calendar over the real EDS (calendar-1, calendar-2): 50 daily or
-// weekday series begun between 2016 and 2023, a minutely series, an
-// hourly one since 2024, and 120 events in a Windows-named zone that the
-// calendar knows and libical does not. Every expansion turn stays under a
-// frame, and every event shows where it should. Written by the test
-// (TestEds), removed by testCalendar's clean-up.
-async function testCalendarLoad(eds, libs) {
-    const {ICalGLib} = libs;
-    if (island()?.expanded) {
-        island().collapse();
-        await sleep(animationWait());
-    }
-    const service = calendarEntry()?.service;
-    if (service?.state !== 'ready') {
-        check('calendar load: the service is ready', false, service?.state);
-        return;
-    }
-    const tz = service.timeZone;
-    const hostTzid = tz.get_identifier();
-    const grid = service._grid();
-    const days = Math.round((grid.end - grid.start) / 86400);
-    const now = GLib.DateTime.new_now(tz);
-    const stamp = `${Date.now()}`;
-    const uid = await eds.addCalendar('Froonty test calendar 3', '#9141ac');
-    const pacific = ICalGLib.Timezone.new();
-    pacific.set_component(ICalGLib.Component.new_from_string(PACIFIC_VTIMEZONE));
-    await eds.addZone(uid, pacific);
-
-    const pad = n => String(n).padStart(2, '0');
-    for (let i = 0; i < 50; i++) {
-        const start = `${2016 + (i % 8)}0104T${pad(8 + (i % 10))}0000`;
-        const end = `${2016 + (i % 8)}0104T${pad(8 + (i % 10))}1500`;
-        await eds.create(uid, vevent([`UID:froonty-test-load-${stamp}-d${i}`, `SUMMARY:FT load ${i}`,
-            `DTSTART;TZID=${hostTzid}:${start}`, `DTEND;TZID=${hostTzid}:${end}`,
-            i % 2 ? 'RRULE:FREQ=DAILY' : 'RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR']));
-    }
-    const minuteStart = GLib.DateTime.new_from_unix_utc(grid.start + 86400 + 9 * 3600);
-    await eds.create(uid, vevent([`UID:froonty-test-load-${stamp}-minutely`, 'SUMMARY:FT load minutely',
-        `DTSTART:${icsTime(minuteStart)}`, `DTEND:${icsTime(minuteStart.add_minutes(1))}`, 'RRULE:FREQ=MINUTELY']));
-    await eds.create(uid, vevent([`UID:froonty-test-load-${stamp}-hourly`, 'SUMMARY:FT load hourly',
-        'DTSTART:20240101T090000Z', 'DTEND:20240101T091500Z', 'RRULE:FREQ=HOURLY']));
-    const losAngeles = GLib.TimeZone.new_identifier('America/Los_Angeles');
-    const pacificDays = Array.from({length: 120}, (_, i) => now.add_days(i % 5));
-    for (const [i, day] of pacificDays.entries()) {
-        await eds.create(uid, vevent([`UID:froonty-test-load-${stamp}-p${i}`, `SUMMARY:FT load pacific ${i}`,
-            `DTSTART;TZID=Pacific Standard Time:${icsDate(day)}T140000`,
-            `DTEND;TZID=Pacific Standard Time:${icsDate(day)}T150000`]));
-    }
-
-    const scheduler = service._adapter.scheduler;
-    scheduler.turns = 0;
-    scheduler.longestTurn = 0;
-    // The main loop's longest stall meanwhile, whatever ran (a note).
-    let last = GLib.get_monotonic_time();
-    let stall = 0;
-    const probe = GLib.timeout_add(GLib.PRIORITY_HIGH, 2, () => {
-        const t = GLib.get_monotonic_time();
-        stall = Math.max(stall, t - last);
-        last = t;
-        return GLib.SOURCE_CONTINUE;
-    });
-    // The tab's redraws meanwhile: how many, and the longest (a note).
-    const tabView = calendarEntry().view;
-    const refresh = tabView._refresh;
-    const redraws = [];
-    tabView._refresh = function (...args) {
-        const t = GLib.get_monotonic_time();
-        refresh.apply(this, args);
-        redraws.push(GLib.get_monotonic_time() - t);
-    };
-    const started = GLib.get_monotonic_time();
-    await openCalendarTab();
-    const pacificRight = () => {
-        const starts = new Map();
-        for (const {item, occurrence} of service._store.occurrences(service.calendars.map(c => c.uid))) {
-            if (item.title?.startsWith('FT load pacific '))
-                starts.set(item.title, occurrence.start);
-        }
-        return pacificDays.filter((day, i) => starts.get(`FT load pacific ${i}`) ===
-            GLib.DateTime.new(losAngeles, day.get_year(), day.get_month(), day.get_day_of_month(), 14, 0, 0).to_unix()).length;
-    };
-    const loaded = await waitFor(() => service.settled && service.calendars.some(c => c.uid === uid) &&
-        shownOccurrences(service, 'FT load minutely').length > 0 && pacificRight() === 120, 30000);
-    const seconds = (GLib.get_monotonic_time() - started) / 1e6;
-    GLib.source_remove(probe);
-    delete tabView._refresh;
-
-    const longest = scheduler.longestTurn / 1000;
-    const longestRedraw = Math.max(0, ...redraws) / 1000;
-    check('calendar load: 50 long-running series, a minutely and an hourly one: every expansion turn under a frame',
-        loaded && longest < 16,
-        `note: ${scheduler.turns} turns, longest ${longest.toFixed(1)} ms; the main loop's longest stall ` +
-        `${(stall / 1000).toFixed(1)} ms; ${redraws.length} redraws of the tab, longest ` +
-        `${longestRedraw.toFixed(1)} ms; loaded in ${seconds.toFixed(1)} s`);
-    // service.js LOADING_REDRAW_MS, plus the visit's own and completions.
-    check('calendar load: the tab redraws at most 5 times a second while the calendar loads',
-        redraws.length <= Math.ceil(seconds * 5) + 6, `${redraws.length} redraws in ${seconds.toFixed(1)} s`);
-    const counts = Array.from({length: 50}, (_, i) => shownOccurrences(service, `FT load ${i}`).length);
-    const weekdays = (() => {
-        let n = 0;
-        for (let t = grid.start + 43200; t < grid.end; t += 86400)
-            n += GLib.DateTime.new_from_unix_utc(t).to_timezone(tz).get_day_of_week() <= 5 ? 1 : 0;
-        return n;
-    })();
-    check('calendar load: each daily series on every day of the grid, each weekday one on its weekdays',
-        counts.every((n, i) => n === (i % 2 ? days : weekdays)), `${counts} (days ${days}, weekdays ${weekdays})`);
-    const minutely = shownOccurrences(service, 'FT load minutely');
-    const hourly = shownOccurrences(service, 'FT load hourly');
-    check('calendar load: the minutely series from its first minute, the hourly one from the grid\'s start, 1000 each',
-        minutely.length === 1000 && minutely[0].start === minuteStart.to_unix() &&
-        minutely[999].start === minuteStart.to_unix() + 999 * 60 &&
-        hourly.length === 1000 && hourly[0].start >= grid.start - 3600 && hourly[0].start <= grid.start + 3600,
-        `${minutely.length} from ${minutely[0]?.start} (${minuteStart.to_unix()}), ${hourly.length} from ${hourly[0]?.start}`);
-    const zones = service._adapter._clients.get(uid)?.zones;
-    check('calendar load: 120 events in a zone libical does not know: all at 14:00 Pacific; the zone fetched once, kept',
-        pacificRight() === 120 && Boolean(zones?.get('Pacific Standard Time')) && zones.size === 1,
-        `${pacificRight()} of 120`);
-    island().collapse();
-    await sleep(animationWait());
-}
-
-// Disable while the tab loads, as a screen lock can: nothing is left
-// running, no error is logged (run.sh greps the Shell log).
-async function testCalendarLifecycle() {
-    settings().set_string('hub-last-tab', 'calendar');
-    const failures = [];
-    for (let i = 0; i < 5; i++) {
-        await setExtensionEnabled(false);
-        await setExtensionEnabled(true);
-        const service = calendarEntry()?.service;
-        island().expand();
-        await sleep(i * 20);
-        await setExtensionEnabled(false);
-        await sleep(i * 50);
-        if (!service || service.viewCount !== 0 || service.clientCount !== 0 || service.registry !== null ||
-            service._changedId !== 0 || service._quietId !== 0 || service._adapter?.scheduler.pending)
-            failures.push(`#${i}: views=${service?.viewCount} clients=${service?.clientCount} registry=${service?.registry}`);
-    }
-    await setExtensionEnabled(true);
-    check('calendar: disabled while loading (5×): no view, connection or registry left', failures.length === 0,
-        failures.join('; '));
-    // Left as the last tab: testLifecycle's cycles (some mid-expand) then
-    // run with the Calendar tab.
 }
 
 // ---------------------------------------------------------------- Claude attention bar
@@ -8038,7 +6228,7 @@ async function testMedia(outDir) {
     try {
         // H1
         const names = island()._hub._tabColumn.get_children().map(b => b.accessible_name);
-        const published = names.filter(name => ['Calendar', 'Notifications', 'Notes'].includes(name));
+        const published = names.filter(name => ['Notes'].includes(name));
         check('media: the Media tab is there by default, after the published tabs',
             s.get_boolean('media-enabled') && tabButton('media')?.accessible_name === 'Media' &&
             names.indexOf('Media') === published.length, names.join(','));
@@ -9185,16 +7375,18 @@ async function testBreak(outDir) {
 }
 
 // The public build (FROONTY_EXTENSION_DIR=an unzipped `make pack`, run
-// with FROONTY_TEST_ONLY=testPublicBuild): its three tabs and two panic
-// buttons only, the header's date pill, each tab opens, and
+// with FROONTY_TEST_ONLY=testPublicBuild): its one tab, Notes, and two
+// panic buttons only, the header's date pill, the tab opens, and
 // enable/disable leaves the Shell as it was.
 async function testPublicBuild() {
     const hub = island()._hub;
-    const names = hub._tabColumn.get_children()
-        .map(b => b.accessible_name.replace(/, unread notifications$/, ''));
-    check('public build: the tabs are Calendar, Notifications and Notes (no Clock tab)',
-        names.join(',') === 'Calendar,Notifications,Notes' &&
-        !GLib.file_test(`${extension().path}/features/clock`, GLib.FileTest.EXISTS), names.join(','));
+    const names = [...hub._entries.values()].map(e => e.feature.title);
+    const gone = ['clock', 'calendar', 'notifications']
+        .filter(name => GLib.file_test(`${extension().path}/features/${name}`, GLib.FileTest.EXISTS));
+    check('public build: the one tab is Notes (no Clock, Calendar or Notifications tab)',
+        names.join(',') === 'Notes' && gone.length === 0, `${names.join(',')} ${gone.join(',')}`);
+    // With one tab on, the tab column is hidden (testHub).
+    check('public build: a single tab, so no tab column', !hub._tabColumn.visible);
     check('public build: the panic bar has the two mute buttons',
         hub._panicBar.actor.get_n_children() === 2, `${hub._panicBar.actor.get_n_children()}`);
     check('public build: no bar under the pill', island()._pillBars.size === 0);
@@ -9204,22 +7396,17 @@ async function testPublicBuild() {
     check('public build: the header\'s date pill shows the date and the time',
         hub.calendarButton?.mapped && hub._header._dateLabel.text === now.date &&
         hub._header._timeLabel.text === now.time, `${hub._header._dateLabel?.text} ${hub._header._timeLabel?.text}`);
-    const opened = [];
-    for (const id of ['calendar', 'notifications', 'notes']) {
-        hub.select(id);
-        // eslint-disable-next-line no-await-in-loop
-        await sleep(SETTLE_MS);
-        if (hub.activeFeature?.id === id && hub._entries.get(id)?.view)
-            opened.push(id);
-    }
-    check('public build: every tab opens', opened.length === 3, opened.join(','));
-    // The icons the kept tabs load from their own folders.
+    hub.select('notes');
+    await sleep(SETTLE_MS);
+    check('public build: the Notes tab opens',
+        hub.activeFeature?.id === 'notes' && Boolean(hub._entries.get('notes')?.view?.actor.mapped),
+        hub.activeFeature?.id);
+    // The icons the kept tab loads from its own folder.
     const notesView = hub._entries.get('notes')?.view;
-    const icons = [hub._entries.get('calendar')?.feature.icon, notesView?._foldUp, notesView?._foldDown]
+    const icons = [notesView?._foldUp, notesView?._foldDown]
         .map(icon => icon?.get_file().get_path() ?? 'none');
     const missing = icons.filter(path => !GLib.file_test(path, GLib.FileTest.EXISTS));
     check('public build: the bundled icons are there', missing.length === 0, missing.join(', '));
-    hub.select('calendar');
     island().collapse();
     await sleep(animationWait());
 
@@ -9266,7 +7453,7 @@ async function testPublicBuild() {
 
 // FROONTY_TEST_ONLY=testA,testB runs only those checks (while debugging).
 const ONLY_TESTS = {
-    testClaudeAttention, testClaudeAttentionWindows, testNotifications, testCalendar,
+    testClaudeAttention, testClaudeAttentionWindows,
     testNotes, testMedia, testBreak, testHub, testLifecycle, testPublicBuild,
     testResizeGrip, testMediaPill, testMediaExtras, testMediaPanic, testMediaChoiceSurvivesLock,
     testPointer, testHubLayout, testDatePill, testCalendarMenu, testEmptyHub,
@@ -9315,8 +7502,6 @@ export async function runAll(outDir) {
         await testSettingsButton(outDir);
         await testDatePill(outDir);
         await testCalendarMenu(outDir);
-        await testNotifications(outDir);
-        await testNotificationSafeguards(outDir);
         await testClaudeAttention(outDir);
         await testClaudeAttentionWindows(outDir);
         await testClaudeAttentionIsland();
@@ -9333,7 +7518,6 @@ export async function runAll(outDir) {
         await testWriting(outDir);
         await testWritingFixes(outDir);
         await testKillProcess(outDir);
-        await testCalendar(outDir);
         await testBreak(outDir);
         await testSettings(outDir);
         await testCoversPanelClock(outDir);

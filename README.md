@@ -7,8 +7,8 @@ facilities GNOME Shell already has. It does not reimplement them.
 Status: **0.5.0-rc0**, a release candidate. See [CHANGELOG.md](CHANGELOG.md).
 
 - The published extension package (`make pack`, extensions.gnome.org)
-  has the first submission's tabs only: Calendar, Notifications and
-  Notes, with the mute panic buttons. Media, Claude, Btop, Clipboard,
+  has the first submission's tab only, Notes, with the date pill and the
+  mute panic buttons. Media, Claude, Btop, Clipboard,
   Kill Process and Break follow in later versions; ZeroTier and Writing
   stay working-tree only. `make install` includes them all.
 - The polling timers are the Btop (system monitor) and Kill Process
@@ -72,45 +72,6 @@ feature has a design note in [docs/features/](docs/features/).
   - The camera button (**Block camera for apps that ask GNOME**) is switched
     off for now; its code is kept
     ([details](docs/features/panic-buttons.md#4-block-camera-for-apps-that-ask-gnome)).
-- **Calendar** tab: the events of every calendar GNOME knows, read-only
-  and live: Google, Microsoft 365, Nextcloud and other accounts in
-  Settings → Online Accounts, and calendars added in GNOME Calendar or
-  Evolution (iCloud, any CalDAV or ICS address).
-  - A month grid with GNOME's week start, week numbers and days off,
-    and up to three calendar-coloured dots per day; a Day / Week / Month
-    switch; the events as cards with "Now" and "Next", repeating events
-    as GNOME expands them.
-  - A click on an event opens its day in the web calendar it comes from
-    (Google, Outlook; iCloud, Nextcloud and Yahoo open their calendar);
-    buttons below the grid open each one on the selected day.
-  - Froonty never adds, changes or removes an event. It reads Evolution
-    Data Server once the tab has been opened, with no polling; while the
-    tab is not on screen it only keeps what EDS sends. A large calendar
-    is expanded a few milliseconds at a time, so it never stalls the
-    desktop.
-  - **Needs `gir1.2-ecal-2.0`** (`sudo apt install gir1.2-ecal-2.0`);
-    without it the tab says so, and it starts off when it is missing on
-    the first start. Microsoft 365 and Exchange calendars also need
-    `evolution-ews-core` (EDS's backends, without the Evolution client).
-    See [docs/features/calendar.md](docs/features/calendar.md).
-- **Notifications** tab: GNOME's own notifications, urgent ones first,
-  then newest first, each with its app, how long ago, its title, its
-  body and up to three action buttons. Froonty keeps no copy.
-  - Click one to open it, as in GNOME's list (the island closes). As in
-    GNOME's list, a click on one whose app gave it no "open" action opens
-    the app and removes all of that app's notifications (resident ones
-    stay). × or Delete dismisses one: a double click on × or a held
-    Delete dismisses only one. "Clear all" asks first ("Clear N?"; from
-    the keyboard, the focus goes to "Keep them"), and keeps any its app
-    updated meanwhile.
-  - The tab carries GNOME's unread dot. Opening it on purpose marks what
-    it lists as seen, as GNOME's list does, except those still waiting
-    for their banner. Opening the island by hover alone does not, nor
-    does typing on into your window afterwards (a modifier key, or any
-    key before Tab moves the focus into the island).
-  - A Do Not Disturb toggle, GNOME's own. Nothing is watched while the
-    tab is not on screen, and nothing is ever removed without a click.
-    See [docs/features/notifications.md](docs/features/notifications.md).
 - **Media** tab: what music and video players report (MPRIS), with play,
   pause, skip and seek, the cover (tinting the island's accent), and a
   choice of player ("Automatic" picks the playing one).
@@ -239,8 +200,6 @@ Each tab can be turned off on its own page in Settings.
 | Tab or button | On at first start | Install (Ubuntu) | Network |
 |---|---|---|---|
 | Island, GNOME's calendar menu | yes | nothing | none |
-| Calendar | yes (off if `gir1.2-ecal-2.0` is missing) | `gir1.2-ecal-2.0` | none by Froonty; GNOME syncs your accounts |
-| Notifications | yes | nothing | none |
 | Notes | yes | nothing | none |
 | Panic: mute microphone, mute sound | yes | nothing | none |
 
@@ -250,17 +209,6 @@ Each tab can be turned off on its own page in Settings.
   when it closes), adds `Super+Alt+I` and a Ctrl+Alt+Tab entry, and
   shows a top bar icon while the island is hidden. The date pill in its
   top row opens GNOME's own calendar and notification menu.
-- **Calendar:** `sudo apt install gir1.2-ecal-2.0` (Evolution Data
-  Server's introspection data); without it the tab says what to install.
-  It shows the calendars GNOME already knows: add them in Settings →
-  Online Accounts (Google, Nextcloud; Microsoft 365 and Exchange also
-  need `evolution-ews-core`), or as a CalDAV or ICS calendar in GNOME
-  Calendar or Evolution (iCloud: with an app-specific password). It reads
-  events and never changes a calendar. A click opens an event's day in
-  the web calendar it comes from.
-- **Notifications:** lists the notifications GNOME shows, only while the
-  tab is on screen. It opens or dismisses one only when you click it, and
-  keeps no copy.
 - **Notes:** Markdown files in `~/.local/share/froonty/notes`, or a folder
   you choose in Settings → Notes, plus a hidden `.froonty.json` (order and
   colours) and `.froonty-labels.json` (labels) there. Deleted notes go to
@@ -300,9 +248,6 @@ froonty@catalin/             the extension (this directory is what gets installe
 │   ├── hoverOpen.js         opens the island after hovering it
 │   └── panelLauncher.js     top bar icon while the island is not shown
 ├── features/                hub tabs, one folder each (registry.js lists them)
-│   ├── calendar/            Calendar tab: Evolution Data Server (eds.js),
-│   │                        month grid, agenda, provider links
-│   ├── notifications/       GNOME's own notifications (through ctx.notifications)
 │   ├── media/               MPRIS players: watcher, service, tab, pill music,
 │   │                        lyrics, up next
 │   ├── notes/               Markdown notes: store, service, tabs, editor,
@@ -324,7 +269,7 @@ froonty@catalin/             the extension (this directory is what gets installe
 ├── services/clock.js        clock ticks from the top bar's GnomeDesktop.WallClock
 └── shell/                   adapters over GNOME Shell APIs
     ├── dateMenu.js          the clock, GNOME's calendar and notification menu
-    ├── messageTray.js       GNOME's notifications for the Notifications tab
+    ├── messageTray.js       GNOME's notifications for the Claude attention bar
     ├── notificationStore.js the only code reading or writing them (Shell-free)
     ├── breakManager.js      Shell internals: GNOME's break engine (Main.breakManager)
     ├── breakEngine.js       a wrapper over it (Shell-free, unit-tested)
@@ -345,7 +290,7 @@ docs/local/                  local notes and build rules (not in git)
 
 ```sh
 make install    # compiles schemas, copies into ~/.local/share/gnome-shell/extensions
-make pack       # builds the public archive: the first submission's tabs only
+make pack       # builds the public archive: the first submission's tab only
 ```
 
 To try Froonty without installing it or touching your session, `make
@@ -428,8 +373,6 @@ its tabs:
 - **Appearance:** size (the expanded size is for when no tab is on),
   animation.
 - **Panic buttons:** which buttons, and their order.
-- **Calendar:** enable, Online Accounts, which calendars, size.
-- **Notifications:** enable, size.
 - **Media:** enable, music on the island, players followed, lyrics, up
   next, cover art from the internet, size.
 - **Notes:** enable, folder, size, All notes.
@@ -458,13 +401,6 @@ The keys behind it:
 | `corner-radius` | 14 | Clamped to half the height by St |
 | `animation-duration` | 250 ms | GNOME's enable-animations setting still applies |
 | `panic-buttons` | microphone, sound | Panic buttons in bar order, at most 5 |
-| `calendar-enabled` | `true` | Show the Calendar tab; turned off once, on the first start, when `gir1.2-ecal-2.0` is missing |
-| `calendar-hidden-sources` | `[]` | Evolution Data Server calendar ids hidden in the tab |
-| `calendar-granularity` | `week` | `day`, `week` or `month`; chosen in the tab |
-| `calendar-width` / `calendar-height` | 620 / 380 | Logical px, while the Calendar tab is shown |
-| `calendar-eds-checked` | `false` | The first-start check for `gir1.2-ecal-2.0` ran (internal) |
-| `notifications-enabled` | `true` | Show the Notifications tab (GNOME's own notifications) |
-| `notifications-width` / `notifications-height` | 400 / 440 | Logical px, while the Notifications tab is shown |
 | `media-enabled` | `true` | Show the Media tab |
 | `media-show-in-pill` / `media-track-notice` | `true` | Cover and bars beside the time while music plays; a new song's title for 3 s |
 | `media-include-other-players` | `true` | Follow browsers and video players automatically (off: only when chosen) |
@@ -496,7 +432,7 @@ The keys behind it:
 | `posture-buildup`, `-step-minutes`, `-ceiling-minutes` | `true`, 15, 240 | The optional build-up |
 | `posture-reminders`, `posture-sit-minutes`, `posture-stand-minutes` | `true`, 45, 15 | Switch reminders |
 | `break-gnome-saved`, `posture-buildup-target` | | What Froonty changed in GNOME; the built-up target (internal) |
-| `hub-last-tab` | `calendar` | The tab the island opens on (internal); when it is gone or off, the first tab that is on |
+| `hub-last-tab` | `notes` | The tab the island opens on (internal); when it is gone or off, the first tab that is on |
 | `notes-last` | | Remembered selection (internal) |
 
 ## Working-tree only (`make install`)

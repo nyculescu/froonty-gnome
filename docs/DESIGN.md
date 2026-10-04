@@ -166,9 +166,9 @@ resizes. Froonty's CSS was written from scratch.
 | Clock | Own `GLib.timeout_add` chain plus logind `PrepareForSleep` resync | Works | `GnomeDesktop.WallClock`, which is suspend- and timezone-safe | **Discard** and use WallClock |
 | Expand/collapse | Hover with 180/300 ms delays; `ease()` width/height; `EASE_OUT_BACK` | Works | Clutter `ease()`; `GrabHelper` for menu-like modality | **Adapt.** Click, keyboard, Escape and outside-click like a GNOME menu |
 | Shortcut | `<Super>n` | **Conflicts** with GNOME's `focus-active-notification` (`ui/messageTray.js:779`) | — | Froonty uses `<Super><Alt>i`, free on stock Ubuntu 24.04 |
-| Notifications | `source-added` + `notification-added`; hides `Main.messageTray._bannerBin` (never re-shown in 46); **calls `notification.destroy()` after N s**, which deletes it from GNOME's history | Signals exist; behavior harmful | `Source` `notification-request-banner`, `MessageTray.bannerBlocked`, object-param `Notification` (46 already uses `new Notification({source, title, body})`) | **Rewritten** as the Notifications tab: observe only, never destroy on its own, GNOME's urgency, policy and banners ([features/notifications.md](features/notifications.md)) |
+| Notifications | `source-added` + `notification-added`; hides `Main.messageTray._bannerBin` (never re-shown in 46); **calls `notification.destroy()` after N s**, which deletes it from GNOME's history | Signals exist; behavior harmful | `Source` `notification-request-banner`, `MessageTray.bannerBlocked`, object-param `Notification` (46 already uses `new Notification({source, title, body})`) | **Discard.** GNOME's own list, through the date pill (§5); Froonty never destroys a notification on its own, and leaves urgency, policy and banners to GNOME. (A Notifications tab over GNOME's list existed in 0.5.0-rc0 and was removed as a duplicate, §9) |
 | MPRIS | Own synchronous proxies with name watching | Works, but blocks the compositor thread at startup | `ui/mpris.js` exports `MprisPlayer` | **Done:** own async proxies (`features/media/mpris.js`). `MprisPlayer` was not used: no teardown, no position or seeking, placeholder texts ([features/media.md](features/media.md#code)) |
-| Calendar | Own month grid; CalendarServer D-Bus; Google Tasks over REST with OAuth | Heavy; duplicates GNOME | `DateMenuButton` (the whole menu), `Calendar.Calendar`, `DBusEventSource`; Evolution Data Server (the user's calendars, GNOME Online Accounts) | **Discard** the fetchers. Open GNOME's own menu (§5). The Calendar tab reads EDS read-only through its own bindings (not CalendarServer: one global time range, no calendar or colour); no account, OAuth or network code of Froonty's ([features/calendar.md](features/calendar.md) §B) |
+| Calendar | Own month grid; CalendarServer D-Bus; Google Tasks over REST with OAuth | Heavy; duplicates GNOME | `DateMenuButton` (the whole menu), `Calendar.Calendar`, `DBusEventSource`; Evolution Data Server (the user's calendars, GNOME Online Accounts) | **Discard** the fetchers. Open GNOME's own menu (§5), whose calendar shows the events of the calendars GNOME knows; no account, OAuth or network code of Froonty's. (A Calendar tab over Evolution Data Server existed in 0.5.0-rc0 and was removed as a duplicate, §9) |
 | Weather | Soup + wttr.in, always on, every 30 min | Works | `misc/weather.js` `WeatherClient` (GWeather; same locations as GNOME Weather) | **Discard** the fetcher and reuse `WeatherClient` in Phase 6, off by default |
 | Quick actions | `loginctl`/`systemctl` subprocesses; polls `pactl`, `fuser`, `upower` every 15 s | Spawns processes | `misc/systemActions.js` `getDefault()`; `ui/status/*` | **Discard** the polling; use SystemActions if needed |
 | System metrics | Synchronous `/proc` reads every 1 s while visible, 3 s otherwise, never stopped | Works | Nothing equivalent | **Rewritten** as the Btop tab: async reads, only while its tab is on screen, configurable interval |
@@ -363,8 +363,8 @@ Consequences:
 | `Atk.StateType.EXPANDED` | Accessibility |
 | `Gvc` streams (`change_is_muted`, `notify::is-muted`), through the Shell's mixer | Panic buttons: mute microphone / sound |
 | `Gio.Settings` `org.gnome.desktop.privacy` `disable-camera` (`changed::`, `writable-changed::`): GNOME Settings' Camera Access switch, enforced by xdg-desktop-portal's camera portal only | Panic button: block camera for apps that ask GNOME ([features/panic-buttons.md](features/panic-buttons.md) §4) |
-| `Gio.Settings` `org.gnome.desktop.notifications` `show-banners` (`changed::`, `writable-changed::`; inverted, it is GNOME's Do Not Disturb, the key Quick Settings' toggle is bound to) | Notifications tab: shows Do Not Disturb, and its toggle writes it on a click ([features/notifications.md](features/notifications.md)). The Claude attention bar hides under it (`changed::show-banners`) |
-| `Pango.parse_markup` | Notifications tab: a notification's text without its markup, after GNOME's `fixMarkup` |
+| `Gio.Settings` `org.gnome.desktop.notifications` `show-banners` (`changed::`; inverted, it is GNOME's Do Not Disturb, the key Quick Settings' toggle is bound to) | The Claude attention bar hides under it (`changed::show-banners`; read only) |
+| `Pango.parse_markup` | The Claude attention bar: a notification's text without its markup, after GNOME's `fixMarkup` |
 | `Gio.File` async I/O, `Gio.FileMonitor` | Notes: Markdown files, folder watching; Claude: Claude Code's config file; the attention bar: a directory monitor on its state folder |
 | `Gio.NetworkMonitor` (`network-changed`, `notify::connectivity`, `notify::network-available`) | Claude: "Unknown" while offline, from NetworkManager's own check |
 | `Soup` 3 (`Session.send_and_read_async`) | Claude: livenerf's README and chart from `raw.githubusercontent.com` |
@@ -379,10 +379,6 @@ Consequences:
 | `Soup` 3 (`Session.send_async`, `InputStream.read_bytes_async`) | Media, opt-in only: web covers, lrclib.net |
 | `St.Settings` `enable-animations` | Media: the bars stand still with GNOME's animations off |
 | `Adw` 1.5, `Gtk` 4 | Preferences |
-| `ECal` 2.0, `EDataServer` 1.2, `ICalGLib` 3.0 (Evolution Data Server's bindings, `gir1.2-ecal-2.0`; optional, imported at run time by `features/calendar/eds.js` only): `SourceRegistry`, `SourceRegistryWatcher`, `ECal.Client.connect`/`get_view`/`get_timezone`/`get_objects_for_uid` (async), `ClientView` (its `start` is a synchronous D-Bus call, made once per view; `stop`/`set_flags` are too, and never called, §8), `recur_generate_instances_sync` (CPU only), `ICalGLib.RecurIterator` (CPU only) | Calendar tab: the user's calendars and live events, read-only |
-| `GIRepository` 3.0 `Repository.enumerate_versions` | Calendar tab: whether the EDS bindings are installed, without importing them (GJS remembers a failed import) |
-| `Gio.Settings` `org.gnome.desktop.calendar` (`week-start-day`, `show-weekdate`; read only) | Calendar tab: GNOME's week start and week numbers |
-| `Gio.AppInfo.launch_default_for_uri_async` | Calendar tab: open an event's day in the web calendar |
 | `Meta.IdleMonitor` (the core idle monitor: `add_idle_watch_full` with `UNINHIBITABLE`, `add_user_active_watch`, `remove_watch`, `get_idletime`) | Break tab: when the user was at the computer or away (`features/break/shared.js`) |
 | `Gio.Credentials` (`get_unix_pid()`) | Break tab: tells a screen unlock (same Shell process: GNOME kept counting) from a new login |
 | GNOME's `Gio.Settings` schemas `org.gnome.desktop.break-reminders` (+ `.eyesight`, `.movement`), `org.gnome.desktop.notifications.application` at `…/application/gnome-wellbeing-panel/` (`enable`), `org.gnome.desktop.screen-time-limits` (`daily-limit-enabled`, read only); each looked up before use | Break tab: GNOME's break settings; its notifications off and back ([features/break.md](features/break.md)) |
@@ -399,9 +395,6 @@ Consequences:
 | `GrabHelper` (which uses `Main.pushModal`) | `ui/grabHelper.js` |
 | `EventEmitter`, `connectObject` / `disconnectObject` | `misc/signals.js`, `misc/signalTracker.js` |
 | `Shell.util_translate_time_string` with GNOME Shell's `calendar heading` msgid | `ui/dateMenu.js:175-178` |
-| `Shell.util_translate_time_string` with GNOME Shell's grid msgids (`grid monday` …), `%OB`, `%OB %Y` and `calendar-no-work`; `Shell.util_get_week_start()` (Calendar tab) | `ui/calendar.js` (50.1) |
-| `Shell.AppSystem.lookup_app()` (Online Accounts), `global.create_app_launch_context()` (Calendar tab) | `ui/dateMenu.js` (50.1) does the same |
-| `global.compositor.get_laters()` (`Meta.LaterType.BEFORE_REDRAW`): the Calendar tab's scroll to the selected day, once laid out | `shell/dateMenu.js` uses it too |
 | `global.focus_manager.navigate_from_event` (Tab navigation under a grab, as `PanelMenu.Button` does) | `ui/panelMenu.js` |
 | `Main.panel.addToStatusArea`, `PanelMenu.Button` (top bar icon while the island is hidden) | `ui/panel.js:935`, `ui/panelMenu.js` |
 | `getMixerControl()`: the shared Gvc mixer behind Quick Settings' volume sliders (through `shell/mixer.js`); also the Media tab's volume row | `ui/status/volume.js:24` |
@@ -424,12 +417,11 @@ Consequences:
 | `Main.panel.statusArea.dateMenu.menu` (`isOpen`, signal `open-state-changed`) | Collapse the island whenever GNOME's menu opens (the date pill, Super+V); one modal at a time | `shell/dateMenu.js` `CalendarMenu` |
 | `Main.panel.statusArea.dateMenu._indicator` (`MessagesIndicator`, its `visible`) | Show GNOME's unread-notifications dot on the pill that covers the clock, with GNOME's own rules | `shell/dateMenu.js` `CalendarMenu` |
 | `Main.messageTray.bannerAlignment` / `bannerBlocked` (public setter) | Hold banners back while the expanded island covers their place, as the panel does for an open menu there | `shell/dateMenu.js` `CalendarMenu.holdBanners()` |
-| `Main.messageTray` `getSources()`, signals `source-added` / `source-removed` (`ui/messageTray.js` 697-701, 887-901 in 50.1) | Notifications tab: GNOME's own notifications, followed only while the tab is on screen. The Claude attention bar: the Claude app's (and, if asked for, web browsers') notifications, through a store of its own with a `filter`, so other sources get no handler at all | `shell/messageTray.js`, `shell/notificationStore.js` |
-| `MessageTray.Source`: `notifications`, `title`, `icon`, signals `notification-added` / `notification-removed` (emitted from inside the notification's `destroy`) | Notifications tab: each app's notifications, its name and icon | `shell/notificationStore.js` |
-| `MessageTray.Notification`: `title`, `body`, `use-body-markup`, `gicon`, `datetime`, `urgency`, `acknowledged` (read, and written only on a deliberate act in the tab), `actions[].label`; signals `notify`, `action-added`, `action-removed`; `activate()`, `actions[i].activate()`, `destroy(DISMISSED)` (only on the user's click) | Notifications tab: rows, and the exact calls GNOME's own list makes (`ui/messageList.js` 726-758) | `shell/notificationStore.js` |
-| `Main.messageTray._notificationQueue` (private field, read only: `includes()`) | Notifications tab: never mark seen a notification still waiting for its banner. GNOME's dot counts unseen minus queued, and while banners are held it does not drop seen ones from the queue (`_updateState()` returns first), so one marked seen there would be subtracted twice and a later unseen one would light no dot. Without the field, every listed one is marked seen (that lag comes back) | `shell/messageTray.js` (passed to the store as `waitingForBanner`) |
-| `MessageTray.Urgency` (`CRITICAL`), `MessageTray.NotificationDestroyedReason` (`DISMISSED`) | Notifications tab: urgent first; dismiss as GNOME's close button does | `shell/messageTray.js` (read when a store is made) |
-| `misc/util.js` `fixMarkup`, `misc/dateUtils.js` `formatTimeSpan` | Notifications tab: text and "10 minutes ago" exactly as GNOME's list shows them | `shell/messageTray.js` |
+| `Main.messageTray` `getSources()`, signals `source-added` / `source-removed` (`ui/messageTray.js` 697-701, 887-901 in 50.1) | The Claude attention bar: the Claude app's (and, if asked for, web browsers') notifications, through a store with a `filter`, so other sources get no handler at all | `shell/messageTray.js`, `shell/notificationStore.js` |
+| `MessageTray.Source`: `notifications`, `title`, `icon`, signals `notification-added` / `notification-removed` (emitted from inside the notification's `destroy`) | The attention bar's store: the followed sources' notifications, their name and icon | `shell/notificationStore.js` |
+| `MessageTray.Notification`: `title`, `body`, `use-body-markup`, `gicon`, `datetime`, `urgency`, `acknowledged` (read), `actions[].label`; signals `notify`, `action-added`, `action-removed`; `activate()`, `destroy(DISMISSED)` (only on the user's click on the bar) | The attention bar's entries, and the exact calls GNOME's own list makes (`ui/messageList.js` 726-758). The store's other writers (`acknowledgeAll()`, `activateAction()`, `clear()`) were the Notifications tab's and have no caller now | `shell/notificationStore.js` |
+| `MessageTray.Urgency` (`CRITICAL`), `MessageTray.NotificationDestroyedReason` (`DISMISSED`) | The store: urgent first; dismiss as GNOME's close button does | `shell/messageTray.js` (read when a store is made) |
+| `misc/util.js` `fixMarkup` | The attention bar: text exactly as GNOME's list shows it | `shell/messageTray.js` |
 | `Main.messageTray.visible` (`notify::visible`; true while a banner is on screen, `MessageTray._updateState()`) | Hide the Claude attention bar while a banner shows where it is | `shell/claudeAttention.js` `ClaudeDesktop.busy` |
 | A notification source's `app` (`FdoNotificationDaemonSource` only; the window-attention source has none) | The attention bar follows only the Claude app's source, and web browsers' (`WebBrowser` category); `describe()` gives the app's id | `shell/claudeAttention.js` `notificationFilter()`, `shell/notificationStore.js` |
 
@@ -443,16 +435,16 @@ The message tray's objects are exported, but they are not an extension
 contract either, and they changed between GNOME 45 and 48 (the
 object-param `Notification`; `NotificationMessage` moved from
 `calendar.js` to `messageList.js`, with groups). Only
-`shell/notificationStore.js` reads or writes them; the feature reaches
-them as `ctx.notifications` and never imports `shell/`
-([features/notifications.md](features/notifications.md) §9).
+`shell/notificationStore.js` reads or writes them, for the Claude
+attention bar (`features/claude/attentionHost.js`, local builds only;
+the public package leaves both modules out).
 
 ### 6.4 Settings window (⚙️)
 
 The expanded island has a ⚙️ button in its top-right corner. It opens the
 settings window, a separate window in GNOME Shell's preferences process
 with tabs (General, Appearance, Panic buttons, then one per feature tab
-in the hub's order: Notifications, Notes, Claude, …). `shell/settingsWindow.js`
+in the hub's order: Notes, Media, Claude, …). `shell/settingsWindow.js`
 works around
 three GNOME Shell 46 behaviors found while testing:
 
@@ -537,8 +529,6 @@ Two St/Clutter rules also shaped the island:
 | Actors | 1 strip (+ children), added as chrome | `Island.destroy()` |
 | GObject signal connections | layoutManager ×2, panelBox ×1 (+1 allocation watch), ThemeContext ×1, dateMenu container ×2 + one allocation watch per ancestor (3), the clock's unread indicator ×2 (`notify::visible`, `destroy`), settings ×7, the top bar's WallClock ×2, desktop interface settings ×1 | `disconnectObject()` in each owner's teardown |
 | GNOME's date menu (JS signals) | 1 (`open-state-changed`), while the island exists | `CalendarMenu.destroy()` from `Island.destroy()` |
-| The pill's `captured-event` | 1, while the island exists: a press, key or scroll in the open island may be deliberate input (the Notifications tab's "seen"; never a modifier alone or a key repeat, and after a hover-open a key only once the focus is inside, a scroll only over the tab's content) | With the pill, in `Island.destroy()` |
-| GNOME's notifications | Notifications tab, **only while it is on screen**: `Main.messageTray` ×2 (`source-added`, `source-removed`); per source ×4 (`notification-added`, `notification-removed`, `notify::title`, `notify::icon`); per notification ×3 (`notify`, `action-added`, `action-removed`); one `org.gnome.desktop.notifications` `Gio.Settings` with 2 handlers (kept, without handlers, until the tab is turned off); one handler on the clock service. Hidden: none. No copy is kept | `NotificationsService.setActive(false)` (`NotificationStore.unwatch()`); `stop()` |
 | Message tray | `bannerBlocked` set only while the island is expanded (and banners are centered) | collapse; `CalendarMenu.destroy()` |
 | Keybinding | 1, for the whole time the extension is enabled | `disable()` |
 | Top bar icon | 1, only while the island is hidden | `_syncIsland()` / `disable()` |
@@ -548,13 +538,12 @@ Two St/Clutter rules also shaped the island:
 | Resize grip | Its actors and handlers live in the pill (destroyed with it); a stage grab only during a drag; GSettings writes only on release, an arrow key or a double-click | `ResizeGrip.destroy()` from `Island.destroy()` (cancels a drag: no write) |
 | Timers / GLib sources | **No periodic timer while the island is closed.** One-shot only: the hover-open delay while the pointer rests on the collapsed pill (`HoverOpen`); a 10 s give-up timeout while a requested settings window has not appeared (`SettingsWindow.destroy()`); Notes' 0.8 s autosave while there are unsaved edits (`NotesService.stop()` flushes and removes it); the Clipboard tab's hidden password expiry (`clipboard-password-minutes`), only while one is listed (`ClipboardRecorder.destroy()`); the Writing tab's per-request timeouts while a request runs (Claude Code 90 s plus 8-15 ms per character, `claude auth status` 10 s, Ollama 180 s plus 60 ms per character overall) and, when it starts Froonty's own Ollama, a chain of 500 ms one-shots for at most 15 s until it answers (all removed when the request ends or `WritingService.stop()` cancels it). **Two periodic timers**, each only while its tab is on screen: the Btop tab's, every `sysmon-interval` seconds (1-10, default 2), and the Kill Process tab's, every `killprocess-interval` seconds (1-10, default 3), both `timeout_add_seconds` so GLib can batch their wakeups (`SysmonService.setActive(false)`, `KillProcessService.setActive(false)`); plus a 5 s give-up timeout per `nvidia-smi` or `kill` run, and the Kill Process tab's one-shot early reading (0.5 s after it comes on screen or a signal is sent, then each second while a killed process is still listed). At most one pending `BEFORE_REDRAW` later (cover recompute), removed in `PanelClock.restore()`; and at most one in the Kill Process list, which fills its rows after a scroll or a new height (never queued while the tab is hidden; removed when it is hidden or its view destroyed). While a Kill Process reading is in flight, at most one idle (`PRIORITY_DEFAULT_IDLE`) at a time between its batches of reads, removed when the reading is cancelled (`KillProcessService.setActive(false)`); the interval's readings are spaced at least ten times as long as the previous one took. The clock ticks come from the top bar's own WallClock, so Froonty owns none | `ClockService.stop()` |
 | File watching | Notes: one inotify folder monitor (`Gio.FileMonitor`), only while the Notes tab has been opened. Claude: one monitor on Claude Code's config file while the Claude tab is on screen, and one more while the island is open with the Claude session panic button. Attention bar: one folder monitor (`WATCH_MOVES`) on `$XDG_RUNTIME_DIR/froonty/claude-attention`, while the island exists and the bar is on; per state file event one read of at most 4 KiB; per recorded session one `/proc/<pid>/stat` read on arrival, on each move of the focus to another window while an entry with a known app shows, and on each collapse | `NotesService.stop()`; `ClaudeService.setActive(false)`; `AttentionService.stop()` |
-| Attention bar | Signals: message tray `notify::visible`, overview `showing` / `hidden` (adapter, for its life); `org.gnome.desktop.notifications` `changed::show-banners`; 3 settings; tray `source-added` / `source-removed` plus 4 per followed source (the Claude app, browsers) and 3 per followed notification, while those are followed (the Notifications tab's store, with a `filter`; other sources get none); `global.display` `notify::focus-window` only while a shown entry has a known app. One Ctrl+Alt+Tab group, listed only while the bar is mapped. No timer, no process. Disk: the `0700` folder and at most one `0600` file of 4 KiB per waiting session, on tmpfs; kept through a screen lock (what waits survives it), removed by any other disable and when the island or the bar is turned off | `Island.destroy()` (`_stopAttention()`, which also removes the folder unless the screen is locking); turning the bar off also removes the folder |
+| Attention bar | Signals: message tray `notify::visible`, overview `showing` / `hidden` (adapter, for its life); `org.gnome.desktop.notifications` `changed::show-banners`; 3 settings; tray `source-added` / `source-removed` plus 4 per followed source (the Claude app, browsers) and 3 per followed notification, while those are followed (`shell/notificationStore.js`, with a `filter`; other sources get none); `global.display` `notify::focus-window` only while a shown entry has a known app. One Ctrl+Alt+Tab group, listed only while the bar is mapped. No timer, no process. Disk: the `0700` folder and at most one `0600` file of 4 KiB per waiting session, on tmpfs; kept through a screen lock (what waits survives it), removed by any other disable and when the island or the bar is turned off | `Island.destroy()` (`_stopAttention()`, which also removes the folder unless the screen is locking); turning the bar off also removes the folder |
 | Notes: All notes button | 1 `St.Button` in the hub header (with the Notes view; shown only on the Notes tab); its tooltip handler | `NotesView.destroy()`, then `HubHeader.removeActions()` |
 | Notes: label menu | Only while open: 1 modal grab (POPUP action mode), 1 `uiGroup` child, 1 focus group, 1 `Main.sessionMode` `updated` handler, 1 `system-modal-opened` handler, 1 `labels-changed` and 1 `changed` handler on the Notes service. Label writes only on user action, rename or create | Destroyed on close, tab switch, collapse, `NotesView.destroy()` (disable, lock, Notes off), `Island.destroy()` (backstop), or its tab going away |
 | Settings window (separate process), All notes page | While the page is shown: one folder monitor, up to 8 reads in flight; while its editor has unsaved text, one 0.8 s one-shot timer. The process exits 2 s after its window closes | Page `hidden` and the window's `close-request` |
 | Clipboard | Clipboard tab enabled (off by default): one `owner-changed` connection on `global.display.get_selection()`, one settings connection, and one read per copy (`St.Clipboard`); history and images under `~/.local/share/froonty/clipboard` (0700/0600) | `releaseRecorder()` (extension `disable()`, tab turned off) |
 | Network monitor | Claude: three connections on the shared `Gio.NetworkMonitor` (`network-changed`, `notify::connectivity`, `notify::network-available`) per active reader: the tab while on screen, the panic button while the island is open. Writing (local builds): the same three while its tab is on screen | `ClaudeService.setActive(false)`; `WritingService.setActive(false)` and `stop()` |
-| Calendar tab | Nothing at module load or enable but a one-time probe (GIRepository's typelib list). The service, when the tab is first selected: 4 settings handlers (2 Froonty keys, 2 `org.gnome.desktop.calendar`). Once the tab has been shown: 1 `ESourceRegistry` for the life of the Shell process (neither disposing it, which stops the process's other registries from seeing new calendars, nor letting the garbage collector finalize it, whose dispose then runs the main context and makes GJS drop the JS timeouts due, is safe; no Froonty handler on it while disabled); until disable: 1 `SourceRegistryWatcher` (3 handlers), 1 registry handler, 1 `ECal.Client` per visible calendar (1 handler each). From the first time the tab shows a month until another month or zone (or disable): 1 EDS view per visible calendar (4 handlers each), kept and paused while the tab is not on screen, so opening and closing the island makes **no** EDS call. Each view's `start()` is a **synchronous D-Bus call** to evolution-calendar-factory (libecal offers no other; about 0.3 ms with local calendars), once per calendar and month shown; the months a fast wheel passes through (within 250 ms) get none. Views are never `stop()`ped (also synchronous): they are let go, and libecal disposes of them asynchronously once collected. One asynchronous `get_objects_for_uid` per repeating event (its moved occurrences, which views do not deliver), one `get_timezone` per calendar and unknown zone. Timers: none periodic; one idle to coalesce redraws, one idle shared by every view's expansion (3 ms of work per turn; a series is expanded in slices from a moved start, features/calendar.md §B.6), only while on screen and there is work; a one-shot 250 ms quiet period after a month change; while a calendar loads, redraws at most every 200 ms (a one-shot timeout in place of the idle). libecal, libedataserver, libical(-glib) and libcamel stay mapped once loaded | `CalendarService.stop()` (views let go, in-flight answers cancelled, late views let go, idles and timer removed); `setActive(false)` pauses |
 | Network requests | Claude tab, livenerf row: one `Soup.Session`, made on the first fetch; two GETs (about 28 kB) per visit while online, at most once an hour. Writing tab (local builds): one session per engine, made on first use; one LanguageTool POST per click (20 s timeout, at most 10 a minute), Ollama on 127.0.0.1 (a 2 s probe when the tab is shown, a 120 s per-read cap, and an overall cap of 180 s plus 60 ms per character per request). Media: none by default; with its options on, one `Soup.Session` (made on the first such request) for web covers (while shown) and lrclib.net (while the lyrics are open) | `LivenerfService.stop()` (aborts the session); `WritingService.stop()` (cancels the request in flight, aborts the sessions); Media `Fetcher.destroy()` from `MediaService.stop()` |
 | File reads | Btop tab, per interval while on screen: `/proc/stat`, `/proc/cpuinfo`, `/proc/meminfo`, `/proc/net/dev`, `/proc/self/mounts`, the CPU's package temperature, a few sysfs files per GPU, and one temperature per core only while the threads are unfolded. Sections that are off are not read. Kill Process tab, per interval while on screen: one listing of `/proc` (with owners), `/proc/stat`, and `/proc/<pid>/stat` for each of the user's processes (256 on the development machine; it also gives the thread count), 32 at a time with a pause between batches so frames are drawn in between; `/proc/<pid>/cmdline` once per process; a handful of small reads (the process, and GNOME Shell's parents) right before each signal | `SysmonService.setActive(false)`, `KillProcessService.setActive(false)` cancel a reading in flight |
 | Subprocesses / D-Bus proxies | Btop tab: one `nvidia-smi` per interval while the tab is on screen and an NVIDIA card is awake (about 40 ms). Kill Process tab: one `/usr/bin/kill` per confirmed kill or "Force quit" click, never otherwise. Writing tab (local builds): one `claude -p` per action click (a time limit of 90 s, plus 8 ms per character with Haiku or 15 ms with Sonnet; never started once the click is cancelled), `claude auth status` before the first one each time the tab is shown (10 s), and `systemctl --user start froonty-ollama.service` when Froonty's own Ollama is needed and stopped. Otherwise 0 of Froonty's own. Outside the Shell, after the user's Set up, Claude Code runs Froonty's GJS hook (about 38 ms, 33 MB) per qualifying Notification, Stop and StopFailure, and `sh` (about 1.2 ms) per prompt, model step and session end. The Claude tab reads GIO's process-wide `Gio.NetworkMonitor`, whose NetworkManager backend keeps GIO's own proxy for the life of the Shell | — |
@@ -570,9 +559,9 @@ Two test layers:
   private `CLAUDE_CONFIG_DIR`, so the real `~/.claude` is out of reach):
   the Claude attention bar's hook script, run as Claude Code runs it, its
   `settings.json` set-up and its model; the
-  Notifications tab's store and service (over GObject fakes of GNOME's
-  tray, sources and notifications; a destroyed one throws on any access),
-  Notes names, Markdown edits, metadata, labels, search, file store, note
+  notification store it reads GNOME's notifications through (over GObject
+  fakes of GNOME's tray, sources and notifications; a destroyed one throws
+  on any access), Notes names, Markdown edits, metadata, labels, search, file store, note
   writer, service and the All notes window's library, the All notes page
   itself (GTK 4 and libadwaita driven through its widgets, `*.gtk.test.js`,
   on a private Broadway display that `tools/unit/run.sh` starts), the panic
@@ -580,13 +569,8 @@ Two test layers:
   the camera switch (on in-memory GSettings backends or a fake, never the
   real settings), the Claude usage parser and service, the Btop tab's
   parsers, sampler (over a fake `/proc` and `/sys`) and polling lifecycle,
-  the Kill Process tab's parsers, safety rules and kill steps over a
-  fake `/proc` whose `kill` only records its arguments, and the Calendar
-  tab's date math, provider links, colours, event model and service
-  over a fake EDS (plus static checks that it never writes to a
-  calendar and makes no synchronous call but one `ClientView.start()`),
-  its expansion scheduler, and its EDS views over the real libecal with
-  a fake calendar (when `gir1.2-ecal-2.0` is installed).
+  and the Kill Process tab's parsers, safety rules and kill steps over a
+  fake `/proc` whose `kill` only records its arguments.
   The Writing tab (local builds) is tested against fakes only: a fake
   `claude`, a local `Soup.Server` for LanguageTool, Ollama and GitHub, a
   fake `systemctl`, and tiny archives (hostile ones too) for Ollama's
@@ -666,19 +650,6 @@ input through Clutter virtual devices and cover:
 - **Claude:** rows and wording from a private `CLAUDE_CONFIG_DIR`, live
   updates while shown, "Unknown" offline, nothing watched while collapsed,
   a fresh read on reopening.
-- **Notifications:** GNOME's notifications from the test's own sources
-  (and three sent over `org.freedesktop.Notifications`): order, rows,
-  markup, nothing watched while hidden, live arrivals and updates,
-  "seen" only on a deliberate act (hover-open marks nothing), the dot on
-  the tab, a row click, actions, ×, the keyboard, the two-step Clear
-  all, Do Not Disturb, `ActionInvoked` / `NotificationClosed` over D-Bus,
-  five rounds that remove nothing, and no handler left after disable;
-  and the accidents (`testNotificationSafeguards`): keys, modifiers and
-  scrolls after a hover-open, a double click on ×, a held Delete, a
-  double Enter on Clear all, an update over D-Bus while "Clear N?" waits,
-  GNOME's rule for a click without a default action, and the dot while
-  banners are held
-  ([features/notifications.md](features/notifications.md) §8).
 - **Claude attention bar:** Froonty's real hook script run as Claude Code
   runs it, and the clear command; the bar's place and wording, order, ×,
   Delete, Escape and Ctrl+Alt+Tab; hidden while the island is open, under
@@ -733,19 +704,6 @@ input through Clutter virtual devices and cover:
   hidden. Only processes the test spawned are ever clicked.
   process id refused; no reading while hidden. Only processes the test
   spawned are ever clicked.
-- **Calendar tab** (over the test session's own, private Evolution Data
-  Server, checked private first): the hint without the bindings; test
-  calendars and events written by the test (a daily series with an
-  excluded and a moved occurrence, a cancelled event in an Exchange-style
-  zone, all-day, now, next); colours, Now/Next, the series as EDS expands
-  it; live addition, rename and removal; calendars added, hidden in
-  Froonty and unticked in GNOME; navigation and keyboard; links (nothing
-  launched); the EDS views kept and paused while collapsed, and let go
-  without `stop()` on another month; EDS's files unchanged by Froonty; a
-  large calendar (50 series begun years ago, minutely and hourly ones,
-  120 events in an unknown zone) with every expansion turn under a
-  frame; disable while loading
-  ([features/calendar.md](features/calendar.md) §B.8).
 - **Settings window:** open, raise instead of duplicating, focus; its All
   notes page (above).
 - **GNOME's calendar and notification menu:** the header's date pill
@@ -761,8 +719,8 @@ input through Clutter virtual devices and cover:
 - **Startup:** with `start-at-login` off, a simulated login waits behind the
   top bar icon, a lock/unlock keeps the state, and the icon or the shortcut
   starts Froonty.
-- **Lifecycle:** 25 enable/disable cycles, some mid-animation (with the
-  Notifications tab on screen), with a before/after "Shell footprint". It
+- **Lifecycle:** 25 enable/disable cycles, some mid-animation, with a
+  before/after "Shell footprint". It
   covers actors, chrome, Ctrl+Alt+Tab, keybindings, the modal count, top
   bar entries, and handler counts on every signal source (including the
   Shell's mixer and the message tray). The checks prove these counts are
@@ -800,6 +758,14 @@ the first submission's tabs only): **669/669** in the default session
 mode and **662/662** in Ubuntu's, plus 646 unit tests and 17 packing
 tests; the published package's own check, **14/14**.
 
+Unreleased: the Notifications and Calendar tabs were removed. The date
+pill opens GNOME's own calendar and notification menu, which already
+lists GNOME's notifications (with Do Not Disturb and Clear) and the
+events of the calendars GNOME knows, so the two tabs duplicated it
+(§2, principle 1). Their Evolution Data Server code and its
+`gir1.2-ecal-2.0` dependency went with them; the published package now
+has the Notes tab only.
+
 The Ubuntu run found a **GNOME Shell 46 race** in `ui/extensionSystem.js`:
 
 - `enable/disableExtension()` write two keys, and each write starts an async
@@ -829,7 +795,7 @@ it makes a leak-free `disable()` matter even more.
 
 | Phase | Reuse |
 |---|---|
-| 3 Notifications | **Done:** `Main.panel.toggleCalendar()` (the date pill), the clock's unread dot, `MessageTray.bannerBlocked` (public setter) while expanded (§5); the Notifications tab over `Main.messageTray` `getSources()` / `source-added` / `source-removed`, observe only, never destroying on its own ([features/notifications.md](features/notifications.md)). Not needed: `Source` `notification-request-banner` (GNOME's own banner logic) |
+| 3 Notifications | **Done:** `Main.panel.toggleCalendar()` (the date pill), the clock's unread dot, `MessageTray.bannerBlocked` (public setter) while expanded (§5). A Notifications tab over `Main.messageTray` was built and removed as a duplicate of GNOME's own list (§9). Not needed: `Source` `notification-request-banner` (GNOME's own banner logic) |
 | 4 MPRIS | **Done** as the Media tab ([features/media.md](features/media.md)): own async `Gio.DBusProxy`s on unique names with `NameOwnerChanged` (not `ui/mpris.js` `MprisPlayer`, which has no teardown) |
 | 5 Battery | UPower DisplayDevice (`/org/freedesktop/UPower/devices/DisplayDevice`), as `ui/status/system.js` does; `UPowerGlib` is already loaded by the Shell |
 | 5 Volume/OSD | `ui/status/volume.js` `getMixerControl()` (shared Gvc mixer; already used by the panic buttons); `Main.osdWindowManager` |
