@@ -8032,6 +8032,9 @@ async function testMedia(outDir) {
     mediaWork = outDir;
     const s = settings();
     const fakes = [];
+    // The automatic choice is checked with every player left playing;
+    // pausing the others has a check of its own (H14).
+    s.set_boolean('media-pause-others', false);
     try {
         // H1
         const names = island()._hub._tabColumn.get_children().map(b => b.accessible_name);
@@ -8060,7 +8063,10 @@ async function testMedia(outDir) {
             `idle=${view._idle.visible} ticking=${service?.ticking}`);
         await screenshotTop(outDir, 'media-idle', 320);
         const [w, h] = pill().get_transformed_size();
-        check('media: the tab opens at its size (480 × 248)', w === 480 * scale() && h === 248 * scale(), `${w}x${h}`);
+        // The height is a minimum: the island grows to show every tab.
+        const mediaHeight = Math.max(248 * scale(), Math.ceil(island()._hubNeeds().height));
+        check('media: the tab opens at its size (480 × 248)', w === 480 * scale() && Math.abs(h - mediaHeight) <= 2,
+            `${w}x${h}`);
 
         // H3
         const a = await spawnFake('froontya', {args: MUSIC, state: {
@@ -8260,6 +8266,18 @@ async function testMedia(outDir) {
         await fakeSet(a2, {PlaybackStatus: 'Paused'});
         check('media: with browsers followed, the latest to play wins',
             await waitFor(() => service.playback?.key === b.name), service.playback?.key);
+        // Pause the others (on by default): one that starts pauses the one
+        // playing, which then gives way.
+        s.set_boolean('media-pause-others', true);
+        await fakeSet(a2, {PlaybackStatus: 'Playing'});
+        const statusOf = fake => service.watcher.players.get(fake.name)?.props.status;
+        check('media: with "pause the others", a player that starts pauses the one playing',
+            await waitFor(() => statusOf(b) === 'Paused' && service.playback?.key === a2.name),
+            `browser=${statusOf(b)} shown=${service.playback?.key}`);
+        s.set_boolean('media-pause-others', false);
+        await fakeSet(a2, {PlaybackStatus: 'Paused'});
+        await fakeSet(b, {PlaybackStatus: 'Playing'});
+        await waitFor(() => service.playback?.key === b.name);
         s.set_boolean('media-include-other-players', false);
         check('media: with browsers not followed, paused music beats a playing browser',
             await waitFor(() => service.playback?.key === a2.name), service.playback?.key);
@@ -8297,13 +8315,15 @@ async function testMedia(outDir) {
         await screenshotTop(outDir, 'media-lyrics-open', 520);
         await clickActor(view.lyricsChip);
         await sleep(animationWait() + 200);
-        check('media: closing them shrinks it back', pill().get_transformed_size()[1] === 248 * scale() &&
+        check('media: closing them shrinks it back',
+            Math.abs(pill().get_transformed_size()[1] - Math.max(248 * scale(), Math.ceil(island()._hubNeeds().height))) <= 2 &&
             view.extra === null);
         await screenshotTop(outDir, 'media-after-extras', 320);
     } finally {
         for (const fake of fakes)
             await quitFake(fake);
         s.reset('media-include-other-players');
+        s.reset('media-pause-others');
         s.reset('media-height');
         await leaveMediaTab();
     }
@@ -8654,6 +8674,9 @@ async function testMediaPanic(outDir) {
     mediaWork = outDir;
     const s = settings();
     const fakes = [];
+    // Two players play at once here: "pause the others" would pause the
+    // first as the second starts.
+    s.set_boolean('media-pause-others', false);
     try {
         const a = await spawnFake('froontypa', {args: MUSIC, state: playing('Panic One')});
         const b = await spawnFake('froontypb', {args: BROWSER, state: playing('Panic Two')});
@@ -8682,6 +8705,7 @@ async function testMediaPanic(outDir) {
         for (const fake of fakes)
             await quitFake(fake);
         s.reset('panic-buttons');
+        s.reset('media-pause-others');
         island().collapse();
         await sleep(animationWait());
     }
@@ -9244,7 +9268,7 @@ async function testPublicBuild() {
 const ONLY_TESTS = {
     testClaudeAttention, testClaudeAttentionWindows, testNotifications, testCalendar,
     testNotes, testMedia, testBreak, testHub, testLifecycle, testPublicBuild,
-    testResizeGrip,
+    testResizeGrip, testMediaPill, testMediaExtras, testMediaPanic, testMediaChoiceSurvivesLock,
     testPointer, testHubLayout, testDatePill, testCalendarMenu, testEmptyHub,
 };
 
@@ -9258,6 +9282,7 @@ export async function runAll(outDir) {
             // the session starts in the overview, where a window mapping
             // leaves GNOME a 'hidden' handler until it closes.
             await waitFor(() => !Main.messageTray.visible, 15000);
+            mediaSharedModule = await mediaShared();
             Main.overview.hide();
             await waitFor(() => !Main.overview.visible && !Main.overview.animationInProgress, 5000);
             for (const name of only.split(','))
@@ -9313,6 +9338,11 @@ export async function runAll(outDir) {
         await testSettings(outDir);
         await testCoversPanelClock(outDir);
         await testMonitors();
+        await testMedia(outDir);
+        await testMediaPill(outDir);
+        await testMediaExtras(outDir);
+        await testMediaPanic(outDir);
+        await testMediaChoiceSurvivesLock();
         await testLifecycle(outDir);
         testLoaded();
         check('media: no web session after all checks with default settings',

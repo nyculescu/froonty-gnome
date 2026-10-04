@@ -280,6 +280,11 @@
       <summary>Media: follow browsers and video players automatically</summary>
       <description>When off, browsers and video players show only when chosen in the tab; music players are always followed. On by default because much music plays in a browser, and a browser cannot be told apart from a music app over MPRIS.</description>
     </key>
+    <key name="media-pause-others" type="b">
+      <default>true</default>
+      <summary>Media: pause the other players when one starts playing</summary>
+      <description>When a player starts playing, every other player that plays is paused, so one plays at a time. Between apps only: a browser reports all its tabs as one player.</description>
+    </key>
     <key name="media-remote-art" type="b">
       <default>false</default>
       <summary>Media: cover art from the internet</summary>

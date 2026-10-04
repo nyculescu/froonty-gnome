@@ -40,6 +40,9 @@ export function mediaPage(settings) {
     players.add(switchRow(settings, 'media-include-other-players',
         _('Follow browsers and video players automatically'),
         _('When off, they show only when you pick them; music players are always followed. On by default because much music plays in a browser.')));
+    players.add(switchRow(settings, 'media-pause-others',
+        _('Pause the other players when one starts playing'),
+        _('One plays at a time. Between apps only: a browser reports all its tabs as one player.')));
     page.add(players);
 
     const extras = new Adw.PreferencesGroup({title: _('Extras')});

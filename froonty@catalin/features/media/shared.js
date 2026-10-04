@@ -8,10 +8,12 @@
 import St from 'gi://St';
 
 import {shellApps} from './apps.js';
+import {WindowFocus} from './focus.js';
 import {MediaService} from './service.js';
 
 let shared = null;
 let users = 0;
+let focus = null;
 
 // "Froonty/0.4.0-rc0": one product token, no spaces.
 function userAgent(version) {
@@ -30,6 +32,7 @@ export function acquireMedia(ctx) {
             apps: shellApps,
             artSide: () => Math.round(200 * St.ThemeContext.get_for_stage(global.stage).scale_factor),
             userAgent: userAgent(ctx.version),
+            focus: focus = new WindowFocus(),
         });
         shared.start();
     }
@@ -42,6 +45,8 @@ export function releaseMedia() {
         return;
     shared?.stop();
     shared = null;
+    focus?.destroy();
+    focus = null;
     users = 0;
 }
 

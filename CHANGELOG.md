@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **Media: pause the other players when one starts playing** (Settings →
+  Media, on by default): one plays at a time. Between apps only; a
+  browser reports all its tabs as one player.
+- **Media: bringing up a player's window shows that player** on the pill
+  and in the tab, until another player starts playing; a player picked by
+  hand still comes first.
+
+### Changed
+- Media: anything that plays comes before anything paused in the
+  automatic choice. Pausing a music player while a browser still plays
+  now shows the browser, not the paused player.
+
 ## 0.5.0-rc0 (2026-10-03)
 
 First release candidate of 0.5.0, for GNOME Shell 50 on Ubuntu 26.04

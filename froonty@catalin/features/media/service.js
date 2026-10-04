@@ -38,6 +38,7 @@ import {
 } from './model.js';
 
 export const INCLUDE_OTHERS_KEY = 'media-include-other-players';
+export const PAUSE_OTHERS_KEY = 'media-pause-others';
 export const REMOTE_ART_KEY = 'media-remote-art';
 
 const NO_ART = Object.freeze({state: 'none', pixbuf: null, tint: null, owner: null, identity: null});
@@ -63,9 +64,11 @@ export class MediaService extends Emitter {
      * @param {string} [options.userAgent]
      * @param {ArtLoader} [options.artLoader]
      * @param {Fetcher} [options.fetcher]
+     * @param {?object} [options.focus] the focused window's {pid, appId}
+     *   (current()) and 'changed' (focus.js), or null
      */
     constructor({settings, memory = {}, apps = NO_APPS, watcher = null, timers = glibTimers,
-        artSide = () => 200, userAgent = 'Froonty', artLoader = null, fetcher = null}) {
+        artSide = () => 200, userAgent = 'Froonty', artLoader = null, fetcher = null, focus = null}) {
         super();
         this._settings = settings;
         memory.media ??= {chosen: null, followed: null, latestPlayed: null};
@@ -77,6 +80,7 @@ export class MediaService extends Emitter {
         this._userAgent = userAgent;
         this._artLoaderOption = artLoader;
         this._fetcherOption = fetcher;
+        this._focus = focus;
         this._started = false;
         this._reset();
     }
@@ -111,6 +115,13 @@ export class MediaService extends Emitter {
         this._seeking = null;
         this._noticeFor = null;
         this._evalId = 0;
+        // Owners playing at the last evaluation (null before the first),
+        // to tell a player that starts playing.
+        this._playingOwners = null;
+        // The player whose window the user brought up, until another starts.
+        this._focusedKey = null;
+        // Owners resume() plays again: they do not pause each other.
+        this._resuming = new Set();
     }
 
     get started() {
@@ -167,6 +178,7 @@ export class MediaService extends Emitter {
             this._settings.connect(`changed::${INCLUDE_OTHERS_KEY}`, () => this._evaluate()),
             this._settings.connect(`changed::${REMOTE_ART_KEY}`, () => this._onRemoteArtChanged()),
         ];
+        this._focusId = this._focus?.connect('changed', () => this._onFocus()) ?? 0;
         this._watcher.start();
         this._evaluate();
     }
@@ -180,6 +192,9 @@ export class MediaService extends Emitter {
         for (const id of this._settingsIds)
             this._settings.disconnect(id);
         this._watcherIds = this._settingsIds = [];
+        if (this._focusId)
+            this._focus.disconnect(this._focusId);
+        this._focusId = 0;
         this._watcher.stop();
         for (const timer of [this._gap, this._grace, this._artGrace, this._notice, this._stuck, this._tick])
             timer.stop();
@@ -353,11 +368,13 @@ export class MediaService extends Emitter {
         const labels = displayNames(described);
         const sources = described.map(s => ({...s, displayName: labels.get(s.key)}));
 
+        this._onStartedPlaying(players);
         const latestKey = latestPlaying(sources, this._memory.latestPlayed);
         if (sources.some(s => s.playing && s.playingSinceUs !== null))
             this._memory.latestPlayed = latestKey;
         let key = preferred(sources, {
             chosenKey: chosen?.key ?? null,
+            focusedKey: this._focusedKey,
             followedKey: this._memory.followed,
             latestPlayingKey: latestKey,
             includeOthers: this._settings.get_boolean(INCLUDE_OTHERS_KEY),
@@ -408,6 +425,51 @@ export class MediaService extends Emitter {
             hasTrackList: player.root.hasTrackList,
             canOpen: Boolean(source.app) || player.root.canRaise,
         }, {previous, now});
+    }
+
+    // A player that starts playing (not one found playing at the start):
+    // the one whose window was brought up gives way to it, and, with
+    // media-pause-others, every other player that plays is paused (not a
+    // mirror of the same process, nor what resume() plays again).
+    _onStartedPlaying(players) {
+        const playing = [...players.values()].filter(p => p.props.playing);
+        const before = this._playingOwners;
+        this._playingOwners = new Set(playing.map(p => p.owner));
+        if (!before)
+            return;
+        const started = playing.filter(p => !before.has(p.owner) && !this._resuming.has(p.owner));
+        for (const owner of [...this._resuming]) {
+            if (!this._playingOwners.has(owner) || before.has(owner))
+                this._resuming.delete(owner);
+        }
+        if (started.length === 0)
+            return;
+        const starter = started.reduce((a, b) => (b.playingSinceUs ?? 0) > (a.playingSinceUs ?? 0) ? b : a);
+        if (this._focusedKey !== starter.name)
+            this._focusedKey = null;
+        if (!this._settings.get_boolean(PAUSE_OTHERS_KEY))
+            return;
+        for (const other of playing) {
+            if (other === starter || other.owner === starter.owner ||
+                (other.pid && other.pid === starter.pid) || !other.props.canPause)
+                continue;
+            other.call('Pause').catch(() => {});
+        }
+    }
+
+    // The focused window belongs to a listed player with a song: shown, as
+    // when it starts playing; a choice made by hand still comes first.
+    _onFocus() {
+        const window = this._focus.current();
+        if (!window)
+            return;
+        const source = this.sources.find(s => s.hasTrack &&
+            ((window.pid && s.pid === window.pid) ||
+             (window.appId && s.app?.get_id?.() === window.appId)));
+        if (!source || source.key === this.playback?.key)
+            return;
+        this._focusedKey = source.key;
+        this._evaluate();
     }
 
     _show(next, {previous, now}) {
@@ -818,8 +880,11 @@ export class MediaService extends Emitter {
             return;
         await Promise.allSettled(held.map(({key, owner}) => {
             const player = this._watcher.players.get(key);
-            return player?.owner === owner && player.props.status === 'Paused'
-                ? player.call('Play') : null;
+            if (player?.owner !== owner || player.props.status !== 'Paused')
+                return null;
+            // Played again together: none pauses the others.
+            this._resuming.add(owner);
+            return player.call('Play');
         }));
     }
 

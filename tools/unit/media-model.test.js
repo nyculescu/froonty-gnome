@@ -177,13 +177,24 @@ test('M16 choice: an explicit choice with a track wins, even paused against a pl
     eq(preferred([src('a', {playing: true, isMusic: true}), src('b', {hasTrack: false})], {chosenKey: 'b'}), 'a');
 });
 
-test('M17 choice: playing music, then a playing other player that started last or was followed, then paused music', () => {
+test('M17 choice: playing music, then any other player that plays, then paused music', () => {
     const music = src('music', {isMusic: true, pid: 5});
     const browser = src('browser', {playing: true, pid: 1});
     eq(preferred([{...music, playing: true}, browser], {latestPlayingKey: 'browser'}), 'music');
     eq(preferred([music, browser], {latestPlayingKey: 'browser'}), 'browser');
     eq(preferred([music, browser], {followedKey: 'browser'}), 'browser');
-    eq(preferred([music, browser], {}), 'music');
+    // Apple Music paused, YouTube still playing: YouTube, not the paused one.
+    eq(preferred([music, browser], {followedKey: 'music', latestPlayingKey: 'music'}), 'browser');
+    eq(preferred([music, {...browser, playing: false}], {}), 'music');
+});
+
+test('M17b choice: the player whose window was brought up, paused or not, after a choice made by hand', () => {
+    const music = src('music', {isMusic: true, playing: true, pid: 5});
+    const browser = src('browser', {pid: 1});
+    eq(preferred([music, browser], {focusedKey: 'browser'}), 'browser');
+    eq(preferred([music, browser], {focusedKey: 'browser', chosenKey: 'music'}), 'music');
+    eq(preferred([music, {...browser, hasTrack: false}], {focusedKey: 'browser'}), 'music');
+    eq(preferred([music, browser], {focusedKey: 'browser', includeOthers: false}), 'music');
 });
 
 test('M18 choice: with other players excluded, a playing browser never wins', () => {
@@ -361,7 +372,7 @@ function fakeSettings(values = {}) {
     };
 }
 
-function rig({include = true} = {}) {
+function rig({include = true, pauseOthers = true, focus = null} = {}) {
     const timers = new FakeTimers();
     const watcher = new FakeWatcher();
     const loads = [];
@@ -371,8 +382,8 @@ function rig({include = true} = {}) {
     };
     const memory = {};
     const service = new MediaService({
-        settings: fakeSettings({'media-include-other-players': include}),
-        memory, apps, watcher, timers, artLoader,
+        settings: fakeSettings({'media-include-other-players': include, 'media-pause-others': pauseOthers}),
+        memory, apps, watcher, timers, artLoader, focus,
         fetcher: {destroy: () => {}, abort: () => {}},
     });
     service.start();
@@ -620,6 +631,80 @@ test('M-art a cover claiming 25000 × 25000 is refused from its header; a small 
     const [, png] = small.save_to_bufferv('png', [], []);
     const pixbuf = decode(png, 128);
     eq([pixbuf.get_width(), pixbuf.get_height()], [128, 64]);
+});
+
+test('M-pause starting a player pauses the others that play (not at the start, not its mirror, not when off)', () => {
+    const {watcher, changed} = rig();
+    const brave = new FakeWatcherPlayer('org.mpris.MediaPlayer2.brave', ':1.1', {pid: 1, track: T('Video'), playing: true, isMusic: false});
+    const music = new FakeWatcherPlayer('org.mpris.MediaPlayer2.music', ':1.2', {pid: 2, track: T('Song')});
+    const mirror = new FakeWatcherPlayer('org.mpris.MediaPlayer2.music2', ':1.3', {pid: 2, track: T('Song'), playing: true});
+    watcher.add(brave);
+    watcher.add(music);
+    watcher.ready = true;
+    changed();
+    eq(brave.calls, [], 'found playing: nothing paused');
+    music.setPlaying(true, 10);
+    watcher.add(mirror);
+    changed();
+    eq([brave.calls, music.calls, mirror.calls], [['Pause'], [], []]);
+
+    const off = rig({pauseOthers: false});
+    const a = new FakeWatcherPlayer('org.mpris.MediaPlayer2.a', ':1.1', {pid: 1, track: T('A'), playing: true});
+    const b = new FakeWatcherPlayer('org.mpris.MediaPlayer2.b', ':1.2', {pid: 2, track: T('B')});
+    off.watcher.add(a);
+    off.watcher.add(b);
+    off.watcher.ready = true;
+    off.changed();
+    b.setPlaying(true, 10);
+    off.changed();
+    eq(a.calls, [], 'off: both play');
+});
+
+test('M-pause Apple Music paused while YouTube plays: YouTube is shown', () => {
+    const {watcher, service, changed} = rig({pauseOthers: false});
+    const youtube = new FakeWatcherPlayer('org.mpris.MediaPlayer2.brave', ':1.1', {pid: 1, track: T('Video'), playing: true, isMusic: false});
+    const music = new FakeWatcherPlayer('org.mpris.MediaPlayer2.music', ':1.2', {pid: 2, track: T('Song')});
+    watcher.add(youtube);
+    watcher.add(music);
+    watcher.ready = true;
+    changed();
+    music.setPlaying(true, 10);
+    changed();
+    eq(service.playback?.key, 'org.mpris.MediaPlayer2.music');
+    music.setPlaying(false, 20);
+    changed();
+    eq(service.playback?.key, 'org.mpris.MediaPlayer2.brave');
+});
+
+test('M-focus bringing up a player\'s window shows it, until another starts playing; a choice by hand wins', () => {
+    const focus = new Emitter();
+    focus.window = null;
+    focus.current = () => focus.window;
+    const {watcher, service, changed} = rig({focus, pauseOthers: false});
+    const music = new FakeWatcherPlayer('org.mpris.MediaPlayer2.music', ':1.1', {pid: 1, track: T('Song'), playing: true});
+    const brave = new FakeWatcherPlayer('org.mpris.MediaPlayer2.brave', ':1.2', {pid: 2, track: T('Video'), isMusic: false});
+    const other = new FakeWatcherPlayer('org.mpris.MediaPlayer2.other', ':1.3', {pid: 3, track: T('Other')});
+    watcher.add(music);
+    watcher.add(brave);
+    watcher.add(other);
+    watcher.ready = true;
+    changed();
+    eq(service.playback?.key, 'org.mpris.MediaPlayer2.music');
+    focus.window = {pid: 2, appId: null};
+    focus.emit('changed');
+    eq(service.playback?.key, 'org.mpris.MediaPlayer2.brave', 'its window brought up');
+    focus.window = {pid: 99, appId: null};
+    focus.emit('changed');
+    eq(service.playback?.key, 'org.mpris.MediaPlayer2.brave', 'another app: unchanged');
+    other.setPlaying(true, 30);
+    changed();
+    eq(service.playback?.key, 'org.mpris.MediaPlayer2.other', 'another started: it is shown, the usual rules');
+    service.select('org.mpris.MediaPlayer2.other');
+    focus.window = {pid: 2, appId: null};
+    focus.emit('changed');
+    eq(service.playback?.key, 'org.mpris.MediaPlayer2.other', 'chosen by hand');
+    service.stop();
+    eq(focus.listenerCount?.('changed') ?? 0, 0, 'stop() lets go of the focus');
 });
 
 await done();

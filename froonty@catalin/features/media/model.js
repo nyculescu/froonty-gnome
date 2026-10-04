@@ -500,22 +500,25 @@ export function mergeMirrors(players) {
  * @param {object[]} sources each {key, pid, playing, isMusic, hasTrack}
  * @param {object} rules
  * @param {?string} rules.chosenKey the user's choice
+ * @param {?string} rules.focusedKey the player whose window the user
+ *   brought up (until another one starts playing)
  * @param {?string} rules.followedKey the source shown last
  * @param {?string} rules.latestPlayingKey the latest to start playing
  * @param {boolean} rules.includeOthers follow browsers and video players
  */
-export function preferred(sources, {chosenKey = null, followedKey = null,
+export function preferred(sources, {chosenKey = null, focusedKey = null, followedKey = null,
     latestPlayingKey = null, includeOthers = true} = {}) {
     const byKey = new Map(sources.map(s => [s.key, s]));
     if (chosenKey && byKey.get(chosenKey)?.hasTrack)
         return chosenKey;
+    const focused = byKey.get(focusedKey);
+    if (focused?.hasTrack && (includeOthers || focused.isMusic))
+        return focusedKey;
     const withTrack = sources.filter(s => s.hasTrack);
+    // Anything playing comes before anything paused.
     const tiers = [
         withTrack.filter(s => s.playing && s.isMusic),
-        includeOthers
-            ? withTrack.filter(s => s.playing && !s.isMusic &&
-                (s.key === latestPlayingKey || s.key === followedKey))
-            : [],
+        includeOthers ? withTrack.filter(s => s.playing && !s.isMusic) : [],
         withTrack.filter(s => s.isMusic),
     ];
     for (const tier of tiers) {
