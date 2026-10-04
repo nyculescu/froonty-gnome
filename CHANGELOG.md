@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Removed
+- **The Notifications and Calendar tabs** (the date pill opens GNOME's
+  own calendar and notifications). A click on the date pill in the hub
+  header, or GNOME's own Super+V, shows GNOME's notification list (with
+  Do Not Disturb and Clear) and its calendar with the events of the
+  calendars GNOME knows, so the two tabs were duplicates. The island now
+  opens on the Notes tab; one that last showed Calendar or Notifications
+  opens on the first tab that is on. Their settings (`calendar-*`,
+  `notifications-*`) are gone, and so is the Calendar tab's need for
+  `gir1.2-ecal-2.0`. The published package now has the Notes tab only,
+  with the date pill and the mute panic buttons. GNOME's unread dot
+  stays on the collapsed pill and on the date pill.
+
 ## 0.5.0-rc0 (2026-10-03)
 
 First release candidate of 0.5.0, for GNOME Shell 50 on Ubuntu 26.04

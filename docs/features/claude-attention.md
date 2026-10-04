@@ -1,7 +1,8 @@
 # Feature: When Claude needs you (the attention bar)
 
 Status: **implemented**, 2026-10-02 (Unreleased), on top of the
-Notifications tab, whose store it shares (section 9).
+Notifications tab's store (section 9), which it keeps now that the tab is
+removed.
 
 ## 1. Goal
 
@@ -262,8 +263,8 @@ shell/
 ├── claudeAttention.js   ClaudeDesktop: app and window of a session, focus,
 │                        raising, banners/overview, which notification
 │                        sources to follow
-├── messageTray.js       the Notifications tab's adapter: createStore({filter})
-└── notificationStore.js the Notifications tab's store: `filter`, and
+├── messageTray.js       the message tray's adapter: createStore({filter})
+└── notificationStore.js the notification store: `filter`, and
                          describe()'s `appId` (section 9)
 features/claude/attentionBar.js  the St bar
 ```
@@ -377,11 +378,13 @@ bar     St.BoxLayout .froonty-attention (Ctrl+Alt+Tab group root)
 
 ## 9. GNOME's notifications: the Notifications tab's store
 
-The Claude app and browser entries come through the Notifications tab's
-own adapter and store (`shell/messageTray.js` `gnomeNotifications()`,
-`shell/notificationStore.js`; [notifications.md](notifications.md)), so
-the message tray's private objects stay in one place. The bar makes a
-store of its own, with two additive changes to the tab's code:
+The Claude app and browser entries come through the adapter and store
+the Notifications tab had (`shell/messageTray.js` `gnomeNotifications()`,
+`shell/notificationStore.js`), so the message tray's private objects stay
+in one place. The tab was removed (the date pill opens GNOME's own list);
+the bar is now the only user of both modules, which the public package
+leaves out. The bar makes a store of its own, with two additive changes
+to the tab's code:
 
 - `createStore(options)` passes `{filter}` on to the store, and the store
   skips a source the filter turns down in `_addSource()`: such a source
@@ -432,9 +435,7 @@ shape was written; it was dropped when this was rebased onto the tab.)
   the app closing it; a click; ×) and as a browser; turning the bar off and
   on (folder, handlers); disable and enable with something waiting. The
   lifecycle footprint counts the tray's `notify::visible` and the
-  overview's handlers too. `testNotifications` turns the bar's two
-  notification switches off while it counts the tray's handlers, so its
-  counts stay the tab's own.
+  overview's handlers too.
 
 ## 11. Risks and known gaps
 
