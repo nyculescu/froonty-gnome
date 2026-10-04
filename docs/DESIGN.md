@@ -758,6 +758,14 @@ the first submission's tabs only): **669/669** in the default session
 mode and **662/662** in Ubuntu's, plus 646 unit tests and 17 packing
 tests; the published package's own check, **14/14**.
 
+Release candidate 0.6.0-rc0 (the Notifications and Calendar tabs
+removed; Media pausing the other players and following the focused one;
+the All notes window's formatting bar and rendered Markdown; the
+settings window retrying while GNOME's preferences service leaves):
+**628/628** in the default session mode and **624/624** in Ubuntu's,
+plus 590 unit tests and 17 packing tests; the published package's own
+check, **15/15**.
+
 Unreleased: the Notifications and Calendar tabs were removed. The date
 pill opens GNOME's own calendar and notification menu, which already
 lists GNOME's notifications (with Do Not Disturb and Clear) and the

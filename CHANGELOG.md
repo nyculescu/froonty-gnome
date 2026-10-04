@@ -1,6 +1,14 @@
 # Changelog
 
-## Unreleased
+## 0.6.0-rc0 (2026-10-04)
+
+First release candidate of 0.6.0, for GNOME Shell 50 on Ubuntu 26.04
+(Wayland). It builds on 0.5.0-rc0. The Notifications and Calendar tabs
+are gone, so the published package (extensions.gnome.org) now has the
+Notes tab only, with the date pill and the mute panic buttons. `make
+install` builds keep every other tab: Media, Claude, Btop, Clipboard,
+Kill Process and Break follow on extensions.gnome.org in later versions;
+ZeroTier and Writing stay working-tree only.
 
 ### Removed
 - **The Notifications and Calendar tabs** (the date pill opens GNOME's
