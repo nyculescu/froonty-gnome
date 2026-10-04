@@ -149,8 +149,9 @@ should disappear".
     most 300 rows, then "Showing 300 of N — refine the search".
   - Note pane: colour, name, labels, a **Labels** menu (an entry and a
     check per label) and the fold button, then the island's **formatting
-    bar** (see below), then a plain-text editor with GTK's undo. Matches of
-    the search are marked in yellow, and the view scrolls to the first.
+    bar** (see below), then the editor with GTK's undo, drawn rendered as
+    in the island (see below). Matches of the search are marked in yellow,
+    over the rendering, and the view scrolls to the first.
     Loading a note or a reload cannot be undone, so undo never reaches into
     another note or version.
   - Without a search the newest notes come first; with one, name matches,
@@ -213,9 +214,22 @@ bar there too."
   gone): the formatting buttons are insensitive. Wrap lines still works:
   it changes the view, not the note.
 - No keyboard shortcuts (Ctrl+B and so on): the island has none either.
-- **Not rendered.** The window's editor shows the Markdown as plain text
-  (`**bold**`, not bold), unlike the island since its rendered Markdown;
-  only the search marks are styled. Rendering it is a separate change.
+- **Rendered, as in the island** (2026-10-04, for a light, Notion-like
+  editor in the window): `allNotesStyler.js` turns the
+  same `render.js` spans into GTK text tags. Headings, bold, italic,
+  strikethrough, code, links, quotes and done items are drawn formatted.
+  The line with the cursor shows its markers, dimmed; the others hide
+  theirs, and so does every line while the editor has no focus. A
+  checkbox and a quote's `>` stay, dimmed. The tags recompute on each
+  edit, on a move to another line and on focus changes; they are not
+  edits, so they never reach the undo history or the autosave.
+  - Hidden markers are transparent at a twentieth of the size, not tagged
+    `invisible`: GtkTextBuffer:text leaves invisible characters out, and
+    the pane saves that text, so `invisible` would drop the markers from
+    the file. As in the island, each character also keeps its place for
+    the cursor and the bar.
+  - The muted colour is a mid grey for light and dark styles alike (the
+    window's editor has no note colour).
 
 ### Filters
 
@@ -444,7 +458,9 @@ features/notes/
 ├── library.js    window side, no GTK: every note, followed by the monitor
 ├── allNotesPage.js  GTK: the All notes page (search, labels, list)
 ├── allNotesNote.js  GTK: its note pane (header, Labels, bar, editor)
-└── allNotesFormatBar.js  GTK: the window's formatting bar
+├── allNotesFormatBar.js  GTK: the window's formatting bar
+└── allNotesStyler.js  GTK: text tags on the window's editor from
+                  render.js
 ```
 
 `names.js`, `markdown.js`, `labels.js`, `search.js`, `store.js`,

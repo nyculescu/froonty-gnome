@@ -2,13 +2,14 @@
 // The "All notes" page's note pane (settings window; GTK 4 + libadwaita, so
 // nothing from the Shell side): the open note's header (colour, name,
 // labels, a Labels menu and the fold button), the island's formatting bar
-// and a plain-text Markdown editor with undo.
+// and a Markdown editor with undo, drawn rendered as in the island
+// (allNotesStyler.js): the line being edited shows its markers, dimmed.
 //
 //   ● Plan                       q4 · work  [Labels ▾] [⤴]
 //   [B][I][S][H][•][1.][☑][</>][🔗][↩]                     formatting bar
 //   ┌────────────────────────────────────────────────────┐
-//   │ # Q4 plan                                          │  matches of the
-//   │ Ship the café menu by Friday                       │  search marked
+//   │ Q4 plan                                            │  matches of the
+//   │ Ship the café menu by **Friday**                   │  search marked
 //   └────────────────────────────────────────────────────┘
 //
 // The bar edits the buffer as one user action (one undo step), saved like
@@ -37,8 +38,10 @@ import Pango from 'gi://Pango';
 import {gettext as _} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
 import {FormatBar} from './allNotesFormatBar.js';
+import {MarkdownStyler} from './allNotesStyler.js';
 import * as Labels from './labels.js';
 import {NoteWriter} from './noteWriter.js';
+import {charOffsets} from './render.js';
 import {fold, sourceRange, terms} from './search.js';
 
 const isError = (e, code) => e?.matches?.(Gio.IOErrorEnum, code) ?? false;
@@ -48,24 +51,6 @@ const foldIcon = name => new Gio.FileIcon({
     file: Gio.File.new_for_uri(import.meta.url).get_parent()
         .get_child('icons').get_child(`froonty-fold-${name}-symbolic.svg`),
 });
-
-// UTF-16 indices of `text` → character offsets (what GtkTextIter counts).
-function charOffsets(text, indices) {
-    const wanted = [...new Set(indices)].sort((a, b) => a - b);
-    const offsets = new Map();
-    let chars = 0;
-    let at = 0;
-    for (const index of wanted) {
-        for (; at < index; at++) {
-            const code = text.charCodeAt(at);
-            // A low surrogate continues the character before it.
-            if (code < 0xDC00 || code > 0xDFFF)
-                chars++;
-        }
-        offsets.set(index, chars);
-    }
-    return offsets;
-}
 
 export class NotePane {
     /**
@@ -586,13 +571,6 @@ export class NotePane {
 
     _buildEditor() {
         this._buffer = new Gtk.TextBuffer();
-        this._matchTag = new Gtk.TextTag({
-            name: 'froonty-match',
-            background: '#f6d32d',
-            foreground: '#1f1f1f',
-        });
-        this._buffer.get_tag_table().add(this._matchTag);
-        this._matchMark = this._buffer.create_mark(null, this._buffer.get_start_iter(), true);
         this._buffer.connect('changed', () => {
             if (!this._syncing && this.name !== null)
                 this._writer?.edited(this._buffer.text);
@@ -611,6 +589,15 @@ export class NotePane {
             top_margin: 12,
             bottom_margin: 12,
         });
+        this._styler = new MarkdownStyler(this._view);
+        // Added after the styler's tags, so a search match shows over them.
+        this._matchTag = new Gtk.TextTag({
+            name: 'froonty-match',
+            background: '#f6d32d',
+            foreground: '#1f1f1f',
+        });
+        this._buffer.get_tag_table().add(this._matchTag);
+        this._matchMark = this._buffer.create_mark(null, this._buffer.get_start_iter(), true);
         this._scroll = new Gtk.ScrolledWindow({
             hexpand: true,
             vexpand: true,

@@ -759,4 +759,72 @@ test('window: Wrap lines and the fold button are the island\'s settings', async 
     await closeWindow(window);
 });
 
+// ---- the editor drawn rendered (allNotesStyler.js)
+
+// The rendered styles at a character offset ('h1', 'bold', 'hidden'…).
+function stylesAt(ui, offset) {
+    return ui.editor.buffer.get_iter_at_offset(offset).get_tags()
+        .map(tag => tag.name).filter(name => name?.startsWith('froonty-markdown-'))
+        .map(name => name.slice('froonty-markdown-'.length)).sort();
+}
+
+test('window: the note is drawn rendered; the edited line shows its markers', async () => {
+    const note = '# Title\nsay **hi** and `x`\n- [x] done\n> quote';
+    const dir = tempFolder({F: note, E: '😀 **hi**'});
+    const {window, ui} = await openWindow(dir, {last: 'F'});
+    const buffer = ui.editor.buffer;
+    // Offsets: "# Title\n" 0-7, "say **hi** and `x`\n" 8-26, "- [x] done\n"
+    // 27-37, "> quote" 38-44.
+    eq(stylesAt(ui, 2), ['h1'], 'a heading');
+    eq(stylesAt(ui, 14), ['bold']);
+    eq(stylesAt(ui, 24), ['code']);
+    eq(stylesAt(ui, 34), ['done'], 'a checked item');
+    eq(stylesAt(ui, 41), ['quote']);
+    ok(!ui.editor.has_focus, 'the editor starts without the focus');
+    for (const at of [0, 12, 13, 16, 17, 23, 25])
+        ok(stylesAt(ui, at).includes('hidden'), `without the focus, the marker at ${at} is hidden`);
+    // As in the island, a checkbox and a quote's ">" stay, dimmed.
+    eq(stylesAt(ui, 30), ['marker'], 'the checkbox');
+    eq(stylesAt(ui, 38), ['marker'], 'the quote mark');
+
+    ui.editor.grab_focus();
+    ui.select(14);
+    ok(await waitFor(() => stylesAt(ui, 12).includes('marker')), 'the edited line: its markers dimmed');
+    ok(stylesAt(ui, 0).includes('hidden'), 'another line: hidden');
+    ui.select(3);
+    ok(stylesAt(ui, 0).includes('marker') && stylesAt(ui, 12).includes('hidden'), 'they follow the cursor');
+
+    // Typing restyles; the text, the undo history and the file stay plain.
+    ui.select(buffer.get_char_count());
+    ui.type(' *it*');
+    eq(stylesAt(ui, 47), ['italic', 'quote'], 'a new span as it is typed');
+    eq(ui.text, `${note} *it*`);
+    eq(buffer.get_text(...buffer.get_bounds(), true), ui.text, 'no character is invisible');
+    await sleep(AUTOSAVE);
+    eq(read(dir, 'F.md'), `${note} *it*`, 'saved with every marker');
+    buffer.undo();
+    eq(ui.text, note, 'one undo step: the typing, not the styling');
+    ok(!buffer.can_undo);
+
+    window.set_focus(ui.search);
+    ok(await waitFor(() => stylesAt(ui, 0).includes('hidden') && stylesAt(ui, 12).includes('hidden')),
+        'the focus elsewhere: every marker hidden');
+
+    // A search match shows over the styles.
+    await ui.searchFor('hi');
+    const at = buffer.get_iter_at_offset(14);
+    const match = at.get_tags().find(tag => tag.name === 'froonty-match');
+    ok(match, 'the match is marked');
+    ok(at.get_tags().every(tag => tag === match || tag.get_priority() < match.get_priority()), 'over the bold');
+    await ui.searchFor('');
+
+    ui.list.select_row(ui.rows.find(row => row._noteName === 'E'));
+    await waitFor(() => ui.open === 'E');
+    eq(stylesAt(ui, 5), ['bold'], 'after an emoji: code points as offsets');
+    ok(stylesAt(ui, 3).includes('hidden'));
+    await sleep(AUTOSAVE);
+    eq(read(dir, 'E.md'), '😀 **hi**', 'untouched');
+    await closeWindow(window);
+});
+
 await done();

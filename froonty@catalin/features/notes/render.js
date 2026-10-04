@@ -5,8 +5,9 @@
 // how it is drawn changes. As in Obsidian's live preview, the markers of
 // the line being edited stay visible (dimmed), so they can be edited.
 //
-// Pure: offsets are JavaScript string indices (UTF-16 units). The view
-// turns the spans into Pango attributes (byte offsets). No GI.
+// Pure: offsets are JavaScript string indices (UTF-16 units). The island
+// turns the spans into Pango attributes (byte offsets, styler.js), the All
+// notes window into text tags (character offsets, allNotesStyler.js). No GI.
 
 const HEADING = /^(#{1,6}) +/;
 const QUOTE = /^> ?/;
@@ -262,5 +263,26 @@ export function byteOffsets(text) {
             bytes += 3;
     }
     offsets[text.length] = bytes;
+    return offsets;
+}
+
+/**
+ * Character offsets (code points, what GtkTextIter counts) of UTF-16
+ * indices of `text`, as a Map from each index.
+ */
+export function charOffsets(text, indices) {
+    const wanted = [...new Set(indices)].sort((a, b) => a - b);
+    const offsets = new Map();
+    let chars = 0;
+    let at = 0;
+    for (const index of wanted) {
+        for (; at < index; at++) {
+            const code = text.charCodeAt(at);
+            // A low surrogate continues the character before it.
+            if (code < 0xDC00 || code > 0xDFFF)
+                chars++;
+        }
+        offsets.set(index, chars);
+    }
     return offsets;
 }

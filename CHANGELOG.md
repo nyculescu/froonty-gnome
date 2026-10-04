@@ -29,8 +29,11 @@
   cursor or selection; an edit is one undo step (Ctrl+Z) and saves like
   typing. Wrap lines and the fold button are the island's settings, so
   both editors look alike (the window used to wrap always). Read-only
-  notes leave the formatting buttons insensitive. The window still shows
-  the Markdown as plain text.
+  notes leave the formatting buttons insensitive.
+- **The All notes window draws notes rendered**, as the island does:
+  headings, bold, italic, strikethrough, code, links, quotes and done
+  items formatted; the line with the cursor shows its Markdown markers,
+  dimmed, and the other lines hide theirs. The file stays plain Markdown.
 
 ### Changed
 - Media: anything that plays comes before anything paused in the
