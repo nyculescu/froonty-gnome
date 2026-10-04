@@ -775,7 +775,7 @@ class FakeDesktop extends Emitter {
     }
 }
 
-// A notification store as the service uses the Notifications tab's
+// A notification store as the service uses it
 // (shell/notificationStore.js, with its `filter`). Every store sees the
 // same notifications, as every store sees GNOME's one tray.
 class FakeStore extends Emitter {

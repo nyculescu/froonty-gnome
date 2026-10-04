@@ -1,9 +1,7 @@
 A compact Dynamic-Island-style entry point at the top center of the screen that reuses GNOME Shell's own clock, calendar and notifications. It takes the place of the top bar clock, which it makes transparent while the pill is shown (a setting turns this off).
 
-Click the pill, rest the pointer on it, or press the shortcut to open it. Its top row shows the date and the time in a small pill: a click on it closes the island and opens GNOME's own calendar and notification menu. The same row has panic buttons that mute the microphone or the sound. Its tabs:
-- Calendar: the events of the calendars GNOME already knows (Online Accounts, GNOME Calendar, Evolution), read-only, through Evolution Data Server. It needs the gir1.2-ecal-2.0 package (Debian and Ubuntu); without it the tab starts off, and Settings → Calendar says what to install.
-- Notifications: GNOME's own notifications, with Do Not Disturb. Froonty keeps no copy.
-- Notes: Markdown notes, kept as plain files in a folder you choose (~/.local/share/froonty/notes by default), with labels and a window to search them all.
-Each tab can be turned off in Settings.
+Click the pill, rest the pointer on it, or press the shortcut to open it. Its top row shows the date and the time in a small pill: a click on it closes the island and opens GNOME's own calendar and notification menu (the pill shows GNOME's dot for unread notifications). The same row has panic buttons that mute the microphone or the sound.
 
-Froonty makes no network requests of its own. On a click, the Calendar tab opens an event's day in the web calendar it comes from (in your browser), or GNOME Settings' Online Accounts.
+Below them is the Notes tab: Markdown notes, kept as plain files in a folder you choose (~/.local/share/froonty/notes by default), with labels and a window to search them all. It can be turned off in Settings.
+
+Froonty makes no network requests of its own.

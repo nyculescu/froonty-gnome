@@ -12,10 +12,8 @@ import {
 
 // Feature settings tabs, after the general ones. (Imported here, not via
 // features/registry.js: that loads Shell-side modules this process cannot.)
-import {calendarPage} from './features/calendar/prefs.js';
 import {attachAllNotes} from './features/notes/allNotesPage.js';
 import {notesPage} from './features/notes/prefs.js';
-import {notificationsPage} from './features/notifications/prefs.js';
 // local:begin local-features (working-tree only; tools/pack-public strips it)
 import {addLocalIconPaths, addLocalPrefs} from './features/localPrefs.js';
 // local:end local-features
@@ -48,8 +46,6 @@ export default class FroontyPreferences extends ExtensionPreferences {
             this._appearancePage(settings),
             panicPage(settings),
             // Feature pages in the hub's tab order (features/registry.js).
-            calendarPage(settings, window),
-            notificationsPage(settings),
             notesPage(settings),
         ]) {
             window.add(page);

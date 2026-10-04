@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Notifications tab: the store over GNOME's message tray
-// (shell/notificationStore.js), the service (features/notifications/
-// service.js) and the hover bubble's text (features/notifications/text.js).
+// The store over GNOME's message tray (shell/notificationStore.js), which
+// the Claude attention bar reads GNOME's notifications through.
 //
 // GNOME's objects are fakes with the same shape as GNOME Shell 50.1's
 // (ui/messageTray.js): a source keeps at most what it is given, emits
@@ -19,10 +18,6 @@ import {test, eq, ok, done} from './test.js';
 import {
     MAX_ACTIONS, NotificationStore, compareEntries,
 } from '../../froonty@catalin/shell/notificationStore.js';
-import {NotificationsService} from '../../froonty@catalin/features/notifications/service.js';
-import {
-    BUBBLE_BODY, BUBBLE_WIDTH, bubbleText, cut, wrapLines,
-} from '../../froonty@catalin/features/notifications/text.js';
 
 // GNOME Shell 50.1's values (messageTray.js); the store gets them passed.
 const CRITICAL = 3;
@@ -785,148 +780,6 @@ test('store: acknowledgeAll() leaves one waiting for its banner to GNOME\'s bann
     eq(store.acknowledgeAll(), 1);
     ok(late.acknowledged);
     store.unwatch();
-});
-
-// ---------------------------------------------------------------- service
-
-const notificationSchema = () =>
-    Gio.SettingsSchemaSource.get_default().lookup('org.gnome.desktop.notifications', true);
-
-function memorySettings() {
-    const settings = new Gio.Settings({
-        settings_schema: notificationSchema(),
-        backend: Gio.memory_settings_backend_new(),
-    });
-    eq(GObject.type_name(settings.backend.constructor.$gtype), 'GMemorySettingsBackend',
-        'test settings must be in memory');
-    return settings;
-}
-
-function fakeGnome(tray) {
-    const gnome = {
-        stores: 0,
-        createStore() {
-            this.stores++;
-            return makeStore(tray);
-        },
-        plainText: text => text,
-        timeAgo: () => '',
-    };
-    return gnome;
-}
-
-const flush = () => {
-    while (GLib.MainContext.default().iteration(false))
-        ;
-};
-
-const settingsHandlers = settings =>
-    handlers(settings, 'changed') + handlers(settings, 'writable-changed');
-
-test('service: no store, no settings and no handlers until shown; hidden again, none', () => {
-    const tray = new FakeTray();
-    const mail = makeSource(tray);
-    const n = notify(mail);
-    const gnome = fakeGnome(tray);
-    const dnd = memorySettings();
-    const service = new NotificationsService(gnome, {notificationSettings: dnd});
-    service.start();
-    eq([gnome.stores, settingsHandlers(dnd), handlers(tray, 'source-added'), handlers(n, 'notify')],
-        [0, 0, 0, 0]);
-    eq(service.items, []);
-    service.setActive(true);
-    eq(gnome.stores, 1);
-    eq(service.items, [n]);
-    eq([settingsHandlers(dnd), handlers(tray, 'source-added'), handlers(n, 'notify')], [2, 1, 1]);
-    service.setActive(false);
-    eq([settingsHandlers(dnd), handlers(tray, 'source-added'), handlers(n, 'notify')], [0, 0, 0]);
-    eq(service.items, []);
-    service.setActive(true);
-    eq(gnome.stores, 1, 'the store is made once');
-    service.stop();
-});
-
-test('service: Do Not Disturb follows show-banners; setDoNotDisturb writes it; dnd-changed only while active', () => {
-    const tray = new FakeTray();
-    const dnd = memorySettings();
-    const service = new NotificationsService(fakeGnome(tray), {notificationSettings: dnd});
-    const fired = counting(service, 'dnd-changed');
-    dnd.set_boolean('show-banners', false);
-    flush();
-    eq(fired.length, 0, 'not while hidden');
-    service.setActive(true);
-    eq(fired.length, 1, 'once on showing');
-    ok(service.doNotDisturb && service.canChangeDoNotDisturb);
-    dnd.set_boolean('show-banners', true);
-    flush();
-    ok(!service.doNotDisturb);
-    eq(fired.length, 2);
-    ok(service.setDoNotDisturb(true));
-    flush();
-    eq(dnd.get_boolean('show-banners'), false);
-    ok(service.doNotDisturb);
-    service.setActive(false);
-    eq(service.setDoNotDisturb(false), false, 'not while hidden');
-    eq(dnd.get_boolean('show-banners'), false);
-    dnd.set_boolean('show-banners', true);
-    flush();
-    eq(fired.length, 3, 'no more while hidden');
-    service.stop();
-});
-
-test('service: without GNOME\'s tray it is unavailable and every call is a no-op', () => {
-    const dnd = memorySettings();
-    const service = new NotificationsService(null, {notificationSettings: dnd});
-    ok(!service.available);
-    service.setActive(true);
-    const fake = {};
-    const snapshot = new Map([[fake, 1]]);
-    eq([service.items, service.describe(fake), service.markSeen(), service.activate(fake),
-        service.activateAction(fake, 0), service.dismiss(fake), service.snapshot().size,
-        service.countClearable(snapshot), service.clear(snapshot)],
-    [[], null, 0, false, false, false, 0, 0, 0]);
-    service.stop();
-});
-
-test('service: every call is a no-op while hidden; stop() is idempotent and releases everything', () => {
-    const tray = new FakeTray();
-    const mail = makeSource(tray);
-    const n = notify(mail);
-    const dnd = memorySettings();
-    const service = new NotificationsService(fakeGnome(tray), {notificationSettings: dnd});
-    service.setActive(true);
-    const snapshot = service.snapshot();
-    eq([snapshot.size, service.countClearable(snapshot)], [1, 1]);
-    service.setActive(false);
-    eq([service.describe(n), service.markSeen(), service.activate(n), service.dismiss(n),
-        service.snapshot().size, service.countClearable(snapshot), service.clear(snapshot)],
-    [null, 0, false, false, 0, 0, 0]);
-    ok(!n.destroyed && !n.acknowledged);
-    service.setActive(true);
-    eq(service.markSeen(), 1);
-    service.stop();
-    service.stop();
-    eq([settingsHandlers(dnd), handlers(tray, 'source-added'), handlers(mail, 'notification-added'),
-        handlers(n, 'notify')], [0, 0, 0, 0]);
-    ok(service._store === null && service._dnd === null);
-    ok(!n.destroyed, 'stopping removes nothing');
-});
-
-// ---------------------------------------------------------------- bubble
-
-test('bubble: wrapped at spaces, long words cut, the body cut at 600 characters', () => {
-    eq(wrapLines('one two three four', 9), ['one two', 'three', 'four']);
-    eq(wrapLines('abcdefghij xy', 4), ['abcd', 'efgh', 'ij', 'xy']);
-    eq(wrapLines('  ', 10), []);
-    eq(cut('short', 10), 'short');
-    eq(cut('abcdefghijkl', 5), 'abcd…');
-    const body = 'word '.repeat(200);
-    const text = bubbleText({heading: 'Mail · 14:05', title: 'Hello', body});
-    const lines = text.split('\n');
-    eq(lines.slice(0, 2), ['Mail · 14:05', 'Hello']);
-    ok(lines.every(line => line.length <= BUBBLE_WIDTH), 'every line fits');
-    const shownBody = lines.slice(2).join(' ');
-    ok(shownBody.endsWith('…') && shownBody.length <= BUBBLE_BODY, `${shownBody.length}`);
 });
 
 await done();

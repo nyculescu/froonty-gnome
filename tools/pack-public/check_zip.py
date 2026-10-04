@@ -29,7 +29,6 @@ LOCAL_MODULES = (
 REQUIRED = (
     "metadata.json", "extension.js",
     # Bundled icons the kept tabs load by path (prune.py keeps them).
-    "features/calendar/icons/hicolor/scalable/actions/froonty-calendar-symbolic.svg",
     "features/notes/icons/froonty-fold-up-symbolic.svg",
     "features/notes/icons/froonty-fold-down-symbolic.svg",
 )

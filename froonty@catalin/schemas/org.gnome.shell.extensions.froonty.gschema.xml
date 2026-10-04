@@ -32,7 +32,7 @@
 
     <!-- Hub -->
     <key name="hub-last-tab" type="s">
-      <default>'calendar'</default>
+      <default>'notes'</default>
       <summary>Hub tab selected last</summary>
       <description>The feature id shown when the island expands (see features/registry.js). When that tab is gone or turned off, the first tab that is on.</description>
     </key>
@@ -58,25 +58,6 @@
       <default>['mute-microphone', 'mute-sound']</default>
       <summary>Panic buttons, in bar order</summary>
       <description>At most 5 ids from panic/catalog.js; unknown ids are ignored.</description>
-    </key>
-
-    <!-- Notifications feature (docs/features/notifications.md) -->
-    <key name="notifications-enabled" type="b">
-      <default>true</default>
-      <summary>Show the Notifications tab</summary>
-      <description>GNOME's own notifications, newest first, urgent ones on top. Froonty keeps no copy, watches them only while the tab is shown, and never removes one on its own.</description>
-    </key>
-    <key name="notifications-width" type="i">
-      <range min="320" max="960"/>
-      <default>400</default>
-      <summary>Notifications island width</summary>
-      <description>In logical pixels, while the Notifications tab is shown.</description>
-    </key>
-    <key name="notifications-height" type="i">
-      <range min="200" max="720"/>
-      <default>440</default>
-      <summary>Notifications island height</summary>
-      <description>In logical pixels, while the Notifications tab is shown.</description>
     </key>
 
     <!-- Notes feature (docs/features/notes.md) -->
@@ -340,44 +321,6 @@
       <default>440</default>
       <summary>Clipboard island height</summary>
       <description>In logical pixels, while the Clipboard tab is shown.</description>
-    </key>
-
-    <!-- Calendar feature (docs/features/calendar.md, step B) -->
-    <key name="calendar-enabled" type="b">
-      <default>true</default>
-      <summary>Show the Calendar tab</summary>
-      <description>The events of the calendars GNOME knows, read-only from Evolution Data Server. Needs gir1.2-ecal-2.0; turned off once, on the first start, when it is missing.</description>
-    </key>
-    <key name="calendar-eds-checked" type="b">
-      <default>false</default>
-      <summary>Calendar: the first-start check for gir1.2-ecal-2.0 ran (internal)</summary>
-    </key>
-    <key name="calendar-hidden-sources" type="as">
-      <default>[]</default>
-      <summary>Calendar: calendars hidden in the tab</summary>
-      <description>Evolution Data Server source ids. Every calendar GNOME's own calendar shows is in the tab unless listed here.</description>
-    </key>
-    <key name="calendar-granularity" type="s">
-      <choices>
-        <choice value="day"/>
-        <choice value="week"/>
-        <choice value="month"/>
-      </choices>
-      <default>'week'</default>
-      <summary>Calendar: the span the agenda shows</summary>
-      <description>"day", "week" or "month" around the selected day. Chosen in the tab.</description>
-    </key>
-    <key name="calendar-width" type="i">
-      <range min="560" max="960"/>
-      <default>620</default>
-      <summary>Calendar island width</summary>
-      <description>In logical pixels, while the Calendar tab is shown.</description>
-    </key>
-    <key name="calendar-height" type="i">
-      <range min="320" max="720"/>
-      <default>380</default>
-      <summary>Calendar island height</summary>
-      <description>In logical pixels, while the Calendar tab is shown.</description>
     </key>
 
     <!-- Kill Process feature (docs/features/kill-process.md) -->
