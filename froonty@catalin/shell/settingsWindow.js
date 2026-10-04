@@ -35,7 +35,8 @@ const PREFS_OBJECT_PATH = '/org/gnome/Shell/Extensions';
 // appears within a second; the service may be starting up).
 const WINDOW_WAIT_SECONDS = 10;
 // A preferences service whose last window just closed still owns its name
-// for a moment, without its object; a new one starts once it has gone.
+// for a moment, without its object, or takes a call and exits without a
+// reply; a new one starts once it has gone.
 const LEAVING_RETRY_MS = 300;
 const LEAVING_RETRIES = 5;
 
@@ -108,8 +109,9 @@ export class SettingsWindow {
                 // pending watch will still activate that window.
                 if (e.message.includes('Already showing a prefs dialog'))
                     return;
-                const leaving = e.matches?.(Gio.DBusError, Gio.DBusError.UNKNOWN_METHOD) ||
-                    e.matches?.(Gio.DBusError, Gio.DBusError.UNKNOWN_OBJECT);
+                // Without its object yet, or gone before it replied.
+                const leaving = [Gio.DBusError.UNKNOWN_METHOD, Gio.DBusError.UNKNOWN_OBJECT,
+                    Gio.DBusError.NO_REPLY].some(code => e.matches?.(Gio.DBusError, code));
                 if (!leaving || attempt >= LEAVING_RETRIES)
                     throw e;
             }

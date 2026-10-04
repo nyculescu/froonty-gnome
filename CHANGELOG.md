@@ -43,7 +43,8 @@
 ### Fixed
 - Settings opened again right after its window closed: the request no
   longer fails while GNOME's preferences service is still leaving (it
-  keeps its name a moment without its object); Froonty retries briefly.
+  keeps its name a moment without its object, or exits without
+  replying); Froonty retries briefly.
 
 ## 0.5.0-rc0 (2026-10-03)
 
