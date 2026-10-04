@@ -211,23 +211,24 @@ hub     BinLayout, reactive (stops clicks from reaching the pill)
  │            side column  tab column (GridLayout, TAB_COLUMNS = 1; only with more than one tab on)
  │                         at the top, ⚙️ at the bottom; always shown; the island grows to fit it
  │            header   [panic 1–4] (date pill: "Sat Oct 3 14:05" + GNOME's unread dot) [panic 5–8] … [feature actions]
- │                     (HeaderLayout: the date pill centred on the island, or moved just clear)
+ │                     (HeaderLayout: the date pill exactly over GNOME's clock; equal-width panic groups)
  │            content  the active tab's view, or, while no tab is on, a notice and "Open Settings"
  └ overlay  tooltips (click-through, fixed positions)
 ```
 
-- **The header row** (`ui/hubHeader.js`, `HeaderLayout`) centres the date
-  pill on the whole island, not on the column right of the tabs, so it
-  sits over GNOME's clock under the island. The panic bar
+- **The header row** (`ui/hubHeader.js`, `HeaderLayout`) puts the date
+  pill's middle exactly over GNOME's top bar clock, concealed under the
+  island: the island's middle shifted by the clock's offset from the
+  monitor's centre (`IslandGeometry.clockOffset()`). The panic bar
   (`ui/panicBar.js`, at most 8, `MAX_PANIC_BUTTONS`) is two groups
-  around it, split by `panicGroups()` (`panic/catalog.js`): the first
-  four on its left, the next four on its right, so with fewer the left
-  fills first. Without a date pill the two groups are centred together.
-  The active feature's buttons sit at the right end. Where centring would
-  bring the pill's groups closer than `PANIC_GAP` (8 px) to the side
-  column or to the feature's buttons, they move just enough; the island
-  is only made wider (`Hub.minWidth`: side column, gaps, the pill and its
-  groups, the feature's buttons) when they do not fit at all. The row
+  around it, split by `panicGroups()` (`panic/catalog.js`): half each,
+  the right one more when the count is odd. Both groups take the wider
+  one's width; the narrower spreads its buttons apart
+  (`PanicGroupLayout`), a lone button at its outer end. Without a date pill the two groups are centred together.
+  The active feature's buttons sit at the right end. The pill never moves
+  off the clock: `Hub.minWidth` makes the island (centred on the monitor)
+  wide enough for both halves around that point, `PANIC_GAP` (8 px) clear
+  of the side column before it and the feature's buttons after it. The row
   reports a minimum width of 0, so it never squeezes the content.
 - **⚙️** (`hub.settingsButton`) is pinned to the bottom of the side column
   with a tab's size and look (20 px icon, `froonty-tab`), never checked,

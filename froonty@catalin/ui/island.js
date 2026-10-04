@@ -330,6 +330,7 @@ export class Island {
         };
         this._ctx = ctx;
         this._hub = new Hub(ctx, FEATURES, {
+            clockOffset: () => this._geometry.clockOffset(),
             openSettings: () => this._openSettings('settings'),
             openCalendar: this._calendarMenu.available
                 ? () => this._openCalendar() : null,

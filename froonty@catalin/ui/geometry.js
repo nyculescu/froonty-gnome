@@ -82,6 +82,19 @@ export class IslandGeometry {
         return Math.max(0, Math.floor(centerY - height / 2));
     }
 
+    /**
+     * How far right of the monitor's centre GNOME's top bar clock is
+     * centred (stage px; 0 without it). The island is centred on the
+     * monitor; the hub header's date pill sits on the clock itself.
+     */
+    clockOffset() {
+        const bounds = this._panelClock.coverBounds;
+        const monitor = Main.layoutManager.primaryMonitor;
+        if (!bounds || !monitor)
+            return 0;
+        return (bounds.x1 + bounds.x2) / 2 - (monitor.x + monitor.width / 2);
+    }
+
     // The pill is centered on the monitor, but the panel centers the clock
     // with its own rounding and shifts it when the left box is crowded. So
     // the pill must reach the clock's farther edge on both sides of the

@@ -57,7 +57,7 @@
     <key name="panic-buttons" type="as">
       <default>['mute-microphone', 'mute-sound']</default>
       <summary>Panic buttons, in bar order</summary>
-      <description>At most 8 ids from panic/catalog.js (the first 4 left of the hub header's date pill, the next 4 right of it); unknown ids are ignored.</description>
+      <description>At most 8 ids from panic/catalog.js (half on each side of the hub header's date pill, the right side one more when odd); unknown ids are ignored.</description>
     </key>
 
     <!-- Notes feature (docs/features/notes.md) -->

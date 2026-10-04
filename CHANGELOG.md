@@ -25,13 +25,15 @@
   whether MathJax is installed, Clear recent, size.
 
 ### Changed
-- **Up to 8 panic buttons** (was 5), Settings → Panic buttons: the first
-  4 left of the hub header's date pill, the next 4 right of it; with
-  fewer, the left fills first. The settings page refuses a 9th.
-- **The date pill is centred on the island**, over GNOME's clock under
-  it, with the panic buttons on its two sides; on a tab too narrow for
-  that it moves just enough to stay clear, and the island only grows
-  wider when they do not fit at all. Without GNOME's date menu (no pill)
+- **Up to 8 panic buttons** (was 5), Settings → Panic buttons: half on
+  each side of the hub header's date pill, the right side one more when
+  the count is odd (3 → 1 + 2). Both sides are equally wide: the side
+  with fewer or narrower buttons spreads them apart. The settings page
+  refuses a 9th.
+- **The date pill sits exactly over GNOME's clock** (concealed under the
+  island), with the panic buttons on its two sides; it never moves off
+  it: an island without room for both sides grows wider. Without GNOME's
+  date menu (no pill)
   the panic buttons are centred as one group. The open tab's own header
   buttons (Notes' All notes) sit at the header's right end.
 - **⚙️ moved to the bottom of the tab column**, below the tabs, with a

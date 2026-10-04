@@ -7,22 +7,21 @@
 //        (the one under the island), the time as Froonty shows it, and
 //        GNOME's unread dot after the time; a press closes the island and
 //        opens GNOME's own calendar and notification menu (absent when
-//        this Shell has no date menu). It is centred on the whole island,
-//        not just on the column right of the tabs: where GNOME's clock
-//        sits in the top bar, under the island. On an island too narrow
-//        for that, it moves just enough for its panic groups to stay
-//        PANIC_GAP clear of the side column and the feature's actions.
+//        this Shell has no date menu). Its middle is always exactly over
+//        GNOME's top bar clock, concealed under the island (Hub's
+//        centre(): the island's middle shifted by the clock's offset).
 //   panic 1–4, 5–8  the panic bar's two groups (panicBar.js), on either
-//        side of the date pill; without a date pill they are centred
-//        together, as one group
+//        side of the date pill: half each, the right one more when odd,
+//        both as wide as the wider one (groupWidth()); without a date
+//        pill they are centred together, as one group
 //   feature actions  buttons a feature's view provides (`headerActions`),
 //        shown only while its tab is the active one, at the row's right
 //        end; e.g. Notes' "All notes"
 //
 // Keyboard order follows the row: panic 1–4, the date pill, panic 5–8,
-// the feature's actions. The hub only makes the island wider (Hub.minWidth)
-// when the pill and its groups do not fit between the side column and the
-// feature's actions at all.
+// the feature's actions. The hub makes the island wide enough (Hub.minWidth)
+// for both halves around the clock's place, PANIC_GAP clear of the side
+// column and the feature's actions.
 //
 // The view owns its action buttons and destroys them; the header only
 // places them, gives them the icon-button tooltip, and shows the active
@@ -76,25 +75,26 @@ class HeaderLayout extends Clutter.LayoutManager {
         const rtl = container.get_text_direction() === Clutter.TextDirection.RTL;
         const width = box.get_width();
         // x: from the row's leading edge (the left one, unless mirrored).
-        const place = (actor, x) => {
-            const [, w] = actor.get_preferred_width(-1);
+        const place = (actor, x, forced) => {
+            const w = forced ?? actor.get_preferred_width(-1)[1];
             const [, h] = actor.get_preferred_height(w);
             const x1 = Math.round(rtl ? box.x2 - x - w : box.x1 + x);
             const y1 = Math.round(box.y1 + (box.get_height() - h) / 2);
             actor.allocate(new Clutter.ActorBox({x1, y1, x2: x1 + w, y2: y1 + h}));
             return w;
         };
-        // Centred, or moved just enough to stay PANIC_GAP clear of the
-        // feature's actions, but never closer than that to the row's start
-        // (the side column).
-        const gap = PANIC_GAP * St.ThemeContext.get_for_stage(global.stage).scale_factor;
+        // Always on centre() (Hub.minWidth makes the island wide enough).
+        // Both panic groups take the wider one's width (groupWidth()); the
+        // narrower spreads its buttons (PanicGroupLayout, panicBar.js).
         const actions = this._header.actions;
-        const end = width - gap - (actions.visible ? actions.get_preferred_width(-1)[1] : 0);
         const centre = this._centre();
-        const [before, after] = this._header.halves();
-        let x = Math.max(gap, Math.min((rtl ? width - centre : centre) - before, end - before - after));
-        for (const actor of this._header.centred.filter(a => a.visible))
-            x += place(actor, x) + this._header.spacing;
+        const [before] = this._header.halves();
+        const groupWidth = this._header.groupWidth();
+        let x = (rtl ? width - centre : centre) - before;
+        for (const actor of this._header.centred.filter(a => a.visible)) {
+            const forced = actor === this._header.calendarButton ? undefined : groupWidth;
+            x += place(actor, x, forced) + this._header.spacing;
+        }
         if (actions.visible)
             place(actions, width - actions.get_preferred_width(-1)[1]);
     }
@@ -160,9 +160,21 @@ export class HubHeader {
      * natural widths): [before it, after it]. The date pill's middle is
      * the island's; without a pill, the groups' middle is.
      */
+    /**
+     * The width both panic groups take: the wider one's natural width, so
+     * the two sides of the date pill match (the narrower one spreads its
+     * buttons out).
+     */
+    groupWidth() {
+        return Math.max(0, ...this.centred.filter(a => a.visible && a !== this.calendarButton)
+            .map(a => a.get_preferred_width(-1)[1]));
+    }
+
     halves() {
         const width = actor => (actor?.visible ? actor.get_preferred_width(-1)[1] : 0);
-        const [start, end] = [this.centred[0], this.centred.at(-1)].map(width);
+        const group = this.groupWidth();
+        const [start, end] = [this.centred[0], this.centred.at(-1)]
+            .map(actor => (actor?.visible ? group : 0));
         const pill = width(this.calendarButton);
         const spacing = this.spacing;
         if (!pill) {

@@ -478,24 +478,28 @@ function headerPlacement(hub = island()._hub) {
     const [first, last] = [parts[0], parts.at(-1)];
     const pillBox = hub.calendarButton?.visible ? boxOf(hub.calendarButton) : null;
     const anchor = pillBox ? middle(pillBox) : (first.x1 + last.x2) / 2;
-    const offset = anchor - middle(isle);
+    // GNOME's own clock, concealed under the island but laid out: the
+    // date pill sits exactly over it.
+    const clock = Main.panel.statusArea.dateMenu?.container;
+    const target = clock?.mapped ? middle(boxOf(clock)) : middle(isle);
+    const offset = anchor - target;
     // The header row starts past the side column and the hub's spacing.
     const leftRoom = first.x1 - boxOf(hub._header.actor).x1;
     const rightRoom = (actions ? actions.x1 : boxOf(hub.actor).x2) - last.x2;
     const ordered = parts.every((b, i) => i === 0 || b.x1 >= parts[i - 1].x2);
     const level = parts.every(b => Math.abs(middle({x1: b.y1, x2: b.y2}) - middle({x1: first.y1, x2: first.y2})) <= 2);
     const centred = Math.abs(offset) <= 1;
-    // Moved: right, just clear of the side column; or left, just clear of
-    // the feature's buttons.
-    const moved = (offset > 0 && Math.abs(leftRoom - gap) <= 1) || (offset < 0 && Math.abs(rightRoom - gap) <= 1);
+    // Both panic groups as wide as each other.
+    const groups = hub._panicBar.groups.filter(g => g.visible).map(boxOf);
+    const equal = groups.length < 2 || Math.abs((groups[0].x2 - groups[0].x1) - (groups[1].x2 - groups[1].x1)) <= 1;
     const clear = leftRoom >= gap - 1 && first.x1 - side.x2 >= gap - 1 && rightRoom >= gap - 1;
     const inside = first.x1 >= isle.x1 && last.x2 <= isle.x2 && (!actions || actions.x2 <= isle.x2);
     return {
-        ok: ordered && level && (centred || moved) && clear && inside,
+        ok: ordered && level && centred && equal && clear && inside,
         centred,
-        detail: `parts ${parts.map(b => `[${b.x1},${b.x2}]`).join(' ')} anchor ${anchor} island [${isle.x1},${isle.x2}] ` +
-            `side ends ${side.x2} actions ${actions ? `[${actions.x1},${actions.x2}]` : 'none'} ` +
-            `ordered=${ordered} level=${level} centred=${centred} moved=${moved} clear=${clear} inside=${inside}`,
+        detail: `parts ${parts.map(b => `[${b.x1},${b.x2}]`).join(' ')} anchor ${anchor} clock ${target} ` +
+            `island [${isle.x1},${isle.x2}] side ends ${side.x2} actions ${actions ? `[${actions.x1},${actions.x2}]` : 'none'} ` +
+            `ordered=${ordered} level=${level} centred=${centred} equal=${equal} clear=${clear} inside=${inside}`,
     };
 }
 
@@ -509,20 +513,26 @@ async function fillPanicBar(count) {
     settings().set_strv('panic-buttons', real);
     await sleep(SETTLE_MS);
     const groups = island()._hub._panicBar.groups;
-    const slots = panicGroups(Array.from({length: count}, (_, i) => i));
+    const actors = island()._hub._panicBar._buttons.map(b => b.actor);
     const standIns = [];
-    slots.forEach((indexes, g) => {
-        for (const i of indexes.filter(n => n >= real.length)) {
-            const button = new St.Button({
-                style_class: 'froonty-icon-button froonty-panic-button',
-                accessible_name: `Stand-in ${i + 1}`,
-                can_focus: true,
-                child: new St.Icon({icon_name: 'dialog-warning-symbolic'}),
-            });
-            groups[g].add_child(button);
-            groups[g].visible = true;
-            standIns.push(button);
+    for (let i = actors.length; i < count; i++) {
+        const button = new St.Button({
+            style_class: 'froonty-icon-button froonty-panic-button',
+            accessible_name: `Stand-in ${i + 1}`,
+            can_focus: true,
+            child: new St.Icon({icon_name: 'dialog-warning-symbolic'}),
+        });
+        actors.push(button);
+        standIns.push(button);
+    }
+    // The bar split the real ones by their own count; all of them, by
+    // `count`.
+    panicGroups(actors).forEach((members, g) => {
+        for (const actor of members) {
+            actor.get_parent()?.remove_child(actor);
+            groups[g].add_child(actor);
         }
+        groups[g].visible = members.length > 0;
     });
     await sleep(animationWait());
     return () => {
@@ -4074,8 +4084,12 @@ async function testSettingsButton(outDir) {
     const halves = hub._header.halves();
     const spacing = hub._main.get_theme_node().get_length('spacing');
     const actionsWidth = hub._header.actions.visible ? hub._header.actions.get_preferred_width(-1)[1] : 0;
-    const expectedMin = Math.ceil(side.get_preferred_width(-1)[1] + spacing + 16 * scale() +
-        halves[0] + halves[1] + actionsWidth);
+    // Room for both halves around the clock's place: the side column
+    // before the pill, the feature's actions after it.
+    const offset = island()._geometry.clockOffset();
+    const lead = side.get_preferred_width(-1)[1] + spacing + 8 * scale() + halves[0];
+    const trail = halves[1] + 8 * scale() + actionsWidth;
+    const expectedMin = Math.ceil(2 * Math.max(lead - offset, trail + offset));
     check('⚙️: the side column\'s width counts in the island\'s minimum width',
         hub.minWidth === expectedMin && side.get_preferred_width(-1)[1] > 0,
         `minWidth ${hub.minWidth}, expected ${expectedMin} (side column ${side.get_preferred_width(-1)[1]})`);
@@ -4436,11 +4450,11 @@ async function testHubLayout(outDir) {
         boxes.every((b, i) => i === 0 || b.y1 > boxes[i - 1].y1) &&
         boxes[0].x2 <= boxOf(hub._content).x1 && boxes.at(-1).y2 <= boxOf(pill()).y2,
         `${boxes.map(b => `[${b.x1},${b.y1}]`).join(' ')} island bottom=${boxOf(pill()).y2}`);
-    // The header: the date pill centred on the island, or moved just
-    // enough (the Notes tab at its default width, the first tab, with
-    // "All notes" at the right end).
+    // The header: the date pill exactly over GNOME's clock (the Notes tab
+    // at its default width, the first tab, with "All notes" at the right
+    // end).
     const atDefault = headerPlacement(hub);
-    check('layout: the date pill is centred on the island (or moved just clear), its panic buttons beside it, clear of the side column and "All notes"',
+    check('layout: the date pill is exactly over GNOME\'s clock, its panic buttons beside it, clear of the side column and "All notes"',
         atDefault.ok, atDefault.detail);
     settings().set_int('notes-width', 620);
     await sleep(animationWait());
@@ -4448,8 +4462,8 @@ async function testHubLayout(outDir) {
     check('layout: on a wide tab the date pill is centred on the island, where GNOME\'s clock is',
         wide.ok && wide.centred, wide.detail);
 
-    // The panic buttons: the first 4 left of the date pill, the next 4
-    // right of it; with fewer, the left fills first.
+    // The panic buttons: half on each side of the date pill, the right one
+    // more when odd; both sides equally wide.
     const pillBox = () => boxOf(hub.calendarButton);
     const sides = () => {
         const [left, right] = hub._panicBar.groups.map(g => (g.visible ? g.get_children() : []));
@@ -4459,12 +4473,12 @@ async function testHubLayout(outDir) {
             ok: left.every(b => boxOf(b).x2 <= p.x1) && right.every(b => boxOf(b).x1 >= p.x2),
         };
     };
-    for (const count of [1, 4, 5, 8]) {
+    for (const count of [1, 2, 3, 4, 5, 6, 7, 8]) {
         const removeStandIns = await fillPanicBar(count);
         const split = sides();
         const placed = headerPlacement(hub);
-        const [left, right] = [Math.min(count, 4), Math.max(0, count - 4)];
-        check(`layout: ${count} panic button${count > 1 ? 's' : ''}: ${left} left of the date pill, ${right} right of it, the pill centred`,
+        const [left, right] = [Math.floor(count / 2), Math.ceil(count / 2)];
+        check(`layout: ${count} panic button${count > 1 ? 's' : ''}: ${left} left of the date pill, ${right} right of it, equally wide, the pill over the clock`,
             split.left === left && split.right === right && split.ok && placed.ok && placed.centred,
             `${split.left} + ${split.right}, ${placed.detail}`);
         if (count === 8)
@@ -5548,10 +5562,12 @@ async function testDatePill(outDir) {
     s.reset('panic-buttons');
     await sleep(animationWait());
 
-    // At the defaults the top row fits the narrowest island (expanded-
-    // width, 360): the pill does not make the island wider.
-    check('date pill: the top row fits a 360 px island; it does not widen the island',
-        hub.minWidth + islandFrame() <= 360 * scale(), `${hub.minWidth} + ${islandFrame()}`);
+    // The pill never leaves the clock: an island without room for both
+    // halves around it grows (the empty hub checks the narrowest, 360).
+    const [isleWidth] = pill().get_transformed_size();
+    check('date pill: the island is at least as wide as the pill centred over the clock needs',
+        isleWidth >= hub.minWidth + islandFrame() - 1 && headerPlacement(hub).ok,
+        `island ${isleWidth}, needs ${hub.minWidth} + ${islandFrame()}`);
     island().collapse();
     await sleep(animationWait());
 
@@ -5626,12 +5642,12 @@ async function testEmptyHub(outDir) {
         check('empty hub: it says so, with a button to the settings',
             title.text === 'No tabs are on' && body.mapped && hub.emptySettingsButton.mapped &&
             hub.emptySettingsButton.label === 'Open Settings' && !isEllipsized(body), `${title.text} / ${body.text}`);
-        const parts = [hub.calendarButton, hub._panicBar.groups[0], hub.settingsButton, title, body,
+        const parts = [hub.calendarButton, ...hub._panicBar.groups, hub.settingsButton, title, body,
             hub.emptySettingsButton];
         const header = headerPlacement(hub);
         check('empty hub: the header stays (the date pill, the panic bar); nothing is of zero size',
             parts.every(actor => actor.mapped && actor.width > 0 && actor.height > 0) &&
-            hub._panicBar.groups[0].get_n_children() === 2 && !hub._panicBar.groups[1].visible && header.ok,
+            hub._panicBar.groups.every(g => g.get_n_children() === 1) && header.ok,
             `${parts.map(actor => `${describeActor(actor)} ${actor.width}x${actor.height}`).join(', ')}; ${header.detail}`);
         const gear = settingsButtonPlacement(hub);
         check('empty hub: the side column stays, with ⚙️ at its bottom', gear.ok, gear.detail);
@@ -7836,7 +7852,7 @@ async function testPublicBuild() {
         hub.calendarButton?.mapped && hub._header._dateLabel.text === now.date &&
         hub._header._timeLabel.text === now.time, `${hub._header._dateLabel?.text} ${hub._header._timeLabel?.text}`);
     const header = headerPlacement(hub);
-    check('public build: the date pill centred on the island (or moved just clear), the mute buttons beside it',
+    check('public build: the date pill exactly over GNOME\'s clock, a mute button on each side, equally wide',
         header.ok, header.detail);
     const gear = settingsButtonPlacement(hub);
     check('public build: ⚙️ at the bottom of the side column', gear.ok, gear.detail);

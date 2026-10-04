@@ -8,12 +8,13 @@ the following week; the bar and the catalog are ready for them.
 The hub has a bar of up to **8 quick-action buttons** at the top of the
 expanded island, in the place the feature tabs used to occupy (up to 5
 until 2026-10-04). They sit in **two groups around the date pill**, which
-is **centred on the whole island**, where GNOME's clock sits under it:
-the first 4 on its left, the next 4 on its right, so with fewer buttons
-the left fills first and the groups grow outward from the pill. On a tab
-too narrow for that, the pill and its groups move just enough to keep
-clear of the tab column and of the tab's own header buttons; the island
-only grows wider when they do not fit at all. Each button shows its name
+sits **exactly over GNOME's clock** under the island: half on its left,
+half on its right, the right one more when the count is odd (1 → 0 + 1,
+3 → 1 + 2, 5 → 2 + 3, 7 → 3 + 4). Both groups are equally wide in
+pixels: the one with fewer or narrower buttons spreads them apart (a lone
+button goes to its group's outer end), so the bar is symmetric around the
+pill. The pill never moves off the clock; an island without room for both
+groups grows wider. Each button shows its name
 in a tooltip on hover. You choose and order the buttons in Settings →
 Panic buttons.
 
@@ -194,8 +195,8 @@ cut-off.
 
 ```
 panic/catalog.js    pure: ids, icons, titles, descriptions, MAX 8,
-                    sanitize(), panicGroups() (4 left of the date pill,
-                    the rest right of it); shared by the Shell and the
+                    sanitize(), panicGroups() (half each side of the
+                    date pill, the right one more when odd); shared by the Shell and the
                     settings window (unit-tested)
 panic/registry.js   Shell side: id → button factory
 panic/audioMute.js  the two mute buttons (input/output)

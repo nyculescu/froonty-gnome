@@ -67,8 +67,10 @@ feature has a design note in [docs/features/](docs/features/).
     them seen, and the dot goes.
   - Banners that arrive while the island is open wait, and show when it
     closes. See [docs/features/calendar.md](docs/features/calendar.md).
-- **Panic buttons.** Up to 8 quick actions, chosen in Settings: the
-  first 4 left of the date pill, the next 4 right of it. Available now:
+- **Panic buttons.** Up to 8 quick actions, chosen in Settings: half on
+  each side of the date pill (which sits exactly over GNOME's clock), the
+  right side one more when the count is odd, both sides equally wide.
+  Available now:
   - **Mute microphone** and **Mute sound**, through GNOME's own audio
     mixer.
   - **Claude session usage** shows the session's percentage, large, over a
@@ -434,7 +436,7 @@ The keys behind it:
 | `expanded-width` / `expanded-height` | 360 / 140 | Logical px; the open island's size while no tab is on (each tab has its own) |
 | `corner-radius` | 14 | Clamped to half the height by St |
 | `animation-duration` | 250 ms | GNOME's enable-animations setting still applies |
-| `panic-buttons` | microphone, sound | Panic buttons in bar order, at most 8 (4 left of the date pill, then 4 right of it) |
+| `panic-buttons` | microphone, sound | Panic buttons in bar order, at most 8 (half on each side of the date pill, the right side one more when odd) |
 | `media-enabled` | `true` | Show the Media tab |
 | `media-show-in-pill` / `media-track-notice` | `true` | Cover and bars beside the time while music plays; a new song's title for 3 s |
 | `media-include-other-players` | `true` | Follow browsers and video players automatically (off: only when chosen) |

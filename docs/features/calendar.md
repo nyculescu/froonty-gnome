@@ -84,11 +84,11 @@ either**: no calendar and no notification store of Froonty's own
   - It looks like the collapsed pill (black, a hairline border, fully
     rounded, the date dimmer than the bold time), as tall as the panic
     buttons beside it.
-  - It is centred on the whole island, over GNOME's clock under it, with
-    the panic buttons on its two sides (the first 4 left, the next 4
-    right) and a tab's own buttons (Notes' All notes) at the header's
-    right end; on a tab too narrow for that it moves just enough to stay
-    clear of them and of the tab column. Tab reaches it after ⚙️ (at the
+  - Its middle is exactly over GNOME's clock under the island, with the
+    panic buttons on its two sides (half each, the right one more when
+    odd, both sides equally wide) and a tab's own buttons (Notes' All
+    notes) at the header's right end; it never moves off the clock: an
+    island without room for both sides grows wider. Tab reaches it after ⚙️ (at the
     bottom of the tab column) and the panic buttons on its left.
   - Its accessible name says what it opens and the full date: "Calendar
     and notifications, Saturday, October 3 2026, 14:35" (", unread

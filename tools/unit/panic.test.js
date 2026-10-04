@@ -30,12 +30,13 @@ test('sanitize keeps 8 buttons and drops a 9th, in order', () => {
     }
 });
 
-test('panicGroups: the first 4 left of the date pill, the next 4 right of it', () => {
+test('panicGroups: half on each side of the date pill, the right one more when odd', () => {
     const ids = Array.from({length: 8}, (_, i) => `p${i + 1}`);
+    const sizes = n => Catalog.panicGroups(ids.slice(0, n)).map(g => g.length);
     eq(Catalog.panicGroups([]), [[], []]);
-    eq(Catalog.panicGroups(ids.slice(0, 1)), [['p1'], []]);
-    eq(Catalog.panicGroups(ids.slice(0, 4)), [['p1', 'p2', 'p3', 'p4'], []]);
-    eq(Catalog.panicGroups(ids.slice(0, 5)), [['p1', 'p2', 'p3', 'p4'], ['p5']]);
+    eq(Catalog.panicGroups(ids.slice(0, 1)), [[], ['p1']]);
+    eq(Catalog.panicGroups(ids.slice(0, 3)), [['p1'], ['p2', 'p3']]);
+    eq([2, 4, 5, 6, 7].map(sizes), [[1, 1], [2, 2], [2, 3], [3, 3], [3, 4]]);
     eq(Catalog.panicGroups(ids), [['p1', 'p2', 'p3', 'p4'], ['p5', 'p6', 'p7', 'p8']]);
 });
 

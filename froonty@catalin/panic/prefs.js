@@ -19,8 +19,8 @@ export function panicPage(settings) {
     });
     const inBar = new Adw.PreferencesGroup({
         title: _('In the bar'),
-        description: _('Up to 8 at the top of the island, in this order: ' +
-            '4 left of the date pill, then 4 right of it'),
+        description: _('Up to 8 at the top of the island, in this order: half left ' +
+            'of the date pill, half right of it (one more on the right when odd)'),
     });
     const available = new Adw.PreferencesGroup({
         title: _('Available'),

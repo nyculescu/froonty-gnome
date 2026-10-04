@@ -14,20 +14,19 @@
 //       window, the same size as a tab but never the active one
 //     header (hubHeader.js): a pill with the date and the time that opens
 //       GNOME's own calendar and notification menu (with GNOME's unread
-//       dot), centred on the whole island, where GNOME's clock sits under
-//       it; the panic bar (max 8) on its two sides, the first four on its
-//       left, the next four on its right; [a] the active feature's own
+//       dot), exactly over GNOME's clock under the island; the panic bar
+//       (max 8) on its two sides, half each (the right one more when
+//       odd), both sides equally wide; [a] the active feature's own
 //       buttons (view.headerActions), at the right end
 //
 // Every tab can be turned off. With none on, the side column (⚙️) and the
 // header stay, and the content says so, with a button that opens Settings.
 // The tab column itself shows only while more than one tab is on.
 //
-// The date pill keeps to the island's middle where that leaves its panic
-// groups PANIC_GAP clear of the side column and the feature's buttons;
-// else it moves just enough (hubHeader.js). The island is only made wider
-// (minWidth) when they do not fit between those at all, and taller
-// (minHeight) when the side column needs it.
+// The date pill never leaves GNOME's clock: the island is made wider
+// (minWidth) until both halves around it fit PANIC_GAP clear of the side
+// column and the feature's buttons, and taller (minHeight) when the side
+// column needs it.
 //
 // Keyboard (Tab): the tabs, ⚙️, the header row from left to right (panic
 // 1–4, the date pill, panic 5–8, the feature's buttons), then the view.
@@ -62,11 +61,15 @@ export class Hub extends EventEmitter {
      * @param {object[]} features descriptors, in tab order
      * @param {object} actions
      * @param {Function} actions.openSettings
+     * @param {Function} [actions.clockOffset] → how far right of the
+     *   island's middle GNOME's top bar clock is centred (stage px): the
+     *   header's date pill sits exactly on it
      * @param {?Function} actions.openCalendar opens GNOME's calendar and
      *   notification menu; null when this Shell has none (no date pill)
      */
-    constructor(ctx, features, {openSettings, openCalendar}) {
+    constructor(ctx, features, {openSettings, openCalendar, clockOffset = () => 0}) {
         super();
+        this._clockOffset = clockOffset;
         this._ctx = ctx;
         this._settings = ctx.settings;
         this._features = features;
@@ -151,18 +154,26 @@ export class Hub extends EventEmitter {
         const gap = PANIC_GAP * St.ThemeContext.get_for_stage(global.stage).scale_factor;
         const spacing = this._main.get_theme_node().get_length('spacing');
         const [before, after] = this._header.halves();
-        return Math.ceil(natural(this._side) + spacing + gap + before + after + gap +
-            natural(this._header.actions));
+        // The date pill never moves off the clock: the island, centred on
+        // the monitor, is made wide enough for both halves around that
+        // point, the side column before it and the feature's actions after.
+        const lead = natural(this._side) + spacing + gap + before;
+        const trail = after + gap + natural(this._header.actions);
+        const rtl = this.actor.get_text_direction() === Clutter.TextDirection.RTL;
+        const offset = rtl ? -this._clockOffset() : this._clockOffset();
+        return Math.ceil(2 * Math.max(lead - offset, trail + offset));
     }
 
-    // The island's middle, from the header row's left edge (stage px): the
-    // allocations of the header and its parents are this layout pass's,
-    // set before the header places its parts.
+    // Where the date pill's middle goes, from the header row's left edge
+    // (stage px): over GNOME's top bar clock, which is the island's middle
+    // shifted by the clock's offset. The allocations of the header and its
+    // parents are this layout pass's, set before the header places its
+    // parts.
     _headerMiddle() {
         let x = 0;
         for (let actor = this._header.actor; actor && actor !== this.actor; actor = actor.get_parent())
             x += actor.get_allocation_box().x1;
-        return this.actor.get_allocation_box().get_width() / 2 - x;
+        return this.actor.get_allocation_box().get_width() / 2 + this._clockOffset() - x;
     }
 
     /**

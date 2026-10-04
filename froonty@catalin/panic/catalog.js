@@ -43,15 +43,15 @@ export function sanitize(ids) {
 
 /**
  * The bar's two groups, on either side of the hub header's date pill:
- * the first half of MAX_PANIC_BUTTONS on its left, the rest on its right,
- * so with fewer buttons the left fills first.
+ * half on each side, and the right one more when the count is odd
+ * (1 → 0 + 1, 3 → 1 + 2, 5 → 2 + 3, 7 → 3 + 4).
  *
  * @param {Array} items buttons (or ids) in bar order
  * @returns {Array[]} [left of the date pill, right of it]
  */
 export function panicGroups(items) {
-    const half = MAX_PANIC_BUTTONS / 2;
-    return [items.slice(0, half), items.slice(half)];
+    const left = Math.floor(items.length / 2);
+    return [items.slice(0, left), items.slice(left)];
 }
 
 export function byId(id) {
