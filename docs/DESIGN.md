@@ -207,15 +207,39 @@ The hub (`ui/hub.js`) is the expanded content:
 
 ```
 hub     BinLayout, reactive (stops clicks from reaching the pill)
- ├ main     [tab column (GridLayout, TAB_COLUMNS = 1; the island grows to fit it)] [header / content]
- │            header   (date pill: "Sat Oct 3 14:05" + GNOME's unread dot) [feature actions] ⚙️
+ ├ main     [side column] [header / content]
+ │            side column  tab column (GridLayout, TAB_COLUMNS = 1; only with more than one tab on)
+ │                         at the top, ⚙️ at the bottom; always shown; the island grows to fit it
+ │            header   [panic 1–4] (date pill: "Sat Oct 3 14:05" + GNOME's unread dot) [panic 5–8] … [feature actions]
+ │                     (HeaderLayout: the date pill centred on the island, or moved just clear)
  │            content  the active tab's view, or, while no tab is on, a notice and "Open Settings"
- ├ panic    panic bar, centered across the island, or moved left to clear the header (PanicLayout; click-through layer)
  └ overlay  tooltips (click-through, fixed positions)
 ```
 
+- **The header row** (`ui/hubHeader.js`, `HeaderLayout`) centres the date
+  pill on the whole island, not on the column right of the tabs, so it
+  sits over GNOME's clock under the island. The panic bar
+  (`ui/panicBar.js`, at most 8, `MAX_PANIC_BUTTONS`) is two groups
+  around it, split by `panicGroups()` (`panic/catalog.js`): the first
+  four on its left, the next four on its right, so with fewer the left
+  fills first. Without a date pill the two groups are centred together.
+  The active feature's buttons sit at the right end. Where centring would
+  bring the pill's groups closer than `PANIC_GAP` (8 px) to the side
+  column or to the feature's buttons, they move just enough; the island
+  is only made wider (`Hub.minWidth`: side column, gaps, the pill and its
+  groups, the feature's buttons) when they do not fit at all. The row
+  reports a minimum width of 0, so it never squeezes the content.
+- **⚙️** (`hub.settingsButton`) is pinned to the bottom of the side column
+  with a tab's size and look (20 px icon, `froonty-tab`), never checked,
+  named "Settings" with its tooltip on its right, as the tabs'. The side
+  column shows with one tab or none on (for ⚙️); `Hub.minHeight` is its
+  natural height (every tab and ⚙️).
+- **Keyboard order** (St follows the actor tree): the tabs, ⚙️, the
+  header from left to right (panic 1–4, the date pill, panic 5–8, the
+  feature's buttons), then the view.
+
 - The header's **date pill** (`ui/hubHeader.js`) is an `St.Button`
-  styled like the collapsed pill, as tall as the icon buttons beside it.
+  styled like the collapsed pill, as tall as the panic buttons beside it.
   It shows `ClockService.snapshot()`'s `date` (the top bar clock's date
   format, from gnome-desktop's catalog) and `time` (Froonty's 12/24-hour
   setting), always with the date, and GNOME's unread dot after
@@ -224,8 +248,8 @@ hub     BinLayout, reactive (stops clicks from reaching the pill)
   opens GNOME's own calendar and notification menu (§5), which closes the
   island. It is absent when the Shell has no date menu.
 - **Every tab can be off** (the Clock tab, the only one without an enable
-  key, is gone). The hub then shows no tab and no column, a notice in the
-  content and the header as ever; the island takes `expanded-width` ×
+  key, is gone). The hub then shows no tab and no tab column, a notice in
+  the content, and the header and the side column (⚙️) as ever; the island takes `expanded-width` ×
   `expanded-height`. `hub-last-tab`
   falls back to the first tab that is on when the remembered one is gone
   (a stored `clock`) or off.
@@ -441,7 +465,8 @@ the public package leaves both modules out).
 
 ### 6.4 Settings window (⚙️)
 
-The expanded island has a ⚙️ button in its top-right corner. It opens the
+The expanded island has a ⚙️ button at the bottom of its side column,
+below the tabs. It opens the
 settings window, a separate window in GNOME Shell's preferences process
 with tabs (General, Appearance, Panic buttons, then one per feature tab
 in the hub's order: Notes, Media, Claude, …). `shell/settingsWindow.js`
@@ -604,11 +629,24 @@ input through Clutter virtual devices and cover:
   switch.
 - **Hub:** the tab column and its tooltips; lazy feature creation and
   activation, tested with a fake feature, including its header button
-  (between the date pill and ⚙️, only while its tab is active, named in
-  the tooltip, destroyed with the view); a remembered tab that is gone (a
-  stored `clock`) opening the first tab; every tab off (the header, a
-  notice and its "Open Settings", the empty size, Escape, Tab), and tabs
-  coming back, also while the island is open.
+  (at the header's right end, clear of the date pill and the panic
+  buttons, only while its tab is active, named in the tooltip, destroyed
+  with the view); a remembered tab that is gone (a stored `clock`)
+  opening the first tab; every tab off (the header, ⚙️ at the bottom of
+  the side column, a notice and its "Open Settings", the empty size,
+  Escape, Tab), one tab on (⚙️ alone in the side column), and tabs coming
+  back, also while the island is open.
+- **Hub header and ⚙️:** the date pill centred on the island (or moved
+  just clear on a narrow one), the panic buttons split 4 + 4 around it
+  and filling the left first (1, 4, 5 and 8 buttons; past the catalog's
+  buttons, stand-ins of a mute button's size), 8 buttons on the narrowest
+  tabs (Notes at 360, Btop and Clipboard at 280) widening the island with
+  nothing overlapping, the groups centred together without a date pill;
+  ⚙️ at the bottom of the side column with a tab's size, its tooltip, its
+  window by click, Enter and Space, the keyboard order (last tab → ⚙️ →
+  first panic button), and the side column counted in the island's
+  minimum width and height. The settings page (a GTK unit test) takes 8
+  buttons and refuses a 9th.
 - **Panic buttons:** real mute and unmute, following changes made elsewhere,
   and the settings rules. Block camera: click and keyboard toggle GNOME's
   `disable-camera` in the private keyfile backend (checked to be private
@@ -623,11 +661,11 @@ input through Clutter virtual devices and cover:
     to `.froonty-labels.json`, a click removes it, the menu stays open
     through folder events, Escape gives the grab and the focus back;
     disabling with the menu open leaves no menu, grab or handler;
-  - the "All notes" button: only on the Notes tab, between the date pill
-    and ⚙️, Tab order, its tint following the note's colour (read from the
-    theme node) and deepening on hover and focus, the island growing so
-    the panic bar stays clear with four panic buttons at the narrowest
-    width;
+  - the "All notes" button: only on the Notes tab, at the header's right
+    end, Tab order (⚙️ → panic buttons → date pill → All notes), its tint
+    following the note's colour (read from the theme node) and deepening
+    on hover and focus, the island growing so the date pill and eight
+    panic buttons stay clear of it at the narrowest width;
   - the All notes window end to end: opened on that page (and raised, and
     sent back to the settings by ⚙️), typing saved and seen by the island,
     an edit elsewhere during typing kept as "e2e (conflict)" and shown in

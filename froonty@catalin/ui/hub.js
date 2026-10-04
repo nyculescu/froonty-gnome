@@ -2,24 +2,35 @@
 // The hub: content of the expanded island. It hosts features
 // (features/registry.js) and contains no feature logic of its own:
 //
-//   ┌─────┬──────────────────────────────────────────────┐
-//   │ tab │      [panic][panic]…   (Sat Oct 3 14:05) [a] ⚙️ │  panic bar (max 5), centered
-//   │ tab ├──────────────────────────────────────────────┤
-//   │ …   │            active feature's view             │  content
-//   └─────┴──────────────────────────────────────────────┘
-//     tab column: one icon per feature; its name shows in a tooltip on hover
+//   ┌─────┬──────────────────────────────────────────────────────┐
+//   │ tab │ [p1][p2][p3][p4] (Sat Oct 3 14:05) [p5]…[p8]     [a] │  header
+//   │ tab ├──────────────────────────────────────────────────────┤
+//   │ …   │               active feature's view                  │  content
+//   │     │                                                      │
+//   │ ⚙️  │                                                      │
+//   └─────┴──────────────────────────────────────────────────────┘
+//     side column: the tab column (one icon per feature; its name shows in
+//       a tooltip on hover), and ⚙️ at its bottom: Froonty's settings
+//       window, the same size as a tab but never the active one
 //     header (hubHeader.js): a pill with the date and the time that opens
 //       GNOME's own calendar and notification menu (with GNOME's unread
-//       dot), [a] the active feature's own buttons (view.headerActions), ⚙️
+//       dot), centred on the whole island, where GNOME's clock sits under
+//       it; the panic bar (max 8) on its two sides, the first four on its
+//       left, the next four on its right; [a] the active feature's own
+//       buttons (view.headerActions), at the right end
 //
-// Every tab can be turned off. With none on, the header stays and the
-// content says so, with a button that opens Settings.
+// Every tab can be turned off. With none on, the side column (⚙️) and the
+// header stay, and the content says so, with a button that opens Settings.
+// The tab column itself shows only while more than one tab is on.
 //
-// The panic bar is centred on the island. On an island too narrow for
-// that (a narrow tab beside the header's date pill and buttons) it moves
-// left just enough to stay clear of the header's buttons (HubLayout);
-// the island is only made wider (minWidth) when the bar does not fit
-// between the tab column and those buttons at all.
+// The date pill keeps to the island's middle where that leaves its panic
+// groups PANIC_GAP clear of the side column and the feature's buttons;
+// else it moves just enough (hubHeader.js). The island is only made wider
+// (minWidth) when they do not fit between those at all, and taller
+// (minHeight) when the side column needs it.
+//
+// Keyboard (Tab): the tabs, ⚙️, the header row from left to right (panic
+// 1–4, the date pill, panic 5–8, the feature's buttons), then the view.
 //
 // A feature's view (and its service, if any) is created the first time its
 // tab is selected, and destroyed when the feature is disabled or the hub is
@@ -28,7 +39,6 @@
 // key focus.
 
 import Clutter from 'gi://Clutter';
-import GObject from 'gi://GObject';
 import St from 'gi://St';
 
 import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
@@ -36,50 +46,10 @@ import {EventEmitter} from 'resource:///org/gnome/shell/misc/signals.js';
 
 import {Emitter} from '../core/emitter.js';
 import {Tooltip} from '../core/tooltip.js';
-import {HubHeader} from './hubHeader.js';
+import {HubHeader, PANIC_GAP} from './hubHeader.js';
 import {PanicBar} from './panicBar.js';
 
 const LAST_TAB_KEY = 'hub-last-tab';
-
-// Room kept on each side of the panic bar (logical px).
-const PANIC_GAP = 8;
-
-// Places the panic bar (the layer's one child) on the header row: centred
-// on the island, or, where that would bring it closer than PANIC_GAP to
-// the header's buttons, moved left until it is not, but never closer than
-// PANIC_GAP to the tab column (Hub.minWidth makes room for both). Mirrored
-// right to left.
-// The hub's own layout: everything stacked (BinLayout), then the panic bar
-// placed in the same pass, once the tab column and the header's buttons
-// have their widths: no second layout pass, whatever changes width (a tab
-// turned on, the date pill's text).
-const HubLayout = GObject.registerClass(
-class HubLayout extends Clutter.BinLayout {
-    /**
-     * @param {Function} bar → the panic bar's actor, or null
-     * @param {Function} span → [left, right]: px kept free at each side
-     */
-    _init(bar, span) {
-        super._init();
-        this._bar = bar;
-        this._span = span;
-    }
-
-    vfunc_allocate(container, box) {
-        super.vfunc_allocate(container, box);
-        const bar = this._bar();
-        if (!bar?.visible)
-            return;
-        const [, width] = bar.get_preferred_width(-1);
-        const [, height] = bar.get_preferred_height(width);
-        let [start, end] = this._span();
-        if (container.get_text_direction() === Clutter.TextDirection.RTL)
-            [start, end] = [end, start];
-        const room = box.get_width();
-        const x = box.x1 + Math.round(Math.max(start, Math.min((room - width) / 2, room - end - width)));
-        bar.allocate(new Clutter.ActorBox({x1: x, y1: box.y1, x2: x + width, y2: box.y1 + height}));
-    }
-});
 
 // Feature tabs fill a grid column by column. One column: the island grows
 // taller when the tabs need it (minHeight).
@@ -151,20 +121,20 @@ export class Hub extends EventEmitter {
     }
 
     /**
-     * The height the tab column needs (physical pixels), so the island
-     * can grow to show every tab; 0 while there is no column.
+     * The height the side column needs (physical pixels: every tab, and
+     * ⚙️ below them), so the island can grow to show them; 0 off stage.
      */
     get minHeight() {
-        const visible = this._tabColumn.visible && this._tabColumn.get_stage();
         // Kept in step on every path, as for minWidth.
-        this._reportedMinHeight = visible ? this._tabColumn.get_preferred_height(-1)[1] : 0;
+        this._reportedMinHeight = this._side.get_stage() ? this._side.get_preferred_height(-1)[1] : 0;
         return this._reportedMinHeight;
     }
 
     /**
      * The width the island's content needs (physical pixels) so that the
-     * panic bar fits between the tab column and the header's buttons with
-     * PANIC_GAP on each side; 0 off stage or without panic buttons.
+     * date pill and the panic buttons beside it fit between the side
+     * column and the feature's header buttons with PANIC_GAP on each side;
+     * 0 off stage or with neither a date pill nor panic buttons.
      */
     get minWidth() {
         // Whatever it returns is what was reported: the allocation watches
@@ -175,22 +145,24 @@ export class Hub extends EventEmitter {
     }
 
     _measureMinWidth() {
-        const panic = this._panicBar.actor;
-        if (!this.actor.get_stage() || !panic.visible || panic.get_n_children() === 0)
+        if (!this.actor.get_stage() || !this._header.centred.some(actor => actor.visible))
             return 0;
-        const [left, right] = this._panicSpan();
-        return left + panic.get_preferred_width(-1)[1] + right;
-    }
-
-    // The room the panic bar keeps free (physical pixels): [from the left
-    // edge, past the tab column; from the right edge, past the header's
-    // buttons], PANIC_GAP included.
-    _panicSpan() {
         const natural = actor => (actor.visible ? actor.get_preferred_width(-1)[1] : 0);
         const gap = PANIC_GAP * St.ThemeContext.get_for_stage(global.stage).scale_factor;
         const spacing = this._main.get_theme_node().get_length('spacing');
-        const left = this._tabColumn.visible ? natural(this._tabColumn) + spacing : 0;
-        return [left + gap, natural(this._header.end) + gap];
+        const [before, after] = this._header.halves();
+        return Math.ceil(natural(this._side) + spacing + gap + before + after + gap +
+            natural(this._header.actions));
+    }
+
+    // The island's middle, from the header row's left edge (stage px): the
+    // allocations of the header and its parents are this layout pass's,
+    // set before the header places its parts.
+    _headerMiddle() {
+        let x = 0;
+        for (let actor = this._header.actor; actor && actor !== this.actor; actor = actor.get_parent())
+            x += actor.get_allocation_box().x1;
+        return this.actor.get_allocation_box().get_width() / 2 - x;
     }
 
     /**
@@ -246,9 +218,9 @@ export class Hub extends EventEmitter {
 
     _buildActors(openSettings, openCalendar) {
         // Main layout plus an overlay layer (fixed positions, click-through)
-        // for the tab tooltips.
+        // for the tooltips.
         this.actor = new St.Widget({
-            layout_manager: new HubLayout(() => this._panicBar?.actor ?? null, () => this._panicSpan()),
+            layout_manager: new Clutter.BinLayout(),
             x_expand: true,
             y_expand: true,
             // Catches clicks on empty parts of the hub so they do not bubble
@@ -262,23 +234,35 @@ export class Hub extends EventEmitter {
         // gestures too. A gesture of our own instead wins over the pill's
         // (an ancestor) and loses to the buttons' (descendants).
         this.actor.add_action(new Clutter.ClickGesture({required_button: Clutter.BUTTON_PRIMARY}));
+        this._tooltip = new Tooltip();
 
         const main = new St.BoxLayout({style_class: 'froonty-hub', x_expand: true, y_expand: true});
         this._main = main;
+        // The side column: the tabs at the top, ⚙️ at the bottom. It shows
+        // with any number of tabs on (⚙️ is always there); the tab column
+        // in it only with more than one.
+        this._side = new St.BoxLayout({
+            style_class: 'froonty-hub-side',
+            orientation: Clutter.Orientation.VERTICAL,
+        });
         this._tabGrid = new Clutter.GridLayout({orientation: Clutter.Orientation.VERTICAL});
         this._tabColumn = new St.Widget({
             style_class: 'froonty-tab-column',
             layout_manager: this._tabGrid,
         });
-        main.add_child(this._tabColumn);
+        this._side.add_child(this._tabColumn);
+        this._side.add_child(new St.Widget({y_expand: true}));
+        this.settingsButton = this._buildSettingsButton(openSettings);
+        this._side.add_child(this.settingsButton);
+        main.add_child(this._side);
         // Before they are first shown (styled), the tabs measure short.
         // Once laid out they are measured again, and the island follows if
         // that changed; their own height does not change while the island
         // animates, so this does not fire then.
         this._reportedMinHeight = 0;
-        this._tabColumn.connect('notify::allocation', () => {
+        this._side.connect('notify::allocation', () => {
             const reported = this._reportedMinHeight;
-            if (this._tabColumn.mapped && this.minHeight !== reported)
+            if (this._side.mapped && this.minHeight !== reported)
                 this.emit('size-changed');
         });
 
@@ -288,16 +272,24 @@ export class Hub extends EventEmitter {
             x_expand: true,
             y_expand: true,
         });
-        // The header row holds the date pill, the active feature's buttons
-        // and ⚙️ on the right; the panic bar is centred over the whole
-        // island in its own layer (see below).
-        this._tooltip = new Tooltip();
+        // The header row: the date pill centred on the island with the
+        // panic buttons on its two sides, and the active feature's buttons
+        // at the right end (hubHeader.js places them). Only the buttons
+        // take input.
+        this._panicBar = new PanicBar(this._settings, this._tooltip, {
+            settings: this._settings,
+            ctx: this._ctx,
+            selectTab: id => {
+                this.select(id);
+                return this._activeId === id;
+            },
+        });
         this._header = new HubHeader(this._tooltip, {
             clock: this._ctx.clock,
-            openSettings,
             openCalendar,
+            panic: this._panicBar.groups,
+            centre: () => this._headerMiddle(),
         });
-        this.settingsButton = this._header.settingsButton;
         this.calendarButton = this._header.calendarButton;
 
         this._content = new St.Widget({
@@ -312,22 +304,12 @@ export class Hub extends EventEmitter {
         right.add_child(this._content);
         main.add_child(right);
 
-        // Panic bar: centred across the island (not just the column right of
-        // the tabs), on the header row, as far as the header's buttons let
-        // it (HubLayout, which places it). Only its buttons take input.
-        this._panicBar = new PanicBar(this._settings, this._tooltip, {
-            settings: this._settings,
-            ctx: this._ctx,
-            selectTab: id => {
-                this.select(id);
-                return this._activeId === id;
-            },
-        });
-        // The panic bar and the header's buttons change width with the
-        // settings and the active tab; once laid out, the island follows
-        // if the room they need changed (as for minHeight).
+        // The panic buttons, the date pill's text, the feature's buttons and
+        // the side column change width with the settings, the clock and the
+        // active tab; once laid out, the island follows if the room they
+        // need changed (as for minHeight).
         this._reportedMinWidth = 0;
-        for (const actor of [this._panicBar.actor, this._header.end]) {
+        for (const actor of [...this._header.centred, this._header.actions, this._side]) {
             actor.connect('notify::allocation', () => {
                 const reported = this._reportedMinWidth;
                 if (actor.mapped && this.minWidth !== reported)
@@ -339,8 +321,22 @@ export class Hub extends EventEmitter {
         overlay.add_child(this._tooltip.actor);
 
         this.actor.add_child(main);
-        this.actor.add_child(this._panicBar.actor);
         this.actor.add_child(overlay);
+    }
+
+    // ⚙️: a tab's size and look (never checked: it opens a window, it is
+    // not a page of the hub), its name in a tooltip on its right as theirs.
+    _buildSettingsButton(openSettings) {
+        const button = new St.Button({
+            style_class: 'froonty-icon-button froonty-tab froonty-hub-settings',
+            accessible_name: _('Settings'),
+            can_focus: true,
+            track_hover: true,
+            child: new St.Icon({icon_name: 'emblem-system-symbolic'}),
+        });
+        button.connect('clicked', () => openSettings());
+        this._tooltip.attach(button, () => button.accessible_name, 'right');
+        return button;
     }
 
     // Adds entries for newly enabled features, removes disabled ones, and
@@ -360,7 +356,8 @@ export class Hub extends EventEmitter {
             const entry = this._entries.get(feature.id) ?? this._addEntry(feature);
             this._tabGrid.attach(entry.button, Math.floor(i / rows), i % rows, 1, 1);
         });
-        // A single tab is not a choice; keep the column out of the way.
+        // A single tab is not a choice; keep the column out of the way
+        // (the side column stays, for ⚙️).
         this._tabColumn.visible = enabled.length > 1;
         // No tab on: the header stays, and the content says so.
         this._empty.visible = enabled.length === 0;

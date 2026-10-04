@@ -31,16 +31,17 @@ either**: no calendar and no notification store of Froonty's own
 ```
  collapsed:      ( 14:35 • )                    • = GNOME's unread dot
  expanded:  ┌────┬───────────────────────────────────────────┐
-            │ 📝 │   [🎤][🔊]   ( Sat Oct 3 14:35 • )  ⚙️ │  the date pill opens
+            │ 📝 │   [🎤][🔊] ( Sat Oct 3 14:35 • )          │  the date pill opens
             │ …  │   active tab                              │  GNOME's menu
+            │ ⚙️ │                                           │
             └────┴───────────────────────────────────────────┘
 ```
 
 ### A.2 What the user can do
 
 1. **Open it with the pointer:** open the island, then click the **date
-   pill** (the date and the time, left of ⚙️; its tooltip says "Calendar
-   and notifications"). The island closes and GNOME's own menu opens under
+   pill** (the date and the time, centred at the top of the island; its
+   tooltip says "Calendar and notifications"). The island closes and GNOME's own menu opens under
    the pill, its arrow pointing at the clock, exactly as a click on the
    clock opened it.
 2. **Open it with the keyboard:** in the open island, Tab to the date pill
@@ -81,10 +82,14 @@ either**: no calendar and no notification store of Froonty's own
     digit (12-hour), the day gains one, or the dot comes and goes, as
     GNOME's clock does.
   - It looks like the collapsed pill (black, a hairline border, fully
-    rounded, the date dimmer than the bold time), as tall as the icon
+    rounded, the date dimmer than the bold time), as tall as the panic
     buttons beside it.
-  - It sits left of ⚙️, and left of a tab's own buttons (Notes' All
-    notes), so ⚙️ stays in the corner; Tab reaches it before ⚙️.
+  - It is centred on the whole island, over GNOME's clock under it, with
+    the panic buttons on its two sides (the first 4 left, the next 4
+    right) and a tab's own buttons (Notes' All notes) at the header's
+    right end; on a tab too narrow for that it moves just enough to stay
+    clear of them and of the tab column. Tab reaches it after ⚙️ (at the
+    bottom of the tab column) and the panic buttons on its left.
   - Its accessible name says what it opens and the full date: "Calendar
     and notifications, Saturday, October 3 2026, 14:35" (", unread
     notifications" while the dot shows); its tooltip says "Calendar and
@@ -185,12 +190,14 @@ Headless (`testDatePill` and `testCalendarMenu` in
 - The date pill: its date and time as the clock service gives them, in
   24-hour, 12-hour and "Follow system" (GNOME's setting switched), with
   the date whatever "Show date when collapsed" says; a tick of the top
-  bar clock updates it; its accessible name; as tall as ⚙️, rounded,
+  bar clock updates it; its accessible name; as tall as a panic button, rounded,
   text not cut; screenshots `hub-header-pill`, `hub-header-pill-12h`.
-  None without a date menu (a header built without one: ⚙️ alone); one
+  None without a date menu (a header built without one: the panic groups
+  alone, which are then centred as one group); one
   handler on the clock service while it exists, none after; with the
   island turned off, no handler left on the clock service at all.
-- The date pill left of ⚙️, clear of the panic bar, its tooltip.
+- The date pill between the panic groups, centred on the island or moved
+  just clear, its tooltip.
 - A click opens GNOME's menu: raised above the island as it opens, the
   island collapsed (back to the pill's size, its hub hidden) and its grab
   released (one modal grab left, the menu's), the focus in the menu, the

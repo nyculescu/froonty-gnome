@@ -5,25 +5,35 @@ the following week; the bar and the catalog are ready for them.
 
 ## 1. Goal
 
-The hub has a bar of up to **5 quick-action buttons** at the top of the
-expanded island, in the place the feature tabs used to occupy. The bar is
-**centered across the whole island** (on a tab too narrow for that, it
-moves left just enough to keep clear of the date pill and ⚙️), and each
-button shows its name in a tooltip on hover. You choose and order the buttons in Settings → Panic
-buttons.
+The hub has a bar of up to **8 quick-action buttons** at the top of the
+expanded island, in the place the feature tabs used to occupy (up to 5
+until 2026-10-04). They sit in **two groups around the date pill**, which
+is **centred on the whole island**, where GNOME's clock sits under it:
+the first 4 on its left, the next 4 on its right, so with fewer buttons
+the left fills first and the groups grow outward from the pill. On a tab
+too narrow for that, the pill and its groups move just enough to keep
+clear of the tab column and of the tab's own header buttons; the island
+only grows wider when they do not fit at all. Each button shows its name
+in a tooltip on hover. You choose and order the buttons in Settings →
+Panic buttons.
 
 The feature tabs (Notes, Media, …) moved to a **vertical column on
-the left**. Each tab shows its feature's name in a tooltip on hover. (Its
-first tab was a Clock tab until 2026-10-03; the date and the time are now
-in a pill left of ⚙️, which opens GNOME's calendar menu.)
+the left**. Each tab shows its feature's name in a tooltip on hover. ⚙️
+(settings) sits at the bottom of that column, the same size as a tab.
+(Its first tab was a Clock tab until 2026-10-03; the date and the time
+are now in the pill, which opens GNOME's calendar menu.)
 
 ```
-┌────┬──────────────────────────────────────────┐
-│ 🗓 │      [🎤][🔊]      ( Sat Oct 3 14:05 ) ⚙️ │  panic bar (max 5), centered
-│ 📝 │──────────────────────────────────────────│
-│    │         active feature                   │
-└────┴──────────────────────────────────────────┘
+┌────┬─────────────────────────────────────────────────────┐
+│ 📝 │  [🎤][🔊][p3][p4] ( Sat Oct 3 14:05 ) [p5]…[p8]  [a] │  panic bar (max 8)
+│ 🎵 │─────────────────────────────────────────────────────│
+│    │         active feature                              │
+│ ⚙️ │                                                     │
+└────┴─────────────────────────────────────────────────────┘
 ```
+
+Without a date pill (a Shell without GNOME's date menu) the two groups are
+centred together, as one.
 
 ## 2. Decisions (agreed 2026-09-28)
 
@@ -31,8 +41,8 @@ in a pill left of ⚙️, which opens GNOME's calendar menu.)
 - **The island keeps its total size.** The tab column (about 40 px) comes out
   of the feature's width.
 - **Settings uses an add/remove list:**
-  - "In the bar" shows up to 5, with up, down and remove buttons.
-  - "Available" has an Add button per entry, disabled at 5.
+  - "In the bar" shows up to 8, with up, down and remove buttons.
+  - "Available" has an Add button per entry, disabled at 8.
 - **Defaults:** Mute microphone, then Mute sound.
 - **The tab column** is a `Clutter.GridLayout` filled column by column.
   `TAB_COLUMNS` in `ui/hub.js` is 1 for now; raising it is the planned way
@@ -183,9 +193,10 @@ cut-off.
 ## 5. Structure
 
 ```
-panic/catalog.js    pure: ids, icons, titles, descriptions, MAX 5,
-                    sanitize(); shared by the Shell and the settings
-                    window (unit-tested)
+panic/catalog.js    pure: ids, icons, titles, descriptions, MAX 8,
+                    sanitize(), panicGroups() (4 left of the date pill,
+                    the rest right of it); shared by the Shell and the
+                    settings window (unit-tested)
 panic/registry.js   Shell side: id → button factory
 panic/audioMute.js  the two mute buttons (input/output)
 panic/claudeSession.js  Claude session usage (reuses features/claude)
@@ -194,7 +205,8 @@ panic/cameraAccess.js   GNOME's Camera Access switch, Gio only
                     (unit-tested)
 panic/camera.js     the "Block camera" button
 panic/prefs.js      the "Panic buttons" settings tab
-ui/panicBar.js      renders the configured buttons (setting: panic-buttons)
+ui/panicBar.js      renders the configured buttons in their two groups
+                    (setting: panic-buttons); ui/hubHeader.js places them
 shell/mixer.js      adapter for the Shell's shared Gvc mixer
 core/tooltip.js     hover bubble, shared by the hub tabs and Notes tabs
 ```
@@ -205,7 +217,11 @@ core/tooltip.js     hover bubble, shared by the hub tabs and Notes tabs
 ## 6. Tests
 
 - **Unit:** `tools/unit/panic.test.js` covers `sanitize` (unknown ids,
-  duplicates, the cap of 5). `tools/unit/panic-camera.test.js` covers the
+  duplicates, the cap of 8, a 9th dropped) and `panicGroups` (1, 4, 5 and
+  8 buttons). `tools/unit/panic-prefs.gtk.test.js` drives the settings
+  page: 8 in the bar, then every Add is off ("The bar holds at most 8
+  buttons"), and a 9th written elsewhere is not shown. Both add stand-in
+  entries to the catalog, since Froonty has fewer than 9 buttons yet. `tools/unit/panic-camera.test.js` covers the
   camera entry and `CameraAccess`: toggling, following a change made
   elsewhere, a locked switch, a missing key, and no handler left after
   `destroy()`. Every write goes to a Gio.Settings on its own memory
@@ -223,6 +239,9 @@ core/tooltip.js     hover bubble, shared by the hub tabs and Notes tabs
   - the bar follows the setting, ignores unknown ids and duplicates, and
     shows nothing when the list is empty;
   - the vertical tab column and its tooltip;
+  - the two groups around the centred date pill, filling the left first,
+    and 8 buttons on the narrowest tabs without overlap (`testHubLayout`;
+    past the catalog, stand-ins of a mute button's size);
   - the leak footprint also counts the mixer's signal handlers.
 - **Headless, Block camera** (`testPanicCamera`, needs no sound server).
   It writes GNOME's privacy settings, so it first checks that they are the

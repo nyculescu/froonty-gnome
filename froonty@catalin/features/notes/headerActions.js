@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// The Notes tab's button in the hub header, between the date pill and ⚙️,
-// shown only while the Notes tab is active (view.headerActions,
-// ui/hubHeader.js): "All notes" opens the settings window on its All notes
-// page, to search every note and filter them by label.
+// The Notes tab's button at the right end of the hub header, shown only
+// while the Notes tab is active (view.headerActions, ui/hubHeader.js):
+// "All notes" opens the settings window on its All notes page, to search
+// every note and filter them by label.
 //
 // It is tinted with a faint wash of the selected note's colour, which sets
-// it apart from the global date pill and ⚙️ and ties it to the note
+// it apart from the global date pill and panic buttons and ties it to the note
 // (stylesheet.css, .froonty-notes-action-<colour>).
 
 import St from 'gi://St';

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// "Panic buttons" settings tab: which buttons are in the bar (at most 5),
+// "Panic buttons" settings tab: which buttons are in the bar (at most 8),
 // in which order. Runs in the preferences process (GTK 4 + libadwaita).
 
 import Adw from 'gi://Adw';
@@ -19,7 +19,8 @@ export function panicPage(settings) {
     });
     const inBar = new Adw.PreferencesGroup({
         title: _('In the bar'),
-        description: _('Up to 5, at the top of the island, in this order'),
+        description: _('Up to 8 at the top of the island, in this order: ' +
+            '4 left of the date pill, then 4 right of it'),
     });
     const available = new Adw.PreferencesGroup({
         title: _('Available'),
@@ -75,7 +76,7 @@ function availableRow(id, full, onAdd) {
     const row = entryRow(id);
     const button = iconButton('list-add-symbolic', _('Add'), !full, onAdd);
     if (full)
-        button.tooltip_text = _('The bar holds at most 5 buttons');
+        button.tooltip_text = _('The bar holds at most 8 buttons');
     row.add_suffix(button);
     return row;
 }
