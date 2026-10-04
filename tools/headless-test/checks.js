@@ -4047,6 +4047,8 @@ async function testHubLayout(outDir) {
     island().expand();
     await sleep(animationWait());
     const hub = island()._hub;
+    hub.select('notes');
+    await sleep(animationWait());
     const tabs = hub._tabColumn.get_children();
     const boxes = tabs.map(boxOf);
     const expectedCount = (await expectedTabs()).length;
@@ -4056,14 +4058,32 @@ async function testHubLayout(outDir) {
         boxes.every((b, i) => i === 0 || b.y1 > boxes[i - 1].y1) &&
         boxes[0].x2 <= boxOf(hub._content).x1 && boxes.at(-1).y2 <= boxOf(pill()).y2,
         `${boxes.map(b => `[${b.x1},${b.y1}]`).join(' ')} island bottom=${boxOf(pill()).y2}`);
-    const bar = boxOf(hub._panicBar.actor);
-    const isle = boxOf(pill());
-    const leftmost = Math.min(...hub._header.end.get_children()
-        .filter(b => b.visible).map(b => boxOf(b).x1));
-    check('layout: the panic bar is centered on the island, clear of tabs and the header buttons',
-        Math.abs((bar.x1 + bar.x2) / 2 - (isle.x1 + isle.x2) / 2) <= 1 &&
-        bar.x2 <= leftmost && bar.x1 > Math.max(...boxes.map(b => b.x2)),
-        `bar=[${bar.x1},${bar.x2}] island=[${isle.x1},${isle.x2}] header from ${leftmost}`);
+    // The panic bar: centred on the island where that keeps it 8 px clear
+    // of the header's buttons; else (the Notes tab at its default width,
+    // the first tab) moved left just enough (HubLayout).
+    const panicPlace = () => {
+        const bar = boxOf(hub._panicBar.actor);
+        const isle = boxOf(pill());
+        const leftmost = Math.min(...hub._header.end.get_children()
+            .filter(b => b.visible).map(b => boxOf(b).x1));
+        const offset = (bar.x1 + bar.x2) / 2 - (isle.x1 + isle.x2) / 2;
+        return {
+            centred: Math.abs(offset) <= 1,
+            shifted: offset < 0 && Math.abs((leftmost - bar.x2) - 8 * scale()) <= 1,
+            clear: bar.x2 <= leftmost && bar.x1 > Math.max(...boxes.map(box => box.x2)),
+            detail: `bar=[${bar.x1},${bar.x2}] island=[${isle.x1},${isle.x2}] header from ${leftmost}`,
+        };
+    };
+    const narrow = panicPlace();
+    check('layout: the panic bar is centred on the island, or moved left just clear of the header buttons; clear of the tabs',
+        (narrow.centred || narrow.shifted) && narrow.clear, narrow.detail);
+    settings().set_int('notes-width', 620);
+    await sleep(animationWait());
+    const wide = panicPlace();
+    check('layout: on a wide tab the panic bar is centred on the island, clear of tabs and the header buttons',
+        wide.centred && wide.clear, wide.detail);
+    settings().reset('notes-width');
+    await sleep(animationWait());
 
     const notesBox = boxOf(tabButton('notes'));
     await movePointerTo((notesBox.x1 + notesBox.x2) / 2, (notesBox.y1 + notesBox.y2) / 2);
