@@ -46,8 +46,7 @@ export class NotesView {
         this._foldUp = foldIcon('up');
         this._foldDown = foldIcon('down');
 
-        // Hub header, between the date pill and ⚙️ (owned here, placed by
-        // the hub).
+        // Hub header, at its right end (owned here, placed by the hub).
         this._allNotes = new AllNotesButton(() => ctx.openSettingsWindow('all-notes'));
         this.headerActions = [this._allNotes.actor];
         this._labelMenu = new LabelMenu(ctx, service);

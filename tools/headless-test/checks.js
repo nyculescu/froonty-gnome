@@ -463,6 +463,76 @@ function islandFrame() {
         node.get_border_width(St.Side.RIGHT);
 }
 
+// The hub header as the user sees it: the date pill and the panic groups
+// in order, none overlapping another, level; the date pill's middle (or,
+// without one, the groups') on the island's, or else the parts moved no
+// further than needed to stay 8 px clear of the side column and of the
+// feature's buttons; all inside the island.
+function headerPlacement(hub = island()._hub) {
+    const parts = hub._header.centred.filter(a => a.visible).map(boxOf);
+    const isle = boxOf(pill());
+    const side = boxOf(hub._side);
+    const actions = hub._header.actions.visible ? boxOf(hub._header.actions) : null;
+    const gap = 8 * scale();
+    const middle = b => (b.x1 + b.x2) / 2;
+    const [first, last] = [parts[0], parts.at(-1)];
+    const pillBox = hub.calendarButton?.visible ? boxOf(hub.calendarButton) : null;
+    const anchor = pillBox ? middle(pillBox) : (first.x1 + last.x2) / 2;
+    const offset = anchor - middle(isle);
+    // The header row starts past the side column and the hub's spacing.
+    const leftRoom = first.x1 - boxOf(hub._header.actor).x1;
+    const rightRoom = (actions ? actions.x1 : boxOf(hub.actor).x2) - last.x2;
+    const ordered = parts.every((b, i) => i === 0 || b.x1 >= parts[i - 1].x2);
+    const level = parts.every(b => Math.abs(middle({x1: b.y1, x2: b.y2}) - middle({x1: first.y1, x2: first.y2})) <= 2);
+    const centred = Math.abs(offset) <= 1;
+    // Moved: right, just clear of the side column; or left, just clear of
+    // the feature's buttons.
+    const moved = (offset > 0 && Math.abs(leftRoom - gap) <= 1) || (offset < 0 && Math.abs(rightRoom - gap) <= 1);
+    const clear = leftRoom >= gap - 1 && first.x1 - side.x2 >= gap - 1 && rightRoom >= gap - 1;
+    const inside = first.x1 >= isle.x1 && last.x2 <= isle.x2 && (!actions || actions.x2 <= isle.x2);
+    return {
+        ok: ordered && level && (centred || moved) && clear && inside,
+        centred,
+        detail: `parts ${parts.map(b => `[${b.x1},${b.x2}]`).join(' ')} anchor ${anchor} island [${isle.x1},${isle.x2}] ` +
+            `side ends ${side.x2} actions ${actions ? `[${actions.x1},${actions.x2}]` : 'none'} ` +
+            `ordered=${ordered} level=${level} centred=${centred} moved=${moved} clear=${clear} inside=${inside}`,
+    };
+}
+
+// `count` panic buttons in the bar: the real ones of the catalog first (in
+// its order), then, past what Froonty has, stand-ins of a mute button's
+// size where panicGroups() would put them. Returns a function that removes
+// the stand-ins (before the bar is rebuilt: the bar does not know them).
+async function fillPanicBar(count) {
+    const {PANIC_BUTTONS, panicGroups} = await import(`file://${extension().path}/panic/catalog.js`);
+    const real = PANIC_BUTTONS.map(b => b.id).slice(0, count);
+    settings().set_strv('panic-buttons', real);
+    await sleep(SETTLE_MS);
+    const groups = island()._hub._panicBar.groups;
+    const slots = panicGroups(Array.from({length: count}, (_, i) => i));
+    const standIns = [];
+    slots.forEach((indexes, g) => {
+        for (const i of indexes.filter(n => n >= real.length)) {
+            const button = new St.Button({
+                style_class: 'froonty-icon-button froonty-panic-button',
+                accessible_name: `Stand-in ${i + 1}`,
+                can_focus: true,
+                child: new St.Icon({icon_name: 'dialog-warning-symbolic'}),
+            });
+            groups[g].add_child(button);
+            groups[g].visible = true;
+            standIns.push(button);
+        }
+    });
+    await sleep(animationWait());
+    return () => {
+        for (const button of standIns)
+            button.destroy();
+        for (const group of groups)
+            group.visible = group.get_n_children() > 0;
+    };
+}
+
 // The configured width of the tab on screen (logical px; expanded-width
 // while no tab is on).
 const tabWidth = () => island()._geometry.expandedSize(island()._hub.activeFeature).width / scale();
@@ -516,10 +586,11 @@ async function testHub(outDir) {
 
     island().expand();
     await sleep(animationWait());
-    check('hub: tab icons are 20 px (25% over other icon buttons)',
+    const panicIcon = hub._panicBar.groups[0].get_first_child()?.child;
+    check('hub: tab icons and ⚙️ are 20 px (25% over other icon buttons: a panic button\'s 16 px)',
         tabButton('notes').child.get_width() === 20 * scale() &&
-        hub.settingsButton.child.get_width() === 16 * scale(),
-        `${tabButton('notes').child.get_width()} / ${hub.settingsButton.child.get_width()}`);
+        hub.settingsButton.child.get_width() === 20 * scale() && panicIcon?.get_width() === 16 * scale(),
+        `${tabButton('notes').child.get_width()} / ${hub.settingsButton.child.get_width()} / ${panicIcon?.get_width()}`);
     await clickActor(tabButton('zerotier'));
     await sleep(animationWait());
     const zeroTierView = hub._entries.get('zerotier')?.view;
@@ -621,15 +692,16 @@ async function testHub(outDir) {
             settings().get_string('hub-last-tab') === 'test-fake');
         await screenshotTop(outDir, 'hub-two-tabs');
 
-        // Its header button: between the date pill and ⚙️, only while its
-        // tab is active.
+        // Its header button: at the header's right end, right of the date
+        // pill and the panic buttons, only while its tab is active.
         const hub = island()._hub;
         const action = log.action;
-        const [cal, act, gear] = [hub.calendarButton, action, hub.settingsButton].map(boxOf);
-        check('hub: a feature\'s header button sits between the date pill and ⚙️ while its tab is active',
-            action?.mapped && cal.x2 <= act.x1 && act.x2 <= gear.x1 &&
-            Math.abs((act.y1 + act.y2) - (gear.y1 + gear.y2)) <= 4,
-            `date pill=[${cal.x1},${cal.x2}] action=[${act.x1},${act.x2}] ⚙️=[${gear.x1},${gear.x2}]`);
+        const [cal, act, isle] = [hub.calendarButton, action, hub.actor].map(boxOf);
+        const centredEnd = Math.max(...hub._header.centred.filter(a => a.visible).map(a => boxOf(a).x2));
+        check('hub: a feature\'s header button sits at the header\'s right end, 8 px clear of the date pill and the panic buttons, level with them',
+            action?.mapped && act.x1 - centredEnd >= 8 * scale() - 1 && isle.x2 - act.x2 <= 1 &&
+            Math.abs((act.y1 + act.y2) - (cal.y1 + cal.y2)) <= 4,
+            `date pill=[${cal.x1},${cal.x2}] centred parts end at ${centredEnd} action=[${act.x1},${act.x2}] hub ends at ${isle.x2}`);
         await movePointerTo((act.x1 + act.x2) / 2, (act.y1 + act.y2) / 2);
         await sleep(SETTLE_MS);
         check('hub: hovering it shows its name in the hub tooltip',
@@ -1402,8 +1474,8 @@ async function screenshotAll(outDir, name) {
     stream.close(null);
 }
 
-// Notes' "All notes" in the hub header: between the date pill and ⚙️,
-// only on the Notes tab, tinted with the note's colour; it opens the
+// Notes' "All notes" in the hub header: at its right end, only on the
+// Notes tab, tinted with the note's colour; it opens the
 // settings window on its All notes page.
 async function testNotesHeader(outDir) {
     const hub = () => island()._hub;
@@ -1417,16 +1489,18 @@ async function testNotesHeader(outDir) {
     check('notes header: "All notes" is not shown on another tab', !button.mapped);
     await clickActor(tabButton('notes'));
     await sleep(animationWait());
-    const [cal, btn, gear] = [hub().calendarButton, button, hub().settingsButton].map(boxOf);
+    const mute = hub()._panicBar.groups[0].get_first_child();
+    const [cal, btn, isle, gear] = [hub().calendarButton, button, hub().actor, mute].map(boxOf);
     const middle = b => (b.y1 + b.y2) / 2;
-    check('notes header: on the Notes tab "All notes" sits between the date pill and ⚙️, centres level',
-        button.mapped && cal.x2 <= btn.x1 && btn.x2 <= gear.x1 &&
+    check('notes header: on the Notes tab "All notes" sits at the header\'s right end, right of the date pill, centres level',
+        button.mapped && cal.x2 <= btn.x1 && isle.x2 - btn.x2 <= 1 &&
         Math.abs(middle(cal) - middle(btn)) <= 2 && Math.abs(middle(gear) - middle(btn)) <= 2,
         `date pill=[${cal.x1},${cal.y1} - ${cal.x2},${cal.y2}] button=[${btn.x1},${btn.y1} - ${btn.x2},${btn.y2}] ` +
-        `⚙️=[${gear.x1},${gear.y1} - ${gear.x2},${gear.y2}]`);
-    check('notes header: it is an icon button like ⚙️ (16 px icon, same size)',
+        `hub ends at ${isle.x2}`);
+    check('notes header: it is an icon button like the panic buttons (16 px icon, same size)',
         button.child.get_width() === 16 * scale() && Math.abs((btn.x2 - btn.x1) - (gear.x2 - gear.x1)) <= 1 &&
-        Math.abs((btn.y2 - btn.y1) - (gear.y2 - gear.y1)) <= 1, `${btn.x2 - btn.x1}x${btn.y2 - btn.y1}`);
+        Math.abs((btn.y2 - btn.y1) - (gear.y2 - gear.y1)) <= 1,
+        `${btn.x2 - btn.x1}x${btn.y2 - btn.y1}, panic button ${gear.x2 - gear.x1}x${gear.y2 - gear.y1}`);
     const row = view._tabs.actor.get_children();
     check('notes header: the tab row holds only the note tabs, "+" and the fold button',
         row.length === 3 && row[1] === view._tabs.addButton && row[2] === view._toolsButton,
@@ -1443,14 +1517,17 @@ async function testNotesHeader(outDir) {
     await movePointerTo(...away);
     await sleep(SETTLE_MS);
 
-    // Keyboard order: the date pill → All notes → ⚙️.
-    hub().calendarButton.grab_key_focus();
-    await pressKeys(Clutter.KEY_Tab);
-    const first = global.stage.key_focus;
-    await pressKeys(Clutter.KEY_Tab);
-    const second = global.stage.key_focus;
-    check('notes header: Tab goes date pill → All notes → ⚙️',
-        first === button && second === hub().settingsButton, `${first} then ${second}`);
+    // Keyboard order: ⚙️ (the side column's last) → the panic buttons left
+    // of the date pill → the date pill → All notes.
+    const order = [...hub()._panicBar.groups[0].get_children(), hub().calendarButton, button];
+    hub().settingsButton.grab_key_focus();
+    const reached = [];
+    for (let i = 0; i < order.length; i++) {
+        await pressKeys(Clutter.KEY_Tab);
+        reached.push(global.stage.key_focus);
+    }
+    check('notes header: Tab goes ⚙️ → the panic buttons → the date pill → All notes',
+        reached.every((actor, i) => actor === order[i]), reached.map(describeActor).join(' → '));
     view._entry.clutter_text.grab_key_focus();
     await sleep(SETTLE_MS);
 
@@ -1492,25 +1569,21 @@ async function testNotesHeader(outDir) {
     await service.setColor('yellow');
     await sleep(2 * SETTLE_MS);
 
-    // Four panic buttons at the narrowest Notes width: the island grows
-    // so the centred panic bar clears the tab column and the header.
-    settings().set_strv('panic-buttons', ['mute-microphone', 'mute-sound', 'claude-session', 'pause-media']);
+    // Eight panic buttons at the narrowest Notes width: the island grows
+    // so the date pill and its panic groups clear the side column and
+    // "All notes".
     settings().set_int('notes-width', 360);
-    await sleep(animationWait() + SETTLE_MS);
-    const node = pill().get_theme_node();
-    const frame = node.get_horizontal_padding() + node.get_border_width(St.Side.LEFT) +
-        node.get_border_width(St.Side.RIGHT);
+    const removeStandIns = await fillPanicBar(8);
+    await sleep(SETTLE_MS);
     const [wide] = pill().get_transformed_size();
-    const bar = boxOf(hub()._panicBar.actor);
-    const leftmost = Math.min(...hub()._header.end.get_children().filter(b => b.visible).map(b => boxOf(b).x1));
-    const tabsRight = boxOf(hub()._tabColumn).x2;
-    check('notes header: with 4 panic buttons at width 360 the island grows to fit them',
-        wide >= hub().minWidth + frame - 1 && wide > 360 * scale(),
-        `island ${wide}, needs ${hub().minWidth} + ${frame}`);
-    check('notes header: the panic bar stays 8 px clear of the header buttons and the tabs',
-        leftmost - bar.x2 >= 8 * scale() - 1 && bar.x1 - tabsRight >= 8 * scale() - 1,
-        `tabs end ${tabsRight}, bar [${bar.x1},${bar.x2}], header from ${leftmost}`);
-    await screenshotTop(outDir, 'notes-header-4-panic-360', 120);
+    check('notes header: with 8 panic buttons at width 360 the island grows to fit them',
+        wide >= hub().minWidth + islandFrame() - 1 && wide > 360 * scale(),
+        `island ${wide}, needs ${hub().minWidth} + ${islandFrame()}`);
+    const crowded = headerPlacement(hub());
+    check('notes header: 8 panic buttons and the date pill stay 8 px clear of "All notes" and the side column',
+        crowded.ok && button.mapped, crowded.detail);
+    await screenshotTop(outDir, 'notes-header-8-panic-360', 120);
+    removeStandIns();
     settings().reset('panic-buttons');
     settings().reset('notes-width');
     await sleep(animationWait() + SETTLE_MS);
@@ -3791,15 +3864,44 @@ async function testSettingsButton(outDir) {
     island().expand();
     await sleep(animationWait());
 
-    const gear = island()._hub.settingsButton;
+    const hub = island()._hub;
+    const gear = hub.settingsButton;
     const g = boxOf(gear);
     const p = boxOf(pill());
     const [gx, gy] = [(g.x1 + g.x2) / 2, (g.y1 + g.y2) / 2];
     check('⚙️ button visible in the expanded island', gear.mapped && gear.opacity > 0);
-    check('⚙️ button sits in the top-right corner',
-        gx > p.x1 + (p.x2 - p.x1) * 0.75 && gy < p.y1 + (p.y2 - p.y1) * 0.35 &&
-        g.x2 <= p.x2 && g.y1 >= p.y1,
-        `button=[${g.x1},${g.y1} - ${g.x2},${g.y2}] pill=[${p.x1},${p.y1} - ${p.x2},${p.y2}]`);
+    const placed = settingsButtonPlacement(hub);
+    check('⚙️ sits at the bottom of the side column, below the tabs, aligned with them',
+        placed.ok, placed.detail);
+    const t = boxOf(tabButton('notes'));
+    check('⚙️ has a tab\'s size and look (20 px icon), is named "Settings", and is never shown as the active tab',
+        Math.abs((g.x2 - g.x1) - (t.x2 - t.x1)) <= 1 && Math.abs((g.y2 - g.y1) - (t.y2 - t.y1)) <= 1 &&
+        gear.child.get_width() === 20 * scale() && gear.has_style_class_name('froonty-tab') &&
+        gear.accessible_name === 'Settings' && !gear.checked && !gear.toggle_mode,
+        `⚙️ ${g.x2 - g.x1}x${g.y2 - g.y1}, a tab ${t.x2 - t.x1}x${t.y2 - t.y1}, checked=${gear.checked}`);
+    await movePointerTo(gx, gy);
+    await sleep(SETTLE_MS);
+    const tip = hub._tooltip.actor;
+    check('⚙️: hovering it says "Settings" to its right, as the tabs do',
+        tip.visible && tip.text === 'Settings' && boxOf(tip).x1 >= g.x2 - 1,
+        `visible=${tip.visible} text=${tip.text}`);
+    await movePointerTo(...pillCenter());
+    await sleep(SETTLE_MS);
+    // The side column counts in the island's size: its height (every tab
+    // and ⚙️) and its width (beside the header's centred parts).
+    const side = hub._side;
+    check('⚙️: the island is as tall as the side column needs, at least',
+        hub.minHeight === side.get_preferred_height(-1)[1] && hub.minHeight > 0 &&
+        p.y2 - p.y1 >= hub.minHeight && g.y2 <= p.y2,
+        `minHeight ${hub.minHeight}, side column ${side.get_preferred_height(-1)[1]}, island ${p.y2 - p.y1}`);
+    const halves = hub._header.halves();
+    const spacing = hub._main.get_theme_node().get_length('spacing');
+    const actionsWidth = hub._header.actions.visible ? hub._header.actions.get_preferred_width(-1)[1] : 0;
+    const expectedMin = Math.ceil(side.get_preferred_width(-1)[1] + spacing + 16 * scale() +
+        halves[0] + halves[1] + actionsWidth);
+    check('⚙️: the side column\'s width counts in the island\'s minimum width',
+        hub.minWidth === expectedMin && side.get_preferred_width(-1)[1] > 0,
+        `minWidth ${hub.minWidth}, expected ${expectedMin} (side column ${side.get_preferred_width(-1)[1]})`);
     await screenshotTop(outDir, 'expanded-with-settings-button');
 
     await clickAt(gx, gy);
@@ -3840,19 +3942,53 @@ async function testSettingsButton(outDir) {
         `windows=${settingsWindows().length} focus=${global.display.focus_window?.get_title()}`);
     await closeSettingsWindows();
 
-    // Keyboard: Tab from the focused pill reaches ⚙️ (after the tabs and
-    // the date pill), Enter activates it.
+    // Keyboard: Tab from the focused pill reaches ⚙️ right after the last
+    // tab, then goes on to the header's first panic button; Enter and
+    // Space activate it.
     island().expand();
     await sleep(animationWait());
-    for (let i = 0; i < 12 && global.stage.key_focus !== gear; i++)
+    const lastTab = hub._tabColumn.get_last_child();
+    const seen = [];
+    for (let i = 0; i < 16 && global.stage.key_focus !== gear; i++) {
         await pressKeys(Clutter.KEY_Tab);
-    check('Tab reaches ⚙️', global.stage.key_focus === gear,
-        `focus=${global.stage.key_focus}`);
+        seen.push(global.stage.key_focus);
+    }
+    check('Tab reaches ⚙️, right after the last tab', global.stage.key_focus === gear && seen.at(-2) === lastTab,
+        seen.map(describeActor).join(' → '));
+    await pressKeys(Clutter.KEY_Tab);
+    check('Tab goes on from ⚙️ to the header\'s first panic button',
+        global.stage.key_focus === hub._panicBar.groups[0].get_first_child(), describeActor(global.stage.key_focus));
+    gear.grab_key_focus();
     await pressKeys(Clutter.KEY_Return);
     check('Enter on ⚙️ opens the settings window', await waitForSettingsWindow() !== null);
     await sleep(SETTLE_MS);
     check('island collapsed after keyboard activation', !island().expanded);
     await closeSettingsWindows();
+    island().expand();
+    await sleep(animationWait());
+    gear.grab_key_focus();
+    await pressKeys(Clutter.KEY_space);
+    check('Space on ⚙️ opens the settings window too', await waitForSettingsWindow() !== null && !island().expanded);
+    await closeSettingsWindows();
+}
+
+// ⚙️ at the bottom of the side column (pinned there, however many tabs are
+// on), below the tabs, left-aligned with them, inside the island.
+function settingsButtonPlacement(hub = island()._hub) {
+    const g = boxOf(hub.settingsButton);
+    const side = boxOf(hub._side);
+    const p = boxOf(pill());
+    const tabs = hub._tabColumn.visible ? hub._tabColumn.get_children().map(boxOf) : [];
+    const content = boxOf(hub._content);
+    const ok = hub.settingsButton.mapped && hub._side.mapped &&
+        side.y2 - g.y2 <= 4 * scale() && g.y2 <= p.y2 && g.x1 >= p.x1 && g.x2 <= content.x1 &&
+        Math.abs(g.x1 - side.x1) <= 1 && tabs.every(t => t.y2 <= g.y1 && Math.abs(t.x1 - g.x1) <= 1) &&
+        g.y1 > side.y1 + (side.y2 - side.y1) / 2;
+    return {
+        ok,
+        detail: `⚙️=[${g.x1},${g.y1} - ${g.x2},${g.y2}] side column=[${side.x1},${side.y1} - ${side.x2},${side.y2}] ` +
+            `${tabs.length} tabs, the last ending at ${tabs.at(-1)?.y2} island bottom ${p.y2}`,
+    };
 }
 
 // The concealed top bar clock stays clickable, so the collapsed pill must
@@ -4123,31 +4259,66 @@ async function testHubLayout(outDir) {
         boxes.every((b, i) => i === 0 || b.y1 > boxes[i - 1].y1) &&
         boxes[0].x2 <= boxOf(hub._content).x1 && boxes.at(-1).y2 <= boxOf(pill()).y2,
         `${boxes.map(b => `[${b.x1},${b.y1}]`).join(' ')} island bottom=${boxOf(pill()).y2}`);
-    // The panic bar: centred on the island where that keeps it 8 px clear
-    // of the header's buttons; else (the Notes tab at its default width,
-    // the first tab) moved left just enough (HubLayout).
-    const panicPlace = () => {
-        const bar = boxOf(hub._panicBar.actor);
-        const isle = boxOf(pill());
-        const leftmost = Math.min(...hub._header.end.get_children()
-            .filter(b => b.visible).map(b => boxOf(b).x1));
-        const offset = (bar.x1 + bar.x2) / 2 - (isle.x1 + isle.x2) / 2;
-        return {
-            centred: Math.abs(offset) <= 1,
-            shifted: offset < 0 && Math.abs((leftmost - bar.x2) - 8 * scale()) <= 1,
-            clear: bar.x2 <= leftmost && bar.x1 > Math.max(...boxes.map(box => box.x2)),
-            detail: `bar=[${bar.x1},${bar.x2}] island=[${isle.x1},${isle.x2}] header from ${leftmost}`,
-        };
-    };
-    const narrow = panicPlace();
-    check('layout: the panic bar is centred on the island, or moved left just clear of the header buttons; clear of the tabs',
-        (narrow.centred || narrow.shifted) && narrow.clear, narrow.detail);
+    // The header: the date pill centred on the island, or moved just
+    // enough (the Notes tab at its default width, the first tab, with
+    // "All notes" at the right end).
+    const atDefault = headerPlacement(hub);
+    check('layout: the date pill is centred on the island (or moved just clear), its panic buttons beside it, clear of the side column and "All notes"',
+        atDefault.ok, atDefault.detail);
     settings().set_int('notes-width', 620);
     await sleep(animationWait());
-    const wide = panicPlace();
-    check('layout: on a wide tab the panic bar is centred on the island, clear of tabs and the header buttons',
-        wide.centred && wide.clear, wide.detail);
+    const wide = headerPlacement(hub);
+    check('layout: on a wide tab the date pill is centred on the island, where GNOME\'s clock is',
+        wide.ok && wide.centred, wide.detail);
+
+    // The panic buttons: the first 4 left of the date pill, the next 4
+    // right of it; with fewer, the left fills first.
+    const pillBox = () => boxOf(hub.calendarButton);
+    const sides = () => {
+        const [left, right] = hub._panicBar.groups.map(g => (g.visible ? g.get_children() : []));
+        const p = pillBox();
+        return {
+            left: left.length, right: right.length,
+            ok: left.every(b => boxOf(b).x2 <= p.x1) && right.every(b => boxOf(b).x1 >= p.x2),
+        };
+    };
+    for (const count of [1, 4, 5, 8]) {
+        const removeStandIns = await fillPanicBar(count);
+        const split = sides();
+        const placed = headerPlacement(hub);
+        const [left, right] = [Math.min(count, 4), Math.max(0, count - 4)];
+        check(`layout: ${count} panic button${count > 1 ? 's' : ''}: ${left} left of the date pill, ${right} right of it, the pill centred`,
+            split.left === left && split.right === right && split.ok && placed.ok && placed.centred,
+            `${split.left} + ${split.right}, ${placed.detail}`);
+        if (count === 8)
+            await screenshotTop(outDir, 'hub-8-panic-buttons', 120);
+        removeStandIns();
+    }
+    settings().reset('panic-buttons');
     settings().reset('notes-width');
+    await sleep(animationWait());
+
+    // Eight panic buttons on the narrowest tabs (the Btop and Clipboard
+    // tabs go down to 280, Notes, with "All notes", to 360): the island
+    // grows, nothing overlaps.
+    const narrowest = [['notes', 'notes-width', 360], ['sysmon', 'sysmon-width', 280],
+        ['clipboard', 'clipboard-width', 280]].filter(([id]) => hub._entries.has(id));
+    for (const [id, key, width] of narrowest) {
+        settings().set_int(key, width);
+        hub.select(id);
+        await sleep(animationWait());
+        const removeStandIns = await fillPanicBar(8);
+        const placed = headerPlacement(hub);
+        const [w] = pill().get_transformed_size();
+        check(`layout: 8 panic buttons on the ${id} tab at width ${width}: the island grows, nothing overlaps`,
+            placed.ok && w >= hub.minWidth + islandFrame() - 1 && w > width * scale(),
+            `island ${w}, needs ${hub.minWidth} + ${islandFrame()}; ${placed.detail}`);
+        removeStandIns();
+        settings().reset('panic-buttons');
+        settings().reset(key);
+        await sleep(SETTLE_MS);
+    }
+    hub.select('notes');
     await sleep(animationWait());
 
     const notesBox = boxOf(tabButton('notes'));
@@ -4503,8 +4674,8 @@ async function testPanic(outDir) {
         bar()._buttons.map(b => b.actor.accessible_name).join(',') === 'Mute sound,Mute microphone');
     s.set_strv('panic-buttons', []);
     await sleep(SETTLE_MS);
-    check('panic: an empty setting hides every slot', bar()._buttons.length === 0 &&
-        bar().actor.get_n_children() === 0);
+    check('panic: an empty setting hides every slot (and both groups)', bar()._buttons.length === 0 &&
+        bar().groups.every(group => group.get_n_children() === 0 && !group.visible));
     s.reset('panic-buttons');
     await sleep(SETTLE_MS);
     island().collapse();
@@ -4570,7 +4741,7 @@ async function testPanicCamera(outDir) {
     await screenshotTop(outDir, 'panic-camera-blocked', 120);
 
     // Keyboard: Tab to the button, Space turns camera access back on.
-    for (let i = 0; i < 10 && global.stage.key_focus !== camera.actor; i++)
+    for (let i = 0; i < 20 && global.stage.key_focus !== camera.actor; i++)
         await pressKeys(Clutter.KEY_Tab);
     check('panic camera: Tab reaches the button', global.stage.key_focus === camera.actor,
         `focus=${global.stage.key_focus}`);
@@ -4793,10 +4964,10 @@ async function testCalendarMenu(outDir) {
     await sleep(animationWait());
     let hub = island()._hub;
     const button = hub.calendarButton;
-    const [b, g, bar] = [button, hub.settingsButton, hub._panicBar.actor].map(boxOf);
-    check('calendar: the date pill sits left of ⚙️ in the hub header, clear of the panic bar',
-        button?.mapped && b.x2 <= g.x1 && Math.abs(b.y1 + b.y2 - g.y1 - g.y2) <= 2 && bar.x2 <= b.x1,
-        `date pill=[${b.x1},${b.y1} - ${b.x2},${b.y2}] ⚙️=[${g.x1},${g.y1}] panic bar ends at ${bar.x2}`);
+    const b = boxOf(button);
+    const placed = headerPlacement(hub);
+    check('calendar: the date pill sits in the hub header, between its panic groups, clear of them',
+        button?.mapped && placed.ok, placed.detail);
     check('calendar: GNOME\'s banners are held while the island is expanded',
         tray._bannerBlocked === true, state());
     await movePointerTo((b.x1 + b.x2) / 2, (b.y1 + b.y2) / 2);
@@ -4870,7 +5041,7 @@ async function testCalendarMenu(outDir) {
     // Keyboard only: Tab to the date pill, Enter; then Space.
     island().expand();
     await sleep(animationWait());
-    for (let i = 0; i < 12 && global.stage.key_focus !== button; i++)
+    for (let i = 0; i < 20 && global.stage.key_focus !== button; i++)
         await pressKeys(Clutter.KEY_Tab);
     check('calendar: Tab reaches the date pill', global.stage.key_focus === button, state());
     await pressKeys(Clutter.KEY_Return);
@@ -5148,17 +5319,17 @@ async function testDatePill(outDir) {
     await sleep(SETTLE_MS);
     check('date pill: a tick of the top bar clock updates it', matches(), shown());
 
-    // Its look: the collapsed pill's, as tall as ⚙️ beside it.
-    const [b, g] = [button, hub.settingsButton].map(boxOf);
+    // Its look: the collapsed pill's, as tall as the panic button beside it.
+    const [b, g] = [button, hub._panicBar.groups[0].get_last_child()].map(boxOf);
     const node = button.get_theme_node();
     const bg = node.get_background_color();
-    check('date pill: a rounded pill as tall as ⚙️, text not cut, centres level',
+    check('date pill: a rounded pill as tall as a panic button, text not cut, centres level',
         Math.abs((b.y2 - b.y1) - (g.y2 - g.y1)) <= 2 * scale() &&
         node.get_border_radius(St.Corner.TOPLEFT) >= (b.y2 - b.y1) / 2 - 1 &&
         node.get_border_width(St.Side.TOP) > 0 && bg.alpha === 255 &&
         !isEllipsized(header._dateLabel) && !isEllipsized(header._timeLabel) &&
         Math.abs(b.y1 + b.y2 - g.y1 - g.y2) <= 2,
-        `pill ${b.x2 - b.x1}x${b.y2 - b.y1}, ⚙️ ${g.x2 - g.x1}x${g.y2 - g.y1}, radius ${node.get_border_radius(St.Corner.TOPLEFT)}`);
+        `pill ${b.x2 - b.x1}x${b.y2 - b.y1}, panic button ${g.x2 - g.x1}x${g.y2 - g.y1}, radius ${node.get_border_radius(St.Corner.TOPLEFT)}`);
     // Hover and the focus ring, as the stylesheet gives them.
     const [pointerX, pointerY] = global.get_pointer();
     const content = boxOf(hub._content);
@@ -5186,6 +5357,20 @@ async function testDatePill(outDir) {
     await movePointerTo(pointerX, pointerY);
     await sleep(SETTLE_MS);
 
+    // Without a date pill (a Shell without GNOME's date menu) the panic
+    // groups are centred together, as one group.
+    const removeStandIns = await fillPanicBar(6);
+    button.hide();
+    await sleep(SETTLE_MS);
+    const alone = headerPlacement(hub);
+    const [left, right] = hub._panicBar.groups.map(boxOf);
+    check('date pill: without it, the panic buttons are centred on the island as one group',
+        alone.ok && alone.centred && right.x1 - left.x2 <= header.spacing + 1, alone.detail);
+    button.show();
+    removeStandIns();
+    s.reset('panic-buttons');
+    await sleep(animationWait());
+
     // At the defaults the top row fits the narrowest island (expanded-
     // width, 360): the pill does not make the island wider.
     check('date pill: the top row fits a 360 px island; it does not widen the island',
@@ -5198,17 +5383,18 @@ async function testDatePill(outDir) {
     const {Tooltip} = await import(`file://${extension().path}/core/tooltip.js`);
     const before = jsHandlerCount(clock, 'changed');
     const bareTip = new Tooltip();
-    const bare = new HubHeader(bareTip, {clock, openSettings: () => {}, openCalendar: null});
+    const groups = () => [new St.BoxLayout(), new St.BoxLayout()];
+    const bare = new HubHeader(bareTip, {clock, openCalendar: null, panic: groups(), centre: () => 0});
     bare.setUnread(true);
-    check('date pill: none without GNOME\'s date menu (⚙️ alone), and no clock handler',
-        bare.calendarButton === null && bare.unreadBadge === null &&
-        bare.end.get_children().length === 2 && bare.end.get_last_child() === bare.settingsButton &&
-        jsHandlerCount(clock, 'changed') === before, `${bare.end.get_children().length} children`);
+    check('date pill: none without GNOME\'s date menu (the panic groups alone), and no clock handler',
+        bare.calendarButton === null && bare.unreadBadge === null && bare.centred.length === 2 &&
+        bare.actor.get_children().length === 3 && bare.actor.get_last_child() === bare.actions &&
+        jsHandlerCount(clock, 'changed') === before, `${bare.actor.get_children().length} children`);
     bare.destroy();
     bare.actor.destroy();
     bareTip.actor.destroy();
     const tip = new Tooltip();
-    const own = new HubHeader(tip, {clock, openSettings: () => {}, openCalendar: () => {}});
+    const own = new HubHeader(tip, {clock, openCalendar: () => {}, panic: groups(), centre: () => 0});
     const during = jsHandlerCount(clock, 'changed');
     own.destroy();
     own.actor.destroy();
@@ -5231,8 +5417,8 @@ async function testDatePill(outDir) {
 // ---------------------------------------------------------------- empty hub
 //
 // Every tab can be off: the open island keeps its header (the date pill,
-// the panic bar, ⚙️) and says so in the content, with a button to the
-// settings; a tab turned back on shows at once.
+// the panic bar) and its side column with ⚙️, and says so in the content,
+// with a button to the settings; a tab turned back on shows at once.
 
 async function testEmptyHub(outDir) {
     const s = settings();
@@ -5263,12 +5449,15 @@ async function testEmptyHub(outDir) {
         check('empty hub: it says so, with a button to the settings',
             title.text === 'No tabs are on' && body.mapped && hub.emptySettingsButton.mapped &&
             hub.emptySettingsButton.label === 'Open Settings' && !isEllipsized(body), `${title.text} / ${body.text}`);
-        const parts = [hub.calendarButton, hub._panicBar.actor, hub.settingsButton, title, body,
+        const parts = [hub.calendarButton, hub._panicBar.groups[0], hub.settingsButton, title, body,
             hub.emptySettingsButton];
-        check('empty hub: the header stays (the date pill, the panic bar, ⚙️); nothing is of zero size',
+        const header = headerPlacement(hub);
+        check('empty hub: the header stays (the date pill, the panic bar); nothing is of zero size',
             parts.every(actor => actor.mapped && actor.width > 0 && actor.height > 0) &&
-            hub._panicBar.actor.get_n_children() === 2 && boxOf(hub._panicBar.actor).x2 <= boxOf(hub.calendarButton).x1,
-            parts.map(actor => `${describeActor(actor)} ${actor.width}x${actor.height}`).join(', '));
+            hub._panicBar.groups[0].get_n_children() === 2 && !hub._panicBar.groups[1].visible && header.ok,
+            `${parts.map(actor => `${describeActor(actor)} ${actor.width}x${actor.height}`).join(', ')}; ${header.detail}`);
+        const gear = settingsButtonPlacement(hub);
+        check('empty hub: the side column stays, with ⚙️ at its bottom', gear.ok, gear.detail);
         check('empty hub: expanded-width × expanded-height',
             w === width() * scale() && h === height(), `${w}x${h}`);
         const path = await screenshotTop(outDir, 'hub-empty', 200);
@@ -5297,6 +5486,9 @@ async function testEmptyHub(outDir) {
         check('empty hub: a tab turned back on shows at once, without the notice',
             hub.activeFeature?.id === 'notes' && hub._entries.get('notes')?.view?.actor.mapped &&
             !notice.visible && !hub._tabColumn.visible);
+        const single = settingsButtonPlacement(hub);
+        check('empty hub: one tab on: no tab column, the side column holds ⚙️ alone, at its bottom',
+            single.ok && hub._side.get_preferred_width(-1)[1] > 0, single.detail);
         s.set_boolean('notes-enabled', false);
         await sleep(animationWait());
         const [w2, h2] = pill().get_transformed_size();
@@ -7443,8 +7635,8 @@ async function testBreak(outDir) {
 
 // The public build (FROONTY_EXTENSION_DIR=an unzipped `make pack`, run
 // with FROONTY_TEST_ONLY=testPublicBuild): its one tab, Notes, and two
-// panic buttons only, the header's date pill, the tab opens, and
-// enable/disable leaves the Shell as it was.
+// panic buttons only, the header's date pill, ⚙️ in the side column, the
+// tab opens, and enable/disable leaves the Shell as it was.
 async function testPublicBuild() {
     const hub = island()._hub;
     const names = [...hub._entries.values()].map(e => e.feature.title);
@@ -7452,10 +7644,13 @@ async function testPublicBuild() {
         .filter(name => GLib.file_test(`${extension().path}/features/${name}`, GLib.FileTest.EXISTS));
     check('public build: the one tab is Notes (no Clock, Calendar or Notifications tab)',
         names.join(',') === 'Notes' && gone.length === 0, `${names.join(',')} ${gone.join(',')}`);
-    // With one tab on, the tab column is hidden (testHub).
-    check('public build: a single tab, so no tab column', !hub._tabColumn.visible);
-    check('public build: the panic bar has the two mute buttons',
-        hub._panicBar.actor.get_n_children() === 2, `${hub._panicBar.actor.get_n_children()}`);
+    // With one tab on, the tab column in the side column is hidden
+    // (testHub); the side column stays, for ⚙️.
+    check('public build: a single tab, so the side column holds ⚙️ and no tab column',
+        !hub._tabColumn.visible && hub._side.visible && hub.settingsButton.visible);
+    const [left, right] = hub._panicBar.groups;
+    check('public build: the panic bar has the two mute buttons, left of the date pill',
+        left.get_n_children() === 2 && !right.visible, `${left.get_n_children()} + ${right.get_n_children()}`);
     check('public build: no bar under the pill', island()._pillBars.size === 0);
     island().expand();
     await sleep(animationWait());
@@ -7463,6 +7658,11 @@ async function testPublicBuild() {
     check('public build: the header\'s date pill shows the date and the time',
         hub.calendarButton?.mapped && hub._header._dateLabel.text === now.date &&
         hub._header._timeLabel.text === now.time, `${hub._header._dateLabel?.text} ${hub._header._timeLabel?.text}`);
+    const header = headerPlacement(hub);
+    check('public build: the date pill centred on the island (or moved just clear), the mute buttons beside it',
+        header.ok, header.detail);
+    const gear = settingsButtonPlacement(hub);
+    check('public build: ⚙️ at the bottom of the side column', gear.ok, gear.detail);
     hub.select('notes');
     await sleep(SETTLE_MS);
     check('public build: the Notes tab opens',

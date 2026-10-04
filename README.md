@@ -44,11 +44,15 @@ feature has a design note in [docs/features/](docs/features/).
     it (Tab), the arrow keys resize in steps of 10 (Shift: 50). Shown on
     tabs whose size can be set.
   - Feature tabs sit in one column on the left, each named in a tooltip;
-    the island grows taller when they need the room.
-  - The panic bar is centered at the top. On the right: a small pill with
-    the date and the time ("Sat Oct 3 14:05", GNOME's unread dot after
-    it), which opens GNOME's calendar and notification menu, and ⚙️
-    (settings).
+    the island grows taller when they need the room. ⚙️ (settings) sits at
+    the bottom of that column, the same size as a tab.
+  - At the top, centred on the island where GNOME's clock sits under it: a
+    small pill with the date and the time ("Sat Oct 3 14:05", GNOME's
+    unread dot after it), which opens GNOME's calendar and notification
+    menu, with the panic buttons on its two sides. The open tab's own
+    buttons (Notes' All notes) sit at the right end.
+  - Keyboard: Tab goes through the tabs, ⚙️, the panic buttons and the
+    date pill from left to right, the tab's own buttons, then the tab.
   - Every tab can be turned off. With none on, the island still opens,
     says so, and offers a button to Settings.
 - **Calendar and notifications:** GNOME's own menu, the one its clock
@@ -63,8 +67,8 @@ feature has a design note in [docs/features/](docs/features/).
     them seen, and the dot goes.
   - Banners that arrive while the island is open wait, and show when it
     closes. See [docs/features/calendar.md](docs/features/calendar.md).
-- **Panic buttons.** Up to 5 quick actions, chosen in Settings. Available
-  now:
+- **Panic buttons.** Up to 8 quick actions, chosen in Settings: the
+  first 4 left of the date pill, the next 4 right of it. Available now:
   - **Mute microphone** and **Mute sound**, through GNOME's own audio
     mixer.
   - **Claude session usage** shows the session's percentage, large, over a
@@ -98,8 +102,8 @@ feature has a design note in [docs/features/](docs/features/).
   - Labels: right-click a note's tab (or Menu / Shift+F10) to add or remove
     them. They live in a hidden `.froonty-labels.json`; the `.md` files
     stay plain Markdown.
-  - **All notes**, a button next to ⚙️ on the Notes tab (tinted with the
-    note's colour), opens every note in a window: search them all, filter
+  - **All notes**, a button at the right end of the header on the Notes
+    tab (tinted with the note's colour), opens every note in a window: search them all, filter
     by labels (all of them, or any), and read or edit them there, drawn
     rendered and with the same formatting bar as the island.
 - **Claude** tab: your Claude plan's usage (Session, Weekly, Weekly Fable)
@@ -243,11 +247,12 @@ froonty@catalin/             the extension (this directory is what gets installe
 │   ├── chrome.js            registers the island as chrome + Ctrl+Alt+Tab
 │   ├── collapsedView.js     collapsed content (time, optional date, unread dot,
 │   │                        a feature's cue)
-│   ├── hub.js               expanded content: tab column, panic bar, header
-│   ├── hubHeader.js         its top row: the date pill, the active tab's
-│   │                        buttons, ⚙️
+│   ├── hub.js               expanded content: side column (tabs, ⚙️),
+│   │                        header, content
+│   ├── hubHeader.js         its top row: the date pill centred, the panic
+│   │                        buttons beside it, the active tab's buttons
 │   ├── contextMenu.js       GNOME popup menus for features (note labels)
-│   ├── panicBar.js          up to 5 panic buttons
+│   ├── panicBar.js          up to 8 panic buttons, in two groups
 │   ├── attentionBar.js      the "Claude needs you" bar under the pill
 │   ├── hoverOpen.js         opens the island after hovering it
 │   └── panelLauncher.js     top bar icon while the island is not shown
@@ -369,7 +374,8 @@ session. Never install it in a real session.
 
 ## Settings
 
-The settings window (⚙️, the top bar icon while the island is hidden, or
+The settings window (⚙️ at the bottom of the island's tab column, the top
+bar icon while the island is hidden, or
 `gnome-extensions prefs froonty@catalin`) opens as its own window. Among
 its tabs:
 
@@ -404,7 +410,7 @@ The keys behind it:
 | `expanded-width` / `expanded-height` | 360 / 140 | Logical px; the open island's size while no tab is on (each tab has its own) |
 | `corner-radius` | 14 | Clamped to half the height by St |
 | `animation-duration` | 250 ms | GNOME's enable-animations setting still applies |
-| `panic-buttons` | microphone, sound | Panic buttons in bar order, at most 5 |
+| `panic-buttons` | microphone, sound | Panic buttons in bar order, at most 8 (4 left of the date pill, then 4 right of it) |
 | `media-enabled` | `true` | Show the Media tab |
 | `media-show-in-pill` / `media-track-notice` | `true` | Cover and bars beside the time while music plays; a new song's title for 3 s |
 | `media-include-other-players` | `true` | Follow browsers and video players automatically (off: only when chosen) |

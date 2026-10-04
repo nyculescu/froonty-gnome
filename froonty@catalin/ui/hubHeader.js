@@ -1,36 +1,117 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// The hub's header row, right-aligned (the panic bar is centred over it in
-// a layer of its own, see hub.js):
+// The hub's header row (HeaderLayout places its parts):
 //
-//   ……………………………  (Sat Oct 3 14:05•)  [feature actions]  ⚙️
+//   ……… [panic 1–4] (Sat Oct 3 14:05•) [panic 5–8] ………  [feature actions]
 //
 //   (date time)  a small pill with the date in the top bar clock's format
 //        (the one under the island), the time as Froonty shows it, and
 //        GNOME's unread dot after the time; a press closes the island and
 //        opens GNOME's own calendar and notification menu (absent when
-//        this Shell has no date menu)
+//        this Shell has no date menu). It is centred on the whole island,
+//        not just on the column right of the tabs: where GNOME's clock
+//        sits in the top bar, under the island. On an island too narrow
+//        for that, it moves just enough for its panic groups to stay
+//        PANIC_GAP clear of the side column and the feature's actions.
+//   panic 1–4, 5–8  the panic bar's two groups (panicBar.js), on either
+//        side of the date pill; without a date pill they are centred
+//        together, as one group
 //   feature actions  buttons a feature's view provides (`headerActions`),
-//        shown only while its tab is the active one; e.g. Notes' "All notes"
-//   ⚙️   Froonty's settings window
+//        shown only while its tab is the active one, at the row's right
+//        end; e.g. Notes' "All notes"
+//
+// Keyboard order follows the row: panic 1–4, the date pill, panic 5–8,
+// the feature's actions. The hub only makes the island wider (Hub.minWidth)
+// when the pill and its groups do not fit between the side column and the
+// feature's actions at all.
 //
 // The view owns its action buttons and destroys them; the header only
 // places them, gives them the icon-button tooltip, and shows the active
 // feature's.
 
 import Clutter from 'gi://Clutter';
+import GObject from 'gi://GObject';
 import St from 'gi://St';
 
 import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 
+// Room kept between the centred parts (the date pill and the panic
+// groups) and the row's start (the side column) or the feature's actions
+// (logical px).
+export const PANIC_GAP = 8;
+
+// Places the header's parts in one pass: the date pill centred on the
+// point centre() gives (the island's middle), the panic groups beside it,
+// the feature's actions at the row's end. Mirrored right to left. Its
+// minimum width is 0: the island makes the room (Hub.minWidth), not the
+// row; while the island animates open, the parts may cross.
+const HeaderLayout = GObject.registerClass(
+class HeaderLayout extends Clutter.LayoutManager {
+    /**
+     * @param {HubHeader} header
+     * @param {Function} centre → x of the island's middle, from the row's
+     *   left edge (logical px of the stage)
+     */
+    _init(header, centre) {
+        super._init();
+        this._header = header;
+        this._centre = centre;
+    }
+
+    vfunc_get_preferred_width(container, _forHeight) {
+        const shown = container.get_children().filter(a => a.visible);
+        const sum = shown.reduce((total, a) => total + a.get_preferred_width(-1)[1], 0);
+        return [0, sum + this._header.spacing * Math.max(0, shown.length - 1)];
+    }
+
+    vfunc_get_preferred_height(container, _forWidth) {
+        let [min, natural] = [0, 0];
+        for (const actor of container.get_children().filter(a => a.visible)) {
+            const [m, n] = actor.get_preferred_height(-1);
+            [min, natural] = [Math.max(min, m), Math.max(natural, n)];
+        }
+        return [min, natural];
+    }
+
+    vfunc_allocate(container, box) {
+        const rtl = container.get_text_direction() === Clutter.TextDirection.RTL;
+        const width = box.get_width();
+        // x: from the row's leading edge (the left one, unless mirrored).
+        const place = (actor, x) => {
+            const [, w] = actor.get_preferred_width(-1);
+            const [, h] = actor.get_preferred_height(w);
+            const x1 = Math.round(rtl ? box.x2 - x - w : box.x1 + x);
+            const y1 = Math.round(box.y1 + (box.get_height() - h) / 2);
+            actor.allocate(new Clutter.ActorBox({x1, y1, x2: x1 + w, y2: y1 + h}));
+            return w;
+        };
+        // Centred, or moved just enough to stay PANIC_GAP clear of the
+        // feature's actions, but never closer than that to the row's start
+        // (the side column).
+        const gap = PANIC_GAP * St.ThemeContext.get_for_stage(global.stage).scale_factor;
+        const actions = this._header.actions;
+        const end = width - gap - (actions.visible ? actions.get_preferred_width(-1)[1] : 0);
+        const centre = this._centre();
+        const [before, after] = this._header.halves();
+        let x = Math.max(gap, Math.min((rtl ? width - centre : centre) - before, end - before - after));
+        for (const actor of this._header.centred.filter(a => a.visible))
+            x += place(actor, x) + this._header.spacing;
+        if (actions.visible)
+            place(actions, width - actions.get_preferred_width(-1)[1]);
+    }
+});
+
 export class HubHeader {
     /**
      * @param {Tooltip} tooltip the hub's tooltip (its overlay layer)
-     * @param {object} actions
-     * @param {ClockService} actions.clock the date and time on the pill
-     * @param {Function} actions.openSettings
-     * @param {?Function} actions.openCalendar null: no date pill
+     * @param {object} parts
+     * @param {ClockService} parts.clock the date and time on the pill
+     * @param {?Function} parts.openCalendar null: no date pill
+     * @param {St.Widget[]} parts.panic the panic bar's two groups: left
+     *   of the date pill, right of it
+     * @param {Function} parts.centre → x of the island's middle, from the
+     *   row's left edge
      */
-    constructor(tooltip, {clock, openSettings, openCalendar}) {
+    constructor(tooltip, {clock, openCalendar, panic, centre}) {
         this._tooltip = tooltip;
         this._clock = clock;
         this._boxes = new Map(); // feature id → box of its actions
@@ -38,41 +119,57 @@ export class HubHeader {
         this.calendarButton = null;
         this.unreadBadge = null;
 
-        this.actor = new St.BoxLayout({style_class: 'froonty-hub-header'});
-        this.actor.add_child(new St.Widget({x_expand: true}));
-        this.end = new St.BoxLayout({style_class: 'froonty-hub-header-end'});
-        this.actor.add_child(this.end);
+        this.actor = new St.Widget({
+            style_class: 'froonty-hub-header',
+            layout_manager: new HeaderLayout(this, centre),
+            x_expand: true,
+        });
 
         if (openCalendar) {
             this.calendarButton = this._buildCalendarButton();
             this.calendarButton.connect('clicked', () => openCalendar());
-            this.end.add_child(this.calendarButton);
             // The top bar clock's ticks; no timer of its own.
             this._clock.connectObject('changed', () => this._syncClock(), this);
             this._syncClock();
         }
+        // In the row's order (the keyboard's): left group, pill, right group.
+        this.centred = [panic[0], this.calendarButton, panic[1]].filter(Boolean);
+        for (const actor of this.centred)
+            this.actor.add_child(actor);
 
-        // Hidden while it holds nothing to show: no double spacing.
-        this._slot = new St.BoxLayout({
+        // Hidden while it holds nothing to show.
+        this.actions = new St.BoxLayout({
             style_class: 'froonty-hub-feature-actions',
             visible: false,
         });
-        this.end.add_child(this._slot);
-
-        this.settingsButton = new St.Button({
-            style_class: 'froonty-icon-button',
-            accessible_name: _('Settings'),
-            can_focus: true,
-            track_hover: true,
-            child: new St.Icon({icon_name: 'emblem-system-symbolic'}),
-        });
-        this.settingsButton.connect('clicked', () => openSettings());
-        this.end.add_child(this.settingsButton);
+        this.actor.add_child(this.actions);
     }
 
     /** Stops following the clock (the hub destroys the actors). */
     destroy() {
         this._clock.disconnectObject(this);
+    }
+
+    /** The row's spacing (stage px; on stage only). */
+    get spacing() {
+        return this.actor.get_theme_node().get_length('spacing');
+    }
+
+    /**
+     * How far the centred parts reach from the island's middle (stage px,
+     * natural widths): [before it, after it]. The date pill's middle is
+     * the island's; without a pill, the groups' middle is.
+     */
+    halves() {
+        const width = actor => (actor?.visible ? actor.get_preferred_width(-1)[1] : 0);
+        const [start, end] = [this.centred[0], this.centred.at(-1)].map(width);
+        const pill = width(this.calendarButton);
+        const spacing = this.spacing;
+        if (!pill) {
+            const total = start + end + (start && end ? spacing : 0);
+            return [total / 2, total / 2];
+        }
+        return [(start ? start + spacing : 0) + pill / 2, pill / 2 + (end ? spacing + end : 0)];
     }
 
     /**
@@ -94,7 +191,7 @@ export class HubHeader {
             this._tooltip.attach(widget, () => widget.accessible_name, 'below');
             box.add_child(widget);
         }
-        this._slot.add_child(box);
+        this.actions.add_child(box);
         this._boxes.set(id, box);
     }
 
@@ -106,7 +203,7 @@ export class HubHeader {
     showActions(id) {
         for (const [key, box] of this._boxes)
             box.visible = key === id;
-        this._slot.visible = this._boxes.has(id);
+        this.actions.visible = this._boxes.has(id);
     }
 
     /** The feature is gone (its view destroyed its buttons already). */
@@ -116,7 +213,7 @@ export class HubHeader {
             return;
         this._boxes.delete(id);
         if (box.visible)
-            this._slot.visible = false;
+            this.actions.visible = false;
         box.destroy();
     }
 

@@ -9,6 +9,21 @@
   tab's levels. It reads only while the island is open; a click opens the
   Btop tab.
 
+### Changed
+- **Up to 8 panic buttons** (was 5), Settings → Panic buttons: the first
+  4 left of the hub header's date pill, the next 4 right of it; with
+  fewer, the left fills first. The settings page refuses a 9th.
+- **The date pill is centred on the island**, over GNOME's clock under
+  it, with the panic buttons on its two sides; on a tab too narrow for
+  that it moves just enough to stay clear, and the island only grows
+  wider when they do not fit at all. Without GNOME's date menu (no pill)
+  the panic buttons are centred as one group. The open tab's own header
+  buttons (Notes' All notes) sit at the header's right end.
+- **⚙️ moved to the bottom of the tab column**, below the tabs, with a
+  tab's size and its name in a tooltip on its right. It is there with one
+  tab or none on as well. Keyboard order: the tabs, ⚙️, the panic buttons
+  and the date pill from left to right, the tab's own buttons, the tab.
+
 ## 0.6.0-rc0 (2026-10-04)
 
 First release candidate of 0.6.0, for GNOME Shell 50 on Ubuntu 26.04
