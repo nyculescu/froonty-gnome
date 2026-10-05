@@ -315,6 +315,21 @@
       <summary>Clipboard history: treat text that looks like a password as one</summary>
       <description>Browsers' password managers do not mark their copies, so one word of 8-64 characters mixing at least three of lower case, upper case, digits and symbols (and not a link, path, date, hash or code name) is treated as a password: never saved, only shown hidden.</description>
     </key>
+    <key name="clipboard-switcher-enabled" type="b">
+      <default>true</default>
+      <summary>Clipboard switcher: paste from the history with a shortcut</summary>
+      <description>While the Clipboard tab is on: hold clipboard-switcher-shortcut's modifier and press its key to show the newest entry by the text cursor, again for older ones (with Shift: newer); release to insert it, Escape cancels. While on, GNOME's own toggle-message-tray loses that shortcut and gets Super+M (clipboard-switcher-tray-backup remembers the previous value, which comes back when this or the tab is turned off).</description>
+    </key>
+    <key name="clipboard-switcher-shortcut" type="as">
+      <default><![CDATA[['<Super>v']]]></default>
+      <summary>Clipboard switcher: shortcut</summary>
+      <description>Needs a modifier: releasing it inserts the shown entry.</description>
+    </key>
+    <key name="clipboard-switcher-tray-backup" type="s">
+      <default>''</default>
+      <summary>Clipboard switcher: GNOME's notification list shortcut before the switcher took it (internal)</summary>
+      <description>JSON {original, written}: org.gnome.shell.keybindings toggle-message-tray before the switcher turned on (null: GNOME's default) and what Froonty set. Empty while the switcher is off.</description>
+    </key>
     <key name="clipboard-width" type="i">
       <range min="280" max="960"/>
       <default>400</default>

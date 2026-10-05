@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Clipboard settings tab: turn the history on, how many entries it keeps,
-// which apps it never records, and the tab's size
+// the switcher (Super+V), which apps it never records, and the tab's size
 // (docs/features/clipboard.md). Runs in the preferences process.
 
 import Adw from 'gi://Adw';
@@ -10,6 +10,7 @@ import Gtk from 'gi://Gtk';
 import {gettext as _} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
 const IGNORED_KEY = 'clipboard-ignored-apps';
+const SHORTCUT_KEY = 'clipboard-switcher-shortcut';
 const SIZE_KEYS = ['clipboard-width', 'clipboard-height'];
 
 export function clipboardPage(settings) {
@@ -27,9 +28,66 @@ export function clipboardPage(settings) {
     group.add(spinRow(settings, 'clipboard-history-size', _('Entries to keep')));
     page.add(group);
 
+    page.add(switcherGroup(settings));
     page.add(privacyGroup(settings));
     page.add(sizeGroup(settings));
     return page;
+}
+
+// The switcher, its shortcut, and what it changes in GNOME's settings
+// (features/clipboard/messageTrayKey.js).
+function switcherGroup(settings) {
+    const group = new Adw.PreferencesGroup({
+        title: _('Switcher'),
+        description: _('Hold Super and press V (the default shortcut): the newest entry shows by the text cursor. Press V again for older ones, Shift+V for newer ones; release Super to insert it where you were typing, or press Esc. Only while the Clipboard tab is on.'),
+    });
+    const row = new Adw.SwitchRow({
+        title: _('Paste from the history with the shortcut'),
+        subtitle: _('Changes a GNOME setting: the notification list loses this shortcut and opens with Super+M. Turning this or the tab off puts your previous shortcut back.'),
+    });
+    settings.bind('clipboard-switcher-enabled', row, 'active', Gio.SettingsBindFlags.DEFAULT);
+    group.add(row);
+
+    // Typed, as GNOME writes it (<Super>v); it needs a modifier, whose
+    // release inserts.
+    const shortcut = new Adw.EntryRow({
+        title: _('Shortcut, e.g. <Super>v'),
+        use_markup: false,
+        show_apply_button: true,
+    });
+    const sync = () => {
+        shortcut.text = settings.get_strv(SHORTCUT_KEY).join(', ');
+        shortcut.remove_css_class('error');
+    };
+    sync();
+    settings.connect(`changed::${SHORTCUT_KEY}`, sync);
+    shortcut.connect('apply', () => {
+        const accelerators = shortcut.text.split(',').map(word => word.trim()).filter(Boolean);
+        const valid = accelerators.length > 0 && accelerators.every(accelerator => {
+            const [ok, key, mods] = Gtk.accelerator_parse(accelerator);
+            return ok && key !== 0 && mods !== 0;
+        });
+        if (valid)
+            settings.set_strv(SHORTCUT_KEY, accelerators);
+        else
+            shortcut.add_css_class('error');
+    });
+    settings.bind('clipboard-switcher-enabled', shortcut, 'sensitive', Gio.SettingsBindFlags.GET);
+    group.add(shortcut);
+
+    const reset = new Gtk.Button({
+        label: _('Default shortcut'),
+        valign: Gtk.Align.CENTER,
+        css_classes: ['flat'],
+    });
+    const syncReset = () => {
+        reset.sensitive = settings.get_user_value(SHORTCUT_KEY) !== null;
+    };
+    syncReset();
+    settings.connect(`changed::${SHORTCUT_KEY}`, syncReset);
+    reset.connect('clicked', () => settings.reset(SHORTCUT_KEY));
+    group.header_suffix = reset;
+    return group;
 }
 
 function privacyGroup(settings) {

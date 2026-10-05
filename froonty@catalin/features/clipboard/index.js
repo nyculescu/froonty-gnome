@@ -4,6 +4,7 @@
 import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 
 import {acquireRecorder, releaseRecorder} from './shared.js';
+import {ClipboardSwitcher} from './switcher.js';
 import {ClipboardView} from './view.js';
 
 // The tab's hold on the shared recorder; the extension holds it too while
@@ -43,4 +44,7 @@ export default {
         acquire: settings => acquireRecorder(settings),
         release: () => releaseRecorder(),
     },
+    // The switcher (Super+V) lives as long as the extension and follows
+    // clipboard-enabled and clipboard-switcher-enabled itself.
+    createExtensionPart: settings => new ClipboardSwitcher(settings),
 };

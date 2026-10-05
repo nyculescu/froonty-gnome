@@ -144,6 +144,11 @@ feature has a design note in [docs/features/](docs/features/).
   a history of what you copy or cut, meaning text, images and file
   locations. Click an entry to copy it again. It is kept on this computer
   only, readable by you only; password managers' copies are never kept.
+  **Switcher**: hold Super and press V where you type; the newest entry
+  shows by the text cursor, V again goes to older ones and Shift+V back;
+  release Super to insert it, Esc to cancel. While it is on, GNOME's
+  notification list opens with Super+M instead of Super+V (your previous
+  shortcut comes back when you turn it off).
   See [docs/features/clipboard.md](docs/features/clipboard.md).
 - **Kill Process** tab (off by default; turn it on in Settings → Kill
   Process): all of your own processes, sorted by CPU load, memory or
@@ -283,7 +288,8 @@ froonty@catalin/             the extension (this directory is what gets installe
 │   │                        livenerf's Opus 5.5 row, fetched from GitHub;
 │   │                        the attention bar's hook script, set-up and model
 │   ├── sysmon/              Btop tab (system monitor): /proc and /sys, nvidia-smi
-│   ├── clipboard/           clipboard history: recorder, store, tab
+│   ├── clipboard/           clipboard history: recorder, store, tab; the
+│   │                        Super+V switcher and its pop-up
 │   ├── killprocess/         Kill Process tab: your processes from /proc, kill(1)
 │   ├── break/               Break tab: GNOME's break engine, the pill's cue,
 │   │                        ledger, sit/stand, Workrave's exercises (exercises/)

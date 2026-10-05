@@ -962,6 +962,46 @@
 .froonty-clipboard-plain StIcon {
     icon-size: 14px;
 }
+/* The switcher (features/clipboard/switcherPopup.js): one entry by the
+   text cursor, in the island's dark look. Its width is WIDTH there. */
+.froonty-clipboard-switcher {
+    width: 360px;
+    spacing: 6px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    color: #ffffff;
+    background-color: #000000;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+}
+.froonty-clipboard-switcher-header {
+    spacing: 8px;
+}
+.froonty-clipboard-switcher-kind {
+    icon-size: 14px;
+    color: rgba(255, 255, 255, 0.6);
+}
+.froonty-clipboard-switcher-meta,
+.froonty-clipboard-switcher-hint {
+    font-size: 0.78em;
+    color: rgba(255, 255, 255, 0.55);
+}
+.froonty-clipboard-switcher-position {
+    font-size: 0.8em;
+    font-feature-settings: "tnum";
+    color: #99c1f1;
+}
+.froonty-clipboard-switcher-preview {
+    font-size: 0.92em;
+}
+.froonty-clipboard-switcher-thumbnail {
+    height: 120px;
+    max-width: 334px;
+}
+.froonty-clipboard-switcher-empty {
+    font-size: 0.9em;
+    color: rgba(255, 255, 255, 0.7);
+}
 
 /* Kill Process feature: the user's processes, busiest first, with a
    kill button each; confirming and "Force quit" are red. */

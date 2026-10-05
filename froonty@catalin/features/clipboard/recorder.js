@@ -16,8 +16,9 @@
 // (which disables the extension). With 0 minutes it is not shown at all.
 //
 // Nothing leaves the computer; the history is on disk (store.js). Picking
-// an entry puts it back on the clipboard, to be pasted as usual: Froonty
-// never pastes by itself and has no shortcut for it (review guidelines).
+// an entry in the tab puts it back on the clipboard, to be pasted as usual.
+// Only the switcher (switcher.js, local builds, on the user's shortcut)
+// pastes.
 //
 // Its GNOME parts come in as `clipboard`, `selection` and `focusedApp`
 // (shared.js makes them), so plain gjs tests can drive it. No St.
@@ -170,8 +171,7 @@ export class ClipboardRecorder extends Emitter {
 
     /**
      * "Paste as plain text": puts the current text back without its
-     * formatting, so the next paste anywhere is plain. Froonty never pastes
-     * by itself (review guidelines).
+     * formatting, so the next paste anywhere is plain.
      */
     copyAsPlainText() {
         const entry = this.entries.find(e => e.id === this.currentId);

@@ -48,7 +48,7 @@ function clipboardSelection() {
 
 // What the focused window says it is: its app's desktop id and name, its
 // window classes and its Flatpak app id.
-function focusedApp() {
+export function focusedApp() {
     const window = global.display.focus_window;
     if (!window)
         return [];
