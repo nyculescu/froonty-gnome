@@ -821,6 +821,12 @@ GNOME's clock; ⚙️ at the bottom of the tab column): **678/678** in the
 default session mode and **674/674** in Ubuntu's, plus 630 unit tests
 and 19 packing tests; the published package's own check, **17/17**.
 
+Release candidate 0.8.0-rc0 (the Clipboard tab's Super+V switcher;
+formulas drawn in notes, in the island and the All notes window; inline
+formulas no longer cut short in the Formulas tab): **708/708** in the
+default session mode and **704/704** in Ubuntu's, plus 661 unit tests
+and 19 packing tests; the published package's own check, **17/17**.
+
 Unreleased: the Notifications and Calendar tabs were removed. The date
 pill opens GNOME's own calendar and notification menu, which already
 lists GNOME's notifications (with Do Not Disturb and Clear) and the

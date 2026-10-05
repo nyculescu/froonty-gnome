@@ -1,6 +1,14 @@
 # Changelog
 
-## Unreleased
+## 0.8.0-rc0 (2026-10-05)
+
+First release candidate of 0.8.0, for GNOME Shell 50 on Ubuntu 26.04
+(Wayland). It builds on 0.7.0-rc0. The published package (extensions.
+gnome.org) is unchanged in what it offers: the Notes tab, the date pill
+and the panic buttons. `make install` builds add the Clipboard tab's
+Super+V switcher and formulas drawn in notes; Media, Claude, Btop,
+Clipboard, Kill Process, Break and Formulas follow on extensions.gnome.org
+in later versions; ZeroTier and Writing stay working-tree only.
 
 ### Added
 - **Clipboard switcher** (the Clipboard tab, local builds; Settings →
