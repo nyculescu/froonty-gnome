@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **Clipboard switcher** (the Clipboard tab, local builds; Settings →
+  Clipboard → Switcher, on while the tab is on). Super+V shows the newest
+  history entry in a small pop-up by the text cursor; with Super held,
+  each further V steps to an older entry and Shift+V back to a newer one;
+  releasing Super inserts the shown entry where you were typing, Escape
+  cancels. Text, images and copied files; hidden passwords show as dots.
+  Text goes into a text field through GNOME's input method and leaves the
+  clipboard alone; anything else (and text in terminals or apps without a
+  text field the input method knows) goes on the clipboard and is pasted
+  with Ctrl+V, Ctrl+Shift+V in terminals. The shortcut can be changed.
+
+### Changed
+- **GNOME's notification list opens with Super+M** while the switcher is
+  on: GNOME's `toggle-message-tray` loses Super+V and gets Super+M. The
+  previous value is remembered and comes back when the switcher or the
+  Clipboard tab is turned off; screen locks leave it alone.
+
 ## 0.7.0-rc0 (2026-10-04)
 
 First release candidate of 0.7.0, for GNOME Shell 50 on Ubuntu 26.04
