@@ -63,6 +63,14 @@ test('MathJax renders a PNG with its size and baseline', async () => {
     ok(display.height > inline.height, 'display style is taller (bounds above and below)');
 });
 
+test('an inline formula is one picture, all of it (no inline line breaks)', async () => {
+    const whole = await renderer.render({tex: 'E=mc^2'});
+    const first = await renderer.render({tex: 'E'});
+    const display = await renderer.render({tex: 'E=mc^2', display: true});
+    ok(whole.width > 3 * first.width, `${whole.width} px wide, E alone ${first.width}`);
+    ok(Math.abs(whole.width - display.width) <= 2, `inline ${whole.width}, display ${display.width}`);
+});
+
 test('a formula MathJax refuses gives its own message', async () => {
     eq((await failure(renderer.render({tex: '\\frac{1}{'}))).message, 'Missing close brace');
     eq((await failure(renderer.render({tex: '\\nosuchcommand'}))).message,

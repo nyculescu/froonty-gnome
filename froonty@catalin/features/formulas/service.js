@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Formulas tab (docs/features/formulas.md): owns the math renderer client
+// Formulas tab (docs/features/formulas.md): holds the math renderer client
 // while the tab exists, and the recent and starred lists in the settings.
-// The helper process starts on the first preview and stops after a minute
-// without one, or when the tab goes (stop(), from the hub, also on
+// The client is the one the formulas in notes use too (renderer/shared.js).
+// Its helper process starts on the first preview and stops after a minute
+// without one, or when its last user goes (stop(), from the hub, also on
 // disable()). No St.
 
 import {pushRecent, toggleFavourite} from './edit.js';
-import {isMathJaxFetched, MathRenderClient} from './renderer/client.js';
+import {isMathJaxFetched} from './renderer/client.js';
+import {acquireRenderer, releaseRenderer} from './renderer/shared.js';
 
 export const RECENT_KEY = 'formulas-recent';
 export const FAVOURITES_KEY = 'formulas-favorites';
@@ -20,17 +22,25 @@ export class FormulasService {
     constructor(settings, {client = null, isFetched = isMathJaxFetched} = {}) {
         this._settings = settings;
         this._client = client;
+        this._shared = false;
         this._isFetched = isFetched;
         this._fetched = false;
     }
 
     start() {
-        this._client ??= new MathRenderClient();
+        if (this._client)
+            return;
+        this._client = acquireRenderer();
+        this._shared = true;
     }
 
     stop() {
-        this._client?.destroy();
+        if (this._shared)
+            releaseRenderer();
+        else
+            this._client?.destroy();
         this._client = null;
+        this._shared = false;
     }
 
     /**

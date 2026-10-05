@@ -125,7 +125,9 @@ export class MathRenderer {
                     throw err;
                 },
             }),
-            OutputJax: new SVG({fontData: MathJaxNewcmFont, fontCache: 'local'}),
+            // No breaks inside an inline formula: MathJax 4 then makes one
+            // picture per piece (E, =mc², …) and only the first was drawn.
+            OutputJax: new SVG({fontData: MathJaxNewcmFont, fontCache: 'local', linebreaks: {inline: false}}),
         });
         return new MathRenderer(mathjax, adaptor, document);
     }
