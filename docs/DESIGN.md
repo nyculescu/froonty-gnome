@@ -91,6 +91,12 @@ What changed for Froonty, and how it adapts:
    the posture and long-rest minutes), so a separate interval would mean
    nothing ([features/break.md](features/break.md)). Exercise pictures are
    still, so there is no frame timer.
+   **Exception, written:** the clipboard switcher checks every 20 ms, at
+   most 30 times, whether the app's text field has GNOME's input method
+   focus back after the switcher's grab, only between the release of
+   Super and the insertion; GNOME emits nothing when it comes back
+   ([features/clipboard.md](features/clipboard.md#inserting)). Its pop-up
+   waits 150 ms before showing, as Alt+Tab does.
 3. No background processes or polling loop. Short-lived local subprocesses
   are limited to the Claude usage refresh, the Btop tab's
   `nvidia-smi` (NVIDIA's driver puts its readings nowhere else; only while
@@ -431,6 +437,7 @@ Consequences:
 | `PopupMenu.PopupMenu`, `PopupMenuManager`, `PopupMenuSection`, `PopupBaseMenuItem` (subclassed; `activate()` overridden so flipping a label does not close the menu, `popupMenu.js:787` in 50.1), `PopupMenuItem`, `Ornament`; `BoxPointer.PopupAnimation`; `Main.uiGroup`. Only in `ui/contextMenu.js` (a note tab's label menu) | `ui/popupMenu.js`, `ui/boxpointer.js`, `ui/main.js` (50.1) |
 | `Main.sessionMode.isLocked`: true while extensions are disabled for the lock screen (`unlock-dialog` mode); the Break tab then keeps GNOME's notifications off | `ui/sessionMode.js` (50.1) |
 | `global.backend.get_core_idle_monitor()` (as GNOME's own break engine) | `misc/breakManager.js` (50.1) |
+| Clipboard switcher (local builds): `Main.inputMethod` (`currentFocus`, `commit()`, `content_purpose`, signal `cursor-location-changed`, as the on-screen keyboard), IBusManager `set-cursor-location` (X11 clients), `Main.pushModal` / `popModal`, `global.display.get_keybinding_action()`, `global.get_pointer()` modifiers and `binding.get_mask()` (as Alt+Tab), a Clutter virtual keyboard (`create_virtual_device`, `notify_keyval`, as `ui/keyboard.js`) | `shell/inputMethod.js`, `features/clipboard/switcher*.js`; `misc/inputMethod.js`, `ui/switcherPopup.js`, `ui/keyboard.js` (50.1) |
 
 ### 6.3 Private / internal (isolated in `shell/`)
 
@@ -451,6 +458,7 @@ Consequences:
 | A notification source's `app` (`FdoNotificationDaemonSource` only; the window-attention source has none) | The attention bar follows only the Claude app's source, and web browsers' (`WebBrowser` category); `describe()` gives the app's id | `shell/claudeAttention.js` `notificationFilter()`, `shell/notificationStore.js` |
 
 | `Main.breakManager`: GNOME's break engine, an internal Shell component exported as a `let` (`main.js:95`) and made at startup in every session (`main.js:271-275`), since GNOME 48. Getters `state`, `currentBreakType`, `nextBreakDueTime`; methods `getNextBreakDue()`, `getCurrentTime()`, `getDurationForBreakType()`, `delayBreak()`, `skipBreak()`, `takeBreak()`; signals `notify::state`, `notify::next-break-due-time`, `notify::last-break-end-time`, `break-due`, `break-finished`, `take-break` | Show and drive GNOME's breaks (Take, Delay, Skip) instead of timing them; the state numbers are checked against the installed Shell by a unit test | `shell/breakManager.js` (the only reader), `shell/breakEngine.js` |
+| `Main.inputMethod._cursorRect`: `{x, y, width, height}`, the last text cursor a client reported, kept by `vfunc_set_cursor_location` while IBus runs (`misc/inputMethod.js`, 50.1) | The clipboard switcher's pop-up by the text cursor, when the public `cursor-location-changed` has not given one for the focused window yet; believed only inside that window. Without it, the pointer | `shell/inputMethod.js` `TextInput.cursor()` |
 | `Main.breakManager._breakLastEnd`: a private `Map` of break type → last break end | Each type's next break (the public API gives only the earliest one), and telling a delay, a skip or a break taken apart. Without it the tab falls back to the next break only | `shell/breakEngine.js` `read()` |
 
 `statusArea.dateMenu` is a role name set by `PANEL_ITEM_IMPLEMENTATIONS`

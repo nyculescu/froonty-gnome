@@ -216,6 +216,10 @@ class PackTest(unittest.TestCase):
         self.assertFalse([n for n in names if n.startswith(("features/calendar", "features/notifications"))])
         self.assertNotIn("shell/messageTray.js", names)
         self.assertNotIn("shell/notificationStore.js", names)
+        # The clipboard switcher's input method adapter, local like its tab.
+        self.assertNotIn("shell/inputMethod.js", names)
+        self.assertNotIn(b"froonty-clipboard-switcher", css)
+        self.assertNotIn(b'name="clipboard-switcher-', schema)
         self.assertIn("LICENSE", names)
         self.assertNotIn("panic/camera.js", names)
         self.assertNotIn("features/localFeatures.js", names)

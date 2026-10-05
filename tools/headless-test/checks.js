@@ -173,6 +173,8 @@ function shellFootprint() {
         ctrlAltTabItems: Main.ctrlAltTabManager._items.length,
         dateMenuOpacity: dateMenu.opacity,
         keybindingModes: Main.wm._allowedKeybindings['toggle-shortcut'] ?? null,
+        // The Clipboard tab's switcher (Super+V), only while that tab is on.
+        switcherKeybinding: Boolean(Main.wm._allowedKeybindings['clipboard-switcher-shortcut']),
         modalCount: Main.modalCount,
         actionMode: Main.actionMode,
         stripPresent: strip() !== null,
@@ -2158,6 +2160,335 @@ async function testClipboard(outDir) {
     await sleep(SETTLE_MS);
     check('clipboard: turning it off stops listening to copies',
         countHandlers(selection, 'owner-changed') === before && !tabButton('clipboard'));
+}
+
+// ---------------------------------------------------------------- clipboard switcher
+
+// The clipboard switcher (Super+V, docs/features/clipboard.md "Switcher"):
+// an extension part of the Clipboard tab's. GNOME's toggle-message-tray
+// lives in the private keyfile here.
+const SWITCHER_BINDING = 'clipboard-switcher-shortcut';
+const switcher = () => extension()?.stateObj?._parts
+    ?.find(part => part.constructor.name === 'ClipboardSwitcher') ?? null;
+const switcherBound = () => Boolean(Main.wm._allowedKeybindings[SWITCHER_BINDING]);
+const gnomeKeybindings = () => new Gio.Settings({schema_id: 'org.gnome.shell.keybindings'});
+const trayBinding = () => JSON.stringify(gnomeKeybindings().get_strv('toggle-message-tray'));
+const switcherUiActors = () => Main.uiGroup.get_children()
+    .filter(actor => actor.get_first_child()?.has_style_class_name?.('froonty-clipboard-switcher')).length;
+
+function readTestFile(dir, name) {
+    try {
+        return new TextDecoder().decode(GLib.file_get_contents(GLib.build_filenamev([dir, name]))[1]);
+    } catch (e) {
+        return null;
+    }
+}
+
+// Super held, the shortcut's key pressed `presses` times (Shift on the
+// ones listed in `shifted`), then `last` (Super's release by default).
+async function holdSuper(presses, {shifted = [], before = null, last = 'release'} = {}) {
+    keyboard.notify_keyval(now(), Clutter.KEY_Super_L, Clutter.KeyState.PRESSED);
+    await sleep(30);
+    for (let i = 0; i < presses; i++) {
+        const shift = shifted.includes(i);
+        if (shift)
+            keyboard.notify_keyval(now(), Clutter.KEY_Shift_L, Clutter.KeyState.PRESSED);
+        keyboard.notify_keyval(now(), Clutter.KEY_v, Clutter.KeyState.PRESSED);
+        await sleep(30);
+        keyboard.notify_keyval(now(), Clutter.KEY_v, Clutter.KeyState.RELEASED);
+        if (shift)
+            keyboard.notify_keyval(now(), Clutter.KEY_Shift_L, Clutter.KeyState.RELEASED);
+        await sleep(i === 0 ? 250 : 60);
+    }
+    await before?.();
+    if (last === 'escape') {
+        keyboard.notify_keyval(now(), Clutter.KEY_Escape, Clutter.KeyState.PRESSED);
+        await sleep(20);
+        keyboard.notify_keyval(now(), Clutter.KEY_Escape, Clutter.KeyState.RELEASED);
+        await sleep(30);
+    }
+    if (last !== 'hold') {
+        keyboard.notify_keyval(now(), Clutter.KEY_Super_L, Clutter.KeyState.RELEASED);
+        await sleep(SETTLE_MS);
+    }
+}
+
+async function testClipboardSwitcher(outDir) {
+    const s = settings();
+    const gnome = gnomeKeybindings();
+    // The user's machine: GNOME's Super+V and Super+M both off.
+    gnome.set_strv('toggle-message-tray', []);
+    s.reset('clipboard-switcher-tray-backup');
+    check('switcher: no keybinding while the Clipboard tab is off, GNOME\'s key untouched',
+        !s.get_boolean('clipboard-enabled') && !switcherBound() && trayBinding() === '[]',
+        `bound=${switcherBound()} tray=${trayBinding()}`);
+
+    s.set_boolean('clipboard-enabled', true);
+    await sleep(SETTLE_MS);
+    check('switcher: the tab on: Super+V is Froonty\'s, GNOME\'s notification list gets Super+M',
+        switcherBound() && trayBinding() === '["<Super>m"]' &&
+        JSON.parse(s.get_string('clipboard-switcher-tray-backup')).original.length === 0,
+        `bound=${switcherBound()} tray=${trayBinding()} backup=${s.get_string('clipboard-switcher-tray-backup')}`);
+
+    // disable() and enable(), as at every screen lock: GNOME's key stays.
+    const backup = s.get_string('clipboard-switcher-tray-backup');
+    gnome.set_strv('toggle-message-tray', ['<Super>m']);
+    await setExtensionEnabled(false);
+    const offBound = switcherBound();
+    const offTray = trayBinding();
+    await setExtensionEnabled(true);
+    await sleep(SETTLE_MS);
+    check('switcher: disable and enable leave GNOME\'s key and the record alone; the keybinding goes and comes back',
+        !offBound && offTray === '["<Super>m"]' && trayBinding() === '["<Super>m"]' && switcherBound() &&
+        settings().get_string('clipboard-switcher-tray-backup') === backup,
+        `off: bound=${offBound} tray=${offTray}; on: bound=${switcherBound()} tray=${trayBinding()}`);
+
+    const here = GLib.path_get_dirname(Gio.File.new_for_uri(import.meta.url).get_path());
+    const dir = GLib.build_filenamev([outDir, 'switcher-entry']);
+    GLib.mkdir_with_parents(dir, 0o700);
+    const launcher = new Gio.SubprocessLauncher({flags: Gio.SubprocessFlags.NONE});
+    // Wayland's text-input, whatever the host's input method variables say.
+    launcher.setenv('GTK_IM_MODULE', 'wayland', true);
+    const proc = launcher.spawnv(['/usr/bin/gjs', '-m', `${here}/textEntry.js`, dir]);
+    const modalBefore = Main.modalCount;
+    const uiBefore = Main.uiGroup.get_children().map(describeActor);
+    try {
+        // Only three texts, newest last (testClipboard leaves its own).
+        await switcher()._recorder.clear();
+        for (const text of ['switcher oldest', 'switcher middle', 'switcher newest']) {
+            stClipboard().set_text(CLIPBOARD, text);
+            // eslint-disable-next-line no-await-in-loop
+            await sleep(SETTLE_MS);
+        }
+        const recorder = switcher()._recorder;
+        await waitFor(() => recorder.entries[0]?.text === 'switcher newest', 3000);
+
+        const findWindow = () => global.display.list_all_windows()
+            .find(w => w.get_title() === 'Froonty test entry') ?? null;
+        await waitFor(() => findWindow() !== null, 15000);
+        const window = findWindow();
+        for (let i = 0; i < 3 && window && global.display.focus_window !== window; i++) {
+            Main.activateWindow(window, global.display.get_current_time_roundtrip());
+            // eslint-disable-next-line no-await-in-loop
+            await waitFor(() => global.display.focus_window === window, 1500);
+        }
+        await waitFor(() => Boolean(Main.inputMethod.currentFocus), 3000);
+        const textInput = switcher()._textInput;
+        await waitFor(() => textInput.cursor() !== null, 3000);
+        const cursor = textInput.cursor();
+        check('switcher: a GTK text field has the focus and has told where its cursor is',
+            window && global.display.focus_window === window && textInput.hasFocus() && cursor !== null,
+            `window=${Boolean(window)} focus=${global.display.focus_window?.get_title()} ` +
+            `im=${Boolean(Main.inputMethod.currentFocus)} cursor=${JSON.stringify(cursor)}`);
+        if (!window)
+            return;
+        // The pointer away from the field, so a pop-up by the pointer would show.
+        await movePointerTo(Main.layoutManager.primaryMonitor.x + 1500, Main.layoutManager.primaryMonitor.y + 900);
+
+        // Super+V, held: the newest, by the text cursor, under a grab.
+        let shown = null;
+        await holdSuper(1, {
+            last: 'hold',
+            before: async () => {
+                await sleep(200);
+                const popup = switcher().popup;
+                const card = popup?._card;
+                shown = popup && {
+                    position: popup.position, text: popup.current?.text, opacity: popup.actor.opacity,
+                    modal: Main.modalCount === modalBefore + 1, box: card && boxOf(card),
+                };
+            },
+        });
+        const below = shown?.box && cursor && Math.abs(shown.box.x1 - cursor.x) <= 1 &&
+            shown.box.y1 >= cursor.y + cursor.height && shown.box.y1 - (cursor.y + cursor.height) <= 12;
+        check('switcher: Super+V shows the newest entry below the text cursor, under a modal grab',
+            shown?.text === 'switcher newest' && shown.position === '1 / 3' && shown.opacity === 255 &&
+            shown.modal && below,
+            `${JSON.stringify(shown)} cursor=${JSON.stringify(cursor)}`);
+        await screenshotTop(outDir, 'clipboard-switcher', 1080);
+
+        // V, V, Shift+V, V with Super still held: 2, 3, 2, 3.
+        const steps = [];
+        for (const shift of [false, false, true, false]) {
+            if (shift)
+                keyboard.notify_keyval(now(), Clutter.KEY_Shift_L, Clutter.KeyState.PRESSED);
+            keyboard.notify_keyval(now(), Clutter.KEY_v, Clutter.KeyState.PRESSED);
+            // eslint-disable-next-line no-await-in-loop
+            await sleep(30);
+            keyboard.notify_keyval(now(), Clutter.KEY_v, Clutter.KeyState.RELEASED);
+            if (shift)
+                keyboard.notify_keyval(now(), Clutter.KEY_Shift_L, Clutter.KeyState.RELEASED);
+            // eslint-disable-next-line no-await-in-loop
+            await sleep(80);
+            steps.push(switcher().popup?.position);
+        }
+        check('switcher: V steps to older entries, Shift+V back to a newer one',
+            JSON.stringify(steps) === '["2 / 3","3 / 3","2 / 3","3 / 3"]', JSON.stringify(steps));
+
+        // Releasing Super types the oldest into the field, through the input
+        // method: no Ctrl+V, the clipboard left alone.
+        keyboard.notify_keyval(now(), Clutter.KEY_Super_L, Clutter.KeyState.RELEASED);
+        await waitFor(() => readTestFile(dir, 'text') === 'switcher oldest' && !switcher().popup, 3000);
+        check('switcher: releasing Super inserts the shown entry into the focused text field',
+            readTestFile(dir, 'text') === 'switcher oldest' && !switcher().popup &&
+            Main.modalCount === modalBefore,
+            `text=${JSON.stringify(readTestFile(dir, 'text'))} popup=${Boolean(switcher().popup)} modal=${Main.modalCount}`);
+        check('switcher: text goes in through the input method (no Ctrl+V), the clipboard stays as it was',
+            !/ctrl v/.test(readTestFile(dir, 'keys') ?? '') && await clipboardText() === 'switcher newest',
+            `keys=${JSON.stringify(readTestFile(dir, 'keys'))} clipboard=${await clipboardText()}`);
+
+        // Escape cancels: nothing typed, the grab gone.
+        await holdSuper(2, {last: 'escape'});
+        await sleep(300);
+        check('switcher: Escape cancels: nothing inserted, no grab, no pop-up left',
+            readTestFile(dir, 'text') === 'switcher oldest' && !switcher().popup &&
+            Main.modalCount === modalBefore && switcherUiActors() === 0,
+            `text=${JSON.stringify(readTestFile(dir, 'text'))} modal=${Main.modalCount} ` +
+            `ui+=${Main.uiGroup.get_children().map(describeActor).filter(a => !uiBefore.includes(a))}`);
+
+        // A click outside the pop-up cancels; a click on it inserts.
+        const monitor = Main.layoutManager.primaryMonitor;
+        await holdSuper(1, {last: 'hold'});
+        await clickAt(monitor.x + 40, monitor.y + monitor.height - 40);
+        const outside = {open: Boolean(switcher().popup && !switcher().popup.finished), modal: Main.modalCount};
+        keyboard.notify_keyval(now(), Clutter.KEY_Super_L, Clutter.KeyState.RELEASED);
+        await sleep(300);
+        check('switcher: a click outside the pop-up cancels',
+            !outside.open && outside.modal === modalBefore && readTestFile(dir, 'text') === 'switcher oldest',
+            `${JSON.stringify(outside)} text=${JSON.stringify(readTestFile(dir, 'text'))}`);
+        await holdSuper(1, {last: 'hold'});
+        const card = switcher().popup?._card;
+        if (card)
+            await clickActor(card);
+        await waitFor(() => readTestFile(dir, 'text') === 'switcher oldestswitcher newest', 2000);
+        keyboard.notify_keyval(now(), Clutter.KEY_Super_L, Clutter.KeyState.RELEASED);
+        await sleep(300);
+        check('switcher: a click on the pop-up inserts its entry',
+            readTestFile(dir, 'text') === 'switcher oldestswitcher newest' && Main.modalCount === modalBefore &&
+            !switcher().popup, `text=${JSON.stringify(readTestFile(dir, 'text'))} modal=${Main.modalCount}`);
+
+        // A quick press and release: the newest, never shown.
+        const {SwitcherPopup} = await import(`file://${extension().path}/features/clipboard/switcherPopup.js`);
+        const showNow = SwitcherPopup.prototype._showNow;
+        let shows = 0;
+        SwitcherPopup.prototype._showNow = function (...args) {
+            if (this._entries.length)
+                shows++;
+            return showNow.apply(this, args);
+        };
+        try {
+            keyboard.notify_keyval(now(), Clutter.KEY_Super_L, Clutter.KeyState.PRESSED);
+            await sleep(20);
+            keyboard.notify_keyval(now(), Clutter.KEY_v, Clutter.KeyState.PRESSED);
+            await sleep(20);
+            keyboard.notify_keyval(now(), Clutter.KEY_v, Clutter.KeyState.RELEASED);
+            await sleep(20);
+            keyboard.notify_keyval(now(), Clutter.KEY_Super_L, Clutter.KeyState.RELEASED);
+            await waitFor(() => readTestFile(dir, 'text') === 'switcher oldestswitcher newestswitcher newest', 2000);
+            await sleep(300);
+        } finally {
+            SwitcherPopup.prototype._showNow = showNow;
+        }
+        check('switcher: a quick tap inserts the newest entry without showing the pop-up',
+            shows === 0 && readTestFile(dir, 'text') === 'switcher oldestswitcher newestswitcher newest' &&
+            Main.modalCount === modalBefore && switcherUiActors() === 0,
+            `shows=${shows} text=${JSON.stringify(readTestFile(dir, 'text'))} modal=${Main.modalCount}`);
+        const typed = readTestFile(dir, 'text');
+
+        // An image entry: on the clipboard, then Ctrl+V.
+        const pixbuf = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, false, 8, 40, 24);
+        pixbuf.fill(0x33d17aff);
+        const [, png] = pixbuf.save_to_bufferv('png', [], []);
+        stClipboard().set_text(CLIPBOARD, 'switcher middle');
+        await sleep(SETTLE_MS);
+        stClipboard().set_content(CLIPBOARD, 'image/png', new GLib.Bytes(png));
+        await waitFor(() => recorder.entries[0]?.kind === 'image', 3000);
+        stClipboard().set_text(CLIPBOARD, 'switcher newest');
+        await waitFor(() => recorder.entries[0]?.text === 'switcher newest', 3000);
+        // The image is the second.
+        await holdSuper(2);
+        await waitFor(() => /ctrl v/.test(readTestFile(dir, 'keys') ?? ''), 3000);
+        const mimetypes = stClipboard().get_mimetypes(CLIPBOARD);
+        check('switcher: an image goes through the clipboard and a Ctrl+V to the app',
+            /ctrl v/.test(readTestFile(dir, 'keys') ?? '') && mimetypes.includes('image/png') &&
+            recorder.entries[0]?.kind === 'image' && recorder.currentId === recorder.entries[0]?.id,
+            `keys=${JSON.stringify(readTestFile(dir, 'keys'))} mimetypes=${mimetypes} top=${recorder.entries[0]?.kind}`);
+
+        // A password: shown hidden.
+        stClipboard().set_text(CLIPBOARD, 'Kx9vR2mQpL4wTz8!');
+        await waitFor(() => recorder.password !== null, 3000);
+        let preview = null;
+        await holdSuper(1, {
+            last: 'escape',
+            before: async () => {
+                const card = switcher().popup?._card;
+                const labels = [];
+                const walk = actor => {
+                    if (actor instanceof St.Label)
+                        labels.push(actor.text);
+                    actor.get_children().forEach(walk);
+                };
+                if (card)
+                    walk(card);
+                preview = labels.join('|');
+            },
+        });
+        check('switcher: a hidden password shows as dots, never in clear',
+            preview?.includes('••••••••') && !preview.includes('Kx9vR2mQ'), preview);
+
+        // An empty history: its note at once, gone on release.
+        await recorder.clear();
+        let empty = null;
+        await holdSuper(1, {
+            last: 'hold',
+            before: () => {
+                const popup = switcher().popup;
+                empty = popup && {opacity: popup.actor.opacity, text: popup._card.get_first_child()?.text};
+            },
+        });
+        keyboard.notify_keyval(now(), Clutter.KEY_Super_L, Clutter.KeyState.RELEASED);
+        await sleep(400);
+        check('switcher: an empty history says so, and the note goes on release',
+            empty?.opacity === 255 && empty.text === 'Clipboard is empty' && !switcher().popup &&
+            Main.modalCount === modalBefore && readTestFile(dir, 'text') === typed,
+            `${JSON.stringify(empty)} popup=${Boolean(switcher().popup)} modal=${Main.modalCount}`);
+
+        // disable() while Super+V is held: no grab, actor or keybinding left.
+        stClipboard().set_text(CLIPBOARD, 'switcher again');
+        await sleep(SETTLE_MS);
+        await holdSuper(1, {last: 'hold'});
+        const held = Boolean(switcher()?.popup) && Main.modalCount === modalBefore + 1;
+        await setExtensionEnabled(false);
+        keyboard.notify_keyval(now(), Clutter.KEY_Super_L, Clutter.KeyState.RELEASED);
+        await sleep(SETTLE_MS);
+        check('switcher: disabled while held: no grab, pop-up or keybinding left, GNOME\'s key unchanged',
+            held && Main.modalCount === modalBefore && switcherUiActors() === 0 && !switcherBound() &&
+            trayBinding() === '["<Super>m"]',
+            `held=${held} modal=${Main.modalCount} actors=${switcherUiActors()} bound=${switcherBound()} tray=${trayBinding()}`);
+        await setExtensionEnabled(true);
+        await sleep(SETTLE_MS);
+    } finally {
+        proc.force_exit();
+        await sleep(SETTLE_MS);
+    }
+
+    // The user turns the switcher off, then on, then the tab off.
+    settings().set_boolean('clipboard-switcher-enabled', false);
+    await sleep(SETTLE_MS);
+    const switcherOff = {bound: switcherBound(), tray: trayBinding(),
+        backup: settings().get_string('clipboard-switcher-tray-backup')};
+    settings().reset('clipboard-switcher-enabled');
+    await sleep(SETTLE_MS);
+    const again = trayBinding();
+    settings().reset('clipboard-enabled');
+    await sleep(SETTLE_MS);
+    check('switcher: turning the switcher off gives GNOME\'s key back; on again takes it again',
+        !switcherOff.bound && switcherOff.tray === '[]' && switcherOff.backup === '' && again === '["<Super>m"]',
+        `${JSON.stringify(switcherOff)} again=${again}`);
+    check('switcher: turning the tab off removes the keybinding and gives GNOME\'s key back',
+        !switcherBound() && trayBinding() === '[]' && settings().get_string('clipboard-switcher-tray-backup') === '',
+        `bound=${switcherBound()} tray=${trayBinding()}`);
+    gnome.reset('toggle-message-tray');
 }
 
 // ---------------------------------------------------------------- writing
@@ -7923,7 +8254,7 @@ const ONLY_TESTS = {
     testResizeGrip, testMediaPill, testMediaExtras, testMediaPanic, testMediaChoiceSurvivesLock,
     testPointer, testHubLayout, testDatePill, testCalendarMenu, testEmptyHub,
     testSettingsButton, testKillProcess, testCpuLoadButton, testFormulas,
-    testNotesHeader, testClaude,
+    testNotesHeader, testClaude, testClipboard, testClipboardSwitcher,
 };
 
 export async function runAll(outDir) {
@@ -7982,6 +8313,7 @@ export async function runAll(outDir) {
         await testLabelMenuLifecycle();
         await testClaude(outDir);
         await testClipboard(outDir);
+        await testClipboardSwitcher(outDir);
         await testWriting(outDir);
         await testWritingFixes(outDir);
         await testKillProcess(outDir);

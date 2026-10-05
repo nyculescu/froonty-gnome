@@ -76,6 +76,12 @@ BANNED = (
     b"Kill Process",
     b"Claude",
     b"Clipboard tab",
+    # The Clipboard tab's switcher: its keys, GNOME's key it changes, and
+    # its input method adapter (shell/inputMethod.js).
+    b"clipboard-switcher",
+    b"toggle-message-tray",
+    b"inputMethod",
+    b"_cursorRect",
     b"Media's",
     b"camera.js",
     b"features/formulas",
