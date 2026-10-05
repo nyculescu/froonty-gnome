@@ -13,6 +13,23 @@
   clipboard alone; anything else (and text in terminals or apps without a
   text field the input method knows) goes on the clipboard and is pasted
   with Ctrl+V, Ctrl+Shift+V in terminals. The shortcut can be changed.
+- **Formulas in notes** (local builds; the published Notes tab is
+  unchanged). In the island's Notes tab and the All notes window, `$…$`
+  and `$$…$$` show as math drawn by MathJax on the lines without the
+  cursor, as in Obsidian's live preview; the line being edited shows the
+  LaTeX, its dollars dimmed. `$$…$$` alone on its lines is centred on a line of its own. Dollars
+  follow Pandoc's rules, so `$5 and $10` stays text, `\$` is a dollar and
+  code is left alone. A formula MathJax refuses keeps its source,
+  underlined (with MathJax's message as a tooltip in the window). The
+  files stay plain Markdown, byte for byte; undo and the formatting bar
+  work on the plain text. The Formulas tab and the notes share one
+  renderer process.
+
+### Fixed
+- **Inline formulas were cut after their first piece** (the Formulas tab
+  with Display off, and copies of its picture): MathJax 4 split
+  `E=mc^2` at `=` and only `E` was drawn. Inline formulas are now one
+  picture.
 
 ### Changed
 - **GNOME's notification list opens with Super+M** while the switcher is

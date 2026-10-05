@@ -108,6 +108,10 @@ feature has a design note in [docs/features/](docs/features/).
     tab (tinted with the note's colour), opens every note in a window: search them all, filter
     by labels (all of them, or any), and read or edit them there, drawn
     rendered and with the same formatting bar as the island.
+  - Formulas (working-tree installs only): `$…$` and `$$…$$` show as
+    rendered math in both editors, off the line being edited; that line
+    shows the LaTeX. The files stay plain Markdown. See
+    [docs/features/notes.md](docs/features/notes.md#formulas-2026-10-05-working-tree-builds-only).
 - **Claude** tab: your Claude plan's usage (Session, Weekly, Weekly Fable)
   and when each resets, as Claude Code last checked it.
   - It is read from Claude Code's own config file each time the tab opens.
@@ -244,7 +248,8 @@ Clipboard, Kill Process, Break; ZeroTier, Writing and Formulas stay
 working-tree only) say what they need in Settings, and in their design
 notes under [docs/features/](docs/features/).
 
-Working-tree installs also need, for the Formulas tab's previews, MathJax:
+Working-tree installs also need, for the Formulas tab's previews and the
+formulas in notes, MathJax:
 `make install` fetches it once when it is missing (`make mathjax` does it
 on demand), with `python3` and an internet connection, from the npm
 registry: four official Apache-2.0 packages (`@mathjax/src`, its
@@ -252,7 +257,8 @@ New Computer Modern font, its mhchem font extension, `mhchemparser`),
 pinned by version and checked against their sha512 hashes, into
 `froonty@catalin/third_party/mathjax` (not in git, about 12.5 MB). Nothing
 is fetched while Froonty runs. Without it the tab still has its symbols,
-templates and guide, and says how to fetch it. See
+templates and guide, and says how to fetch it, and notes show their
+formulas as LaTeX. See
 [docs/features/formulas.md](docs/features/formulas.md).
 
 ## Layout
@@ -294,7 +300,8 @@ froonty@catalin/             the extension (this directory is what gets installe
 │   ├── break/               Break tab: GNOME's break engine, the pill's cue,
 │   │                        ledger, sit/stand, Workrave's exercises (exercises/)
 │   └── formulas/            Formulas tab: palettes, templates, guide; renderer/:
-│                            MathJax in a helper process and its client
+│                            MathJax in a helper process and its client;
+│                            notes/: formulas drawn in both notes editors
 ├── panic/                   panic button catalog, factories, buttons (mute,
 │                            Claude session, block camera, pause media,
 │                            sit/stand), prefs
