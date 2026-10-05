@@ -1,6 +1,15 @@
 # Changelog
 
-## Unreleased
+## 0.7.0-rc0 (2026-10-04)
+
+First release candidate of 0.7.0, for GNOME Shell 50 on Ubuntu 26.04
+(Wayland). It builds on 0.6.0-rc0. The published package (extensions.
+gnome.org) keeps the Notes tab, with the new header: the date pill over
+GNOME's clock, up to 8 panic buttons around it, and ⚙️ in the tab
+column. `make install` builds add the Formulas tab and the CPU load
+panic button; Media, Claude, Btop, Clipboard, Kill Process, Break and
+Formulas follow on extensions.gnome.org in later versions; ZeroTier and
+Writing stay working-tree only.
 
 ### Added
 - **CPU load panic button** (Settings → Panic buttons, local builds): the

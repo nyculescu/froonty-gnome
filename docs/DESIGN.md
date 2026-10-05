@@ -805,6 +805,13 @@ settings window retrying while GNOME's preferences service leaves):
 plus 590 unit tests and 17 packing tests; the published package's own
 check, **15/15**.
 
+Release candidate 0.7.0-rc0 (the Formulas tab with MathJax in a helper
+process; the CPU load panic button; up to 8 panic buttons, half on each
+side of the date pill in equal widths; the date pill exactly over
+GNOME's clock; ⚙️ at the bottom of the tab column): **678/678** in the
+default session mode and **674/674** in Ubuntu's, plus 630 unit tests
+and 19 packing tests; the published package's own check, **17/17**.
+
 Unreleased: the Notifications and Calendar tabs were removed. The date
 pill opens GNOME's own calendar and notification menu, which already
 lists GNOME's notifications (with Do Not Disturb and Clear) and the
