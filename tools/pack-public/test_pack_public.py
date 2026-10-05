@@ -211,6 +211,11 @@ class PackTest(unittest.TestCase):
         # The Formulas tab and its renderer, fetched or not, stay out.
         self.assertFalse([n for n in names if n.startswith(("features/formulas", "third_party"))])
         self.assertFalse([n for n in names if "mathjax" in n.lower()])
+        # Formulas in notes: the Notes modules come without their hooks.
+        for module in ("render.js", "styler.js", "view.js", "allNotesStyler.js"):
+            text = archive_text(path, f"features/notes/{module}")
+            self.assertNotIn("formulas", text, module)
+            self.assertNotRegex(text, r"(?i)math(?!\.)", module)  # Math.round() is no formula
         # The Calendar and Notifications tabs are gone; the message tray
         # modules only the local Claude attention bar imports stay out.
         self.assertFalse([n for n in names if n.startswith(("features/calendar", "features/notifications"))])

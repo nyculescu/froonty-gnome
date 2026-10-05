@@ -228,6 +228,149 @@ function inlineSpans(line, from, {marker, span}) {
     return claimed;
 }
 
+// local:begin notes-math
+// Formulas (features/formulas/notes, working-tree builds only): $…$ inside
+// a line and $$…$$ on a line or over several, read as Pandoc reads them.
+// An opening $ has a non-space character right after it, a closing $ one
+// right before it and no digit after it, and nothing between them is
+// another $, so "$5 and $10" stays text; \$ is a dollar; $$…$$ holds no
+// blank line. Dollars in code (`…`, fenced blocks) are only text.
+
+// What a formula's characters become while Markdown is looked for, so
+// nothing inside one is formatting: not a space, a word character or a
+// marker. One per UTF-16 unit, so every offset stays.
+const MASK = '\u0001';
+
+/**
+ * The formulas of `text`, in order.
+ *
+ * @param {string} text the note
+ * @returns {{start: number, end: number, open: number, close: number,
+ *   tex: string, display: boolean, block: boolean, firstLine: number,
+ *   lastLine: number}[]} start/end: the formula with its dollars (UTF-16
+ *   indices); open/close: how many dollars on each side; tex: what is
+ *   between them, trimmed; display: $$…$$; block: a $$…$$ alone on its
+ *   lines (drawn on a line of its own); lines from 0
+ */
+export function mathSpans(text) {
+    // Runs of unescaped dollars outside code: {at, n, line}; and each
+    // line's paragraph (a blank line or a code fence ends one).
+    const runs = [];
+    const paragraphOf = [];
+    let paragraph = 0;
+    let offset = 0;
+    let inFence = false;
+    text.split('\n').forEach((line, index) => {
+        const fence = FENCE.test(line);
+        if (fence || inFence || line.trim() === '')
+            paragraph++;
+        paragraphOf.push(paragraph);
+        if (fence)
+            inFence = !inFence;
+        if (!fence && !inFence)
+            dollarRuns(line, offset, index, runs);
+        if (fence || line.trim() === '')
+            paragraph++;
+        offset += line.length + 1;
+    });
+
+    const formulas = [];
+    const space = c => c === undefined || /\s/.test(c);
+    for (let r = 0; r < runs.length; r++) {
+        const open = runs[r];
+        let close = null;
+        if (open.n === 2) {
+            for (let s = r + 1; s < runs.length && paragraphOf[runs[s].line] === paragraphOf[open.line]; s++) {
+                if (runs[s].n === 2) {
+                    close = runs[s];
+                    break;
+                }
+            }
+            if (!close || !text.slice(open.at + 2, close.at).trim())
+                continue;
+        } else if (open.n === 1 && !space(text[open.at + 1])) {
+            const next = runs[r + 1];
+            if (!next || next.line !== open.line || next.n !== 1 ||
+                space(text[next.at - 1]) || /[0-9]/.test(text[next.at + 1] ?? ''))
+                continue;
+            close = next;
+        } else {
+            continue;
+        }
+        const end = close.at + close.n;
+        const lineStart = text.lastIndexOf('\n', open.at - 1) + 1;
+        const lineEnd = text.indexOf('\n', end);
+        formulas.push({
+            start: open.at,
+            end,
+            open: open.n,
+            close: close.n,
+            tex: text.slice(open.at + open.n, close.at).trim(),
+            display: open.n === 2,
+            block: open.n === 2 && !text.slice(lineStart, open.at).trim() &&
+                !text.slice(end, lineEnd < 0 ? text.length : lineEnd).trim(),
+            firstLine: open.line,
+            lastLine: close.line,
+        });
+        r = runs.indexOf(close);
+    }
+    return formulas;
+}
+
+// Adds the line's runs of unescaped dollars outside code spans to `runs`.
+function dollarRuns(line, offset, index, runs) {
+    const code = new Array(line.length).fill(false);
+    for (const m of line.matchAll(/`[^`\n]+`/g))
+        code.fill(true, m.index, m.index + m[0].length);
+    for (let i = 0; i < line.length; i++) {
+        if (line[i] !== '$' || code[i])
+            continue;
+        let backslashes = 0;
+        while (line[i - 1 - backslashes] === '\\')
+            backslashes++;
+        if (backslashes % 2)
+            continue; // \$: a dollar sign
+        let j = i;
+        while (line[j] === '$' && !code[j])
+            j++;
+        runs.push({at: offset + i, n: j - i, line: index});
+        i = j - 1;
+    }
+}
+
+/**
+ * markdownSpans() for a note with formulas: no Markdown inside a formula,
+ * and the formulas, each saying whether it is on the edited line (any of
+ * its lines). There it shows its LaTeX, its dollars dimmed (marker spans).
+ *
+ * @param {string} text the note
+ * @param {number} activeLine as for markdownSpans()
+ * @returns {{spans: object[], formulas: object[]}} formulas: mathSpans()'s,
+ *   each with `active`
+ */
+export function mathMarkdownSpans(text, activeLine = -1) {
+    const formulas = mathSpans(text).map(formula => ({
+        ...formula,
+        active: activeLine >= formula.firstLine && activeLine <= formula.lastLine,
+    }));
+    const parts = [];
+    let at = 0;
+    for (const {start, end} of formulas) {
+        parts.push(text.slice(at, start), text.slice(start, end).replace(/[^\n]/g, MASK));
+        at = end;
+    }
+    parts.push(text.slice(at));
+    const spans = markdownSpans(parts.join(''), activeLine);
+    for (const {start, end, open, close, active} of formulas) {
+        if (active) {
+            spans.push({start, end: start + open, style: 'marker'},
+                {start: end - close, end, style: 'marker'});
+        }
+    }
+    return {spans, formulas};
+}
+// local:end notes-math
+
 /** The line (from 0) holding character position `position` (code points). */
 export function lineAt(text, position) {
     let line = 0;

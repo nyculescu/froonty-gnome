@@ -15,6 +15,7 @@ import Adw from 'gi://Adw?version=1';
 import Gdk from 'gi://Gdk?version=4.0';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
+import Gsk from 'gi://Gsk?version=4.0';
 import Gtk from 'gi://Gtk?version=4.0';
 
 import {test, eq, ok, done} from './test.js';
@@ -32,6 +33,11 @@ const EXTENSION_DIR = GLib.build_filenamev([
 
 // "%s".format(), as the preferences service sets it up (its main.js).
 imports.package.initFormat();
+// The formulas' renderer, in the copy below, draws with the working
+// tree's MathJax (when fetched: `make mathjax`).
+const MATHJAX_DIR = GLib.build_filenamev([EXTENSION_DIR, 'third_party', 'mathjax']);
+GLib.setenv('FROONTY_MATHJAX_DIR', MATHJAX_DIR, true);
+const MATHJAX = GLib.file_test(GLib.build_filenamev([MATHJAX_DIR, 'fetched.json']), GLib.FileTest.EXISTS);
 
 Adw.init();
 if (!Gdk.Display.get_default()) {
@@ -71,7 +77,10 @@ function copyModules() {
         'export const ngettext = (one, many, n) => (n === 1 ? one : many);',
         'export const pgettext = (_context, s) => s;',
     ].join('\n'), null, false, 0, null);
-    for (const dir of ['core', 'features/notes', 'features/notes/icons']) {
+    // The formulas in notes come with the working tree's Notes (local:begin
+    // notes-math in its modules).
+    for (const dir of ['core', 'features/notes', 'features/notes/icons', 'features/formulas/notes',
+        'features/formulas/renderer']) {
         const source = Gio.File.new_for_path(GLib.build_filenamev([EXTENSION_DIR, dir]));
         const target = root.resolve_relative_path(dir);
         target.make_directory_with_parents(null);
@@ -824,6 +833,118 @@ test('window: the note is drawn rendered; the edited line shows its markers', as
     ok(stylesAt(ui, 3).includes('hidden'));
     await sleep(AUTOSAVE);
     eq(read(dir, 'E.md'), '😀 **hi**', 'untouched');
+    await closeWindow(window);
+});
+
+// ---- formulas in notes (working-tree builds)
+
+const pictures = ui => [...walk(ui.editor)].filter(w => w instanceof Gtk.Picture && w.visible && w.paintable);
+const mathTags = (ui, offset) => ui.editor.buffer.get_iter_at_offset(offset).get_tags()
+    .map(tag => tag.name).filter(name => name?.startsWith('froonty-math-')).sort();
+// An iterator's box, in the view's own coordinates.
+function boxAt(ui, offset) {
+    const view = ui.editor;
+    const box = view.get_iter_location(view.buffer.get_iter_at_offset(offset));
+    const [x, y] = view.buffer_to_window_coords(Gtk.TextWindowType.WIDGET, box.x, box.y);
+    return {x, y, width: box.width, height: box.height};
+}
+function boundsOf(widget, view) {
+    const [, bounds] = widget.compute_bounds(view);
+    return {x: bounds.get_x(), y: bounds.get_y(), width: bounds.get_width(), height: bounds.get_height()};
+}
+
+test('window: formulas are drawn off the edited line, the LaTeX on it; text, file and undo stay', async () => {
+    if (!MATHJAX) {
+        print('     (skipped: MathJax is not fetched; run `make mathjax`)');
+        return;
+    }
+    // "Energy $E=mc^2$ here\n" 0-20, "and $5 and $10\n" 21-35, "$$\n" 36-38,
+    // "\int_0^1 x\,dx\n" 39-53, "$$\n" 54-56, "end" 57-59.
+    const note = 'Energy $E=mc^2$ here\nand $5 and $10\n$$\n\\int_0^1 x\\,dx\n$$\nend';
+    const dir = tempFolder({F: note});
+    const {window, ui} = await openWindow(dir, {last: 'F'});
+    const view = ui.editor;
+    const buffer = view.buffer;
+    // Broadway, with no browser watching, lays out about once a second.
+    ok(await waitFor(() => pictures(ui).length === 2 && pictures(ui).every(p => p.get_width() > 0), 15000),
+        `two pictures without the focus (${pictures(ui).length})`);
+    await waitFor(() => Math.abs(boundsOf(pictures(ui)[0], view).x - boxAt(ui, 7).x) <= 1, 3000);
+    eq(mathTags(ui, 8), ['froonty-math-hidden'], 'the source is hidden');
+    // A picture's paintable draws its texture at its size on screen.
+    const snapshot = new Gtk.Snapshot();
+    const paintable = pictures(ui)[0].paintable;
+    paintable.snapshot(snapshot, paintable.get_intrinsic_width(), paintable.get_intrinsic_height());
+    const node = snapshot.to_node();
+    ok(node && [Gsk.RenderNodeType.TEXTURE_NODE, Gsk.RenderNodeType.TEXTURE_SCALE_NODE]
+        .includes(node.get_node_type()), `drawn as ${node?.get_node_type()}`);
+    eq(mathTags(ui, 24), [], 'money stays text');
+
+    // The inline picture on its room: where "$" starts, as wide as the
+    // room up to " here", on the line.
+    const [inline, block] = pictures(ui).sort((a, b) => boundsOf(a, view).y - boundsOf(b, view).y);
+    const p = boundsOf(inline, view);
+    const start = boxAt(ui, 7);
+    const after = boxAt(ui, 15);
+    ok(Math.abs(p.x - start.x) <= 1 && Math.abs(p.y - start.y) <= 2, `picture at ${p.x},${p.y}, room at ${start.x},${start.y}`);
+    ok(after.x - start.x >= p.width && after.x - start.x <= p.width + 3,
+        `room ${after.x - start.x} px for a picture ${p.width} px wide`);
+    const [lineTop, lineHeight] = view.get_line_yrange(buffer.get_iter_at_offset(0));
+    ok(lineHeight >= p.height && p.y - view.top_margin >= lineTop - 1, `line ${lineHeight} px for ${p.height}`);
+    // The display one: centred, its first line as tall as it.
+    const middle = view.left_margin + (view.get_width() - view.left_margin - view.right_margin) / 2;
+    const centred = () => Math.abs(boundsOf(block, view).x + boundsOf(block, view).width / 2 - middle) <= 2;
+    ok(await waitFor(centred, 3000), `centred: ${boundsOf(block, view).x + boundsOf(block, view).width / 2} vs ${middle}`);
+    const b = boundsOf(block, view);
+    const [, blockLine] = view.get_line_yrange(buffer.get_iter_at_offset(36));
+    ok(blockLine >= b.height, `the $$ line ${blockLine} px for ${b.height}`);
+
+    // The edited line shows the LaTeX; the others stay drawn.
+    view.grab_focus();
+    ui.select(3);
+    ok(await waitFor(() => pictures(ui).length === 1 && mathTags(ui, 8).length === 0),
+        'the edited line: its formula as LaTeX');
+    eq(stylesAt(ui, 7), ['marker'], 'its dollars dimmed');
+    ui.select(40);
+    ok(await waitFor(() => pictures(ui).length === 1 && mathTags(ui, 40).length === 0 &&
+        mathTags(ui, 8).length > 0), 'inside the block: the block as LaTeX');
+
+    // The text, the saved file and undo are the plain note.
+    eq(ui.text, note);
+    eq(buffer.get_text(...buffer.get_bounds(), true), note, 'no character is invisible');
+    ui.select(20);
+    ui.type(' too');
+    ui.select(buffer.get_char_count());
+    ui.type('!');
+    await sleep(AUTOSAVE);
+    const typed = note.replace('here', 'here too') + '!';
+    eq(read(dir, 'F.md'), typed, 'saved, byte for byte');
+    buffer.undo();
+    buffer.undo();
+    eq(ui.text, note, 'undo: the typing only');
+    ok(!buffer.can_undo, 'nothing else in the history');
+
+    // The formatting bar edits by the plain text's offsets.
+    ui.select(16, 20);
+    ui.click('Bold');
+    eq(ui.text, note.replace('here', '**here**'), 'Bold around the word after a formula');
+    eq(ui.selection, [18, 22], 'the word still selected');
+    await sleep(AUTOSAVE);
+    eq(read(dir, 'F.md'), note.replace('here', '**here**'));
+    await closeWindow(window);
+});
+
+test('window: a formula MathJax refuses shows its source, underlined, with the message', async () => {
+    if (!MATHJAX) {
+        print('     (skipped: MathJax is not fetched; run `make mathjax`)');
+        return;
+    }
+    const note = 'bad $\\frac{1}{$ x\nother';
+    const dir = tempFolder({F: note});
+    const {window, ui} = await openWindow(dir, {last: 'F'});
+    ok(await waitFor(() => mathTags(ui, 6).includes('froonty-math-refused'), 15000), 'underlined');
+    eq(pictures(ui).length, 0, 'no picture');
+    eq(stylesAt(ui, 6), [], 'not dimmed: plain source');
+    ok(ui.editor.has_tooltip, 'tooltips on');
     await closeWindow(window);
 });
 

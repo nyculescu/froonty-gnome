@@ -25,6 +25,12 @@ cp -a "$ROOT/$UUID" "$STAGED"
 for module in features/registry.js prefs.js panic/catalog.js panic/registry.js; do
     python3 "$ROOT/tools/pack-public/strip_local.py" --several "$STAGED/$module" local-features
 done
+# Formulas in notes (features/formulas/notes): the Notes tab and its All
+# notes window stay, drawing Markdown only.
+for module in features/notes/render.js features/notes/styler.js features/notes/view.js \
+    features/notes/allNotesStyler.js; do
+    python3 "$ROOT/tools/pack-public/strip_local.py" --several "$STAGED/$module" notes-math
+done
 rm -rf "$STAGED/features/zerotier" "$STAGED/features/writing" "$STAGED/features/formulas"
 # The Formulas tab's renderer (tools/fetch-mathjax.py), when fetched.
 rm -rf "$STAGED/third_party/mathjax"

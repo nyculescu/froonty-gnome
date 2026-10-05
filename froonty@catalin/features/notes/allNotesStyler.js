@@ -18,6 +18,9 @@ import Gtk from 'gi://Gtk';
 import Pango from 'gi://Pango';
 
 import {charOffsets, lineAt, markdownSpans} from './render.js';
+// local:begin notes-math (working-tree only; tools/pack-public strips it)
+import {WindowMath} from '../formulas/notes/window.js';
+// local:end notes-math
 
 const MUTED = 'rgba(128, 128, 128, 1)';
 
@@ -59,6 +62,10 @@ export class MarkdownStyler {
         view.add_controller(this._focus);
         buffer.connect('changed', () => this.update(true));
         buffer.connect('notify::cursor-position', () => this.update());
+        // local:begin notes-math
+        // Formulas drawn as pictures (features/formulas/notes/window.js).
+        this.math = new WindowMath(view, () => this.update(true));
+        // local:end notes-math
         this.update(true);
     }
 
@@ -72,11 +79,19 @@ export class MarkdownStyler {
         this._line = line;
         for (const tag of this._tags.values())
             buffer.remove_tag(tag, ...buffer.get_bounds());
-        const spans = markdownSpans(text, line);
+        const spans = this._spans(text, line);
         const offsets = charOffsets(text, spans.flatMap(({start, end}) => [start, end]));
         for (const {start, end, style} of spans) {
             buffer.apply_tag(this._tags.get(style), buffer.get_iter_at_offset(offsets.get(start)),
                 buffer.get_iter_at_offset(offsets.get(end)));
         }
+    }
+
+    _spans(text, line) {
+        // local:begin notes-math
+        if (this.math)
+            return this.math.update(text, line);
+        // local:end notes-math
+        return markdownSpans(text, line);
     }
 }

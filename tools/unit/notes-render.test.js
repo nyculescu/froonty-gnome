@@ -1,9 +1,23 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import Gio from 'gi://Gio';
+import GLib from 'gi://GLib';
 import Pango from 'gi://Pango';
 
 import {byteOffsets, lineAt, markdownSpans} from '../../froonty@catalin/features/notes/render.js';
-import {markdownAttributes} from '../../froonty@catalin/features/notes/styler.js';
 import {done, eq, test} from './test.js';
+
+// styler.js as the public build has it: its formulas (local:begin
+// notes-math) need GNOME Shell's Clutter, which plain gjs has not.
+const NOTES = GLib.build_filenamev([GLib.path_get_dirname(GLib.filename_from_uri(import.meta.url)[0]),
+    '..', '..', 'froonty@catalin', 'features', 'notes']);
+const copy = Gio.File.new_for_path(GLib.dir_make_tmp('froonty-styler-XXXXXX'));
+for (const name of ['render.js', 'styler.js']) {
+    const [, bytes] = Gio.File.new_for_path(GLib.build_filenamev([NOTES, name])).load_contents(null);
+    const text = new TextDecoder().decode(bytes)
+        .replace(/^\s*\/\/ local:begin notes-math[^]*?\/\/ local:end notes-math\n/gm, '');
+    copy.get_child(name).replace_contents(text, null, false, 0, null);
+}
+const {markdownAttributes} = await import(copy.get_child('styler.js').get_uri());
 
 // Spans as "style:text" for readability.
 const shown = (text, active = -1) =>

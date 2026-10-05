@@ -85,6 +85,13 @@ BANNED = (
     b"Media's",
     b"camera.js",
     b"features/formulas",
+    # Formulas in notes: render.js's parser, the editors' hooks.
+    b"formulas/notes",
+    b"mathSpans",
+    b"mathMarkdownSpans",
+    b"IslandMath",
+    b"WindowMath",
+    b"notes-math",
     b"formulas-enabled",
     b"froonty-formulas",
     b"MathJax",
