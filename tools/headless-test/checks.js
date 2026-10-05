@@ -6646,7 +6646,7 @@ async function testClaudeAttentionWindows(outDir) {
     const focusOn = async window => {
         // Then, if that is turned down too (Ubuntu's session), raise and
         // focus the window directly.
-        for (let i = 0; i < 3 && global.display.focus_window !== window; i++) {
+        for (let i = 0; i < 5 && global.display.focus_window !== window; i++) {
             const time = global.display.get_current_time_roundtrip();
             if (i === 0) {
                 Main.activateWindow(window, time);
@@ -6677,6 +6677,10 @@ async function testClaudeAttentionWindows(outDir) {
             `windows=${app()?.get_windows().map(w => w.get_title())} exited=${windows.exited}`);
         if (!(alpha && shell && claudeWindow))
             return;
+        // All three on screen first: a window that maps after a focus
+        // request takes the focus itself (the newest), and focusOn() lost.
+        await waitFor(() => [alpha, shell, claudeWindow].every(w => w.get_compositor_private()?.mapped), 5000);
+        await sleep(SETTLE_MS);
         const chain = [[claude.pid, procStart(claude.pid)], [windows.pid, procStart(windows.pid)]];
 
         // Which window: through the real ClaudeDesktop.resolve().
@@ -6698,7 +6702,9 @@ async function testClaudeAttentionWindows(outDir) {
         // whose title holds the project folder): what Claude Code says
         // in its own window shows.
         check('attention windows: the test can focus the shell window', await focusOn(shell),
-            `focus=${global.display.focus_window?.get_title()}`);
+            `focus=${global.display.focus_window?.get_title()} modalCount=${Main.modalCount} ` +
+            `expanded=${island()?.expanded} overview=${Main.overview.visible} ` +
+            `keyFocus=${global.stage.key_focus ? describeActor(global.stage.key_focus) : null}`);
         await write('froonty-test-30', {kind: 'permission', entrypoint: 'cli', project: 'Froonty', pids: chain});
         await write('froonty-test-31', {kind: 'finished', entrypoint: 'cli', project: 'Froonty', pids: chain});
         await write('froonty-test-32', {kind: 'waiting', entrypoint: 'cli', project: 'Froonty', pids: chain});
