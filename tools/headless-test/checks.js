@@ -4365,6 +4365,98 @@ const settingsWindows = () => global.display.list_all_windows().filter(w =>
     w.get_wm_class() === 'org.gnome.Shell.Extensions' &&
     w.get_title() === 'Froonty');
 
+// Formulas in the island's Notes editor (working-tree builds): drawn as
+// pictures off the edited line, at their reserved place; LaTeX on the
+// edited line; the note's text and file unchanged; plain text without a
+// renderer; nothing left after disable().
+async function testNotesMath(outDir) {
+    const s = settings();
+    const notes = await openTab('notes');
+    if (notes.service.selected === null)
+        await notes.service.create();
+    await sleep(SETTLE_MS);
+    const view = notes.view;
+    const text = view._entry.clutter_text;
+    const math = view._styler.math;
+    const source = 'Energy $E=mc^2$ here\nsecond line, $5 and $10\n  $$\n\\int_0^1 x\\,dx\n$$ \nend';
+    view._entry.text = source;
+    text.grab_key_focus();
+    text.set_cursor_position(source.indexOf('second'));
+    const drawn = await waitFor(() => math.placed.length === 2 && math._actors.length === 2 &&
+        math._actors.every(a => a.mapped && a.content), 10000);
+    const helpers = rendererHelpers();
+    check('notes math: formulas off the edited line are drawn as pictures, by one helper process',
+        drawn && helpers.length === 1, `placed=${math.placed.length} actors=${math._actors.length} helpers=${helpers}`);
+    await sleep(SETTLE_MS);
+    await screenshotTop(outDir, 'notes-math', 420);
+
+    // At the reserved box: the inline picture where "$" starts, and as
+    // wide as the room the formula takes on its line.
+    const [tx, ty] = text.get_transformed_position();
+    const inline = math._actors[0];
+    const [ax, ay] = inline.get_transformed_position();
+    const [, sx, sy] = text.position_to_coords(source.indexOf('$E'));
+    const [, ex] = text.position_to_coords(source.indexOf(' here'));
+    const [, hx] = text.position_to_coords(source.indexOf('here'));
+    check('notes math: the inline picture sits on its reserved box',
+        Math.abs(ax - (tx + sx)) <= 1 && Math.abs(ay - (ty + sy)) <= 1 &&
+        Math.abs(ex - sx - Math.ceil(inline.width)) <= 1 && hx > ex,
+        `picture ${ax},${ay} ${inline.width}x${inline.height}; box ${tx + sx},${ty + sy} to ${tx + ex}`);
+    const ink = await inkIn(outDir, 'notes-math-inline', ax, ay, inline.width, inline.height);
+    check('notes math: the picture is drawn (ink in its box)', ink > 0.02, `ink=${ink.toFixed(3)}`);
+    // The display block: centred, its three lines one picture high.
+    const block = math._actors[1];
+    const [bx] = block.get_transformed_position();
+    const [, , endY] = text.position_to_coords(source.indexOf('end'));
+    const [, , blockY] = text.position_to_coords(source.indexOf('$$'));
+    const centre = tx + text.width / 2;
+    check('notes math: the display formula is centred, its lines one picture high',
+        Math.abs(bx + block.width / 2 - centre) <= 2 && Math.abs(endY - blockY - block.height) <= 2,
+        `centre ${bx + block.width / 2} vs ${centre}; lines ${endY - blockY} vs ${block.height}`);
+    check('notes math: money stays text', math.placed.every(p => !p.tex.includes('5')));
+
+    // The edited line shows the LaTeX.
+    text.set_cursor_position(2);
+    await sleep(SETTLE_MS);
+    const [, s1] = text.position_to_coords(source.indexOf('E=mc'));
+    const [, s2] = text.position_to_coords(source.indexOf('=mc'));
+    check('notes math: the edited line shows the source',
+        math.placed.length === 1 && s2 - s1 > 3, `placed=${math.placed.length} E width=${s2 - s1}`);
+    check('notes math: the text is the note, unchanged', view._entry.text === source);
+    const name = notes.service.selected;
+    check('notes math: the file is the Markdown, byte for byte',
+        await waitFor(() => readNote(`${name}.md`) === source, 3000), JSON.stringify(readNote(`${name}.md`)));
+
+    // Without a renderer: the source stays as text, nothing complains.
+    const images = math._images;
+    const client = images._client;
+    const {MathRenderClient} = await import(`file://${extension().path}/features/formulas/renderer/client.js`);
+    images._client = new MathRenderClient({argv: ['/nonexistent/froonty-math-helper']});
+    view._entry.text = 'New $\\alpha_9$ here\nother';
+    text.set_cursor_position(view._entry.text.length);
+    const plain = await waitFor(() => images.get({tex: '\\alpha_9', display: false,
+        color: math._style().color, scale: math._style().scale})?.state === 'plain', 5000);
+    const [, p1] = text.position_to_coords(4);
+    const [, p2] = text.position_to_coords(6);
+    check('notes math: without a renderer the source stays, as text',
+        plain && math.placed.length === 0 && p2 - p1 > 3, `plain=${plain} width=${p2 - p1}`);
+    images._client.destroy();
+    images._client = client;
+
+    // disable(): no helper, no picture left.
+    view._entry.text = source;
+    await waitFor(() => math.placed.length >= 1, 5000);
+    island().collapse();
+    await sleep(animationWait());
+    check('notes math: disable succeeds', await setExtensionEnabled(false), stateName());
+    const gone = await waitFor(() => rendererHelpers().length === 0, 5000);
+    check('notes math: disable() stops the helper and drops the pictures',
+        gone && math._actors.length === 0 && math._layerGone, `helpers=${rendererHelpers()}`);
+    check('notes math: re-enable succeeds', await setExtensionEnabled(true), stateName());
+    s.reset('hub-last-tab');
+    await sleep(SETTLE_MS);
+}
+
 async function waitForSettingsWindow(timeoutMs = 10000) {
     for (let waited = 0; waited < timeoutMs; waited += 100) {
         const [window] = settingsWindows();
@@ -8254,7 +8346,7 @@ const ONLY_TESTS = {
     testResizeGrip, testMediaPill, testMediaExtras, testMediaPanic, testMediaChoiceSurvivesLock,
     testPointer, testHubLayout, testDatePill, testCalendarMenu, testEmptyHub,
     testSettingsButton, testKillProcess, testCpuLoadButton, testFormulas,
-    testNotesHeader, testClaude, testClipboard, testClipboardSwitcher,
+    testNotesHeader, testClaude, testClipboard, testClipboardSwitcher, testNotesMath,
 };
 
 export async function runAll(outDir) {
@@ -8319,6 +8411,7 @@ export async function runAll(outDir) {
         await testKillProcess(outDir);
         await testCpuLoadButton();
         await testFormulas(outDir);
+        await testNotesMath(outDir);
         await testBreak(outDir);
         await testSettings(outDir);
         await testCoversPanelClock(outDir);

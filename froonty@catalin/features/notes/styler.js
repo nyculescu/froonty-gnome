@@ -15,6 +15,9 @@
 import Pango from 'gi://Pango';
 
 import {byteOffsets, lineAt, markdownSpans} from './render.js';
+// local:begin notes-math (working-tree only; tools/pack-public strips it)
+import {IslandMath} from '../formulas/notes/island.js';
+// local:end notes-math
 
 const OPAQUE = 65535;
 const HEADING_SCALE = {h1: 1.45, h2: 1.3, h3: 1.15};
@@ -60,9 +63,14 @@ function attributesFor(style, muted) {
 
 /** The Pango attributes that draw `text` as rendered Markdown. */
 export function markdownAttributes(text, activeLine, muted) {
+    return spanAttributes(text, markdownSpans(text, activeLine), muted);
+}
+
+/** The Pango attributes for render.js spans of `text`. */
+export function spanAttributes(text, spans, muted) {
     const list = new Pango.AttrList();
     const bytes = byteOffsets(text);
-    for (const {start, end, style} of markdownSpans(text, activeLine)) {
+    for (const {start, end, style} of spans) {
         for (const attribute of attributesFor(style, muted)) {
             attribute.start_index = bytes[start];
             attribute.end_index = bytes[end];
@@ -92,6 +100,10 @@ export class MarkdownStyler {
         text.connect('notify::cursor-position', () => this.update());
         text.connect('key-focus-in', () => this.update(true));
         text.connect('key-focus-out', () => this.update(true));
+        // local:begin notes-math
+        // Formulas drawn as pictures (features/formulas/notes/island.js).
+        this.math = new IslandMath(entry, {spanAttributes, restyle: () => this.update(true)});
+        // local:end notes-math
         this.update(true);
     }
 
@@ -103,6 +115,12 @@ export class MarkdownStyler {
         if (!force && line === this._line)
             return;
         this._line = line;
+        // local:begin notes-math
+        if (this.math) {
+            text.set_attributes(this.math.attributes(text.text, line, this._muted));
+            return;
+        }
+        // local:end notes-math
         text.set_attributes(markdownAttributes(text.text, line, this._muted));
     }
 }

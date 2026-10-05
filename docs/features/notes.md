@@ -87,6 +87,187 @@ Markdown so that I can use the edit buttons"):
   note's colour: grey on the pastels, lighter on charcoal.
 - **Not yet:** clicking a checkbox to tick it, and images.
 
+## Formulas (2026-10-05, working-tree builds only)
+
+Agreed with the user on 2026-10-03: the notes hold formulas for a PhD, and
+`$…$` and `$$…$$` should show as rendered math in both editors, as in
+Obsidian's live preview. Local builds only (MathJax is there already, for
+the Formulas tab); the published Notes tab is unchanged.
+
+### What shows
+
+- **Off the edited line, a formula is a picture**, drawn by MathJax in
+  the note's text colour (the island) or the style's (the window, light
+  or dark), at the editor's font size. `$…$` sits on the text's
+  baseline, and a tall one makes its line taller. `$$…$$` is drawn in
+  display style; alone on its line or lines, it is centred on a line of
+  its own (lines wrapped; unwrapped, it starts at the left), and a block
+  over several lines takes the picture's height, not one line each.
+- **On the edited line, the LaTeX shows**, its dollars dimmed like other
+  markers, so it can be edited. A `$$` block over several lines shows
+  whole while the cursor is on any of its lines. Without the key focus
+  every formula is drawn, as every marker is hidden. A click on a picture
+  puts the cursor there, so it opens for editing.
+- **Until its picture comes**, a formula shows as dimmed source. One
+  MathJax refuses shows its source with a squiggly underline; in the
+  window MathJax's message is its tooltip (the island has no tooltip for
+  it). Without MathJax (`make mathjax`), or when the helper cannot run,
+  the source shows as plain text, and the formulas are asked for again
+  30 s later.
+- **The file stays the Markdown, byte for byte**: only how the text is
+  laid out changes. Undo, the formatting bar, the search, cursor
+  movement and every offset are those of the plain text.
+
+### Which dollars are formulas (`render.js`, `mathSpans`)
+
+As Pandoc reads them (tex_math_dollars):
+
+- `$…$`: the opening `$` has a non-space character right after it, the
+  closing one a non-space character right before it and no digit after
+  it, and nothing between them is another `$`. One line only. So
+  `$5 and $10` and `$20,000 and $30,000` stay text, while `$5 and $x^2$`
+  has one formula, `x^2`.
+- `$$…$$` may span lines, but not a blank line or a code fence; a `$`
+  inside it is part of it. Empty ones (`$$ $$`) are text, and so are runs
+  of three or more dollars.
+- `\$` is a dollar sign (an even number of backslashes before it is not an
+  escape). Dollars in code (`` `…` ``, fenced blocks) are text.
+- Nothing inside a formula is Markdown: `mathMarkdownSpans` runs the usual
+  `markdownSpans` over the note with each formula's characters masked
+  (one neutral character per UTF-16 unit, line breaks kept), so offsets
+  stay and `$a_1 * b_2$` is no italic.
+
+### How: the island (`features/formulas/notes/island.js`)
+
+Prototyped in the headless Shell (2026-10-05) before building:
+
+- **Pango shape attributes work on the editable `Clutter.Text`.** A shape
+  on a formula's first character with the picture's logical rectangle
+  (its top `baseline` px above the text baseline) reserves exactly that
+  box: the line grew from 21 to 40 px for a 30 + 10 px shape, and the
+  cursor rectangle of the shaped character is the box itself
+  (`position_to_coords`: y = baseline − shape top), so the picture goes
+  at that point. A shape of no size on the formula's other characters
+  makes them take no width, and a line holding only such characters
+  takes no height: a three-line `$$` block measured 50 + 0 + 0 px for a
+  50 px picture. Clutter draws nothing in a shape. Every character stays
+  in the text, so cursor keys and the formatting bar work on the plain
+  offsets. `allow_breaks: false` keeps a formula on one line.
+- **Pictures cannot be children of the `Clutter.Text`**: added there, an
+  actor was allocated and mapped but never painted (ClutterText draws
+  only its text). They are children of a **layer of no size** added after
+  the entry in the scrolled box, so they scroll and clip with the note
+  and are drawn over the text; their places come from the entry's,
+  the text's and the layer's allocation boxes plus `position_to_coords`,
+  set in a `BEFORE_REDRAW` later after each restyle and allocation.
+- A formula alone on its lines gets a shape as wide as the editor (less
+  1 px) when lines wrap, with the picture centred in it; a new width
+  restyles. Unwrapped it is as wide as the picture: a shape the editor's
+  width there would pin the editor's minimum width to it.
+- **Reading the `Clutter.Text`'s `font-description` (or its getter) again
+  and again crashed GNOME Shell 50** (`free(): invalid pointer`, found by
+  bisecting in the headless Shell); the font comes from the theme node
+  (`get_font()`) instead, which was fine 150 times over.
+- Scale: the font's px size / 16 (MathJax's em) × the text's resource
+  scale; colour: the theme node's foreground colour.
+
+### How: the window (`features/formulas/notes/window.js`)
+
+GtkTextView cannot shape text, and options that add a character to the
+buffer were ruled out. Evaluated (Broadway prototype, 2026-10-05):
+
+- **(b) a child anchor or a paintable in the buffer** adds U+FFFC: the
+  saved text, undo, the formatting bar's offsets and the search would all
+  have to filter it. Not taken.
+- **(a) overlays plus tags on the source**, taken:
+  - A transparent tag at 1 % size (never `invisible`, which
+    GtkTextBuffer:text leaves out) makes the formula's characters about
+    0.1 px each.
+  - `letter_spacing` on the first character alone widened it by exactly
+    the asked amount (60 px asked, 19 → 80 px), with no trimming at the
+    run's edges, so it makes the picture's width.
+  - `rise` on a tiny character moves the line's extents exactly: +30 px on
+    the first and −20 px on the last made a 51 px line (30 above, 20
+    below, 1 for the tiny text). So the first character is raised by the
+    picture's height above the baseline and the last lowered by its
+    depth.
+  - A formula alone on its lines: `pixels_above_lines` = the picture's
+    height on its first line (measured: 40 px asked, a 41 px line), its
+    lines' spaces hidden too, the picture centred.
+  - `add_overlay(widget, x, y)` takes buffer coordinates and scrolls with
+    the text; the places come from `get_iter_location` and
+    `get_line_yrange`, set at once and again in a `PRIORITY_DEFAULT_IDLE`
+    idle (after GTK's own line validation), and when a scroll adjustment
+    says the width (`page-size`) or the height changed.
+  - GTK 4.20 allocates an overlay at its **minimum** size, so each
+    `Gtk.Picture` has its size request; and `remove()` does not take an
+    overlay off ("not a child of GtkTextView"), so unused ones are hidden
+    and reused.
+  - Pictures drawn for a scale of 2 are twice as large in pixels as on
+    screen: a small `Gdk.Paintable` gives the texture its size in logical
+    pixels.
+- The tags sit just under the hidden one, so the search's match stays on
+  top. Light/dark changes restyle (`Adw.StyleManager`, while the view is
+  mapped).
+
+### Rendering and its cost (`features/formulas/notes/images.js`)
+
+- One math renderer client per process, shared with the Formulas tab
+  (`features/formulas/renderer/shared.js`): GNOME Shell runs at most one
+  helper, the settings window one of its own (docs/features/formulas.md
+  §4).
+- Every formula of the open note is asked for (notes are short), at
+  (tex, display, colour, scale), 0.25 s after the last change, so typing
+  never waits and partial formulas are not each sent while typing. The
+  client caches 200 pictures; answers that come together make one
+  restyle. A formula keeps its picture while the text around it changes.
+- Restyling is synchronous as before (the parse is a pass over the
+  note); placing pictures waits for layout (a later, an idle).
+
+### Public build
+
+`render.js`, `styler.js`, `view.js` and `allNotesStyler.js` hold the math
+path in `local:begin notes-math` blocks, which `tools/pack-public.sh`
+strips (`strip_local.py --several`); `features/formulas` (with `notes/`)
+is deleted, and `check_zip.py` fails on `formulas/notes`, `mathSpans`,
+`mathMarkdownSpans`, `IslandMath`, `WindowMath` or `notes-math` in the
+zip. After stripping, `render.js` and `view.js` are as before; `styler.js`
+gained `spanAttributes()` (what `markdownAttributes()` did, for given
+spans) and `allNotesStyler.js` a `_spans()` method, the same behaviour.
+
+### Tests
+
+- `tools/unit/notes-math.test.js`: the dollar rules (inline, display,
+  over lines, escapes, money, code), no Markdown inside, the edited line,
+  offsets with other scripts; the pictures' states against the stand-in
+  helper (pending, ready, error, MathJax missing, a helper that cannot
+  start, destroy); the shared client.
+- `tools/unit/notes-all-notes.gtk.test.js` (real MathJax; skipped,
+  saying so, without it): the window draws two pictures off the edited
+  line, the inline one on its room (place, width, line height), the block
+  centred and its line as tall; the edited line shows the LaTeX, dollars
+  dimmed; text, the saved file (typing around formulas) and undo are the
+  plain note; Bold after a formula by the plain offsets; a refused
+  formula underlined with tooltips on.
+- Headless (`FROONTY_TEST_ONLY=testNotesMath`): pictures off the edited
+  line by one helper, the inline one on its reserved box and drawn (ink),
+  the block centred with its lines one picture high, money as text, the
+  source on the edited line, the text and the file unchanged, a helper
+  that cannot start leaves plain source, and disable() leaves no helper
+  and no picture.
+- `tools/unit/notes-render.test.js` tests `styler.js` as the public build
+  has it (the island's formula path needs GNOME Shell's Clutter).
+
+### Not done or not verified
+
+- No tooltip with MathJax's message in the island.
+- A change of the monitor's scale is picked up at the next restyle (an
+  edit, a move to another line, a focus change), not at once.
+- Fractional scaling in the window: the surface's scale is used where
+  GTK gives one; not tried on a fractionally scaled display.
+- Very long notes: every formula of the note is asked for, not only the
+  ones on screen.
+
 ## All notes window and labels (2026-10-02)
 
 User requests: "I want a button to show all the notes under the Notes tab,

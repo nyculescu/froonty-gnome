@@ -158,6 +158,11 @@ packages ship none, their `package.json` says Apache-2.0).
   output is made: without it `\ce{A -> B}`'s arrow is an empty box.
 - SVG output with a local font cache; `adaptor.serializeXML()` (innerHTML
   is not well-formed XML for librsvg).
+- No line breaks inside inline formulas (`linebreaks: {inline: false}`,
+  2026-10-05). MathJax 4 splits an inline formula at its break points into
+  one `<svg>` per piece, and only the first was drawn: `E=mc^2` came out
+  as `E` (15 px wide; 65 px since), `\int_0^1 x\,dx` without its `x\,dx`.
+  Display formulas were whole. Found while drawing formulas in notes.
 - Size from the viewBox (1/1000 em): width and height in px at the asked
   scale, padded by 0.08 em (glyphs reach slightly past MathJax's box),
   rounded up, and the viewBox widened to match, so nothing is stretched.
@@ -197,7 +202,11 @@ when it is the program), so the unit tests' parse check can import it.
 
 ### 4.3 Client (`renderer/client.js`)
 
-Gio and GLib only, no St or Gtk.
+Gio and GLib only, no St or Gtk. One client per process
+(`renderer/shared.js`, 2026-10-05): the Formulas tab and the formulas in
+notes (docs/features/notes.md, "Formulas") hold the same one, so GNOME
+Shell runs at most one helper and the settings window one of its own; it
+is made by the first holder and destroyed when the last lets go.
 
 - Started lazily on the first request; stopped after IDLE_MS (60 s)
   without one, and on `destroy()` (the service's `stop()`, which the hub
@@ -243,6 +252,10 @@ replaces the installed copy.
 | `renderer/mathjax.js` | MathJax → SVG → PNG (helper only) |
 | `renderer/helper.js` | The helper program |
 | `renderer/client.js` | The toolkit-free client |
+| `renderer/shared.js` | One client per process, held by the tab and the notes |
+| `notes/images.js` | Formulas in notes: the pictures' states, sent after a pause in typing (GLib only) |
+| `notes/island.js` | Formulas in the island's Notes editor (Pango shapes, a layer of pictures) |
+| `notes/window.js` | Formulas in the All notes window's editor (tags, overlays) |
 | `tools/fetch-mathjax.py` | The fetch (§3.1) |
 
 Generic, public changes: `ui/hub.js` has `viewOf(id)` (an opened tab's
@@ -269,6 +282,10 @@ Yaru).
   `third_party/`, and on `features/formulas`, `formulas-enabled`,
   `froonty-formulas`, `MathJax` or `mathjax` anywhere in the zip.
 - The Makefile leaves `third_party` out of `--extra-source`.
+- Formulas in notes: the Notes modules' `local:begin notes-math` blocks
+  are stripped (docs/features/notes.md, "Public build"), and
+  `check_zip.py` fails on `formulas/notes`, `mathSpans`,
+  `mathMarkdownSpans`, `IslandMath`, `WindowMath` or `notes-math`.
 - `tools/unit/modules-parse.test.js` skips `third_party/` (vendored code;
   importing it would run it).
 
@@ -283,7 +300,8 @@ Yaru).
   start; the service's lists in a memory-backed copy of the real schema.
 - `tools/unit/formulas-renderer.test.js` (skipped, saying so, without
   MathJax): geometry, PNG size and baseline, display vs inline, MathJax's
-  messages, the mhchem arrow, lazily loaded glyphs, every palette entry,
+  messages, an inline formula drawn whole, the mhchem arrow, lazily
+  loaded glyphs, every palette entry,
   template and guide example, the protocol through the client, the
   missing-tree reply, speed.
 - `tools/pack-public/test_pack_public.py`: the leak guard on MathJax and
