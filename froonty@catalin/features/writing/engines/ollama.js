@@ -11,7 +11,7 @@
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 
-import {actionById, systemPrompt, wrapText, cleanOutput, LIMITS, LONG_TEXT_CHARS} from '../actions.js';
+import {buildRequest, finishReply, stepsFor, LIMITS, LONG_TEXT_CHARS} from '../actions.js';
 import {WritingError} from '../errors.js';
 import {networkFailure, newSession, parseJson, request, sleep, streamNdjson} from '../http.js';
 import {defaultPaths, override, SYSTEM_OLLAMA, SYSTEM_OLLAMA_UNITS, UNIT_NAME} from '../paths.js';
@@ -38,10 +38,20 @@ export function overallTimeoutMs(chars) {
     return 180 * 1000 + 60 * Math.max(0, chars);
 }
 
-export function busyText(chars = 0) {
+export function busyText(chars = 0, thinking = false) {
+    if (thinking)
+        return 'Ollama is thinking first (a thinking model is slow: a non-thinking one answers in seconds)…';
     return chars > LONG_TEXT_CHARS
         ? 'Rewriting with Ollama (a long text can take several minutes without a graphics card)…'
         : 'Rewriting with Ollama (loading the model can take a while)…';
+}
+
+export const TRANSLATE_MODEL_KEY = 'writing-ollama-translate-model';
+
+/** The model for `action`: Translate's own model when one is chosen. */
+export function modelFor(settings, action) {
+    const own = action === 'translate' ? settings.get_string(TRANSLATE_MODEL_KEY) : '';
+    return own || settings.get_string('writing-ollama-model');
 }
 
 /** Whether `url` is plain HTTP to this computer (127.0.0.1, ::1 or localhost). */
@@ -124,6 +134,16 @@ export function localModels(tags) {
         }));
 }
 
+/**
+ * The most a reply may write, in tokens: about four times the text (a
+ * token is three or four characters), so a model caught in a loop (gemma3
+ * once wrote "} 0} 0}…" on and on) stops in seconds; the idioms' JSON
+ * gets 1024 or more.
+ */
+export function maxTokens(chars, kind = 'text') {
+    return Math.max(kind === 'idioms' ? 1024 : 256, Math.ceil(chars) + 256);
+}
+
 /** The context window for a text of `chars` characters, in tokens. */
 export function numCtx(chars) {
     const tokens = 2.5 * Math.ceil(chars / 3) + 512;
@@ -131,22 +151,29 @@ export function numCtx(chars) {
     return Math.min(16384, Math.max(4096, rounded));
 }
 
-/** The body of one /api/chat request. */
-export function chatBody({model, actionId, message, chars, thinking = false}) {
-    const action = actionById(actionId);
-    if (!action)
-        throw new WritingError('failed', `Unknown action ${actionId}`);
+/**
+ * The body of one /api/chat request (`request` from actions.js
+ * buildRequest). A thinking model is asked to think: its reasoning then
+ * comes apart from the reply (and is not shown). Asked not to, a model
+ * that always thinks (qwen3:4b, Qwen3-4B-Thinking-2507, does) writes its
+ * reasoning into the reply instead. The idioms step's reply is held to
+ * its JSON schema.
+ */
+export function chatBody({model, request, chars, thinking = false}) {
     const body = {
         model,
         stream: true,
         messages: [
-            {role: 'system', content: systemPrompt(actionId)},
-            {role: 'user', content: message},
+            {role: 'system', content: request.system},
+            {role: 'user', content: request.message},
         ],
-        options: {temperature: action.temperature, num_ctx: numCtx(chars)},
+        options: {temperature: request.temperature, num_ctx: numCtx(chars),
+            num_predict: maxTokens(chars, request.step?.kind)},
     };
+    if (request.schema)
+        body.format = request.schema;
     if (thinking)
-        body.think = false;
+        body.think = true;
     return body;
 }
 
@@ -249,18 +276,19 @@ async function thinks(session, url, model, cache, cancellable) {
 }
 
 /**
- * One rewrite with the model in writing-ollama-model.
+ * One step with the model in writing-ollama-model (Translate: in
+ * writing-ollama-translate-model when one is chosen).
  *
  * @param {object} request see claudeCode.js run(); `onBusy(text)` tells
  *   the view when Ollama is being started, and `onPartial(raw, code)`
  *   hands over the reply streamed so far (see actions.js cleanPartial)
  */
-export async function run({action, text, settings, cancellable = null, cache = new Map(),
-    onBusy = () => {}, onPartial = () => {}, deps = {}}) {
+export async function run({action, text, settings, request = null, cancellable = null,
+    cache = new Map(), onBusy = () => {}, onPartial = () => {}, deps = {}}) {
     const {url = baseUrl(), paths = defaultPaths(), run: exec = runProcess,
         overallMs = overallTimeoutMs(text.length), waitMs = START_WAIT_MS,
         system = null} = deps;
-    const model = settings.get_string('writing-ollama-model');
+    const model = modelFor(settings, action);
     if (!model) {
         throw new WritingError('needs-setup', 'No model chosen.',
             'Choose or download one in Settings → Writing.');
@@ -283,28 +311,27 @@ export async function run({action, text, settings, cancellable = null, cache = n
             onBusy('Starting Ollama…');
             await startOwn({url, cache, cancellable: local, run: exec, waitMs});
         }
-        onBusy(busyText(text.length));
         const {main} = sessions(cache);
         const thinking = await thinks(main, url, model, cache, local);
-        const wrapped = wrapText(text);
+        onBusy(busyText(text.length, thinking));
+        const wrapped = request ?? buildRequest(stepsFor(action)[0], text);
         let reply = '';
         let failure = null;
         const status = await streamNdjson(main, 'POST', `${url}/api/chat`, {
-            json: chatBody({model, actionId: action, message: wrapped.message, chars: text.length,
-                thinking}),
+            json: chatBody({model, request: wrapped, chars: text.length, thinking}),
             cancellable: local,
             onObject: object => {
                 if (object.error)
                     failure ??= String(object.error);
                 else if (typeof object.message?.content === 'string' && object.message.content) {
                     reply += object.message.content;
-                    onPartial(reply, wrapped.code);
+                    onPartial(reply, wrapped.step.key);
                 }
             },
         });
         if (status !== 200 || failure)
             throw mapError(status, failure ?? `answered ${status}`, model);
-        return {text: cleanOutput(reply, wrapped.code, text.includes('```'))};
+        return finishReply(wrapped, reply, text.includes('```'), text);
     } catch (e) {
         if (e instanceof WritingError) {
             if (e.code === 'cancelled' && timedOut)
@@ -333,11 +360,17 @@ export default {
     id: ID,
     title: 'Ollama',
     cloud: false,
-    actions: ['paraphrase', 'grammar', 'shorten', 'formal', 'casual', 'summarise'],
+    prompted: true,
+    actions: ['grammar', 'shorten', 'formal', 'humanize', 'translate'],
     limit: LIMITS[ID],
     busyText: ({chars = 0} = {}) => busyText(chars),
-    destination: settings =>
-        `Stays on this computer: Ollama, ${settings.get_string('writing-ollama-model') || 'no model chosen'}`,
+    destination: settings => {
+        const model = settings.get_string('writing-ollama-model') || 'no model chosen';
+        const translate = settings.get_string(TRANSLATE_MODEL_KEY);
+        return translate && translate !== model
+            ? `Stays on this computer: Ollama, ${model} (Translate: ${translate})`
+            : `Stays on this computer: Ollama, ${model}`;
+    },
     /**
      * Ready when Ollama runs with the chosen model, or when it is
      * Froonty's own (it starts when used). Otherwise why not: no model

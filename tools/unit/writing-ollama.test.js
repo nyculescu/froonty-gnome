@@ -4,9 +4,9 @@
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 
-import ollama, {baseUrl, chatBody, isLoopback, LOCAL_URL, localModels, numCtx, overallTimeoutMs,
-    run, startOwn, systemOllama} from '../../froonty@catalin/features/writing/engines/ollama.js';
-import {cleanPartial} from '../../froonty@catalin/features/writing/actions.js';
+import ollama, {baseUrl, chatBody, isLoopback, LOCAL_URL, localModels, maxTokens, modelFor, numCtx,
+    overallTimeoutMs, run, startOwn, systemOllama} from '../../froonty@catalin/features/writing/engines/ollama.js';
+import {buildRequest, cleanPartial, IDIOMS_SCHEMA, stepsFor} from '../../froonty@catalin/features/writing/actions.js';
 import {override} from '../../froonty@catalin/features/writing/paths.js';
 import {deleteModel, modelRows, pullModel} from '../../froonty@catalin/features/writing/setup/ollamaModels.js';
 import {readState, writeState} from '../../froonty@catalin/features/writing/setup/state.js';
@@ -36,16 +36,61 @@ test('the context window grows with the text, within 4096-16384', () => {
     eq(numCtx(40000), 16384);
 });
 
-test('the chat body: system prompt, wrapped text, streaming; think only when it thinks', () => {
-    const body = chatBody({model: 'llama3.2:3b', actionId: 'grammar', message: '<<<TEXT-x>>>', chars: 10});
+test('the chat body: the step\'s prompts, streaming; a thinking model thinks apart', () => {
+    const [b2] = stepsFor('grammar');
+    const request = buildRequest(b2, 'teh cat');
+    const body = chatBody({model: 'llama3.2:3b', request, chars: 10});
     eq(body.stream, true);
     eq(body.messages.map(m => m.role), ['system', 'user']);
-    ok(body.messages[0].content.includes('Task: Fix grammar'));
-    eq(body.messages[1].content, '<<<TEXT-x>>>');
-    eq(body.options, {temperature: 0.1, num_ctx: 4096});
+    eq(body.messages[0].content, b2.system);
+    ok(body.messages[0].content.includes('English editor'));
+    eq(body.messages[1].content, request.message);
+    eq(body.options, {temperature: 0.3, num_ctx: 4096, num_predict: 266});
+    eq([maxTokens(0), maxTokens(4000), maxTokens(10, 'idioms')], [256, 4256, 1024],
+        'a reply stops at about four times the text');
+    eq(body.format, b2.schema, 'held to {"rewrite": "…"}');
     eq('think' in body, false);
-    eq(chatBody({model: 'qwen3:4b', actionId: 'grammar', message: 'm', chars: 1, thinking: true}).think,
-        false);
+    // Asked not to think, Qwen3-4B-Thinking-2507 wrote its reasoning into
+    // the reply: a thinking model is asked to think, apart from it.
+    eq(chatBody({model: 'qwen3:4b', request, chars: 1, thinking: true}).think, true);
+    const idioms = buildRequest(stepsFor('translate')[1], 'x', {translation: 'y'});
+    eq(chatBody({model: 'gemma3:4b', request: idioms, chars: 1}).format, IDIOMS_SCHEMA);
+});
+
+test('Translate uses its own model when one is chosen', () => {
+    const settings = makeSettings();
+    settings.set_string('writing-ollama-model', 'qwen3:4b-instruct-2507-q4_K_M');
+    eq(modelFor(settings, 'translate'), 'qwen3:4b-instruct-2507-q4_K_M');
+    settings.set_string('writing-ollama-translate-model', 'gemma3:4b');
+    eq([modelFor(settings, 'translate'), modelFor(settings, 'grammar')],
+        ['gemma3:4b', 'qwen3:4b-instruct-2507-q4_K_M']);
+    eq(ollama.destination(settings),
+        'Stays on this computer: Ollama, qwen3:4b-instruct-2507-q4_K_M (Translate: gemma3:4b)');
+});
+
+// The reply the Writing tab showed on 2026-10-05 (qwen3:4b, think: false):
+// its reasoning, then </think>, then the result.
+const LEAKED = 'We are given a block of text that starts with <<<TEXT-bb4c9d21d7b7>>>.\n' +
+    'Task: Fix grammar, spelling and punctuation only.\n\nLet\'s analyze the text:\n' +
+    '1. "throughut" -> This is a typo.\n</think>\n\nLet\'s update the PhD thesis path.';
+
+test('reasoning a thinking model leaves in its reply is not shown', async () => {
+    const server = ollamaServer({
+        'POST /api/show': () => ({body: '{"capabilities":["completion","thinking"]}'}),
+        'POST /api/chat': () => ({type: 'application/x-ndjson', body: ndjson([
+            {message: {role: 'assistant', content: LEAKED.slice(0, 60)}, done: false},
+            {message: {role: 'assistant', content: LEAKED.slice(60)}, done: false},
+            {message: {role: 'assistant', content: ''}, done: true}])}),
+    });
+    try {
+        const partials = [];
+        const result = await ollamaRun(server, {onPartial: (raw, key) => partials.push(cleanPartial(raw, key))});
+        eq(result.text, 'Let\'s update the PhD thesis path.');
+        eq(partials.at(-1), 'Let\'s update the PhD thesis path.');
+        eq(JSON.parse(server.requests.find(r => r.path === '/api/chat').body).think, true);
+    } finally {
+        server.close();
+    }
 });
 
 function ollamaServer(extra = {}) {
@@ -54,15 +99,11 @@ function ollamaServer(extra = {}) {
         'GET /api/tags': () => ({body: JSON.stringify({models: [
             {name: 'llama3.2:3b', size: 2019393189, digest: DIGEST}]})}),
         'POST /api/show': () => ({body: '{"capabilities":["completion"]}'}),
-        'POST /api/chat': request => {
-            const body = JSON.parse(request.body);
-            const code = /<<<TEXT-([0-9a-f]{12})>>>/.exec(body.messages[1].content)[1];
-            return {type: 'application/x-ndjson', body: ndjson([
-                {message: {role: 'assistant', content: `<<<TEXT-${code}>>>\nThe `}, done: false},
-                {message: {role: 'assistant', content: 'cat sat.'}, done: false},
+        'POST /api/chat': () => ({type: 'application/x-ndjson', body: ndjson([
+                {message: {role: 'assistant', content: '{"rewrite": "The '}, done: false},
+                {message: {role: 'assistant', content: 'cat sat."}'}, done: false},
                 {message: {role: 'assistant', content: ''}, done: true, done_reason: 'stop'},
-            ])};
-        },
+            ])}),
         ...extra,
     });
 }
@@ -135,18 +176,14 @@ test('the overall cap grows with the text: 3 min, plus 60 ms a character', () =>
 
 test('a reply streamed and then stalled: the timeout, with what came until then', async () => {
     const server = ollamaServer({
-        'POST /api/chat': request => {
-            const body = JSON.parse(request.body);
-            const code = /<<<TEXT-([0-9a-f]{12})>>>/.exec(body.messages[1].content)[1];
-            return {chunksThenHang: [
-                `${JSON.stringify({message: {content: `<<<TEXT-${code}>>>\nThe cat`}, done: false})}\n`,
-                `${JSON.stringify({message: {content: ' sat on'}, done: false})}\n`]};
-        },
+        'POST /api/chat': () => ({chunksThenHang: [
+            `${JSON.stringify({message: {content: '{"rewrite": "The cat'}, done: false})}\n`,
+            `${JSON.stringify({message: {content: ' sat on'}, done: false})}\n`]}),
     });
     try {
         const partials = [];
         await rejectsWith(ollamaRun(server, {
-            onPartial: (raw, code) => partials.push(cleanPartial(raw, code)),
+            onPartial: (raw, key) => partials.push(cleanPartial(raw, key)),
             deps: {url: server.url, paths: fakePaths(), overallMs: 600, system: NO_OLLAMA},
         }), 'timeout');
         eq(partials, ['The cat', 'The cat sat on']);

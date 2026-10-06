@@ -20,6 +20,9 @@ import {Island} from './ui/island.js';
 import {PanelLauncher} from './ui/panelLauncher.js';
 
 const TOGGLE_SHORTCUT_KEY = 'toggle-shortcut';
+// Whether Froonty runs now: Settings' Stop/Start, the Show Apps entry's
+// actions (dconf), the top bar icon and the shortcut set it.
+const RUNNING_KEY = 'running';
 
 export default class FroontyExtension extends Extension {
     enable() {
@@ -31,10 +34,14 @@ export default class FroontyExtension extends Extension {
         this._launcher = null;
 
         // "Start at login": the first enable() in a Shell process is the
-        // login. Later ones (screen unlock, another extension being
-        // toggled) keep what the user had, so disable() deliberately leaves
-        // this field alone.
-        this._started ??= this._settings.get_boolean('start-at-login');
+        // login, and sets whether Froonty runs. Later ones (screen unlock,
+        // another extension being toggled) keep what the user had (Stop in
+        // Settings, the top bar icon), so disable() leaves this field and
+        // the key alone.
+        if (!this._loginSeen) {
+            this._loginSeen = true;
+            this._settings.set_boolean(RUNNING_KEY, this._settings.get_boolean('start-at-login'));
+        }
         // Plain data features keep in memory (ctx.memory). Kept across
         // screen locks only when a feature asks for that (keepsMemory);
         // otherwise disable() drops it.
@@ -51,6 +58,7 @@ export default class FroontyExtension extends Extension {
         this._settings.connectObject(
             'changed::island-enabled', () => this._syncIsland(),
             'changed::hide-panel-clock', () => this._syncPanelClock(),
+            `changed::${RUNNING_KEY}`, () => this._syncRunning(),
             this);
         // Work a feature does while it is enabled, not only once its tab
         // has been opened.
@@ -67,13 +75,33 @@ export default class FroontyExtension extends Extension {
                 console.warn(`Froonty: ${feature.id} setup failed: ${e.message}`));
         }
 
-        // Parts of features that live as long as the extension and follow
-        // whether the island is shown.
-        this._parts = FEATURES.filter(f => f.createExtensionPart)
-            .map(f => f.createExtensionPart(this._settings));
-        this._syncIsland();
+        // Parts of features that live while Froonty runs and follow
+        // whether the island is shown (made in _syncRunning).
+        this._parts = [];
+        this._syncRunning();
+    }
+
+    get _running() {
+        return this._settings.get_boolean(RUNNING_KEY);
+    }
+
+    // Running: the island, the features' parts (Super+V, the break
+    // takeover) and their background work (clipboard recording, break
+    // tracking, usage checks). Stopped (Settings → General → Stop, for a
+    // computer that needs all its power): none of it, only the top bar
+    // icon that starts it again and the shortcut.
+    _syncRunning() {
+        if (this._running && !this._parts.length) {
+            this._parts = FEATURES.filter(f => f.createExtensionPart)
+                .map(f => f.createExtensionPart(this._settings));
+        } else if (!this._running) {
+            for (const part of this._parts)
+                part.destroy({locked: false});
+            this._parts = [];
+        }
         for (const feature of FEATURES.filter(f => f.background))
             this._syncBackground(feature);
+        this._syncIsland();
     }
 
     disable() {
@@ -99,7 +127,7 @@ export default class FroontyExtension extends Extension {
     }
 
     _syncBackground(feature) {
-        const want = this._settings.get_boolean(feature.enabledKey);
+        const want = this._running && this._settings.get_boolean(feature.enabledKey);
         if (want === this._backgrounds.has(feature.id))
             return;
         if (want) {
@@ -119,7 +147,7 @@ export default class FroontyExtension extends Extension {
     }
 
     _onShortcut() {
-        if (!this._started)
+        if (!this._running)
             this._start();
         else if (this._island)
             this._island.toggle();
@@ -127,20 +155,20 @@ export default class FroontyExtension extends Extension {
             this._settingsWindow.open();
     }
 
+    // Through the key, as Settings and the Show Apps entry do.
     _start() {
-        this._started = true;
-        this._syncIsland();
+        this._settings.set_boolean(RUNNING_KEY, true);
     }
 
     // While the island is not shown, a top bar icon keeps Froonty reachable.
     _syncIsland() {
         this._launcher?.destroy();
         this._launcher = null;
-        if (this._started && this._settings.get_boolean('island-enabled')) {
+        if (this._running && this._settings.get_boolean('island-enabled')) {
             this._createIsland();
         } else {
             this._destroyIsland();
-            this._launcher = this._started
+            this._launcher = this._running
                 ? new PanelLauncher(_('Froonty settings'), () => this._settingsWindow.open())
                 : new PanelLauncher(_('Start Froonty'), () => this._start());
         }

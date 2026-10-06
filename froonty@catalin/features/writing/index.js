@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Writing tab: paraphrase, fix grammar, shorten, change the tone of, or
-// summarise text, with Claude Code, LanguageTool or Ollama
+// Writing tab: fix grammar, shorten, make formal, humanize or translate
+// text, with Claude Code, LanguageTool or Ollama
 // (docs/features/writing.md). Working-tree builds only: `make pack` leaves
 // it out.
 

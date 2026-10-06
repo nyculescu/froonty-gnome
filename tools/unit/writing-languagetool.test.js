@@ -138,7 +138,7 @@ test('nothing listening: offline; offline network: nothing sent; cancel', async 
         const running = lt(server, makeSettings(), {cancellable});
         cancellable.cancel();
         await rejectsWith(running, 'cancelled');
-        await rejectsWith(run({action: 'paraphrase', text: 'x', settings: makeSettings(),
+        await rejectsWith(run({action: 'formal', text: 'x', settings: makeSettings(),
             network: new FakeNetwork(), deps: {url: `${server.url}/v2/check`}}), 'failed');
     } finally {
         server.close();

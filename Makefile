@@ -2,6 +2,10 @@
 UUID := froonty@catalin
 SRC := $(UUID)
 INSTALL_DIR := $(HOME)/.local/share/gnome-shell/extensions/$(UUID)
+# Froonty in Show Apps: opens its settings; Start/Stop Froonty on right
+# click (tools/froonty.desktop). Local installs only: the public build
+# cannot add one.
+DESKTOP_FILE := $(HOME)/.local/share/applications/froonty.desktop
 
 # Absolute paths: on some machines other toolchains (e.g. SUMO) shadow the
 # system GLib tools on PATH. Override if needed.
@@ -40,11 +44,14 @@ $(MATHJAX):
 install: schemas $(MATHJAX) uninstall
 	mkdir -p $(dir $(INSTALL_DIR))
 	cp -r $(SRC) $(INSTALL_DIR)
+	mkdir -p $(dir $(DESKTOP_FILE))
+	cp tools/froonty.desktop $(DESKTOP_FILE)
 
 # rm never follows a symlink named without a trailing slash, so this also
 # removes the link of an older install without touching the working tree.
 uninstall:
 	rm -rf $(INSTALL_DIR)
+	rm -f $(DESKTOP_FILE)
 
 # gnome-extensions 46 segfaulted if --out-dir did not exist yet. The archive
 # is built from a staged public copy; `make install` keeps local-only features.

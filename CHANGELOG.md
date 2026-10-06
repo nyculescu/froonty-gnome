@@ -1,5 +1,73 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **Stop Froonty and start it again** (Settings → General), for a
+  computer that needs all its power. Stopped, nothing of Froonty runs: no
+  island, no clipboard history, break tracking or Claude usage, no
+  Super+V; only the top bar icon that starts it again (as do the shortcut
+  and the same button). A screen lock keeps it stopped; the next login
+  follows "Start at login". New key `running`.
+- **Froonty in Show Apps** (local installs: `make install` adds
+  `~/.local/share/applications/froonty.desktop`, `make uninstall` removes
+  it). It opens Froonty's settings; right-click it for Start Froonty and
+  Stop Froonty.
+
+### Changed
+- **Writing: Fix grammar is now an English editor, in two versions**
+  (working-tree only). The models are told the writer thinks in their
+  first language (Settings → Writing, Romanian by default) and writes in
+  English, and give a B2 version (a light edit, in the writer's own words)
+  and a C1 one (a fluent rewrite, same tone, plain words), each with its
+  own Copy; one that comes out the same is shown once. The other rewrites
+  keep to plain B2-C1 wording. Prompts tested against three local models
+  (docs/features/writing.md §3).
+- **Writing: Summarise and Paraphrase are gone.** On a short text
+  Summarise gave no summary, and Shorten does that job; Fix grammar's C1
+  and Humanize cover Paraphrase.
+- **Writing: Humanize replaces Casual.** It says what the text says in
+  words a real person would use: no buzzwords, no filler, same meaning and
+  formality.
+- **Writing: a text that asks for something is reworded, not answered.**
+  Casual answered "help me get new ideas…" with ideas, and small models
+  wrote the e-mail "write me an e-mail…" asked for. The models are now
+  told the text is the writer's message to someone else, and the text and
+  their reply are JSON; a reply that still looks like an answer is asked
+  for once more, strictly, and then shown with a warning.
+- **Writing keeps the writer's directness.** No added "really",
+  "absolutely", "Could you please" or small talk, in rewrites and in
+  translations ("vreau" is "I want"). Shorten must cut to about half the
+  words, and is asked once more when it does not. A reply is capped at
+  about four times the text, and a runaway one (gemma3:4b's `”} 0} 0}…`)
+  is cut where it went wrong.
+- **Writing: your politeness, as you wrote it.** B2 keeps it exactly
+  ("te rog" is "please" in a translation); C1 may make a request slightly
+  more courteous, implicitly ("Could you help me…"), never more.
+- **Writing: tooltips** on the tab's buttons and in Settings → Writing say
+  what each action does and which models did best (qwen3:4b-instruct as
+  Model, gemma3:4b for Translate). Froonty's tooltips can now wrap and sit
+  above their button.
+
+### Added
+- **Writing: Another option** asks again for other wording than the
+  versions so far (they go along, to be avoided).
+- **Writing: Translate**, from and to languages chosen in the tab and
+  kept (Romanian to English by default), with the text's idioms: each one,
+  its natural equivalent, what it means, and an example. Claude Code and
+  Ollama; Ollama can use a model of its own for it (Settings → Writing).
+
+### Fixed
+- **Writing with a thinking model (qwen3:4b) showed its reasoning** before
+  the result. Ollama is now asked to let such a model think apart, and
+  reasoning left in a reply is dropped. Settings now suggests
+  qwen3:4b-instruct-2507-q4_K_M: it answers in under a second where
+  qwen3:4b thinks for 30 s or more.
+- **Writing: the result could not be selected with the keyboard**, and a
+  selection dragged past its bottom edge did not scroll. Arrows,
+  Home/End, Page Up/Down, with Shift and Ctrl, Ctrl+A and Ctrl+C now work
+  there, and the result follows the selection.
+
 ## 0.8.0-rc0 (2026-10-05)
 
 First release candidate of 0.8.0, for GNOME Shell 50 on Ubuntu 26.04

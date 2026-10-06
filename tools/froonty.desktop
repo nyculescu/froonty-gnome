@@ -1,0 +1,19 @@
+[Desktop Entry]
+Type=Application
+Name=Froonty
+GenericName=Froonty settings
+Comment=Froonty's settings: stop it, start it again, or change it
+Keywords=froonty;island;extension;start;stop;
+Icon=application-x-addon
+Exec=/usr/bin/gnome-extensions prefs froonty@catalin
+Terminal=false
+Categories=Settings;
+Actions=start;stop;
+
+[Desktop Action start]
+Name=Start Froonty
+Exec=/usr/bin/dconf write /org/gnome/shell/extensions/froonty/running true
+
+[Desktop Action stop]
+Name=Stop Froonty
+Exec=/usr/bin/dconf write /org/gnome/shell/extensions/froonty/running false

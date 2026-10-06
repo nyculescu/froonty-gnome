@@ -9,6 +9,11 @@
       <summary>Start at login</summary>
       <description>When false, Froonty waits after login with only a top bar icon; clicking it or pressing the toggle shortcut starts it. Screen unlocks keep the current state.</description>
     </key>
+    <key name="running" type="b">
+      <default>true</default>
+      <summary>Froonty runs</summary>
+      <description>False: stopped, with no island and no background work; a top bar icon or the shortcut starts it again. Set at each login from start-at-login.</description>
+    </key>
     <key name="island-enabled" type="b">
       <default>true</default>
       <summary>Show the island</summary>
@@ -514,7 +519,7 @@
     <key name="writing-enabled" type="b">
       <default>false</default>
       <summary>Show the Writing tab</summary>
-      <description>Paraphrase, fix grammar, shorten, change the tone of, or summarise text with the engines switched on below. Text leaves the computer only on a click of one of these actions, and only to the engine named above the text box. Off by default.</description>
+      <description>Fix grammar, shorten, make formal, humanize or translate text with the engines switched on below. Text leaves the computer only on a click of one of these actions, and only to the engine named above the text box. Off by default.</description>
     </key>
     <key name="writing-engine" type="s">
       <choices>
@@ -559,6 +564,26 @@
       <default>''</default>
       <summary>Writing: Ollama model</summary>
       <description>A model downloaded in Ollama, such as llama3.2:3b. Ollama's cloud models are never used.</description>
+    </key>
+    <key name="writing-ollama-translate-model" type="s">
+      <default>''</default>
+      <summary>Writing: Ollama model for Translate</summary>
+      <description>Empty: the Ollama model above. A multilingual model (such as gemma3:4b) translates better than one chosen for editing English.</description>
+    </key>
+    <key name="writing-first-language" type="s">
+      <default>'ro'</default>
+      <summary>Writing: your first language</summary>
+      <description>A language code (ro, de, fr…). Fix grammar and the other rewrites tell the model that the writer thinks in it and writes in English, so it looks for that language's sentence structure and literal translations; "en" for none.</description>
+    </key>
+    <key name="writing-translate-from" type="s">
+      <default>'ro'</default>
+      <summary>Writing: translate from</summary>
+      <description>A language code, or "auto" for any language. Kept from the Writing tab's Translate row.</description>
+    </key>
+    <key name="writing-translate-to" type="s">
+      <default>'en'</default>
+      <summary>Writing: translate to</summary>
+      <description>A language code. Kept from the Writing tab's Translate row.</description>
     </key>
     <key name="writing-width" type="i">
       <range min="360" max="960"/>

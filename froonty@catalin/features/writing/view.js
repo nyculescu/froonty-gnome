@@ -6,13 +6,21 @@
 //   ┌ text box ───────────────────────────┐
 //   └─────────────────────────────────────┘
 //   [From clipboard] [Clear]        1,234 / 20,000
-//   [Paraphrase][Fix grammar][Shorten]      the chosen engine's actions
-//   [Formal][Casual][Summarise]
-//   busy: "Rewriting with Claude Code…" [Cancel] · error · result + [Copy]
+//   [Fix grammar][Shorten][Formal][Humanize] the chosen engine's actions
+//   [Translate] from [Romanian] to [English]  (a language list opens below)
+//   busy: "Rewriting with Claude Code…" [Cancel] · error
+//   result: B2            [Copy]   each version, with its own Copy
+//           text
+//           C1            [Copy]
+//           text
+//           idioms (Translate) · LanguageTool's changes
+//   [Another option]               link
 //
 // Engine text is shown as plain text (never Pango markup), and goes on the
-// clipboard only when Copy is clicked. While Ollama streams, what it has
-// written so far shows in the result area. Renders WritingService state;
+// clipboard only when Copy (or Ctrl+C on a selection) is used. While
+// Ollama streams, what it has written so far shows in the result area.
+// Results are read-only but take the keyboard (readOnlyText.js). Renders
+// WritingService state;
 // text is only replaced when it differs, so a 'changed' (each keystroke
 // emits one) neither re-lays out a long result nor clears a selection in
 // it.
@@ -26,9 +34,15 @@ import {gettext as _, ngettext} from 'resource:///org/gnome/shell/extensions/ext
 
 import {keepCursorVisible} from '../../core/textScroll.js';
 import {Tooltip} from '../../core/tooltip.js';
-import {ACTIONS, measure} from './actions.js';
+import {WrapLayout} from '../formulas/wrapLayout.js';
+import {ACTIONS, ANY_LANGUAGE, LANGUAGES, languageName, measure} from './actions.js';
+import {HINTS} from './hints.js';
+import {makeNavigable} from './readOnlyText.js';
+import {FROM_KEY, TO_KEY} from './service.js';
 
-const ROW_SIZE = 3;
+const ROW_SIZE = 4;
+// On a row of its own, with its languages.
+const TRANSLATE = 'translate';
 
 const group = n => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 
@@ -60,8 +74,30 @@ function textButton(styleClass, text) {
     });
 }
 
-// A multi-line St.Entry in a vertical scroll view, as the Notes editor.
-function textArea(styleClass, hint, editable) {
+// A read-only result text, a direct child of the scroll view's child box
+// (so keepCursorVisible's coordinates hold).
+function resultText(scroll) {
+    const entry = new St.Entry({
+        style_class: 'froonty-writing-text froonty-writing-result',
+        can_focus: true,
+        x_expand: true,
+        y_align: Clutter.ActorAlign.START,
+    });
+    const text = entry.clutter_text;
+    text.single_line_mode = false;
+    text.activatable = false;
+    text.line_wrap = true;
+    text.line_wrap_mode = Pango.WrapMode.WORD_CHAR;
+    text.use_markup = false;
+    text.editable = false;
+    text.selectable = true;
+    makeNavigable(entry, scroll);
+    return entry;
+}
+
+// The text box: a multi-line St.Entry in a vertical scroll view, as the
+// Notes editor.
+function textArea(styleClass, hint) {
     const entry = new St.Entry({
         style_class: `froonty-writing-text ${styleClass}`,
         hint_text: hint,
@@ -75,11 +111,6 @@ function textArea(styleClass, hint, editable) {
     text.line_wrap = true;
     text.line_wrap_mode = Pango.WrapMode.WORD_CHAR;
     text.use_markup = false;
-    if (!editable) {
-        text.editable = false;
-        text.selectable = true;
-        text.cursor_visible = false;
-    }
     const box = new St.BoxLayout({
         orientation: Clutter.Orientation.VERTICAL,
         x_expand: true,
@@ -108,7 +139,8 @@ export class WritingView {
         this._ctx = ctx;
         this._service = service;
         this._syncing = false;
-        this._copied = false;
+        // The index of the version whose Copy was clicked, or null.
+        this._copied = null;
 
         this.actor = new St.Widget({
             layout_manager: new Clutter.BinLayout(),
@@ -131,7 +163,7 @@ export class WritingView {
         this._destination = wrapping(new St.Label({style_class: 'froonty-writing-destination'}));
         this._main.add_child(this._destination);
 
-        const input = textArea('froonty-writing-input', _('Type or paste text (Ctrl+V)'), true);
+        const input = textArea('froonty-writing-input', _('Type or paste text (Ctrl+V)'));
         this._input = input.entry;
         this._inputScroll = input.scroll;
         this._input.clutter_text.connect('text-changed', () => {
@@ -170,32 +202,51 @@ export class WritingView {
         this._actionButtons = new Map();
         for (const action of ACTIONS) {
             const button = textButton('froonty-writing-action', _(action.label));
-            button.connect('clicked', () => this._service.run(action.id));
+            button.connect('clicked', () => {
+                this._chooser.visible = false;
+                this._service.run(action.id);
+            });
             this._actionButtons.set(action.id, button);
         }
         this._main.add_child(this._actionsBox);
+        this._buildTranslate();
 
+        // Long hints wrap (hints.js).
+        this._tooltip = new Tooltip({maxWidth: 360});
         this._buildStatus();
 
-        this._tooltip = new Tooltip();
+        // What each button does, and which models did best (hints.js).
+        for (const [id, button] of this._actionButtons)
+            this._tooltip.attach(button, () => _(HINTS[id]), 'below');
+        this._tooltip.attach(this._againButton, () => _(HINTS.again), 'above');
+        for (const button of [this._fromButton, this._toButton])
+            this._tooltip.attach(button, () => _(HINTS.language), 'below');
         const overlay = new St.Widget({x_expand: true, y_expand: true});
         overlay.add_child(this._tooltip.actor);
         this.actor.add_child(overlay);
 
         this._serviceId = this._service.connect('changed', () => this._sync());
+        this._settingsIds = [FROM_KEY, TO_KEY].map(key =>
+            this._ctx.settings.connect(`changed::${key}`, () => this._sync()));
         this._sync();
     }
 
     destroy() {
         this._service.disconnect(this._serviceId);
+        for (const id of this._settingsIds)
+            this._ctx.settings.disconnect(id);
+        // Kept out of the tree between engines: destroyed here.
         for (const button of this._actionButtons.values())
             button.destroy();
+        this._translateRow.destroy();
+        this._chooser.destroy();
         this.actor.destroy();
     }
 
     setActive(active) {
         if (!active) {
             this._tooltip.hide();
+            this._chooser.visible = false;
             return;
         }
         this._focusInput();
@@ -250,16 +301,32 @@ export class WritingView {
         this._notice = wrapping(new St.Label({style_class: 'froonty-writing-notice', visible: false}));
         this._main.add_child(this._notice);
 
-        const result = textArea('froonty-writing-result', '', false);
-        this._result = result.entry;
-        this._resultScroll = result.scroll;
+        // The versions (each a header with its label and Copy, then its
+        // text), the idioms and the changes, all in one scroll view.
+        this._resultBox = new St.BoxLayout({
+            orientation: Clutter.Orientation.VERTICAL,
+            x_expand: true,
+            y_expand: true,
+        });
+        this._resultScroll = new St.ScrollView({
+            style_class: 'froonty-writing-scroll froonty-writing-result-scroll',
+            hscrollbar_policy: St.PolicyType.NEVER,
+            vscrollbar_policy: St.PolicyType.AUTOMATIC,
+            overlay_scrollbars: true,
+            x_expand: true,
+            y_expand: true,
+            child: this._resultBox,
+        });
+        this._options = [];
+        this._idioms = wrapping(new St.Label({style_class: 'froonty-writing-idioms', visible: false}));
         this._changes = wrapping(new St.Label({style_class: 'froonty-writing-changes', visible: false}));
-        result.box.add_child(this._changes);
+        this._resultBox.add_child(this._idioms);
+        this._resultBox.add_child(this._changes);
         this._main.add_child(this._resultScroll);
 
         const resultTools = new St.BoxLayout({style_class: 'froonty-writing-tools'});
-        this._copyButton = textButton('froonty-writing-copy', _('Copy'));
-        this._copyButton.connect('clicked', () => this._copy());
+        this._againButton = textButton('froonty-writing-small', _('Another option'));
+        this._againButton.connect('clicked', () => this._service.again());
         this._attribution = new St.Button({
             style_class: 'froonty-writing-link',
             can_focus: true,
@@ -268,19 +335,92 @@ export class WritingView {
             x_align: Clutter.ActorAlign.END,
         });
         this._attribution.connect('clicked', () => this._openAttribution());
-        resultTools.add_child(this._copyButton);
+        resultTools.add_child(this._againButton);
         resultTools.add_child(this._attribution);
         this._resultTools = resultTools;
         this._main.add_child(resultTools);
     }
 
-    _copy() {
-        const text = this._service.result?.text;
+    // The block of the i-th version: made when first needed, then kept.
+    _option(i) {
+        while (this._options.length <= i) {
+            const index = this._options.length;
+            const header = new St.BoxLayout({style_class: 'froonty-writing-option-header'});
+            const label = new St.Label({
+                style_class: 'froonty-writing-option-label',
+                x_expand: true,
+                y_align: Clutter.ActorAlign.CENTER,
+            });
+            const copy = textButton('froonty-writing-small froonty-writing-copy', _('Copy'));
+            copy.connect('clicked', () => this._copy(index));
+            header.add_child(label);
+            header.add_child(copy);
+            const entry = resultText(this._resultScroll);
+            // Before the idioms and the changes.
+            this._resultBox.insert_child_below(header, this._idioms);
+            this._resultBox.insert_child_below(entry, this._idioms);
+            this._options.push({header, label, copy, entry});
+        }
+        return this._options[i];
+    }
+
+    _copy(index) {
+        const text = this._service.result?.options?.[index]?.text;
         if (!text)
             return;
         St.Clipboard.get_default().set_text(St.ClipboardType.CLIPBOARD, text);
-        this._copied = true;
-        this._copyButton.label = _('Copied');
+        this._copied = index;
+        this._sync();
+    }
+
+    _buildTranslate() {
+        this._translateRow = new St.BoxLayout({
+            style_class: 'froonty-writing-action-row froonty-writing-translate',
+        });
+        const word = text => new St.Label({
+            style_class: 'froonty-writing-translate-word',
+            text,
+            y_align: Clutter.ActorAlign.CENTER,
+        });
+        this._translateWords = [word(_('from')), word(_('to'))];
+        this._fromButton = textButton('froonty-writing-small froonty-writing-language', '');
+        this._toButton = textButton('froonty-writing-small froonty-writing-language', '');
+        this._fromButton.connect('clicked', () => this._toggleChooser(FROM_KEY));
+        this._toButton.connect('clicked', () => this._toggleChooser(TO_KEY));
+        this._chooser = new St.Widget({
+            style_class: 'froonty-writing-chooser',
+            layout_manager: new WrapLayout(),
+            x_expand: true,
+            visible: false,
+        });
+        this._chooserKey = null;
+    }
+
+    // The languages under the Translate row, for from or to; the choice
+    // is kept (writing-translate-from/-to). The same button again closes
+    // the list.
+    _toggleChooser(key) {
+        if (this._chooser.visible && this._chooserKey === key) {
+            this._chooser.visible = false;
+            return;
+        }
+        this._chooserKey = key;
+        this._chooser.destroy_all_children();
+        const settings = this._ctx.settings;
+        const current = settings.get_string(key);
+        const choices = key === FROM_KEY
+            ? [{code: ANY_LANGUAGE, name: _('Any language')}, ...LANGUAGES] : LANGUAGES;
+        for (const {code, name} of choices) {
+            const button = textButton('froonty-writing-small froonty-writing-language-choice', name);
+            if (code === current)
+                button.add_style_pseudo_class('checked');
+            button.connect('clicked', () => {
+                settings.set_string(key, code);
+                this._chooser.visible = false;
+            });
+            this._chooser.add_child(button);
+        }
+        this._chooser.visible = true;
     }
 
     // LanguageTool's conditions ask for a visible link to it.
@@ -317,10 +457,13 @@ export class WritingView {
                     // toggle_mode flipped it; the chosen engine decides.
                     this._sync();
                 });
+                // Not ready: why; ready: what it is best at.
                 this._tooltip.attach(button, () => {
                     const entry = this._service.enabledEngines.find(e => e.id === id);
-                    return entry && !entry.availability.ready
-                        ? `${entry.title}: ${entry.availability.reason}` : null;
+                    if (!entry)
+                        return null;
+                    return entry.availability.ready ? _(HINTS[id])
+                        : `${entry.title}: ${entry.availability.reason}`;
                 }, 'below');
                 this._engineRow.add_child(button);
                 this._engineButtons.set(id, button);
@@ -346,19 +489,39 @@ export class WritingView {
         const key = ids.join(',');
         if (key !== this._actionKey) {
             this._actionKey = key;
-            // The buttons are kept (destroy() destroys them); only the rows go.
+            // The buttons, the Translate row and the language list are kept
+            // (destroy() destroys them); only the rows go.
             for (const button of this._actionButtons.values())
                 button.get_parent()?.remove_child(button);
+            for (const child of [this._translateRow, this._chooser])
+                child.get_parent()?.remove_child(child);
+            this._translateRow.remove_all_children();
             this._actionsBox.destroy_all_children();
-            for (let i = 0; i < ids.length; i += ROW_SIZE) {
+            const rewrites = ids.filter(id => id !== TRANSLATE);
+            for (let i = 0; i < rewrites.length; i += ROW_SIZE) {
                 const row = new St.BoxLayout({style_class: 'froonty-writing-action-row'});
-                for (const id of ids.slice(i, i + ROW_SIZE))
+                for (const id of rewrites.slice(i, i + ROW_SIZE))
                     row.add_child(this._actionButtons.get(id));
                 this._actionsBox.add_child(row);
             }
+            if (ids.includes(TRANSLATE)) {
+                const [from, to] = this._translateWords;
+                for (const child of [this._actionButtons.get(TRANSLATE), from, this._fromButton,
+                    to, this._toButton])
+                    this._translateRow.add_child(child);
+                this._actionsBox.add_child(this._translateRow);
+                this._actionsBox.add_child(this._chooser);
+            } else {
+                this._chooser.visible = false;
+            }
         }
-        for (const id of ids)
-            this._actionButtons.get(id).reactive = sendable;
+        for (const id of ids) {
+            this._actionButtons.get(id).reactive = sendable &&
+                (id !== TRANSLATE || this._service.canTranslate);
+        }
+        const {from, to} = this._service.languages;
+        setLabel(this._fromButton, from === ANY_LANGUAGE ? _('Any language') : languageName(from));
+        setLabel(this._toButton, languageName(to));
     }
 
     _emptyText(engines) {
@@ -424,25 +587,69 @@ export class WritingView {
         // streamed so far (no Copy until it is done or stopped).
         const result = !busy && (service.state === 'done' || service.result?.partial)
             ? service.result : null;
-        const partial = busy ? service.partialText : '';
-        this._resultScroll.visible = Boolean(result || partial);
-        this._resultTools.visible = Boolean(result);
-        setText(this._result, result?.text ?? partial);
+        let options = [];
+        if (result)
+            options = result.options ?? [{label: '', text: result.text}];
+        else if (busy)
+            options = service.progress;
+        this._resultScroll.visible = options.length > 0;
         if (!result)
-            this._copied = false;
-        setLabel(this._copyButton, this._copied ? _('Copied') : _('Copy'));
+            this._copied = null;
+        options.forEach((option, i) => {
+            const block = this._option(i);
+            block.header.visible = block.entry.visible = true;
+            setText(block.label, option.label ?? '');
+            block.copy.visible = Boolean(result);
+            setLabel(block.copy, this._copied === i ? _('Copied') : _('Copy'));
+            setText(block.entry, option.text);
+        });
+        for (const block of this._options.slice(options.length)) {
+            block.header.visible = block.entry.visible = false;
+            setText(block.entry, '');
+        }
+        // A model's rewrite can be asked for again; LanguageTool's
+        // corrections would come out the same.
+        const resultEngine = engines.find(e => e.id === result?.engineId)?.engine;
+        this._againButton.visible = Boolean(result && !result.partial && resultEngine?.prompted &&
+            service.lastAction);
+        this._againButton.reactive = !busy && availability.ready;
         const attribution = result?.attribution ?? null;
         this._attribution.visible = Boolean(attribution);
         setLabel(this._attribution, attribution?.label ?? '');
+        this._resultTools.visible = this._againButton.visible || this._attribution.visible;
+        setText(this._idioms, result ? this._idiomsText(result.idioms) : '');
+        this._idioms.visible = Boolean(this._idioms.text);
         setText(this._changes, result ? this._changesText(result) : '');
         this._changes.visible = Boolean(this._changes.text);
     }
 
+    // Translate's idioms: each phrase and its equivalent, then what it
+    // means and the equivalent in use (when the model's example uses it).
+    _idiomsText(idioms) {
+        if (!idioms?.length)
+            return '';
+        const lines = [_('Idioms')];
+        for (const {phrase, meaning, equivalent, example} of idioms) {
+            lines.push(`“${phrase}” → ${equivalent}`);
+            lines.push(example ? `    ${meaning} · ${_('e.g.')} “${example}”` : `    ${meaning}`);
+        }
+        return lines.join('\n');
+    }
+
     // LanguageTool's corrections, one per line: “teh” → “the”: message.
-    // A stopped run: that this is only part of the reply.
+    // A stopped run: that this is only part of the reply. A model's reply
+    // that still looked like an answer to the text: a warning.
     _changesText(result) {
         if (result.partial)
             return _('Stopped before the end: this is what it wrote until then.');
+        // service.js looksAnswered, twice.
+        const answered = (result.options ?? []).filter(o => o.answered);
+        if (answered.length) {
+            const which = answered.map(o => o.label).filter(Boolean).join(', ');
+            return (which ? _('%s may answer your text instead of rewording it.').format(which)
+                : _('This may answer your text instead of rewording it.')) +
+                ` ${_('Try Another option, or another model.')}`;
+        }
         if (!Array.isArray(result.changes))
             return '';
         const count = result.changes.length + (result.moreChanges ?? 0);

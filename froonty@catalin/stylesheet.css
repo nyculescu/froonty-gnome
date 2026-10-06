@@ -1623,6 +1623,36 @@
     font-size: 0.78em;
     color: rgba(255, 255, 255, 0.6);
 }
+/* A version's header in the result: its level (B2, C1) and Copy. */
+.froonty-writing-option-header {
+    padding: 6px 8px 0 10px;
+    spacing: 6px;
+}
+.froonty-writing-option-label {
+    font-size: 0.75em;
+    font-weight: bold;
+    color: #99c1f1;
+}
+.froonty-writing-idioms {
+    padding: 4px 10px 8px;
+    font-size: 0.8em;
+    color: rgba(255, 255, 255, 0.75);
+}
+/* Translate, from [language] to [language], and the language list. */
+.froonty-writing-translate-word {
+    font-size: 0.8em;
+    color: rgba(255, 255, 255, 0.6);
+}
+.froonty-writing-language {
+    color: #ffffff;
+}
+.froonty-writing-chooser {
+    spacing: 4px;
+    padding: 2px 0;
+}
+.froonty-writing-language-choice:checked {
+    background-color: rgba(98, 160, 234, 0.45);
+}
 .froonty-writing-link {
     font-size: 0.75em;
     color: #99c1f1;

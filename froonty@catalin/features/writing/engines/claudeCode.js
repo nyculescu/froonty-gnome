@@ -17,7 +17,7 @@
 import Gio from 'gi://Gio';
 
 import {findClaudeCode} from '../../claude/refresher.js';
-import {actionById, systemPrompt, wrapText, cleanOutput, LIMITS, LONG_TEXT_CHARS} from '../actions.js';
+import {actionById, buildRequest, finishReply, stepsFor, systemPrompt, LIMITS, LONG_TEXT_CHARS} from '../actions.js';
 import {WritingError} from '../errors.js';
 import {defaultPaths, override} from '../paths.js';
 import {runProcess} from '../process.js';
@@ -69,17 +69,27 @@ export function busyText(chars = 0) {
         : 'Rewriting with Claude Code…';
 }
 
-/** The argv of one run. The text is never in it (it goes on stdin). */
-export function claudeArgv(bin, actionId, model) {
+/**
+ * The argv of one run, for an action (its first step) or a step's
+ * request (actions.js buildRequest). The text is never in it (it goes on
+ * stdin): a step's system prompt holds no text.
+ */
+export function claudeArgv(bin, actionOrRequest, model) {
     if (!CLAUDE_MODELS.includes(model))
         throw new WritingError('failed', `Unknown model ${model}`);
-    if (!actionById(actionId))
-        throw new WritingError('failed', `Unknown action ${actionId}`);
+    let system = actionOrRequest?.system;
+    if (typeof actionOrRequest === 'string') {
+        if (!actionById(actionOrRequest))
+            throw new WritingError('failed', `Unknown action ${actionOrRequest}`);
+        system = systemPrompt(actionOrRequest);
+    }
+    if (typeof system !== 'string')
+        throw new WritingError('failed', 'No system prompt');
     return [bin, '-p',
         ...SAFETY_FLAGS,
         `--model=${model}`,
         ...model === 'sonnet' ? ['--effort=low'] : [],
-        `--system-prompt=${systemPrompt(actionId)}`];
+        `--system-prompt=${system}`];
 }
 
 // Paid billing and anything that would change the model or provider.
@@ -269,14 +279,16 @@ const isOnline = network => (network ?? Gio.NetworkMonitor.get_default()).connec
  * @param {string} request.action
  * @param {string} request.text
  * @param {Gio.Settings} request.settings
+ * @param {?object} [request.request] the step (actions.js buildRequest); the
+ *   action's first step when null
  * @param {?Gio.Cancellable} request.cancellable
  * @param {object} [request.network] a Gio.NetworkMonitor
  * @param {Map} [request.cache] the service's, cleared each time the tab is shown
  * @param {object} [request.deps] tests: {locate, run, paths, timeoutMs}
- * @returns {Promise<{text: string}>}
+ * @returns {Promise<{text: string} | {idioms: object[]}>} (actions.js finishReply)
  */
-export async function run({action, text, settings, cancellable = null, network = null,
-    cache = new Map(), deps = {}}) {
+export async function run({action, text, settings, request = null, cancellable = null,
+    network = null, cache = new Map(), deps = {}}) {
     const {locate: find = locate, run: exec = runProcess, paths = defaultPaths(),
         timeoutMs = null} = deps;
     if (!isOnline(network)) {
@@ -298,13 +310,13 @@ export async function run({action, text, settings, cancellable = null, network =
     }
     const chosen = settings.get_string('writing-claude-code-model');
     const model = CLAUDE_MODELS.includes(chosen) ? chosen : 'haiku';
-    const argv = claudeArgv(bin, action, model);
+    const wrapped = request ?? buildRequest(stepsFor(action)[0], text);
+    const argv = claudeArgv(bin, wrapped, model);
     const {unset, set} = claudeEnv(model);
-    const wrapped = wrapText(text);
     const result = await exec({argv, cwd, unset, set, stdin: wrapped.message, cancellable,
         timeoutMs: timeoutMs ?? runTimeoutMs(text.length, model), label: LABEL});
     const raw = parseResult(result.stdout, result.stderr, result.exitOk);
-    return {text: cleanOutput(raw, wrapped.code, text.includes('```'))};
+    return finishReply(wrapped, raw, text.includes('```'), text);
 }
 
 export function modelLabel(model) {
@@ -315,7 +327,8 @@ export default {
     id: ID,
     title: 'Claude Code',
     cloud: true,
-    actions: ['paraphrase', 'grammar', 'shorten', 'formal', 'casual', 'summarise'],
+    prompted: true,
+    actions: ['grammar', 'shorten', 'formal', 'humanize', 'translate'],
     limit: LIMITS[ID],
     busyText: ({chars = 0} = {}) => busyText(chars),
     destination: settings =>

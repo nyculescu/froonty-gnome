@@ -4,7 +4,10 @@
 // Text and results are kept in memory only, and dropped by stop() (the
 // tab turned off, the screen locked, Froonty disabled).
 //
-// Nothing is sent but on run(), which the view calls on an action click.
+// Nothing is sent but on run(), which the view calls on an action click
+// (or "Another option"). A click may make several requests, one after
+// the other (actions.js stepsFor): Fix grammar a B2 and a C1 version,
+// Translate a translation and its idioms.
 // Which engines are ready is checked when the tab comes on screen, when a
 // Writing setting changes, and, while the tab is on screen, when the
 // network goes on or off line (Gio.NetworkMonitor's signals); never on a
@@ -16,11 +19,15 @@ import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 
 import {Emitter} from '../../core/emitter.js';
-import {checkSendable, cleanPartial} from './actions.js';
+import {ANY_LANGUAGE, buildRequest, checkSendable, cleanPartial, languageName, MAX_EARLIER,
+    replyProblem, stepsFor} from './actions.js';
 import {describeError} from './errors.js';
 import {ENGINES, enabledKey} from './engines/index.js';
 
 export const ENGINE_KEY = 'writing-engine';
+export const FROM_KEY = 'writing-translate-from';
+export const TO_KEY = 'writing-translate-to';
+export const FIRST_LANGUAGE_KEY = 'writing-first-language';
 const AUTH_KEY = 'claude-code-auth';
 // GLib 2.80's NetworkManager backend reports its connectivity check only as
 // property notifications; 'network-changed' comes with route changes.
@@ -29,6 +36,19 @@ const NETWORK_SIGNALS = ['network-changed', 'notify::connectivity', 'notify::net
 const PARTIAL_EVERY_US = 250 * 1000;
 
 const isOnline = network => network?.connectivity === Gio.NetworkConnectivity.FULL;
+
+// Two versions that came out the same are shown once, under both labels.
+function mergeSame(options) {
+    const merged = [];
+    for (const option of options) {
+        const same = merged.find(m => m.text.trim() === option.text.trim());
+        if (same)
+            same.label = [same.label, option.label].filter(Boolean).join(' · ');
+        else
+            merged.push({...option});
+    }
+    return merged;
+}
 
 export class WritingService extends Emitter {
     /**
@@ -66,12 +86,22 @@ export class WritingService extends Emitter {
         this.busyText = '';
         /** While busy: {engineId, destination} of the request in flight. */
         this.running = null;
-        // While busy: what the engine streamed so far, {raw, code}.
+        // While busy: what the engine streamed so far, {raw, key}.
         this._partial = null;
         this._partialShownAt = 0;
+        // While busy: the step running ({id, label, kind}) and the
+        // versions finished before it.
+        this._step = null;
+        this._done = [];
+        // The action of the last run, for "Another option", and the
+        // versions it has given for that text: {key, byStep: {id: [text]}}.
+        this.lastAction = null;
+        this._earlier = null;
         /**
-         * {text, changes, moreChanges, notes, attribution, engineId} or
-         * null; with `partial: true`, what a stopped run wrote until then.
+         * {text, options: [{id, label, text}], idioms, changes, moreChanges,
+         * notes, attribution, engineId} or null; `text` is the first
+         * option's. With `partial: true`, what a stopped run wrote until
+         * then.
          */
         this.result = null;
         /** {code, message, hint} or null */
@@ -126,6 +156,9 @@ export class WritingService extends Emitter {
         this._availabilityRun++;
         this.input = '';
         this._partial = null;
+        this._done = [];
+        this._earlier = null;
+        this.lastAction = null;
         this.result = null;
         this.error = null;
         this.notice = null;
@@ -210,14 +243,46 @@ export class WritingService extends Emitter {
 
     /** What the engine in flight has written so far ('' when nothing). */
     get partialText() {
-        return this._partial ? cleanPartial(this._partial.raw, this._partial.code) : '';
+        return this._partial ? cleanPartial(this._partial.raw, this._partial.key, this.input) : '';
+    }
+
+    /**
+     * While busy, what to show: the versions finished so far and the one
+     * being written ({id, label, text}; never the idioms step's JSON).
+     */
+    get progress() {
+        const options = [...this._done];
+        const text = this.partialText;
+        if (text && this._step?.kind !== 'idioms')
+            options.push({id: this._step?.id ?? '', label: this._step?.label ?? '', text});
+        return options;
     }
 
     // A stopped run keeps what it wrote until then.
     _keepPartial(engineId) {
-        const text = this.partialText;
+        const options = this.progress;
         this._partial = null;
-        this.result = text ? {text, partial: true, engineId} : null;
+        this._done = [];
+        this.result = options.length
+            ? {text: options[0].text, options, idioms: [], partial: true, engineId} : null;
+    }
+
+    /** Translate from and to (codes), and the writer's first language. */
+    get languages() {
+        const from = this._settings.get_string(FROM_KEY);
+        const to = this._settings.get_string(TO_KEY);
+        const first = this._settings.get_string(FIRST_LANGUAGE_KEY);
+        return {
+            from: from === ANY_LANGUAGE || languageName(from) ? from : 'ro',
+            to: languageName(to) ? to : 'en',
+            firstLanguage: languageName(first) ? first : 'ro',
+        };
+    }
+
+    /** Whether Translate can run: from and to differ. */
+    get canTranslate() {
+        const {from, to} = this.languages;
+        return from !== to;
     }
 
     async refreshAvailability() {
@@ -251,15 +316,19 @@ export class WritingService extends Emitter {
     }
 
     /**
-     * Sends the text to the chosen engine for `actionId`. Does nothing
-     * while a request runs, or for an action the engine does not offer.
+     * Sends the text to the chosen engine for `actionId`, one step after
+     * the other. Does nothing while a request runs, or for an action the
+     * engine does not offer. With `again` ("Another option"), the versions
+     * the earlier runs gave for the same text go with it, to be avoided.
      */
-    async run(actionId) {
+    async run(actionId, {again = false} = {}) {
         const engine = this.engine;
         if (this.state === 'busy' || this._stopped || !engine || !engine.actions.includes(actionId))
             return;
         // The view's buttons are off then too; nothing goes to an engine not ready.
         if (!this.availabilityOf(engine.id).ready)
+            return;
+        if (actionId === 'translate' && !this.canTranslate)
             return;
         this.notice = null;
         // The Clipboard tab's hidden password, compared in memory only.
@@ -272,20 +341,36 @@ export class WritingService extends Emitter {
             this.emit('changed');
             return;
         }
+        const input = this.input;
+        const languages = this.languages;
+        const key = JSON.stringify([actionId, engine.id, input,
+            actionId === 'translate' ? [languages.from, languages.to] : null]);
+        if (!again || this._earlier?.key !== key)
+            this._earlier = {key, byStep: {}};
+        const earlier = this._earlier;
+        const avoid = Object.keys(earlier.byStep).length > 0;
+        const steps = engine.prompted ? stepsFor(actionId, {...languages, again: avoid}) : [null];
+        this.lastAction = actionId;
+
         const runId = ++this._runId;
         const cancellable = new Gio.Cancellable();
         this._cancellable = cancellable;
         this.state = 'busy';
-        this.busyText = engine.busyText({chars: this.input.length});
+        this.busyText = engine.busyText({chars: input.length});
         this.running = {engineId: engine.id, destination: engine.destination(this._settings)};
         this._partial = null;
+        this._done = [];
+        this._step = null;
         this.result = null;
         this.error = null;
         this.emit('changed');
         try {
-            const result = await engine.run({
+            let extra = {};
+            let idioms = [];
+            const ask = request => engine.run({
                 action: actionId,
-                text: this.input,
+                text: input,
+                request,
                 settings: this._settings,
                 cancellable,
                 network: this.network,
@@ -296,10 +381,10 @@ export class WritingService extends Emitter {
                         this.emit('changed');
                     }
                 },
-                onPartial: (raw, code) => {
+                onPartial: (raw, key) => {
                     if (runId !== this._runId || this.state !== 'busy')
                         return;
-                    this._partial = {raw, code};
+                    this._partial = {raw, key};
                     const now = GLib.get_monotonic_time();
                     if (now - this._partialShownAt >= PARTIAL_EVERY_US) {
                         this._partialShownAt = now;
@@ -307,9 +392,54 @@ export class WritingService extends Emitter {
                     }
                 },
             });
-            if (runId !== this._runId || this._stopped)
-                return;
-            this.result = {...result, engineId: engine.id};
+            const current = () => runId === this._runId && !this._stopped;
+            for (const step of steps) {
+                const translation = this._done[0]?.text ?? null;
+                if (step?.kind === 'idioms' && !translation)
+                    continue;
+                const options = {earlier: earlier.byStep[step?.id] ?? [], translation};
+                this._step = step;
+                this._partial = null;
+                // eslint-disable-next-line no-await-in-loop
+                let result = await ask(step ? buildRequest(step, input, options) : null);
+                if (!current())
+                    return;
+                // A reply that looks like an answer to the text (or a Shorten
+                // that is not shorter): once more, strictly; still so, it is
+                // shown with a warning.
+                let answered = false;
+                const problem = step?.kind === 'text' ? replyProblem(actionId, input, result.text) : null;
+                if (problem) {
+                    const strict = stepsFor(actionId, {...languages, again: avoid, strict: problem})
+                        .find(s => s.id === step.id);
+                    this._partial = null;
+                    // eslint-disable-next-line no-await-in-loop
+                    result = await ask(buildRequest(strict, input, options));
+                    if (!current())
+                        return;
+                    answered = replyProblem(actionId, input, result.text) === 'answered';
+                }
+                this._partial = null;
+                if (step?.kind === 'idioms') {
+                    idioms = result.idioms ?? [];
+                } else {
+                    const {text, ...rest} = result;
+                    extra = {...extra, ...rest};
+                    this._done.push({id: step?.id ?? actionId, label: step?.label ?? '', text,
+                        ...answered ? {answered} : {}});
+                    this.emit('changed');
+                }
+            }
+            const options = mergeSame(this._done);
+            for (const option of this._done) {
+                const list = earlier.byStep[option.id] ??= [];
+                if (!list.includes(option.text))
+                    list.push(option.text);
+                list.splice(0, Math.max(0, list.length - MAX_EARLIER));
+            }
+            this.result = {...extra, text: options[0]?.text ?? '', options, idioms,
+                engineId: engine.id};
+            this._done = [];
             this.state = 'done';
         } catch (e) {
             if (runId !== this._runId || this._stopped)
@@ -326,9 +456,15 @@ export class WritingService extends Emitter {
             if (runId === this._runId) {
                 this.running = null;
                 this._partial = null;
+                this._step = null;
             }
         }
         this.emit('changed');
+    }
+
+    /** "Another option": the last action again, avoiding what it gave. */
+    again() {
+        return this.lastAction ? this.run(this.lastAction, {again: true}) : Promise.resolve();
     }
 
     /** Stops the request in flight (SIGTERM to Claude Code, Soup aborted). */

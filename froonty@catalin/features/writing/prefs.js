@@ -20,7 +20,9 @@ import {gettext as _} from 'resource:///org/gnome/Shell/Extensions/js/extensions
 import {authCheck, CLAUDE_MODELS, locate, version as claudeVersion,
     workingFolder} from './engines/claudeCode.js';
 import {VARIANTS} from './engines/languageTool.js';
-import {baseUrl, probe, systemOllama} from './engines/ollama.js';
+import {LANGUAGES} from './actions.js';
+import {HINTS} from './hints.js';
+import {baseUrl, probe, systemOllama, TRANSLATE_MODEL_KEY} from './engines/ollama.js';
 import {newSession} from './http.js';
 import {defaultPaths, override} from './paths.js';
 import {runProcess} from './process.js';
@@ -165,11 +167,31 @@ class Operation {
 function tabGroup(settings) {
     const group = new Adw.PreferencesGroup({
         title: _('Writing tab'),
-        description: _('Paraphrase, fix grammar, shorten, change the tone of, or summarise text. Text leaves this computer only when you click one of these actions, and only to the engine named above the text box. Nothing is saved.'),
+        description: _('Fix grammar, shorten, make formal, humanize or translate text. Text leaves this computer only when you click one of these actions, and only to the engine named above the text box. Nothing is saved.'),
     });
     const enabled = new Adw.SwitchRow({title: _('Show the Writing tab')});
     settings.bind('writing-enabled', enabled, 'active', Gio.SettingsBindFlags.DEFAULT);
     group.add(enabled);
+
+    // The models are told the writer thinks in it (actions.js stepsFor).
+    const first = new Adw.ComboRow({
+        title: _('Your first language'),
+        subtitle: _('Fix grammar looks for its sentence structure and literal translations in your English. English: none'),
+        model: Gtk.StringList.new(LANGUAGES.map(l => l.name)),
+        tooltip_text: _(HINTS.firstLanguage),
+    });
+    const syncFirst = () => {
+        first.selected = Math.max(0, LANGUAGES.findIndex(l =>
+            l.code === settings.get_string('writing-first-language')));
+    };
+    syncFirst();
+    settings.connect('changed::writing-first-language', syncFirst);
+    first.connect('notify::selected', () => {
+        const code = LANGUAGES[first.selected]?.code;
+        if (code && code !== settings.get_string('writing-first-language'))
+            settings.set_string('writing-first-language', code);
+    });
+    group.add(first);
     const hint = new Adw.ActionRow({
         title: _('Turn on Show the Writing tab too.'),
         subtitle: _('An engine is switched on below, but the tab is off.'),
@@ -205,6 +227,7 @@ function claudeGroup(ctx) {
     const model = new Adw.ComboRow({
         title: _('Model'),
         subtitle: _('Haiku counts least toward your plan’s limits'),
+        tooltip_text: _(HINTS['claude-code']),
         model: Gtk.StringList.new(models.map(m => _(m))),
     });
     const syncModel = () => {
@@ -283,7 +306,8 @@ function languageToolGroup(ctx) {
         title: _('LanguageTool'),
         description: _('Grammar and spelling, online. Nothing to install and no account.'),
     });
-    const enabled = new Adw.SwitchRow({title: _('Offer LanguageTool in the Writing tab')});
+    const enabled = new Adw.SwitchRow({title: _('Offer LanguageTool in the Writing tab'),
+        tooltip_text: _(HINTS.languagetool)});
     settings.bind('writing-languagetool-enabled', enabled, 'active', Gio.SettingsBindFlags.DEFAULT);
     group.add(enabled);
     const status = new Adw.ActionRow({title: _('Status')});
@@ -350,13 +374,29 @@ function ollamaGroup(ctx) {
     const modelList = new Gtk.StringList();
     let modelNames = [];
     let syncingModels = false;
-    const model = new Adw.ComboRow({title: _('Model'), model: modelList});
+    const model = new Adw.ComboRow({title: _('Model'), model: modelList, tooltip_text: _(HINTS.ollama)});
     model.connect('notify::selected', () => {
         const name = modelNames[model.selected];
         if (!syncingModels && name && name !== settings.get_string('writing-ollama-model'))
             settings.set_string('writing-ollama-model', name);
     });
     group.add(model);
+
+    // Translate's own model; the first row, "Same as Model", is none.
+    const translateList = new Gtk.StringList();
+    let translateNames = [];
+    const translateModel = new Adw.ComboRow({
+        title: _('Model for Translate'),
+        subtitle: _('A multilingual model, such as gemma3:4b, translates better'),
+        model: translateList,
+        tooltip_text: _(HINTS.translateModel),
+    });
+    translateModel.connect('notify::selected', () => {
+        const name = translateNames[translateModel.selected];
+        if (!syncingModels && name !== undefined && name !== settings.get_string(TRANSLATE_MODEL_KEY))
+            settings.set_string(TRANSLATE_MODEL_KEY, name);
+    });
+    group.add(translateModel);
 
     const actions = new Adw.ActionRow({title: _('Ollama on this computer')});
     const buttons = {
@@ -385,8 +425,9 @@ function ollamaGroup(ctx) {
         [_('B. System-wide, by yourself, with Ollama’s official instructions. Its install script runs as administrator: it installs under /usr/local or /usr, creates an ollama system user, adds a system service that starts at boot, and with an NVIDIA card but no driver it may add NVIDIA’s package source and install drivers:'),
             'curl -fsSL https://ollama.com/install.sh | sh'],
         [_('Or follow the manual archive steps at docs.ollama.com/linux; uninstalling is described at docs.ollama.com/linux#uninstall. Froonty then uses that Ollama and never removes it. The ollama snap is not one of Ollama’s documented methods; Froonty does not use it.')],
-        [_('Then download a model (Download model…, or in a terminal), and choose it above. A 3B model needs roughly 4 GB of free memory; without a supported graphics card it runs on the processor, more slowly.'),
-            'ollama pull llama3.2:3b'],
+        [_('Then download a model (Download model…, or in a terminal), and choose it above. A 3B or 4B model needs roughly 4 GB of free memory; without a supported graphics card it runs on the processor, more slowly.'),
+            'ollama pull qwen3:4b-instruct-2507-q4_K_M'],
+        [_('Tried on 2026-10-05: qwen3:4b-instruct-2507-q4_K_M edits English best (well under a second per version on a graphics card); gemma3:4b translates Romanian best (choose it under Model for Translate) but is a poor editor. qwen3:4b is a thinking model: it reasons first, for about 30 s per version. Idioms from a 4B model are hit and miss (some missed, some wrong); Claude Code was not tried.')],
     ]));
 
     const session = newSession(30);
@@ -443,6 +484,17 @@ function ollamaGroup(ctx) {
             model.subtitle = _('None chosen yet: pick one. Only models on this computer are listed');
         else
             model.subtitle = _('Only models on this computer; Ollama’s cloud models are never used');
+        const translate = settings.get_string(TRANSLATE_MODEL_KEY);
+        const local = (facts?.models ?? []).map(m => m.name);
+        translateNames = ['', ...local];
+        const translateLabels = [_('Same as Model'), ...local];
+        if (translate && !local.includes(translate)) {
+            translateNames.push(translate);
+            translateLabels.push(_('%s (not downloaded)').format(translate));
+        }
+        translateList.splice(0, translateList.get_n_items(), translateLabels);
+        translateModel.selected = Math.max(0, translateNames.indexOf(translate));
+        translateModel.sensitive = local.length > 0;
         syncingModels = false;
     };
 
@@ -511,6 +563,7 @@ function ollamaGroup(ctx) {
         syncStatus();
         syncModels();
     });
+    settings.connect(`changed::${TRANSLATE_MODEL_KEY}`, syncModels);
 
     const deps = () => ({paths, session, url});
 

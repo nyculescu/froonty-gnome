@@ -3,6 +3,7 @@
 // process, GTK 4 and libadwaita).
 
 import Adw from 'gi://Adw';
+import GLib from 'gi://GLib';
 import Gtk from 'gi://Gtk';
 
 import {
@@ -104,6 +105,35 @@ export default class FroontyPreferences extends ExtensionPreferences {
 
     _startupGroup(settings) {
         const group = new Adw.PreferencesGroup({title: _('Startup')});
+
+        // Stop: for a computer that needs all its power (long scripts);
+        // Start brings it back. Also: the top bar icon, the shortcut, and
+        // Froonty in Show Apps (make install).
+        const running = new Adw.ActionRow({use_markup: false});
+        const toggle = new Gtk.Button({valign: Gtk.Align.CENTER});
+        toggle.connect('clicked', () =>
+            settings.set_boolean('running', !settings.get_boolean('running')));
+        running.add_suffix(toggle);
+        running.activatable_widget = toggle;
+        // `make install` adds Froonty to Show Apps (tools/froonty.desktop).
+        const inApps = GLib.file_test(GLib.build_filenamev([GLib.get_user_data_dir(),
+            'applications', 'froonty.desktop']), GLib.FileTest.EXISTS);
+        const syncRunning = () => {
+            const on = settings.get_boolean('running');
+            running.title = on ? _('Froonty is running') : _('Froonty is stopped');
+            const again = inApps
+                ? _('The top bar icon, the shortcut, Froonty in Show Apps or this button start it again')
+                : _('The top bar icon, the shortcut or this button start it again');
+            running.subtitle = on
+                ? `${_('Stop it to free the computer: no island and no background work (clipboard history, break tracking, usage checks).')} ${again}`
+                : `${_('Nothing of it runs but the top bar icon. At the next login it follows Start at login.')} ${again}`;
+            toggle.label = on ? _('Stop Froonty') : _('Start Froonty');
+            toggle.css_classes = on ? ['destructive-action'] : ['suggested-action'];
+        };
+        syncRunning();
+        settings.connect('changed::running', syncRunning);
+        group.add(running);
+
         group.add(switchRow(settings, 'start-at-login', _('Start at login'),
             _('When off, Froonty waits after login until you click its icon in the top bar or press the shortcut')));
         return group;

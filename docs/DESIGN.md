@@ -141,8 +141,9 @@ What changed for Froonty, and how it adapts:
    `disable()` on every screen lock (default `session-modes` is `["user"]`,
    `ui/extensionSystem.js:440`), so this path runs many times a day.
    Two exceptions are kept on the extension object, which lives as long
-   as the Shell process: the "started" state behind `start-at-login`, so a
-   screen unlock does not undo a manual start; and in-memory choices
+   as the Shell process: whether the login has been seen (the first
+   `enable()` sets the `running` key from `start-at-login`), so a screen
+   unlock does not undo a manual Stop or Start; and in-memory choices
    (`ctx.memory`: Media's chosen player), so a lock does not forget them.
    Both are plain data, never GObjects. `ctx.memory` is kept only while a
    feature that declares `keepsMemory` (Media) is built in; otherwise
@@ -766,7 +767,10 @@ input through Clutter virtual devices and cover:
   ([features/calendar.md](features/calendar.md) §A.6).
 - **Startup:** with `start-at-login` off, a simulated login waits behind the
   top bar icon, a lock/unlock keeps the state, and the icon or the shortcut
-  starts Froonty.
+  starts Froonty. Stop (`running` off) leaves no island, no background
+  work and no feature parts (Super+V, the break takeover), only the icon;
+  a lock keeps it stopped; the icon or the shortcut start it again; the
+  next login follows `start-at-login`.
 - **Lifecycle:** 25 enable/disable cycles, some mid-animation, with a
   before/after "Shell footprint". It
   covers actors, chrome, Ctrl+Alt+Tab, keybindings, the modal count, top

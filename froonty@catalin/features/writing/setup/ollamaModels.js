@@ -10,11 +10,17 @@ import {networkFailure, parseJson, request, streamNdjson} from '../http.js';
 import {localModels} from '../engines/ollama.js';
 import {isModelName, readState, writeState} from './state.js';
 
-/** Sizes as listed on ollama.com on 2026-10-02; they may change. */
+/**
+ * Sizes as listed on ollama.com on 2026-10-02 (the Qwen3 instruct one as
+ * Ollama reported it after a download on 2026-10-05); they may change.
+ * The notes come from trying the Writing prompts on 2026-10-05
+ * (docs/features/writing.md §3).
+ */
 export const MODEL_CHOICES = [
+    {name: 'qwen3:4b-instruct-2507-q4_K_M', size: '2.5 GB', note: 'best for Fix grammar'},
+    {name: 'gemma3:4b', size: '3.3 GB', note: 'multilingual: best for Translate'},
     {name: 'llama3.2:3b', size: '2.0 GB', note: ''},
-    {name: 'gemma3:4b', size: '3.3 GB', note: 'multilingual'},
-    {name: 'qwen3:4b', size: '2.5 GB', note: 'a thinking model; thinking is turned off'},
+    {name: 'qwen3:4b', size: '2.5 GB', note: 'thinks first: slow'},
     {name: 'phi4-mini', size: '2.5 GB', note: ''},
     {name: 'granite4:3b', size: '2.1 GB', note: ''},
     {name: 'llama3.2:1b', size: '1.3 GB', note: ''},

@@ -201,8 +201,10 @@ feature has a design note in [docs/features/](docs/features/).
   itself. Turned off on the first start when ZeroTier is not installed;
   see [docs/features/zerotier.md](docs/features/zerotier.md).
 - **Writing** tab (working-tree installs only, off by default):
-  Paraphrase, Fix grammar, Shorten, Formal, Casual and Summarise, with the
-  engines you switch on; see [Working-tree only](#working-tree-only-make-install).
+  Fix grammar (a B2 and a C1 version), Shorten, Formal, Humanize and
+  Translate (with its idioms), with the engines you switch
+  on, and Another option for other wording; see
+  [Working-tree only](#working-tree-only-make-install).
 - **Formulas** tab (working-tree installs only): LaTeX with a rendered
   preview, symbols searchable by name (`alpha`, `approx`), templates,
   recent and starred formulas and a short guide; copy as `$…$` or `$$…$$`,
@@ -212,6 +214,14 @@ feature has a design note in [docs/features/](docs/features/).
   top bar (and the shortcut) opens the settings.
 - **Start at login**, or not. With it off, Froonty waits after login behind
   that icon; a click (or the shortcut) starts it.
+- **Stop and start again**, for a computer that needs all its power
+  (Settings → General → Stop Froonty). Stopped, nothing of Froonty runs:
+  no island and no background work (clipboard history, break tracking,
+  Claude usage), only the top bar icon that starts it again; the
+  shortcut, the same button, or (local installs) Froonty in Show Apps
+  start it too. Show Apps' Froonty opens the settings; right-click it for
+  Start Froonty and Stop Froonty. A screen lock keeps it stopped; the next
+  login follows "Start at login".
 
 > Planned: more panic buttons, rendered Markdown in notes and many more inspired from https://github.com/vorssaint/vorssaint-utils
 
@@ -416,7 +426,7 @@ bar icon while the island is hidden, or
 `gnome-extensions prefs froonty@catalin`) opens as its own window. Among
 its tabs:
 
-- **General:** startup, island, hover, shortcut, clock.
+- **General:** Stop/Start Froonty, startup, island, hover, shortcut, clock.
 - **Appearance:** size (the expanded size is for when no tab is on),
   animation.
 - **Panic buttons:** which buttons, and their order.
@@ -429,8 +439,9 @@ its tabs:
   settings, urgency rules, exercises, sit/stand target and build-up,
   history, size.
 - **ZeroTier:** enable, allow reading ZeroTier's status.
-- **Writing:** the tab, each engine's switch, status and set-up steps,
-  Set up… and Remove for Ollama, Remove everything, size.
+- **Writing:** the tab, your first language, each engine's switch, status
+  and set-up steps, Ollama's model and its model for Translate, Set up…
+  and Remove for Ollama, Remove everything, size.
 - **Formulas:** enable, preview in display style, whether MathJax is
   installed, clear the recent formulas, size.
 
@@ -439,6 +450,7 @@ The keys behind it:
 | Key | Default | |
 |---|---|---|
 | `start-at-login` | `true` | When off, Froonty waits after login with only a top bar icon; a click or the shortcut starts it. A screen unlock keeps the current state |
+| `running` | `true` | Whether Froonty runs now; set from `start-at-login` at each login, and by Stop/Start (Settings, Show Apps: `dconf write /org/gnome/shell/extensions/froonty/running false`), the top bar icon and the shortcut |
 | `island-enabled` | `true` | Tears down the island without disabling the extension; a top bar icon (and the shortcut) then opens the settings |
 | `hide-panel-clock` | `true` | Makes the top bar clock transparent; its menu keeps working |
 | `hover-open-delay` | 350 ms | Open the island after hovering it this long; 0 turns it off |
@@ -469,6 +481,9 @@ The keys behind it:
 | `writing-claude-code-model` | `haiku` | `haiku` or `sonnet` (low effort) |
 | `writing-languagetool-variants` | `en-US,de-DE` | LanguageTool's preferred language variants |
 | `writing-ollama-model` | `''` | The local Ollama model |
+| `writing-ollama-translate-model` | `''` | Ollama's model for Translate; empty: the one above |
+| `writing-first-language` | `ro` | The writer's first language, named to the models (`en`: none) |
+| `writing-translate-from` / `writing-translate-to` | `ro` / `en` | Translate's languages, kept from the tab (`auto`: any language) |
 | `writing-width` / `writing-height` | 460 / 540 | The island's size on the Writing tab |
 | `formulas-enabled` | `true` | Show the Formulas tab (local builds) |
 | `formulas-display` | `true` | Preview as a formula on its own line (`$$…$$`); off, as inside a line |
@@ -493,8 +508,8 @@ The keys behind it:
 Three tabs are in local builds only:
 
 - **ZeroTier**: see [docs/features/zerotier.md](docs/features/zerotier.md).
-- **Writing** (off by default): Paraphrase, Fix grammar, Shorten, Formal,
-  Casual and Summarise, on text you type or paste, or the Clipboard tab's
+- **Writing** (off by default): Fix grammar (B2 and C1
+  versions), Shorten, Formal, Humanize and Translate, on text you type or paste, or the Clipboard tab's
   current entry. The result is plain text; Copy puts it on the clipboard.
   Text is sent only when you click an action, and the line above the box
   always says where it goes. No paid API keys. Details:
