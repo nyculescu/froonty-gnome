@@ -1,6 +1,14 @@
 # Changelog
 
-## Unreleased
+## 0.9.0-rc0 (2026-10-05)
+
+First release candidate of 0.9.0, for GNOME Shell 50 on Ubuntu 26.04
+(Wayland). It builds on 0.8.0-rc0. The published package (extensions.
+gnome.org) gains Stop/Start Froonty in Settings → General; otherwise it
+offers the same: the Notes tab, the date pill and the panic buttons.
+`make install` builds add Froonty to Show Apps and rework the Writing tab
+(an English editor in B2 and C1, Translate, Humanize), which stays
+working-tree only.
 
 ### Added
 - **Stop Froonty and start it again** (Settings → General), for a

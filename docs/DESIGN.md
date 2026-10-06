@@ -831,6 +831,12 @@ formulas no longer cut short in the Formulas tab): **708/708** in the
 default session mode and **704/704** in Ubuntu's, plus 661 unit tests
 and 19 packing tests; the published package's own check, **17/17**.
 
+Release candidate 0.9.0-rc0 (Stop/Start Froonty and Froonty in Show
+Apps; the Writing tab's B2/C1 editor, Translate and Humanize, keyboard
+selection in its results, tooltips that wrap): **732/732** in the default
+session mode and **728/728** in Ubuntu's, plus 676 unit tests and 19
+packing tests; the published package's own check, **17/17**.
+
 Unreleased: the Notifications and Calendar tabs were removed. The date
 pill opens GNOME's own calendar and notification menu, which already
 lists GNOME's notifications (with Do Not Disturb and Clear) and the

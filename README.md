@@ -4,7 +4,7 @@ A small Dynamic-Island-style pill at the top center of the screen for
 **GNOME Shell 50** (Ubuntu 26.04, Wayland). The island is a compact entry point to
 facilities GNOME Shell already has. It does not reimplement them.
 
-Status: **0.8.0-rc0**, a release candidate. See [CHANGELOG.md](CHANGELOG.md).
+Status: **0.9.0-rc0**, a release candidate. See [CHANGELOG.md](CHANGELOG.md).
 
 - The published extension package (`make pack`, extensions.gnome.org)
   has the first submission's tab only, Notes, with the date pill and the
