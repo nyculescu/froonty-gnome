@@ -1,6 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.10.0-rc0 (2026-10-06)
+
+First release candidate of 0.10.0, for GNOME Shell 50 on Ubuntu 26.04
+(Wayland). It builds on 0.9.0-rc0. The published package (extensions.
+gnome.org) is unchanged: the Notes tab, the date pill and the panic
+buttons. `make install` builds add Software brightness, which stays
+working-tree only until it is submitted.
 
 ### Added
 - **Software brightness** (working-tree only, off by default; Settings →

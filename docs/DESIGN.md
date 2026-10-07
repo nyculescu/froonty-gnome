@@ -840,6 +840,11 @@ selection in its results, tooltips that wrap): **732/732** in the default
 session mode and **728/728** in Ubuntu's, plus 676 unit tests and 19
 packing tests; the published package's own check, **17/17**.
 
+Release candidate 0.10.0-rc0 (Software brightness, working-tree only: a
+Quick Settings slider that dims monitors without DDC/CI): **746/746** in
+the default session mode and **742/742** in Ubuntu's, plus 684 unit tests
+and 19 packing tests; the published package's own check, **18/18**.
+
 Unreleased: the Notifications and Calendar tabs were removed. The date
 pill opens GNOME's own calendar and notification menu, which already
 lists GNOME's notifications (with Do Not Disturb and Clear) and the
