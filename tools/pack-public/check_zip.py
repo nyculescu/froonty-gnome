@@ -18,7 +18,7 @@ import zipfile
 LOCAL_DIRS = (
     "features/writing/", "features/zerotier/", "features/media/", "features/claude/",
     "features/sysmon/", "features/clipboard/", "features/killprocess/", "features/break/",
-    "features/formulas/",
+    "features/formulas/", "features/brightness/",
     # The Formulas tab's MathJax (tools/fetch-mathjax.py).
     "third_party/",
 )
@@ -95,6 +95,14 @@ BANNED = (
     b"formulas-enabled",
     b"froonty-formulas",
     b"MathJax",
+    # Software brightness (a part, not a tab).
+    b"features/brightness",
+    b"brightness-enabled",
+    b"SoftwareBrightness",
+    b"LOCAL_PARTS",
+    b"addUnderBrightness",
+    b"brightness",
+    b"Brightness",
     b"mathjax",
     b"localFeatures",
     b"localPrefs",

@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **Software brightness** (working-tree only, off by default; Settings →
+  Brightness): a second brightness slider in Quick Settings, under
+  GNOME's, for monitors whose brightness GNOME cannot set (no DDC/CI, as
+  some Samsung Smart Monitors). It darkens the chosen monitors (external
+  ones by default, the built-in screen, or all) with a black layer that
+  takes no input, so the pointer is neither dimmed nor copied. Software
+  dimming only: the backlight and its power use stay as they are; the
+  lock screen is not dimmed. From a contributed patch, reworked: a menu
+  actor no longer left behind at each screen lock, the built-in screen
+  told by Mutter (not "the primary monitor"), the slider placed with
+  Quick Settings' own API and spanning the lowest level to 100 %, levels
+  in percent, and tests. New keys `brightness-enabled`, `-level`, `-min`,
+  `-monitors`. See docs/features/brightness.md.
+
 ## 0.9.0-rc0 (2026-10-05)
 
 First release candidate of 0.9.0, for GNOME Shell 50 on Ubuntu 26.04

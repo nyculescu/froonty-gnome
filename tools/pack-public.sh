@@ -20,9 +20,10 @@ trap 'rm -rf "$STAGING_ROOT"' EXIT
 
 cp -a "$ROOT/$UUID" "$STAGED"
 # The imports of features/localFeatures.js, features/localPrefs.js,
-# panic/localCatalog.js and panic/localFactories.js, and their uses, go;
+# panic/localCatalog.js and panic/localFactories.js, and their uses (in
+# extension.js too: the parts that are not tabs), go;
 # prune.py then leaves those modules out with everything only they reach.
-for module in features/registry.js prefs.js panic/catalog.js panic/registry.js; do
+for module in extension.js features/registry.js prefs.js panic/catalog.js panic/registry.js; do
     python3 "$ROOT/tools/pack-public/strip_local.py" --several "$STAGED/$module" local-features
 done
 # Formulas in notes (features/formulas/notes): the Notes tab and its All

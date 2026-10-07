@@ -26,7 +26,7 @@ import xml.etree.ElementTree as ET
 # Settings keys of the features the public build leaves out.
 PREFIXES = (
     "media-", "claude-", "sysmon-", "clipboard-", "killprocess-",
-    "break-", "posture-", "zerotier-", "writing-", "formulas-",
+    "break-", "posture-", "zerotier-", "writing-", "formulas-", "brightness-",
 )
 # Their CSS classes: each name and every class it begins with a dash
 # (froonty-media matches .froonty-media and .froonty-media-title, not
@@ -42,7 +42,7 @@ CLASS = re.compile(r"\.(" + "|".join(map(re.escape, CLASSES)) + r")(?![A-Za-z0-9
 # Comments that mention them go too (a comment above a block of keys).
 MENTIONS = tuple(f"features/{name}" for name in (
     "media", "claude", "sysmon", "clipboard", "killprocess", "break", "zerotier", "writing",
-    "formulas",
+    "formulas", "brightness",
 )) + ("kill-process", "claude-attention", "local-only")
 ROOTS = ("extension.js", "prefs.js")
 SCHEMA = "schemas/org.gnome.shell.extensions.froonty.gschema.xml"

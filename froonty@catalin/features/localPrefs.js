@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// The settings tabs of localFeatures.js's features, in the same order.
+// The settings tabs of localFeatures.js's features, in the same order,
+// then Brightness (a part, not a tab).
 // tools/pack-public replaces this file with one that adds none.
 
 import {addIconPath as addBreakIconPath, breakPage} from './break/prefs.js';
+import {brightnessPage} from './brightness/prefs.js';
 import {addIconPath as addClaudeIconPath, claudePage} from './claude/prefs.js';
 import {clipboardPage} from './clipboard/prefs.js';
 import {formulasPage} from './formulas/prefs.js';
@@ -35,6 +37,8 @@ export function addLocalPrefs(window, settings) {
         zeroTierPage(settings),
         writingPage(settings, window),
         formulasPage(settings),
+        // Not a hub tab (localFeatures.js, LOCAL_PARTS).
+        brightnessPage(settings),
     ];
     for (const page of pages)
         window.add(page);

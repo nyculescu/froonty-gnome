@@ -9,7 +9,7 @@ Status: **0.9.0-rc0**, a release candidate. See [CHANGELOG.md](CHANGELOG.md).
 - The published extension package (`make pack`, extensions.gnome.org)
   has the first submission's tab only, Notes, with the date pill and the
   mute panic buttons. Media, Claude, Btop, Clipboard,
-  Kill Process and Break follow in later versions; ZeroTier, Writing and
+  Kill Process, Break and Software brightness follow in later versions; ZeroTier, Writing and
   Formulas stay working-tree only. `make install` includes them all.
 - The polling timers are the Btop (system monitor) and Kill Process
   tabs', each running only while its tab is on screen; the Media tab's
@@ -210,6 +210,14 @@ feature has a design note in [docs/features/](docs/features/).
   recent and starred formulas and a short guide; copy as `$…$` or `$$…$$`,
   or put it into the open note. Drawn on this computer by MathJax, in a
   helper process; see [Working-tree only](#working-tree-only-make-install).
+- **Software brightness** (working-tree installs only, off by default;
+  Settings → Brightness): a second brightness slider in Quick Settings,
+  under GNOME's, for monitors whose brightness GNOME cannot set (no
+  DDC/CI, as some Samsung Smart Monitors). It darkens the chosen monitors
+  (external ones by default, built-in screen, or all) with a black layer
+  that takes no input; the pointer is not dimmed or copied. Software
+  dimming only: the backlight, and its power use, stay as they are. See
+  [docs/features/brightness.md](docs/features/brightness.md).
 - **Always reachable.** With "Show island" off, a puzzle-piece icon in the
   top bar (and the shortcut) opens the settings.
 - **Start at login**, or not. With it off, Froonty waits after login behind
@@ -309,9 +317,11 @@ froonty@catalin/             the extension (this directory is what gets installe
 │   ├── killprocess/         Kill Process tab: your processes from /proc, kill(1)
 │   ├── break/               Break tab: GNOME's break engine, the pill's cue,
 │   │                        ledger, sit/stand, Workrave's exercises (exercises/)
-│   └── formulas/            Formulas tab: palettes, templates, guide; renderer/:
-│                            MathJax in a helper process and its client;
-│                            notes/: formulas drawn in both notes editors
+│   ├── formulas/            Formulas tab: palettes, templates, guide; renderer/:
+│   │                        MathJax in a helper process and its client;
+│   │                        notes/: formulas drawn in both notes editors
+│   └── brightness/          Software brightness (not a tab): the black layer,
+│                            its Quick Settings slider, levels, prefs
 ├── panic/                   panic button catalog, factories, buttons (mute,
 │                            Claude session, block camera, pause media,
 │                            sit/stand), prefs
@@ -328,6 +338,7 @@ froonty@catalin/             the extension (this directory is what gets installe
     ├── breakManager.js      Shell internals: GNOME's break engine (Main.breakManager)
     ├── breakEngine.js       a wrapper over it (Shell-free, unit-tested)
     ├── mixer.js             the Shell's shared audio mixer
+    ├── quickSettings.js     an item under GNOME's brightness slider
     ├── claudeAttention.js   the attention bar's apps, windows, focus, banners
     └── settingsWindow.js    opens or raises the settings window (or its
                              All notes page)
@@ -444,6 +455,8 @@ its tabs:
   and Remove for Ollama, Remove everything, size.
 - **Formulas:** enable, preview in display style, whether MathJax is
   installed, clear the recent formulas, size.
+- **Brightness:** software brightness on or off, which monitors, the
+  lowest level.
 
 The keys behind it:
 
@@ -489,6 +502,9 @@ The keys behind it:
 | `formulas-display` | `true` | Preview as a formula on its own line (`$$…$$`); off, as inside a line |
 | `formulas-recent` / `formulas-favorites` | `[]` | The last 20 formulas used; starred ones (at most 100) |
 | `formulas-width` / `formulas-height` | 500 / 560 | The island's size on the Formulas tab |
+| `brightness-enabled` | `false` | Software brightness: its slider in Quick Settings (local builds) |
+| `brightness-level` / `brightness-min` | 100 / 10 | Its level and the slider's left end, in percent |
+| `brightness-monitors` | `external` | `external` (all but a built-in screen), `built-in` or `all` |
 | `prefs-page` | `''` | The settings tab to show next (internal; "Open Settings → Writing") |
 | `break-enabled` | `false` | Show the Break tab and follow GNOME's break reminders |
 | `break-pill-reminders` | `true` | Remind in the island; GNOME's Wellbeing notifications are off meanwhile |

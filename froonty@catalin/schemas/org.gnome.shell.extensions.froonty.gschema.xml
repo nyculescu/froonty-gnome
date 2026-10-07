@@ -515,6 +515,35 @@
       <summary>Break: sit down after standing this long (min)</summary>
     </key>
 
+    <!-- Software display brightness (features/brightness, docs/features/brightness.md) -->
+    <key name="brightness-enabled" type="b">
+      <default>false</default>
+      <summary>Software display brightness</summary>
+      <description>Darkens the chosen monitors with a black layer, with a slider in Quick Settings. No DDC/CI or backlight; the pointer is not dimmed.</description>
+    </key>
+    <key name="brightness-level" type="i">
+      <range min="0" max="100"/>
+      <default>100</default>
+      <summary>Software brightness (%)</summary>
+      <description>100 is no layer. Never applied below brightness-min.</description>
+    </key>
+    <key name="brightness-min" type="i">
+      <range min="5" max="90"/>
+      <default>10</default>
+      <summary>Lowest software brightness (%)</summary>
+      <description>The slider's left end, so a monitor never goes black.</description>
+    </key>
+    <key name="brightness-monitors" type="s">
+      <choices>
+        <choice value="external"/>
+        <choice value="built-in"/>
+        <choice value="all"/>
+      </choices>
+      <default>'external'</default>
+      <summary>Monitors software brightness dims</summary>
+      <description>external: every monitor but a laptop's built-in screen (all of them on a desktop); built-in: the built-in screen; all: every monitor.</description>
+    </key>
+
     <!-- local-only: the Writing tab (docs/features/writing.md); tools/pack-public strips the writing-* keys and this comment -->
     <key name="writing-enabled" type="b">
       <default>false</default>

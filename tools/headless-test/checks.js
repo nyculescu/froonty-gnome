@@ -8505,7 +8505,95 @@ async function testBreak(outDir) {
 // with FROONTY_TEST_ONLY=testPublicBuild): its one tab, Notes, and two
 // panic buttons only, the header's date pill, ⚙️ in the side column, the
 // tab opens, and enable/disable leaves the Shell as it was.
+// ---------------------------------------------------------------- software brightness
+
+const brightnessLayer = () => global.stage.get_children()
+    .find(actor => actor.name === 'froonty-brightness') ?? null;
+const quickSettingsMenu = () => Main.panel.statusArea.quickSettings.menu;
+const brightnessSliders = () => quickSettingsMenu()._grid.get_children()
+    .filter(item => item.slider?.accessible_name === 'Software brightness');
+
+async function testBrightness() {
+    let s = settings();
+    const menuActors = () => quickSettingsMenu()._overlay.get_n_children();
+    const menusBefore = menuActors();
+    check('brightness: off by default, nothing on the stage or in Quick Settings',
+        !s.get_boolean('brightness-enabled') && !brightnessLayer() && brightnessSliders().length === 0);
+
+    s.set_boolean('brightness-enabled', true);
+    await sleep(SETTLE_MS);
+    const [slider] = brightnessSliders();
+    const gnome = Main.panel.statusArea.quickSettings._brightness.quickSettingsItems.at(-1);
+    check('brightness: on, a slider right under GNOME\'s brightness slider, spanning both columns',
+        brightnessSliders().length === 1 && gnome.get_next_sibling() === slider &&
+        quickSettingsMenu()._grid.layout_manager.get_child_meta(
+            quickSettingsMenu()._grid, slider).column_span === 2);
+    check('brightness: at 100 % the layer is on top of the stage and empty',
+        global.stage.get_last_child() === brightnessLayer() && brightnessLayer().get_n_children() === 0);
+
+    s.set_int('brightness-level', 40);
+    await sleep(SETTLE_MS);
+    const monitors = Main.layoutManager.monitors;
+    const overlays = () => brightnessLayer().get_children();
+    const covers = (overlay, m) => overlay.x === m.x && overlay.y === m.y &&
+        overlay.width === m.width && overlay.height === m.height;
+    // The test session's virtual monitors are not built-in panels, so
+    // "External monitors" (the default) is all of them.
+    check('brightness: 40 % puts a black layer at 60 % over every external monitor',
+        overlays().length === monitors.length &&
+        overlays().every((overlay, i) => covers(overlay, monitors[i]) && overlay.opacity === 153),
+        overlays().map(o => `${o.x},${o.y} ${o.width}x${o.height} @${o.opacity}`).join('; '));
+    check('brightness: the slider follows the setting (40 % between 10 and 100 %)',
+        Math.abs(slider.slider.value - 30 / 90) < 0.001, `${slider.slider.value}`);
+    const m = monitors[0];
+    const picked = global.stage.get_actor_at_pos(Clutter.PickMode.ALL,
+        m.x + m.width / 2, m.y + m.height / 2);
+    check('brightness: the layer takes no pointer (left out of picking)',
+        picked && !brightnessLayer().contains(picked), `${picked}`);
+
+    s.set_string('brightness-monitors', 'built-in');
+    await sleep(SETTLE_MS);
+    check('brightness: "Built-in screen" with no built-in panel dims nothing', overlays().length === 0);
+    s.set_string('brightness-monitors', 'all');
+    await sleep(SETTLE_MS);
+    check('brightness: "All monitors" dims every monitor', overlays().length === monitors.length);
+
+    slider.slider.value = 0;
+    await sleep(SETTLE_MS);
+    check('brightness: the slider\'s left end is the minimum (10 %)',
+        s.get_int('brightness-level') === 10 && overlays()[0]?.opacity === 230, `${s.get_int('brightness-level')}`);
+    s.set_int('brightness-min', 30);
+    await sleep(SETTLE_MS);
+    check('brightness: a higher minimum applies at once, the slider at its left end',
+        overlays()[0]?.opacity === 179 && slider.slider.value === 0, `${overlays()[0]?.opacity}`);
+
+    await lockUnlock();
+    s = settings();
+    check('brightness: a screen lock and unlock bring back one slider and the layer, no menu left behind',
+        brightnessSliders().length === 1 && overlays().length === monitors.length &&
+        menuActors() === menusBefore + 1, `sliders=${brightnessSliders().length} menus=${menuActors()}/${menusBefore}`);
+
+    s.set_boolean('running', false);
+    await sleep(SETTLE_MS);
+    check('brightness: Stop Froonty takes the layer, the slider and its menu away',
+        !brightnessLayer() && brightnessSliders().length === 0 && menuActors() === menusBefore);
+    s.set_boolean('running', true);
+    await sleep(SETTLE_MS);
+    check('brightness: Start brings them back', Boolean(brightnessLayer()) && brightnessSliders().length === 1);
+
+    s.set_boolean('brightness-enabled', false);
+    await sleep(SETTLE_MS);
+    check('brightness: off takes everything away again',
+        !brightnessLayer() && brightnessSliders().length === 0 && menuActors() === menusBefore);
+    for (const key of ['brightness-enabled', 'brightness-level', 'brightness-min', 'brightness-monitors'])
+        s.reset(key);
+    await sleep(SETTLE_MS);
+}
+
 async function testPublicBuild() {
+    check('public build: no software brightness (local-only) in Quick Settings or on the stage',
+        !brightnessLayer() && brightnessSliders().length === 0 &&
+        !settings().settings_schema.has_key('brightness-enabled'));
     const hub = island()._hub;
     const names = [...hub._entries.values()].map(e => e.feature.title);
     const gone = ['clock', 'calendar', 'notifications']
@@ -8594,7 +8682,7 @@ const ONLY_TESTS = {
     testPointer, testHubLayout, testDatePill, testCalendarMenu, testEmptyHub,
     testSettingsButton, testKillProcess, testCpuLoadButton, testFormulas,
     testNotesHeader, testClaude, testClipboard, testClipboardSwitcher, testNotesMath,
-    testWriting, testWritingFixes, testStartup,
+    testWriting, testWritingFixes, testStartup, testBrightness,
 };
 
 export async function runAll(outDir) {
@@ -8664,6 +8752,7 @@ export async function runAll(outDir) {
         await testSettings(outDir);
         await testCoversPanelClock(outDir);
         await testMonitors();
+        await testBrightness();
         await testMedia(outDir);
         await testMediaPill(outDir);
         await testMediaExtras(outDir);
