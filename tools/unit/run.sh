@@ -14,6 +14,15 @@
 # their own: a private Broadway server (GTK's HTML5 backend, from GTK's
 # libgtk-4-bin; nothing shows on screen), its socket in a private runtime
 # folder, so parallel runs never meet.
+#
+# Parallel: the test files run JOBS at a time (default: half the logical
+# CPUs), each in a root of its own (its own TMPDIR, XDG folders and, for GTK
+# tests, Broadway server), so they cannot see each other's files. Each
+# file's output is printed whole, in file order, as soon as it and every
+# file before it are done. JOBS=1 runs them one after another. The GTK
+# files, the slowest (fixed waits for the widgets), are split into
+# GTK_SHARDS processes each (FROONTY_TEST_SHARD, test.js); GTK_SHARDS=1
+# keeps each whole.
 set -uo pipefail
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -26,51 +35,99 @@ BROADWAYD=${BROADWAYD:-/usr/bin/gtk4-broadwayd}
 CACHE=${XDG_CACHE_HOME:-$HOME/.cache}
 mkdir -p "$CACHE"
 ROOT=$(mktemp -d -p "$CACHE" froonty-unit.XXXXXX)
-broadway_pid=
-trap '[[ -n "$broadway_pid" ]] && kill "$broadway_pid" 2>/dev/null; rm -rf "$ROOT"' EXIT
-mkdir -p "$ROOT/tmp" "$ROOT/data" "$ROOT/config" "$ROOT/cache" "$ROOT/claude"
-mkdir -m 700 "$ROOT/runtime"
-export TMPDIR=$ROOT/tmp
-export XDG_DATA_HOME=$ROOT/data
-export XDG_CONFIG_HOME=$ROOT/config
-export XDG_CACHE_HOME=$ROOT/cache
-export XDG_RUNTIME_DIR=$ROOT/runtime
-# Claude Code's config folder: a private one, so a default
-# claudeSettingsFile() can never reach the real ~/.claude.
-export CLAUDE_CONFIG_DIR=$ROOT/claude
+JOBS=${JOBS:-$(( $(nproc) / 2 > 0 ? $(nproc) / 2 : 1 ))}
+GTK_SHARDS=${GTK_SHARDS:-4}
+trap 'kill $(jobs -p) 2>/dev/null; wait 2>/dev/null; rm -rf "$ROOT"' EXIT
 export GSETTINGS_BACKEND=memory
 export FROONTY_UNIT_ISOLATED=1
 
-# Display :0 of a private runtime folder listens on broadway1.socket there.
+# A private root: TMPDIR, the XDG folders and Claude Code's config folder
+# (so a default claudeSettingsFile() can never reach the real ~/.claude).
+make_root() {
+    local r=$1
+    mkdir -p "$r/tmp" "$r/data" "$r/config" "$r/cache" "$r/claude"
+    mkdir -m 700 "$r/runtime"
+}
+
+# Display :0 of the root's runtime folder listens on broadway1.socket there.
 start_broadway() {
-    [[ -n "$broadway_pid" ]] && return 0
+    local r=$1
     if [[ ! -x "$BROADWAYD" ]]; then
         echo "FAIL $BROADWAYD not found (GTK's libgtk-4-bin): the GTK tests need it"
         return 1
     fi
-    mkdir -p -m 700 "$ROOT/runtime"
-    XDG_RUNTIME_DIR=$ROOT/runtime "$BROADWAYD" :0 >"$ROOT/broadway.log" 2>&1 &
-    broadway_pid=$!
+    # Its web server on a socket of the root too, not TCP port 8080 (shared by
+    # every display :0, so parallel GTK tests would collide there).
+    XDG_RUNTIME_DIR=$r/runtime "$BROADWAYD" --unixsocket="$r/runtime/broadway-http.socket" :0 \
+        >"$r/broadway.log" 2>&1 &
+    echo $! >"$r/broadway.pid"
     for _ in $(seq 50); do
-        [[ -S "$ROOT/runtime/broadway1.socket" ]] && return 0
+        [[ -S "$r/runtime/broadway1.socket" ]] && return 0
         sleep 0.1
     done
     echo "FAIL gtk4-broadwayd did not start:"
-    cat "$ROOT/broadway.log"
+    cat "$r/broadway.log"
     return 1
 }
 
-status=0
-for t in "$HERE"/*.test.js; do
-    echo "== $(basename "$t")"
-    if [[ "$t" == *.gtk.test.js ]]; then
-        start_broadway || { status=1; continue; }
-        XDG_RUNTIME_DIR=$ROOT/runtime GDK_BACKEND=broadway BROADWAY_DISPLAY=:0 \
-            GTK_A11Y=none GDK_DEBUG=no-portals "$GJS" -m "$t" || status=1
-    else
-        "$GJS" -m "$t" || status=1
-    fi
+# Runs one test file (shard $3, i/n) in root $2; its output goes to $2/out,
+# its status to $2/rc.
+run_one() {
+    local t=$1 r=$2 part=$3 rc=0
+    make_root "$r"
+    (
+        export TMPDIR=$r/tmp XDG_DATA_HOME=$r/data XDG_CONFIG_HOME=$r/config XDG_CACHE_HOME=$r/cache \
+            XDG_RUNTIME_DIR=$r/runtime CLAUDE_CONFIG_DIR=$r/claude
+        export FROONTY_TEST_SHARD=$part
+        if [[ "$part" == 0/1 ]]; then
+            echo "== $(basename "$t")"
+        else
+            echo "== $(basename "$t") [${part%/*} of ${part#*/}]"
+        fi
+        if [[ "$t" == *.gtk.test.js ]]; then
+            start_broadway "$r" || exit 1
+            GDK_BACKEND=broadway BROADWAY_DISPLAY=:0 GTK_A11Y=none GDK_DEBUG=no-portals "$GJS" -m "$t"
+            rc=$?
+            kill "$(cat "$r/broadway.pid")" 2>/dev/null
+            exit $rc
+        elif [[ "$t" == *.py ]]; then
+            PYTHONDONTWRITEBYTECODE=1 python3 -m unittest -q "$t"
+        else
+            "$GJS" -m "$t"
+        fi
+    ) >"$r/out" 2>&1 </dev/null || rc=1
+    echo $rc >"$r/rc"
+}
+
+TESTS=() PARTS=()
+for t in "$HERE"/*.test.js "$HERE/../pack-public/test_pack_public.py"; do
+    n=1
+    [[ "$t" == *.gtk.test.js ]] && n=$GTK_SHARDS
+    for (( k = 0; k < n; k++ )); do
+        TESTS+=("$t")
+        PARTS+=("$k/$n")
+    done
 done
-echo "== test_pack_public.py"
-PYTHONDONTWRITEBYTECODE=1 python3 -m unittest -q "$HERE/../pack-public/test_pack_public.py" || status=1
+for i in "${!TESTS[@]}"; do
+    while (( $(jobs -rp | wc -l) >= JOBS )); do
+        wait -n
+    done
+    run_one "${TESTS[$i]}" "$ROOT/$i" "${PARTS[$i]}" &
+done
+
+status=0
+for i in "${!TESTS[@]}"; do
+    while [[ ! -e "$ROOT/$i/rc" ]]; do
+        sleep 0.05
+    done
+    if [[ "${TESTS[$i]}" == *.py ]]; then
+        # Same heading as before; the file's own "==" line names the path.
+        echo "== test_pack_public.py"
+        tail -n +2 "$ROOT/$i/out"
+    else
+        cat "$ROOT/$i/out"
+    fi
+    [[ "$(cat "$ROOT/$i/rc")" == 0 ]] || status=1
+done
+wait
 exit $status
