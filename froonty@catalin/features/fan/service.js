@@ -62,6 +62,8 @@ export class FanService extends Emitter {
         this.lock = null;
         /** Who drove the pad last (pad.js parseLastControl), or null. */
         this.lastControl = null;
+        /** The speed's rpm, dB at the ears, band and the noise limit (pad.js parseNoise), or null. */
+        this.noise = null;
         /** Latest temperatures: {cpu, gpus: [{id, name, temp, asleep}], cores: [{core, temp, threads}]}. */
         this.temps = null;
         /** [{t, cpu, gpus: {id: temp}, fan}], oldest first, t in seconds. */
@@ -141,6 +143,11 @@ export class FanService extends Emitter {
         this._queue({args: [locked ? 'lock' : 'unlock']});
     }
 
+    /** Lifts the noise limits until quiet hours end (llano.py loud), or puts them back. */
+    setLoud(loud) {
+        this._queue({args: [loud ? 'loud' : 'quiet']});
+    }
+
     async stopController(unit) {
         await this._pad.stopUnit(unit);
         this._released = true;
@@ -212,9 +219,10 @@ export class FanService extends Emitter {
         this._pending = null;
         this._busy = true;
         try {
-            const {status, error, message} = await this._pad.llano(this._script, command.args);
+            const {status, noise, error, message} = await this._pad.llano(this._script, command.args);
             // A write refused by the lock leaves the pad as it was.
             this.status = status ?? (error === 'locked' ? this.status : null);
+            this.noise = status ? noise : error === 'locked' ? this.noise : null;
             this.error = error;
             this.errorMessage = message;
             if (command.released)
@@ -246,11 +254,15 @@ export class FanService extends Emitter {
     }
 
     // The NVIDIA (or hottest) GPU stands for 'gpu', as in the sweep.
+    // Capped to the noise limit in force (llano.py would cap it anyway);
+    // `wanted` keeps what the table asks for.
     _recommend() {
         const gpuTemps = (this.temps?.gpus ?? []).map(gpu => gpu.temp).filter(t => t !== null && t !== undefined);
-        this.recommendation = this.lut && this.temps
+        const rec = this.lut && this.temps
             ? recommend(this.lut, {cpu: this.temps.cpu, gpu: gpuTemps.length ? Math.max(...gpuTemps) : null})
             : null;
+        const cap = this.noise?.limit?.max_percent ?? 100;
+        this.recommendation = rec && {...rec, wanted: rec.fan, fan: Math.min(rec.fan, cap)};
     }
 
     async _sample() {

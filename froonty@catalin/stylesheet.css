@@ -918,6 +918,16 @@
     spacing: 8px;
     padding: 4px 0 2px 0;
 }
+/* The speed's noise (llano-v12-linux's noise.py bands): quiet green to very loud red. */
+.froonty-fan-noise {
+    font-size: 0.78em;
+    font-feature-settings: "tnum";
+}
+.froonty-fan-band-quiet { color: #33d17a; }
+.froonty-fan-band-night { color: #a5e34a; }
+.froonty-fan-band-audible { color: #f6d32d; }
+.froonty-fan-band-loud { color: #ff7800; }
+.froonty-fan-band-very-loud { color: #e01b24; }
 /* Lock off while the pad is locked: Unlock, in the warning colour. */
 .froonty-fan-button:checked {
     color: #ffbe6f;

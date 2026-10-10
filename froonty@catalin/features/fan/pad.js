@@ -78,6 +78,23 @@ export function parseLastControl(text) {
     }
 }
 
+/**
+ * llano.py's `noise {json}` line: the speed's rpm and dB at the ears, its
+ * band, and the limit in force ({quiet, until, max_rpm, max_percent,
+ * override_until}); null when there is none (an older llano.py).
+ */
+export function parseNoise(text) {
+    const match = /^noise (\{.*\})\s*$/m.exec(text ?? '');
+    if (!match)
+        return null;
+    try {
+        const noise = JSON.parse(match[1]);
+        return noise && typeof noise.rpm === 'number' && noise.limit ? noise : null;
+    } catch (e) {
+        return null;
+    }
+}
+
 /** Why llano.py failed, from its standard error. */
 export function failureKind(stderr) {
     if (/locked off/.test(stderr))
@@ -134,19 +151,19 @@ async function run(argv, cancellable = null, env = {}) {
 
 /**
  * Runs llano.py with `args` (['status'], ['speed', '40'], ['release'],
- * ['lock'], ['unlock']); its control log names Froonty.
+ * ['lock'], ['unlock'], ['loud'], ['quiet']); its control log names Froonty.
  *
- * @returns {Promise<{status: ?object, error: ?string, message: string}>}
- *   status as parseStatus; error null or a failureKind
+ * @returns {Promise<{status: ?object, noise: ?object, error: ?string, message: string}>}
+ *   status as parseStatus, noise as parseNoise; error null or a failureKind
  */
 export async function llano(script, args, cancellable = null) {
     const {ok, stdout, stderr} = await run([PYTHON, script, ...args], cancellable,
         {LLANO_CLIENT: 'Froonty'});
     const status = ok ? parseStatus(stdout) : null;
     if (status)
-        return {status, error: null, message: ''};
+        return {status, noise: parseNoise(stdout), error: null, message: ''};
     const message = (stderr || stdout).trim().split('\n').pop() ?? '';
-    return {status: null, error: failureKind(stderr || stdout), message};
+    return {status: null, noise: null, error: failureKind(stderr || stdout), message};
 }
 
 /** The active CONTROLLER_UNITS of the user's systemd. */

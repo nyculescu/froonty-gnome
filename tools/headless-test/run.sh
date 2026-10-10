@@ -251,15 +251,22 @@ chmod +x "$FROONTY_SYSTEMCTL"
 # Fan tab: a stand-in for llano-v12-linux's llano.py, so the real cooling
 # pad is never driven (FROONTY_TEST_LLANO=/path/to/llano.py runs the checks
 # against the real pad instead). Same commands, output and state files
-# ($XDG_STATE_HOME/llano: the lock, control.log); like the pad, release
-# keeps the speed and the status still says software (0x80).
+# ($XDG_STATE_HOME/llano: the lock, control.log, loud-until); like the pad,
+# release keeps the speed and the status still says software (0x80). Noise
+# as llano-v12-linux's noise.py: rpm = 300 + 25 x %, capped at 12 % (600 rpm)
+# while $WORK/fake-quiet exists (quiet hours) and 68 % (2000 rpm) otherwise,
+# unless `loud` lifted it.
 cat >"$WORK/fake-llano.py" <<'EOF'
 import json, os, sys, time
 here = os.path.dirname(os.path.abspath(__file__))
 state_path = os.path.join(here, 'fake-llano.state')
 llano_dir = os.path.join(os.environ['XDG_STATE_HOME'], 'llano')
 lock_path = os.path.join(llano_dir, 'lock')
+loud_path = os.path.join(llano_dir, 'loud-until')
+quiet = os.path.exists(os.path.join(here, 'fake-quiet'))
 os.makedirs(llano_dir, exist_ok=True)
+def cap():
+    return 100 if os.path.exists(loud_path) else 12 if quiet else 68
 with open(os.path.join(here, 'fake-llano.log'), 'a') as log:
     log.write(' '.join(sys.argv[1:]) + '\n')
 st, speed = (0x88, 60)
@@ -274,7 +281,7 @@ if len(args) == 2 and args[0] == 'speed' or args == ['release']:
     if args == ['release']:
         action = 'release'
     else:
-        st, speed, action = 0x80, int(args[1]), 'speed'
+        st, speed, action = 0x80, min(int(args[1]), cap()), 'speed'
 elif args == ['lock'] and not locked:
     json.dump({'time': time.time(), 'by': os.environ.get('LLANO_CLIENT', 'test'), 'speed': speed,
                'ctl': 'software' if st == 0x80 else 'pad'}, open(lock_path, 'w'))
@@ -283,6 +290,15 @@ elif args == ['unlock'] and locked:
     record = json.load(open(lock_path))
     os.remove(lock_path)
     st, speed, action = 0x80, record['speed'], 'unlock'
+elif args == ['loud']:
+    open(loud_path, 'w').write(f'{time.time() + 3600:.0f}')
+    action = 'loud'
+elif args == ['quiet']:
+    if os.path.exists(loud_path):
+        os.remove(loud_path)
+    if st == 0x80 and not locked:
+        speed = min(speed, cap())
+    action = 'quiet'
 elif args not in (['status'], ['lock'], ['unlock']):
     sys.exit('usage')
 if action:
@@ -294,6 +310,13 @@ body = [st, speed, 0, 0x82, 4, 0, 0xff]
 raw = ' '.join(f'{b:02x}' for b in body + [(0xff - sum(body)) & 0xff])
 ctl = 'software' if st == 0x80 else 'pad'
 print(('LOCKED  ' if os.path.exists(lock_path) else '') + f'speed {speed}% ({ctl} control)  lights off  raw {raw}')
+rpm = 0 if speed == 0 else 300 + 25 * speed
+over = float(open(loud_path).read()) if os.path.exists(loud_path) else None
+print('noise ' + json.dumps({'rpm': rpm, 'ear_db': 37.5 + rpm / 50, 'band': 'quiet' if rpm <= 400 else
+      'night' if rpm <= 600 else 'audible' if rpm <= 1000 else 'loud' if rpm <= 2000 else 'very loud',
+      'limit': {'quiet': quiet, 'until': '2026-10-10T07:00' if quiet else '2026-10-09T22:00',
+                'max_rpm': None if over else 600 if quiet else 2000,
+                'max_percent': cap(), 'override_until': over, 'mapping_measured': 'partly'}}))
 EOF
 
 # Media tab: apps for the fake players (fake-mpris.js) to name, one music

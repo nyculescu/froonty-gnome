@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import {deviceFan, parseLut, recommend} from '../../froonty@catalin/features/fan/lut.js';
-import {activeUnits, failureKind, parseLastControl, parseLock, parseStatus} from '../../froonty@catalin/features/fan/pad.js';
+import {activeUnits, failureKind, parseLastControl, parseLock, parseNoise, parseStatus} from '../../froonty@catalin/features/fan/pad.js';
 import {physicalCores} from '../../froonty@catalin/features/fan/service.js';
 import {done, eq, test} from './test.js';
 
@@ -39,6 +39,17 @@ test('pad: the lock file and the last control.log entry', () => {
         {by: 'llano-guard', action: 'speed', speed: 40});
     eq(parseLastControl(''), null);
     eq(parseLastControl(null), null);
+});
+
+test('pad: the noise line after the status', () => {
+    const out = 'speed 12% (pad control)  lights on  raw 88 0c 00 03 04 00 ff 65\n' +
+        'noise {"rpm": 600, "ear_db": 49.5, "band": "night", "limit": {"quiet": true, ' +
+        '"until": "2026-10-10T07:00", "max_rpm": 600, "max_percent": 12, "override_until": null}}\n';
+    eq(parseStatus(out).speed, 12);
+    eq(parseNoise(out).limit.max_percent, 12);
+    eq(parseNoise(out).band, 'night');
+    eq(parseNoise('speed 12% (pad control)  lights on  raw 88 0c 00 03 04 00 ff 65'), null);
+    eq(parseNoise('noise {broken'), null);
 });
 
 test('pad: units that drive the pad, from is-active\'s lines', () => {

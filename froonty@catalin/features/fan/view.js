@@ -74,7 +74,18 @@ function lastChangeText(service) {
     let what;
     switch (entry.action) {
     case 'speed':
-        what = _('set %d%%').format(entry.speed);
+        what = entry.requested !== undefined && entry.requested !== entry.speed
+            ? _('set %d%% (asked %d%%, noise limit)').format(entry.speed, entry.requested)
+            : _('set %d%%').format(entry.speed);
+        break;
+    case 'enforce':
+        what = _('lowered it to %d%% (noise limit)').format(entry.speed);
+        break;
+    case 'loud':
+        what = _('lifted the noise limits');
+        break;
+    case 'quiet':
+        what = _('put the noise limits back');
         break;
     case 'release':
         what = _('handed it to the roller');
@@ -89,6 +100,36 @@ function lastChangeText(service) {
         what = entry.action;
     }
     return _('Last change: %s %s · %s').format(entry.by, what, clock(entry.time));
+}
+
+const hhmm = iso => iso ? iso.slice(11, 16) : '';
+const BAND_NAMES = {
+    quiet: () => _('quiet'),
+    night: () => _('night level'),
+    audible: () => _('audible'),
+    loud: () => _('loud'),
+    'very loud': () => _('very loud'),
+};
+
+// "≈600 rpm · ≈50 dB at the ears · night level" (llano-v12-linux's noise.py).
+function noiseText(noise) {
+    if (!noise)
+        return '';
+    const band = BAND_NAMES[noise.band]?.() ?? noise.band;
+    return _('≈%d rpm · ≈%s dB at the ears · %s').format(noise.rpm, noise.ear_db.toFixed(0), band);
+}
+
+// The limit in force, for the quiet row; '' when there is nothing to say.
+function limitText(limit) {
+    if (!limit)
+        return '';
+    if (limit.override_until) {
+        const until = GLib.DateTime.new_from_unix_local(Math.floor(limit.override_until)).format('%H:%M');
+        return _('Noise limits lifted until %s.').format(until);
+    }
+    if (limit.quiet)
+        return _('Quiet hours until %s: capped at %d rpm (%d%%).').format(hhmm(limit.until), limit.max_rpm, limit.max_percent);
+    return _('Daytime: capped at %d rpm (%d%%).').format(limit.max_rpm, limit.max_percent);
 }
 
 function noticeText(service) {
@@ -191,6 +232,8 @@ export class FanView {
         box.add_child(this._detail);
         this._lastChange = new St.Label({style_class: 'froonty-sysmon-detail'});
         box.add_child(this._lastChange);
+        this._noiseLabel = new St.Label({style_class: 'froonty-fan-noise'});
+        box.add_child(this._noiseLabel);
 
         const sliderRow = new St.BoxLayout({style_class: 'froonty-fan-slider-row'});
         this._slider = new Slider(0);
@@ -226,6 +269,19 @@ export class FanView {
         // Everything that sets a speed, held while the pad is locked.
         this._speedControls = [this._slider, ...buttons.get_children()
             .filter(child => child instanceof St.Button && child !== this._lockButton)];
+
+        // The noise limit in force, and lifting it until quiet hours end.
+        this._limitRow = new St.BoxLayout({style_class: 'froonty-fan-notice-row'});
+        this._limitLabel = new St.Label({style_class: 'froonty-sysmon-detail', x_expand: true,
+            y_align: Clutter.ActorAlign.CENTER});
+        this._limitLabel.clutter_text.line_wrap = true;
+        this._limitLabel.clutter_text.ellipsize = Pango.EllipsizeMode.NONE;
+        this._limitRow.add_child(this._limitLabel);
+        this._loudButton = this._button(_('Loud'), () =>
+            this._service.setLoud(!this._service.noise?.limit?.override_until));
+        this._loudButton.y_align = Clutter.ActorAlign.CENTER;
+        this._limitRow.add_child(this._loudButton);
+        box.add_child(this._limitRow);
 
         // The recommendation (lut.js): its speed, which device leads, Apply.
         const recommendRow = new St.BoxLayout({style_class: 'froonty-fan-recommend'});
@@ -298,15 +354,21 @@ export class FanView {
         this._settingSlider = true;
         this._slider.value = percent / 100;
         this._settingSlider = false;
-        this._targetLabel.text = _('%d%%').format(percent);
+        this._targetLabel.text = this._targetText(percent);
         this._service.setSpeed(percent);
+    }
+
+    // "40%", or "40% → 12%" past the noise limit.
+    _targetText(percent) {
+        const cap = this._service.noise?.limit?.max_percent ?? 100;
+        return percent > cap ? _('%d%% → %d%%').format(percent, cap) : _('%d%%').format(percent);
     }
 
     _onSliderValue() {
         if (this._settingSlider)
             return;
         const percent = Math.round(this._slider.value * 100);
-        this._targetLabel.text = _('%d%%').format(percent);
+        this._targetLabel.text = this._targetText(percent);
         this._holdUntil = GLib.get_monotonic_time() / 1000 + HOLD_MS;
         this._service.setSpeed(percent);
     }
@@ -325,6 +387,15 @@ export class FanView {
         this._noticeRow.visible = Boolean(notice);
         this._stopButton.visible = !service.lock && !service.error && service.controllers.length > 0;
         this._lastChange.text = lastChangeText(service);
+        this._noiseLabel.text = noiseText(service.noise);
+        this._noiseLabel.visible = Boolean(service.noise);
+        this._noiseLabel.style_class = `froonty-fan-noise froonty-fan-band-${(service.noise?.band ?? 'quiet').replace(' ', '-')}`;
+        const limit = service.noise?.limit;
+        this._limitLabel.text = limitText(limit);
+        this._limitRow.visible = Boolean(limit) && !service.lock;
+        this._loudButton.label = limit?.override_until ? _('Back to limits')
+            : limit?.quiet ? _('Loud until %s').format(hhmm(limit.until)) : _('Loud for a while');
+        this._loudButton.checked = Boolean(limit?.override_until);
         const locked = Boolean(service.lock);
         this._lockButton.label = locked ? _('Unlock') : _('Lock off');
         this._lockButton.checked = locked;
@@ -362,7 +433,9 @@ export class FanView {
                 : _('fan_lut.json is not a fan table that can be read.');
         } else if (rec) {
             const leader = rec.device === 'gpu' ? _('GPU') : _('CPU');
-            this._recommendLabel.text = _('Recommended %d%%').format(rec.fan);
+            this._recommendLabel.text = rec.wanted > rec.fan
+                ? _('Recommended %d%% (table: %d%%, capped)').format(rec.fan, rec.wanted)
+                : _('Recommended %d%%').format(rec.fan);
             this._recommendDetail.text = [_('%s %s leads').format(leader, celsius(rec.temp)),
                 service.lut.built && _('table of %s').format(service.lut.built)].filter(Boolean).join(' · ');
         } else {

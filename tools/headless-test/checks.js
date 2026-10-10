@@ -8802,10 +8802,44 @@ async function testFan(outDir) {
     await waitFor(() => service.error === null && service.status, 5000);
     check('fan: the right location again clears it', !view._noticeRow.visible, view._notice.text);
 
+    // Noise: the speed's rpm and dB, the limit in force, quiet hours capping
+    // a speed, Loud lifting the cap and Back to limits bringing it down.
+    // The fake caps at 12 % while fake-quiet exists, 68 % otherwise.
+    const fiftyButton = offButton.get_next_sibling();
+    const pollWait = (s.get_int('fan-interval') + 2) * 1000;
+    if (!real) {
+        check('fan: the speed\'s rpm and dB at the ears, and the daytime cap',
+            /^≈\d+ rpm · ≈\d+ dB at the ears · /.test(view._noiseLabel.text) &&
+            view._limitLabel.text === 'Daytime: capped at 2000 rpm (68%).',
+            `${view._noiseLabel.text} | ${view._limitLabel.text}`);
+        GLib.file_set_contents(`${outDir}/fake-quiet`, '');
+        await waitFor(() => service.noise?.limit?.quiet, pollWait);
+        await clickActor(fiftyButton);
+        await waitFor(() => !service.busy && service.status?.speed === 12, 5000);
+        check('fan: in quiet hours 50 % is capped to 600 rpm (12 %)',
+            service.status?.speed === 12 && view._limitLabel.text.startsWith('Quiet hours until 07:00: capped at 600 rpm (12%)') &&
+            view._loudButton.label === 'Loud until 07:00' && view._noiseLabel.text.startsWith('≈600 rpm'),
+            `${service.status?.speed} | ${view._limitLabel.text} | ${view._loudButton.label} | ${view._noiseLabel.text}`);
+        await screenshotTop(outDir, 'fan-quiet', 640);
+        await clickActor(view._loudButton);
+        await waitFor(() => !service.busy && service.noise?.limit?.override_until, 5000);
+        await clickActor(fiftyButton);
+        await waitFor(() => !service.busy && service.status?.speed === 50, 5000);
+        check('fan: Loud lifts the cap: 50 % stays 50 %',
+            service.status?.speed === 50 && view._limitLabel.text.startsWith('Noise limits lifted until') &&
+            view._loudButton.label === 'Back to limits', `${service.status?.speed} | ${view._limitLabel.text}`);
+        await clickActor(view._loudButton);
+        await waitFor(() => !service.busy && service.status?.speed === 12, 5000);
+        check('fan: Back to limits brings the speed down to the cap', service.status?.speed === 12 &&
+            !service.noise?.limit?.override_until, `${service.status?.speed}`);
+        GLib.unlink(`${outDir}/fake-quiet`);
+        await waitFor(() => service.noise?.limit?.quiet === false, pollWait);
+    }
+
     // Who changed the pad last: Froonty's own writes say so.
     await waitFor(() => view._lastChange.text.includes('Froonty'), 5000);
     check('fan: the last change names Froonty and what it did',
-        /^Last change: Froonty (set \d+%|unlocked it at \d+%) · \d\d:\d\d:\d\d$/.test(view._lastChange.text),
+        /^Last change: Froonty (set \d+%|unlocked it at \d+%|put the noise limits back) · \d\d:\d\d:\d\d$/.test(view._lastChange.text),
         view._lastChange.text);
 
     // The lock, from the tab: fan off, every speed control held, and

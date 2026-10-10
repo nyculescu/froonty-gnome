@@ -17,7 +17,14 @@ island's corner to change it).
 - **Cooling pad:** the speed in big type; under it the control (software,
   the pad's roller, or released), the lights and the raw status report,
   and **Last change**: who drove the pad last, what they did and when
-  (llano.py's `control.log`), or the pad's roller when its status says so.
+  (llano.py's `control.log`), or the pad's roller when its status says so;
+  then the speed's estimated **rpm and dB at the ears**, coloured by noise
+  band (llano-v12-linux's NOISE.md: quiet, night level, audible, loud,
+  very loud).
+- **Noise limit:** the cap in force ("Quiet hours until 07:00: capped at
+  600 rpm (12%)", or the daytime 2000 rpm) and **Loud until 07:00** /
+  **Back to limits**. A slider position past the cap reads "40% → 12%";
+  the recommendation is capped too ("Recommended 12% (table: 60%, capped)").
   A slider 0–100 %, then **Off**, **50 %**, **100 %**, **Lock off** /
   **Unlock** and **Release**.
 - **Recommended:** the speed `fan_lut.json` gives for the current CPU and
@@ -65,6 +72,14 @@ the udev rule gives every program of the user access. A lock that no user
 program can lift needs root (a helper that de-authorizes the USB device,
 unlocked with the password through polkit); see llano-v12-linux's README.
 The pad's roller always works.
+
+## Noise limits
+
+llano.py caps every speed to the limit in force (NOISE.md): 600 rpm in
+quiet hours (weekdays 22:00–07:00), 2000 rpm by day, unless `llano.py
+loud` lifted it; a user timer (`llano-enforce`) lowers a software-set speed
+above it every 5 minutes, and the roller is left alone. The tab reads it
+all from llano.py's `noise {json}` line after each command and poll.
 
 ## Settings (Settings → Fan)
 
