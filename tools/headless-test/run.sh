@@ -269,27 +269,31 @@ def cap():
     return 100 if os.path.exists(loud_path) else 12 if quiet else 68
 with open(os.path.join(here, 'fake-llano.log'), 'a') as log:
     log.write(' '.join(sys.argv[1:]) + '\n')
-st, speed = (0x88, 60)
+st, speed, off = (0x88, 60, 0)
 if os.path.exists(state_path):
-    st, speed = (int(v) for v in open(state_path).read().split())
+    st, speed, off = (int(v) for v in open(state_path).read().split())
 args = sys.argv[1:]
 locked = os.path.exists(lock_path)
 action = None
-if len(args) == 2 and args[0] == 'speed' or args == ['release']:
+# Like llano.py: `off` (and lock) switch the whole pad off (byte 2 = 1);
+# any speed, 0 % included, and release switch it on.
+if len(args) == 2 and args[0] == 'speed' or args in (['release'], ['off']):
     if locked:
         sys.exit('the pad is locked off (llano.py unlock to start it again)')
     if args == ['release']:
-        action = 'release'
+        off, action = 0, 'release'
+    elif args == ['off']:
+        st, speed, off, action = 0x80, 0, 1, 'off'
     else:
-        st, speed, action = 0x80, min(int(args[1]), cap()), 'speed'
+        st, speed, off, action = 0x80, min(int(args[1]), cap()), 0, 'speed'
 elif args == ['lock'] and not locked:
     json.dump({'time': time.time(), 'by': os.environ.get('LLANO_CLIENT', 'test'), 'speed': speed,
-               'ctl': 'software' if st == 0x80 else 'pad'}, open(lock_path, 'w'))
-    st, speed, action = 0x80, 0, 'lock'
+               'ctl': 'software' if st == 0x80 else 'pad', 'off': bool(off)}, open(lock_path, 'w'))
+    st, speed, off, action = 0x80, 0, 1, 'lock'
 elif args == ['unlock'] and locked:
     record = json.load(open(lock_path))
     os.remove(lock_path)
-    st, speed, action = 0x80, record['speed'], 'unlock'
+    st, speed, off, action = 0x80, record['speed'], int(record.get('off', False)), 'unlock'
 elif args == ['loud']:
     open(loud_path, 'w').write(f'{time.time() + 3600:.0f}')
     action = 'loud'
@@ -299,18 +303,19 @@ elif args == ['quiet']:
     if st == 0x80 and not locked:
         speed = min(speed, cap())
     action = 'quiet'
-elif args not in (['status'], ['lock'], ['unlock']):
+elif args not in (['status'], ['lock'], ['unlock'], ['off']):
     sys.exit('usage')
 if action:
     with open(os.path.join(llano_dir, 'control.log'), 'a') as log:
         log.write(json.dumps({'time': time.time(), 'by': os.environ.get('LLANO_CLIENT', 'test'),
                               'pid': os.getpid(), 'action': action, 'speed': speed}) + '\n')
-open(state_path, 'w').write(f'{st} {speed}')
-body = [st, speed, 0, 0x82, 4, 0, 0xff]
+open(state_path, 'w').write(f'{st} {speed} {off}')
+body = [st, speed, 1 if off else 0, 0x82, 4, 0, 0xff]
 raw = ' '.join(f'{b:02x}' for b in body + [(0xff - sum(body)) & 0xff])
 ctl = 'software' if st == 0x80 else 'pad'
-print(('LOCKED  ' if os.path.exists(lock_path) else '') + f'speed {speed}% ({ctl} control)  lights off  raw {raw}')
-rpm = 0 if speed == 0 else 300 + 25 * speed
+print(('LOCKED  ' if os.path.exists(lock_path) else '') +
+      f'speed {speed}% ({ctl} control){"  pad off" if off else ""}  lights off  raw {raw}')
+rpm = 0 if off else 300 if speed <= 1 else 300 + 25 * speed
 over = float(open(loud_path).read()) if os.path.exists(loud_path) else None
 print('noise ' + json.dumps({'rpm': rpm, 'ear_db': 37.5 + rpm / 50, 'band': 'quiet' if rpm <= 400 else
       'night' if rpm <= 600 else 'audible' if rpm <= 1000 else 'loud' if rpm <= 2000 else 'very loud',

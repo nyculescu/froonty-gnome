@@ -32,8 +32,10 @@ export const CONTROLLER_UNITS = ['llano-guard.service', 'llanod.service'];
  * The pad's state from llano.py's output ("speed 20% (software control)
  * lights off  raw 80 14 00 82 04 00 ff e6"), or null.
  *
- * @returns {?{speed: number, control: string, lightsOff: boolean, raw: string}}
- *   control is 'software' (status byte 0x80) or 'pad' (0x88)
+ * @returns {?{speed: number, control: string, off: boolean, lightsOff: boolean, raw: string}}
+ *   control is 'software' (status byte 0x80) or 'pad' (0x88); off when
+ *   byte 2 (on_off) switched the whole pad off, fan and lights (llano.py
+ *   speed 0 or lock: at 0 % with the pad on, the fan still turns)
  */
 export function parseStatus(text) {
     const match = /raw ((?:[0-9a-f]{2} ){7}[0-9a-f]{2})\s*$/m.exec(text ?? '');
@@ -45,7 +47,8 @@ export function parseStatus(text) {
     return {
         speed: bytes[1],
         control: bytes[0] === 0x80 ? 'software' : 'pad',
-        lightsOff: (bytes[3] & 0x80) !== 0,
+        off: bytes[2] === 1,
+        lightsOff: bytes[2] === 1 || (bytes[3] & 0x80) !== 0,
         raw: match[1],
     };
 }

@@ -12,10 +12,14 @@
 # The sandbox lives in ~/.cache/froonty-devkit and is kept between runs
 # (your test notes, settings, …). Close the window to stop.
 #
-# Usage: tools/devkit.sh [--reset] [--public]
+# Usage: tools/devkit.sh [--reset] [--public] [--system-bus]
 #          --reset   start from an empty sandbox
 #          --public  run the `make pack` build (what extensions.gnome.org gets)
 #                    instead of the working tree
+#          --system-bus  reach your real system bus, filtered to
+#                    SYSTEM_BUS_NAMES (asusd: the Fan tab's laptop profile and
+#                    curves). It acts on this computer: a profile switched
+#                    in the devkit is switched for real.
 #        tools/devkit.sh run COMMAND…   run a command inside the running
 #                    sandbox, e.g. tools/devkit.sh run notify-send Hello World
 
@@ -92,11 +96,12 @@ if [[ -e "$SANDBOX/env" ]]; then
     rm -f "$SANDBOX/env"
 fi
 
-RESET= PUBLIC=
+RESET= PUBLIC= SYSTEM_BUS=
 for arg in "$@"; do
     case "$arg" in
     --reset) RESET=1 ;;
     --public) PUBLIC=1 ;;
+    --system-bus) SYSTEM_BUS=1 ;;
     *) echo "unknown option $arg" >&2; exit 2 ;;
     esac
 done
@@ -185,12 +190,30 @@ EOF
 fi
 
 # A private, empty system bus: no real logind, GDM or NetworkManager.
-/usr/bin/dbus-daemon --session --nofork --address="unix:path=$SANDBOX/system_bus" \
-    >"$SANDBOX/system_bus.log" 2>&1 &
+# With --system-bus, the real one through xdg-dbus-proxy instead, where only
+# SYSTEM_BUS_NAMES can be seen and called: the nested Shell still finds no
+# logind or GDM (it would register a session and follow the real locks).
+SYSTEM_BUS_NAMES=${SYSTEM_BUS_NAMES:-xyz.ljones.Asusd}
+rm -f "$SANDBOX/system_bus"
+if [[ -n "$SYSTEM_BUS" ]]; then
+    talk=()
+    for name in $SYSTEM_BUS_NAMES; do
+        talk+=("--talk=$name")
+    done
+    /usr/bin/xdg-dbus-proxy "${DBUS_SYSTEM_BUS_ADDRESS:-unix:path=/run/dbus/system_bus_socket}" \
+        "$SANDBOX/system_bus" --filter "${talk[@]}" >"$SANDBOX/system_bus.log" 2>&1 &
+    echo "devkit: the real system bus, only for $SYSTEM_BUS_NAMES"
+else
+    /usr/bin/dbus-daemon --session --nofork --address="unix:path=$SANDBOX/system_bus" \
+        >"$SANDBOX/system_bus.log" 2>&1 &
+fi
 system_bus=$!
 trap 'kill "$system_bus" 2>/dev/null; rm -f "$SANDBOX/env" "$SANDBOX/system_bus"' EXIT
 export DBUS_SYSTEM_BUS_ADDRESS=unix:path=$SANDBOX/system_bus
-sleep 0.3
+for _ in $(seq 25); do
+    [[ -S "$SANDBOX/system_bus" ]] && break
+    sleep 0.1
+done
 
 # The session bus and its services log to session.log, not your terminal.
 /usr/bin/dbus-run-session -- "$0" --inner 2>>"$SANDBOX/session.log" &

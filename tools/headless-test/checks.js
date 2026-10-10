@@ -8711,7 +8711,7 @@ async function testFan(outDir) {
 
     await waitFor(() => service.status && service.history.length >= 2, 10000);
     check('fan: the pad\'s status reaches the tab',
-        service.status && view._speedLabel.text === `${service.status.speed}%` &&
+        service.status && view._speedLabel.text === (service.status.off ? 'Off' : `${service.status.speed}%`) &&
         view._detail.text.includes('raw '), `${view._speedLabel.text} | ${view._detail.text}`);
     check('fan: the CPU temperature is read and in the legend',
         typeof service.temps?.cpu === 'number' && view._legendItems[0].text.endsWith('°C'),
@@ -8727,9 +8727,10 @@ async function testFan(outDir) {
     const offButton = view._slider.get_parent().get_next_sibling().get_first_child();
     await clickActor(offButton);
     await waitFor(() => !service.busy && service.status?.speed === 0, 5000);
-    check('fan: Off sets the pad to 0 % under software control',
-        service.status?.speed === 0 && service.control === 'software' &&
-        (real || fakeLog().includes('speed 0\n')), `${JSON.stringify(service.status)}`);
+    check('fan: Off switches the pad off under software control, and says Off',
+        service.status?.speed === 0 && service.status?.off && service.control === 'software' &&
+        view._speedLabel.text === 'Off' && view._detail.text.includes('pad off') &&
+        (real || fakeLog().includes('off\n')), `${JSON.stringify(service.status)} | ${view._detail.text}`);
 
     // The slider, clicked at about 40 % of its width.
     const box = boxOf(view._slider);
@@ -8805,7 +8806,8 @@ async function testFan(outDir) {
     // Noise: the speed's rpm and dB, the limit in force, quiet hours capping
     // a speed, Loud lifting the cap and Back to limits bringing it down.
     // The fake caps at 12 % while fake-quiet exists, 68 % otherwise.
-    const fiftyButton = offButton.get_next_sibling();
+    // Off, 0 %, 50 %, 100 %.
+    const fiftyButton = offButton.get_next_sibling().get_next_sibling();
     const pollWait = (s.get_int('fan-interval') + 2) * 1000;
     if (!real) {
         check('fan: the speed\'s rpm and dB at the ears, and the daytime cap',
@@ -8856,7 +8858,7 @@ async function testFan(outDir) {
     await waitFor(() => !service.busy, 5000);
     check('fan: while locked, llano.py refuses a new speed',
         service.error === 'locked' && service.lock && service.status?.speed === 0 &&
-        view._speedLabel.text === '0%' && Math.round(view._slider.value * 100) === 0,
+        view._speedLabel.text === 'Off' && Math.round(view._slider.value * 100) === 0,
         `error=${service.error} slider=${Math.round(view._slider.value * 100)}`);
     await screenshotTop(outDir, 'fan-locked', 640);
     await clickActor(view._lockButton);

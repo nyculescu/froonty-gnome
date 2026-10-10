@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Fan tab: the llano V12 Ultra cooling pad and the temperatures it is
-// there for (docs/features/fan.md). Working tree only.
+// Fan tab: the llano V12 Ultra cooling pad, the laptop's own fans (asusd)
+// and the temperatures they are there for (docs/features/fan.md). Working
+// tree only.
 
 import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 

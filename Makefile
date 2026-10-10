@@ -74,8 +74,10 @@ unit:
 # Both session modes: layout can depend on the theme (Ubuntu uses Yaru).
 # Froonty in a nested GNOME Shell window, isolated from the session
 # (needs mutter-dev-bin); devkit-public runs the make pack build.
+# SYSTEM_BUS=1 lets it reach the real asusd (tools/devkit.sh --system-bus):
+# the Fan tab's laptop profile and curves then change this computer's.
 devkit: schemas $(MATHJAX)
-	tools/devkit.sh
+	tools/devkit.sh $(if $(SYSTEM_BUS),--system-bus)
 
 devkit-public:
 	tools/devkit.sh --public

@@ -12,6 +12,9 @@
 // The recommended speed comes from llano-v12-linux's fan_lut.json (lut.js),
 // read again on each visit, so a new sweep shows without a restart.
 //
+// The laptop's own fans, profile and curves (asus.js, through asusd) are
+// read with the temperatures, so a tick ends in one 'changed'.
+//
 // Emits 'changed' after each sample or command, and when the settings
 // change. No St.
 
@@ -21,6 +24,7 @@ import GLib from 'gi://GLib';
 import {Emitter} from '../../core/emitter.js';
 import {SYSTEM_IO} from '../sysmon/io.js';
 import {Sampler} from '../sysmon/sampler.js';
+import {AsusFans} from './asus.js';
 import {parseLut, recommend} from './lut.js';
 import * as Pad from './pad.js';
 
@@ -33,9 +37,10 @@ export class FanService extends Emitter {
     /**
      * @param {Gio.Settings} settings
      * @param {object} [deps] for tests: `pad` (pad.js's functions), `io`
-     *   (sysmon/io.js), `now` (seconds)
+     *   (sysmon/io.js), `now` (seconds), `laptop` (an AsusFans)
      */
-    constructor(settings, {pad = Pad, io = SYSTEM_IO, now = () => GLib.get_monotonic_time() / 1e6} = {}) {
+    constructor(settings, {pad = Pad, io = SYSTEM_IO, now = () => GLib.get_monotonic_time() / 1e6,
+        laptop = null} = {}) {
         super();
         this._settings = settings;
         this._pad = pad;
@@ -75,6 +80,10 @@ export class FanService extends Emitter {
         this.lutError = null;
         /** {fan, device, temp} from the LUT and the latest temperatures, or null. */
         this.recommendation = null;
+        /** The laptop's fans, platform profile and curves (asus.js). */
+        this.laptop = laptop ?? new AsusFans(io);
+        /** Whether a laptop profile or curve change is under way. */
+        this.laptopBusy = false;
         this._readSettings();
     }
 
@@ -97,6 +106,7 @@ export class FanService extends Emitter {
         if (active) {
             this._cancellable = new Gio.Cancellable();
             this._sampler.reset();
+            this.laptop.reset();
             this._loadLut();
             this._schedule();
             this._tick();
@@ -121,11 +131,29 @@ export class FanService extends Emitter {
         return this._busy || this._pending !== null;
     }
 
-    /** Takes software control and sets the fan to `percent` (0-100). */
+    /**
+     * Takes software control and sets the fan to `percent` (0-100), the pad on
+     * and its lights too: at 0 % the fan still turns at its slowest (off()
+     * stops it). A speed the pad already has under software control is not
+     * sent again.
+     */
     setSpeed(percent) {
         const speed = Math.round(Math.min(100, Math.max(0, percent)));
+        if (!this.busy && this.control === 'software' && !this.status.off && this.status.speed === speed)
+            return;
         this._released = false;
         this._queue({args: ['speed', String(speed)]});
+    }
+
+    /**
+     * The whole pad off, fan and lights (llano.py off): the pad cannot stop
+     * its fan and keep its lights on. Any speed switches it on again. Sent
+     * even when it seems off already: llano.py then switches it on and off
+     * (a short flash), which also ends a fan left on with the lights dark.
+     */
+    off() {
+        this._released = false;
+        this._queue({args: ['off']});
     }
 
     /**
@@ -146,6 +174,29 @@ export class FanService extends Emitter {
     /** Lifts the noise limits until quiet hours end (llano.py loud), or puts them back. */
     setLoud(loud) {
         this._queue({args: [loud ? 'loud' : 'quiet']});
+    }
+
+    /** Switches the laptop's platform profile (asus.js PROFILES' numbers). */
+    setLaptopProfile(profile) {
+        this._laptopChange(() => this.laptop.setProfile(profile));
+    }
+
+    /** Turns the laptop's custom fan curves for the active profile on or off. */
+    setLaptopCurves(enabled) {
+        this._laptopChange(() => this.laptop.setCurvesEnabled(enabled));
+    }
+
+    async _laptopChange(change) {
+        if (this.laptopBusy)
+            return;
+        this.laptopBusy = true;
+        this.emit('changed');
+        try {
+            await change();
+        } finally {
+            this.laptopBusy = false;
+        }
+        this.emit('changed');
     }
 
     async stopController(unit) {
@@ -273,7 +324,11 @@ export class FanService extends Emitter {
         const cancellable = this._cancellable;
         const now = this._now();
         try {
-            const snapshot = await this._sampler.sample(['cpu', 'gpu'], {cores: true, now, cancellable});
+            const [snapshot] = await Promise.all([
+                this._sampler.sample(['cpu', 'gpu'], {cores: true, now, cancellable}),
+                this.laptop.refresh(cancellable).catch(e =>
+                    console.warn(`Froonty: Fan tab laptop read failed: ${e.message}`)),
+            ]);
             if (!snapshot || cancellable?.is_cancelled())
                 return;
             this._record(snapshot, now);

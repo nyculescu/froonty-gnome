@@ -1,0 +1,70 @@
+From 678246231c31a278058996359857ba047fa460db Mon Sep 17 00:00:00 2001
+From: Catalin Niculescu <cn.cata@gmail.com>
+Date: Sat, 10 Oct 2026 00:56:05 -0700
+Subject: [PATCH] Off from off: switch the pad on at 0 % first
+
+`on_off` = 1 sent to a pad that is already off starts its fan again with
+the lights dark, and the status byte reads 1 in both states. So when the
+pad is not known to be on, `speed 0` (and lock) write on at 0 %, then off
+half a second later (a short flash); from on, a single off as before.
+Any non-zero on_off acts as 1: the pad has no fan-off-lights-on. All
+confirmed by eye and ear on the pad.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ README.md |  2 +-
+ llano.py  | 13 +++++++++++--
+ 2 files changed, 12 insertions(+), 3 deletions(-)
+
+diff --git a/README.md b/README.md
+index 71b7b9d..6149221 100644
+--- a/README.md
++++ b/README.md
+@@ -122,7 +122,7 @@ Set-state fields, from the vendor's `SetLapFanParam` builder:
+ |---|---|---|
+ | 0 | `fan_mode_control` | `0` = the pad keeps its own speed and ignores byte 1; `1` = byte 1 sets the speed |
+ | 1 | `fan_speed` | 0–100 % |
+-| 2 | `on_off` | `0` on; `1` switches the whole pad off, fan and lights. At 0 % with the pad on, the fan still turns at its slowest, so `llano.py speed 0` (and `lock`) also switch it off |
++| 2 | `on_off` | `0` on; `1` switches the whole pad off, fan and lights (any non-zero acts as `1`; there is no fan off with the lights on). At 0 % with the pad on, the fan still turns at its slowest, so `llano.py speed 0` (and `lock`) also switch it off. `1` sent to a pad already off starts its fan with the lights dark, and the status byte reads `1` either way, so off from anything but on is sent as on at 0 %, then off half a second later |
+ | 3 | `light_mode \| light_off << 7` | e.g. `03` = colour chase, `83` = same mode with the lights off |
+ | 4–6 | lighting parameters | the app sends `04 00 ff` (brightness 255 is byte 6) |
+ | 7 | checksum | `~sum(bytes 0–6) & 0xff` |
+diff --git a/llano.py b/llano.py
+index 7f93d02..8bea5f7 100644
+--- a/llano.py
++++ b/llano.py
+@@ -7,7 +7,8 @@ sum to 0xFF (byte 7 = ~sum of bytes 0-6).
+   ctl speed on_off light 04 00 ff cks    set state
+       ctl:   fan_mode_control; 0 = pad keeps its own speed, 1 = software sets speed
+       speed: fan_speed 0-100 %
+-      on_off: 0 = on, 1 = the whole pad off, fan and lights (0 % alone leaves the fan turning)
++      on_off: 0 = on, 1 = the whole pad off, fan and lights (0 % alone leaves the fan turning);
++              any non-zero acts as 1, and 1 sent to a pad already off starts its fan, lights dark
+       light: light_mode | light_off << 7; bytes 4-6 are the remaining light parameters
+   80 00 00 00 00 00 00 7f                request status; GET_FEATURE then returns
+   st speed on_off light 04 00 ff cks     status (st 0x88 under pad control, 0x80 under software)
+@@ -46,8 +47,12 @@ import noise
+ VID, PID = 0x374A, 0xB101
+ CTL_PAD, CTL_SOFTWARE = 0x00, 0x01
+ # Byte 2. 0 % with the pad on still turns the fan at its slowest; only `off` stops it,
+-# and it puts the lights out with it (confirmed by eye and ear, 2026-10-10).
++# and it puts the lights out with it: there is no fan-off-lights-on (2 acts as 1). `off`
++# sent to a pad already off starts its fan again with the lights dark, and the status
++# byte cannot tell that from off, so off from anything but on goes through on first.
++# All confirmed by eye and ear, 2026-10-10.
+ PAD_ON, PAD_OFF = 0x00, 0x01
++OFF_AFTER_ON_S = 0.5
+ 
+ 
+ class LlanoError(Exception):
+@@ -171,6 +176,10 @@ class Pad:
+         cur = self.status()  # keep the lighting as it is
+         # Software at 0 % switches the pad off; any speed, or the roller, switches it on.
+         power = PAD_OFF if ctl == CTL_SOFTWARE and speed == 0 else PAD_ON
++        if power == PAD_OFF and cur[2] != PAD_ON:
++            # Off or half off (fan on, lights dark): on at 0 % first (a short flash), then off.
++            self._set_feature(command(bytes([ctl, 0, PAD_ON, cur[3], cur[4], cur[5], cur[6]])))
++            time.sleep(OFF_AFTER_ON_S)
+         self._set_feature(command(bytes([ctl, speed, power, cur[3], cur[4], cur[5], cur[6]])))
+         log_control(action, speed, requested)
+ 

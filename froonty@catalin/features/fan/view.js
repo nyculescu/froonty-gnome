@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Fan tab: the cooling pad (its state, a speed slider, presets and
-// Release, the speed fan_lut.json recommends with Apply), then the temperatures: the CPU package and each GPU now, their
+// Release, the speed fan_lut.json recommends with Apply); the laptop's own
+// fans (their speeds, the platform profile, the custom curves on or off and
+// drawn); then the temperatures: the CPU package and each GPU now, their
 // last five minutes with the fan speed in one chart, and each physical
 // core as a bar. Actors are made once and updated on each 'changed'.
 
@@ -14,6 +16,7 @@ import St from 'gi://St';
 import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 import {Slider} from 'resource:///org/gnome/shell/ui/slider.js';
 
+import {PROFILES, curvesState} from './asus.js';
 import {HISTORY_S} from './service.js';
 
 const DASH = '—';
@@ -31,6 +34,11 @@ const CPU_RGB = [0.965, 0.380, 0.318];
 const GPU_RGB = [[0.341, 0.890, 0.537], [0.863, 0.541, 0.867], [0.976, 0.941, 0.420]];
 const FAN_RGB = [0.600, 0.757, 0.945];
 const MUTED = [1, 1, 1, 0.45];
+// The laptop's fans, in the colours of what they cool.
+const LAPTOP_FAN_RGB = {cpu: CPU_RGB, gpu: GPU_RGB[0], mid: FAN_RGB};
+// The curve chart's temperature axis.
+const CURVE_T_MIN = 30;
+const CURVE_T_MAX = 100;
 // A core's bar by its temperature: the Btop levels' green to red.
 const BANDS = [
     [50, [0.200, 0.820, 0.478]],
@@ -61,6 +69,43 @@ const bandRgb = temp => BANDS.find(([upTo]) => temp < upTo)[1];
 // A GPU worth a line: one with a temperature, or an NVIDIA one asleep.
 const shownGpus = gpus => (gpus ?? []).filter(gpu => known(gpu.temp) || gpu.asleep);
 
+const PROFILE_NAMES = {
+    'low-power': () => _('Low power'),
+    quiet: () => _('Quiet'),
+    balanced: () => _('Balanced'),
+    performance: () => _('Performance'),
+    custom: () => _('Custom'),
+};
+const profileName = profile => PROFILE_NAMES[PROFILES[profile]]?.() ?? DASH;
+const LAPTOP_FAN_NAMES = {cpu: () => _('CPU'), gpu: () => _('GPU'), mid: () => _('Mid')};
+const laptopFanName = id => LAPTOP_FAN_NAMES[id]?.() ?? id;
+const laptopFanRgb = id => LAPTOP_FAN_RGB[id] ?? MUTED.slice(0, 3);
+
+// Whether the active profile runs its custom curves, for the curves row.
+function curvesText(laptop) {
+    const profile = profileName(laptop.profile);
+    switch (curvesState(laptop.curves)) {
+    case 'all':
+        return _('Custom fan curves on for %s.').format(profile);
+    case 'some':
+        return _('Custom fan curves on for %s: %s.').format(profile, laptop.curves
+            .filter(curve => curve.enabled).map(curve => laptopFanName(curve.fan)).join(', '));
+    default:
+        return _('Custom fan curves off: the firmware’s own for %s.').format(profile);
+    }
+}
+
+function laptopNotice(laptop) {
+    if (laptop.daemon === false) {
+        return _('asusd is not running: the profile and fan curves need asusctl’s daemon (third_party/asusctl).');
+    }
+    if (laptop.readError)
+        return _('asusd: %s').format(laptop.readError);
+    if (laptop.error)
+        return _('asusd refused: %s').format(laptop.error);
+    return '';
+}
+
 const clock = time => GLib.DateTime.new_from_unix_local(Math.floor(time)).format('%H:%M:%S');
 
 // "Last change: …" from llano.py's control log; the pad's own status says
@@ -77,6 +122,9 @@ function lastChangeText(service) {
         what = entry.requested !== undefined && entry.requested !== entry.speed
             ? _('set %d%% (asked %d%%, noise limit)').format(entry.speed, entry.requested)
             : _('set %d%%').format(entry.speed);
+        break;
+    case 'off':
+        what = _('switched it off');
         break;
     case 'enforce':
         what = _('lowered it to %d%% (noise limit)').format(entry.speed);
@@ -197,6 +245,7 @@ export class FanView {
         this.actor.add_child(scroll);
 
         this._buildPad(list);
+        this._buildLaptop(list);
         this._buildTemps(list);
 
         this._serviceId = this._service.connect('changed', () => this._sync());
@@ -256,7 +305,10 @@ export class FanView {
         box.add_child(sliderRow);
 
         const buttons = new St.BoxLayout({style_class: 'froonty-fan-buttons'});
-        buttons.add_child(this._button(_('Off'), () => this._setSpeed(0)));
+        buttons.add_child(this._button(_('Off'), () => this._setOff(),
+            _('Switch the pad off, fan and lights')));
+        buttons.add_child(this._button(_('0 %'), () => this._setSpeed(0),
+            _('Slowest speed, lights on')));
         buttons.add_child(this._button(_('50 %'), () => this._setSpeed(50)));
         buttons.add_child(this._button(_('100 %'), () => this._setSpeed(100)));
         buttons.add_child(new St.Widget({x_expand: true}));
@@ -320,6 +372,40 @@ export class FanView {
         box.add_child(noticeRow);
     }
 
+    _buildLaptop(parent) {
+        this._laptopBox = this._section(parent, _('Laptop'));
+        this._laptopName = new St.Label({style_class: 'froonty-sysmon-name'});
+        this._laptopBox.add_child(this._laptopName);
+        // Each fan's swatch, name and rpm; rebuilt when the fans change.
+        this._laptopLegend = new St.BoxLayout({style_class: 'froonty-fan-legend'});
+        this._laptopBox.add_child(this._laptopLegend);
+        this._laptopLegendKey = null;
+
+        // One button per profile, the active one checked; rebuilt when they change.
+        this._profileButtons = new St.BoxLayout({style_class: 'froonty-fan-buttons'});
+        this._laptopBox.add_child(this._profileButtons);
+        this._profilesKey = null;
+
+        this._curvesRow = new St.BoxLayout({style_class: 'froonty-fan-notice-row'});
+        this._curvesLabel = new St.Label({style_class: 'froonty-sysmon-detail', x_expand: true,
+            y_align: Clutter.ActorAlign.CENTER});
+        this._curvesLabel.clutter_text.line_wrap = true;
+        this._curvesLabel.clutter_text.ellipsize = Pango.EllipsizeMode.NONE;
+        this._curvesRow.add_child(this._curvesLabel);
+        this._curvesButton = this._button(_('Use custom curves'), () =>
+            this._service.setLaptopCurves(curvesState(this._service.laptop.curves) === 'none'));
+        this._curvesButton.y_align = Clutter.ActorAlign.CENTER;
+        this._curvesRow.add_child(this._curvesButton);
+        this._laptopBox.add_child(this._curvesRow);
+        this._curveChart = new CurveChart();
+        this._laptopBox.add_child(this._curveChart);
+
+        this._laptopNotice = new St.Label({style_class: 'froonty-fan-notice'});
+        this._laptopNotice.clutter_text.line_wrap = true;
+        this._laptopNotice.clutter_text.ellipsize = Pango.EllipsizeMode.NONE;
+        this._laptopBox.add_child(this._laptopNotice);
+    }
+
     _buildTemps(parent) {
         const box = this._section(parent, _('Temperatures'));
         this._legend = new St.BoxLayout({style_class: 'froonty-fan-legend'});
@@ -358,6 +444,16 @@ export class FanView {
         this._service.setSpeed(percent);
     }
 
+    // The slider rests at 0 while the pad is off.
+    _setOff() {
+        this._holdUntil = GLib.get_monotonic_time() / 1000 + HOLD_MS;
+        this._settingSlider = true;
+        this._slider.value = 0;
+        this._settingSlider = false;
+        this._targetLabel.text = _('Off');
+        this._service.off();
+    }
+
     // "40%", or "40% → 12%" past the noise limit.
     _targetText(percent) {
         const cap = this._service.noise?.limit?.max_percent ?? 100;
@@ -377,9 +473,9 @@ export class FanView {
         const service = this._service;
         const {status, temps} = service;
 
-        this._speedLabel.text = status ? _('%d%%').format(status.speed) : DASH;
+        this._speedLabel.text = !status ? DASH : status.off ? _('Off') : _('%d%%').format(status.speed);
         this._detail.text = status
-            ? [controlText(service.control), status.lightsOff ? _('lights off') : _('lights on'),
+            ? [controlText(service.control), status.off ? _('pad off') : status.lightsOff ? _('lights off') : _('lights on'),
                 _('raw %s').format(status.raw)].join(' · ')
             : DASH;
         const notice = noticeText(service);
@@ -410,10 +506,11 @@ export class FanView {
             this._settingSlider = true;
             this._slider.value = status.speed / 100;
             this._settingSlider = false;
-            this._targetLabel.text = _('%d%%').format(status.speed);
+            this._targetLabel.text = status.off ? _('Off') : _('%d%%').format(status.speed);
         }
 
         this._syncRecommendation(service);
+        this._syncLaptop(service);
         this._syncLegend(temps, status, service.gpuNames);
         this._chart.update(service.history, service.gpuNames, service.interval);
         const cores = temps?.cores ?? [];
@@ -470,7 +567,7 @@ export class FanView {
         });
     }
 
-    _legendItem(rgb, name, tooltip = name) {
+    _legendItem(rgb, name, tooltip = name, legend = this._legend) {
         const item = new St.BoxLayout({style_class: 'froonty-fan-legend-item', accessible_name: tooltip});
         item.add_child(new St.Widget({
             style_class: 'froonty-fan-swatch',
@@ -480,8 +577,67 @@ export class FanView {
         item.add_child(new St.Label({style_class: 'froonty-fan-legend-name', text: name}));
         const value = new St.Label({style_class: 'froonty-fan-legend-value'});
         item.add_child(value);
-        this._legend.add_child(item);
+        legend.add_child(item);
         return value;
+    }
+
+    _syncLaptop(service) {
+        const laptop = service.laptop;
+        this._laptopBox.visible = laptop.present;
+        if (!laptop.present)
+            return;
+        this._laptopName.text = laptop.model ?? _('Laptop fans');
+
+        const fanKey = laptop.fans.map(fan => fan.id).join(',');
+        if (fanKey !== this._laptopLegendKey) {
+            this._laptopLegend.destroy_all_children();
+            this._laptopFanItems = laptop.fans.map(fan => this._legendItem(laptopFanRgb(fan.id),
+                laptopFanName(fan.id), _('%s fan').format(laptopFanName(fan.id)), this._laptopLegend));
+            this._laptopLegendKey = fanKey;
+        }
+        laptop.fans.forEach((fan, i) => {
+            this._laptopFanItems[i].text = _('%d rpm').format(fan.rpm);
+        });
+        this._laptopLegend.visible = laptop.fans.length > 0;
+
+        const profilesKey = laptop.profiles.join(',');
+        if (profilesKey !== this._profilesKey) {
+            this._profileButtons.destroy_all_children();
+            for (const profile of laptop.profiles) {
+                const button = this._button(profileName(profile), () => {
+                    if (this._service.laptop.profile !== profile)
+                        this._service.setLaptopProfile(profile);
+                }, _('%s profile').format(profileName(profile)));
+                button.add_style_class_name('froonty-fan-profile');
+                button._profile = profile;
+                this._profileButtons.add_child(button);
+            }
+            this._profilesKey = profilesKey;
+        }
+        for (const button of this._profileButtons.get_children()) {
+            button.checked = button._profile === laptop.profile;
+            button.reactive = !service.laptopBusy;
+        }
+        this._profileButtons.visible = laptop.profiles.length > 0;
+
+        const curves = laptop.curves.length > 0;
+        this._curvesRow.visible = curves;
+        this._curveChart.visible = curves;
+        if (curves) {
+            this._curvesLabel.text = curvesText(laptop);
+            this._curvesButton.label = curvesState(laptop.curves) === 'none'
+                ? _('Use custom curves') : _('Firmware curves');
+            this._curvesButton.reactive = !service.laptopBusy;
+            const gpuTemps = (service.temps?.gpus ?? []).map(gpu => gpu.temp).filter(known);
+            this._curveChart.update(laptop.curves, {
+                cpu: service.temps?.cpu ?? null,
+                gpu: gpuTemps.length ? Math.max(...gpuTemps) : null,
+            });
+        }
+
+        const notice = laptopNotice(laptop);
+        this._laptopNotice.text = notice;
+        this._laptopNotice.visible = Boolean(notice);
     }
 }
 
@@ -657,6 +813,84 @@ class CoreChart extends St.DrawingArea {
                 const label = cores[start].threads > 1 ? _('P-cores') : _('E-cores');
                 draw(label, (start + i) / 2 * slot, height - lineHeight / 2, 0.5, MUTED);
                 start = i;
+            }
+        }
+        cr.$dispose();
+    }
+});
+
+// The active profile's fan curves: fan % over °C, each fan in its colour,
+// solid while it is in use and dashed while the firmware's own run
+// instead; the CPU's and the hottest GPU's temperatures now as thin lines.
+const CurveChart = GObject.registerClass(
+class CurveChart extends St.DrawingArea {
+    _init() {
+        super._init({style_class: 'froonty-fan-curves', x_expand: true});
+        this._curves = [];
+        this._temps = {};
+    }
+
+    // Redrawn only when the curves change or a temperature moves a degree.
+    update(curves, temps) {
+        const rounded = {cpu: known(temps.cpu) ? Math.round(temps.cpu) : null,
+            gpu: known(temps.gpu) ? Math.round(temps.gpu) : null};
+        if (curves === this._curves && rounded.cpu === this._temps.cpu && rounded.gpu === this._temps.gpu)
+            return;
+        this._curves = curves;
+        this._temps = rounded;
+        this.queue_repaint();
+    }
+
+    vfunc_repaint() {
+        const cr = this.get_context();
+        const [width, height] = this.get_surface_size();
+        const {measure, draw} = textPainter(cr, this.get_theme_node());
+        const lineHeight = measure('0').h;
+        const left = measure(_('%d%%').format(100)).w + 6;
+        const [right, top, bottom] = [measure(celsius(CURVE_T_MAX)).w / 2, lineHeight / 2, lineHeight + 3];
+        const [pw, ph] = [width - left - right, height - top - bottom];
+        const X = t => left + (Math.min(CURVE_T_MAX, Math.max(CURVE_T_MIN, t)) - CURVE_T_MIN) /
+            (CURVE_T_MAX - CURVE_T_MIN) * pw;
+        const Y = percent => top + (100 - percent) / 100 * ph;
+
+        cr.setLineWidth(1);
+        for (const v of [0, 50, 100]) {
+            cr.setSourceRGBA(1, 1, 1, 0.1);
+            cr.moveTo(left, Math.round(Y(v)) + 0.5);
+            cr.lineTo(width - right, Math.round(Y(v)) + 0.5);
+            cr.stroke();
+            draw(_('%d%%').format(v), left - 5, Y(v), 1, MUTED);
+        }
+        for (let t = CURVE_T_MIN; t <= CURVE_T_MAX; t += 10)
+            draw(celsius(t), X(t), height - lineHeight / 2, 0.5, MUTED);
+
+        for (const [device, rgb] of [['gpu', GPU_RGB[0]], ['cpu', CPU_RGB]]) {
+            const temp = this._temps[device];
+            if (!known(temp))
+                continue;
+            cr.setSourceRGBA(...rgb, 0.45);
+            cr.setLineWidth(1);
+            cr.moveTo(Math.round(X(temp)) + 0.5, top);
+            cr.lineTo(Math.round(X(temp)) + 0.5, top + ph);
+            cr.stroke();
+        }
+
+        for (const curve of this._curves) {
+            const rgb = laptopFanRgb(curve.fan);
+            cr.setSourceRGBA(...rgb, curve.enabled ? 1 : 0.6);
+            cr.setLineWidth(curve.enabled ? 2 : 1.5);
+            cr.setDash(curve.enabled ? [] : [4, 3], 0);
+            curve.points.forEach(([t, percent], i) => {
+                if (i === 0)
+                    cr.moveTo(X(t), Y(percent));
+                else
+                    cr.lineTo(X(t), Y(percent));
+            });
+            cr.stroke();
+            cr.setDash([], 0);
+            for (const [t, percent] of curve.points) {
+                cr.arc(X(t), Y(percent), curve.enabled ? 2.5 : 1.5, 0, 2 * Math.PI);
+                cr.fill();
             }
         }
         cr.$dispose();

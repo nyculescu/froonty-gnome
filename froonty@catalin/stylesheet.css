@@ -973,6 +973,15 @@
     height: 60px;
     font-size: 0.72em;
 }
+.froonty-fan-curves {
+    height: 110px;
+    font-size: 0.72em;
+}
+/* The laptop's active profile: Froonty's toggle blue, not the lock's warning colour. */
+.froonty-fan-button.froonty-fan-profile:checked {
+    color: #ffffff;
+    background-color: rgba(53, 132, 228, 0.75);
+}
 /* local:end fan */
 
 /* Clipboard feature: the history, newest first; the entry now on the
