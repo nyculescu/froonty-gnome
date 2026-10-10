@@ -3,7 +3,7 @@
 // tools/pack-public replaces this file with an empty list, and their
 // settings tabs come from localPrefs.js. Each moves to registry.js once it
 // is submitted to extensions.gnome.org (ZeroTier, Writing, Formulas and
-// Fan stay local). LOCAL_PARTS (Software brightness) are not tabs.
+// Fan stay local). LOCAL_PARTS (Software brightness, Focus) are not tabs.
 
 // `break` is a reserved word.
 import breakFeature from './break/index.js';
@@ -11,6 +11,7 @@ import {SoftwareBrightness} from './brightness/overlay.js';
 import claude from './claude/index.js';
 import clipboard from './clipboard/index.js';
 import fan from './fan/index.js';
+import {FocusPart} from './focus/quickToggle.js';
 import formulas from './formulas/index.js';
 import killprocess from './killprocess/index.js';
 import media from './media/index.js';
@@ -35,4 +36,5 @@ export const LOCAL_FEATURES = [
 // made from the settings.
 export const LOCAL_PARTS = [
     settings => new SoftwareBrightness(settings),
+    settings => new FocusPart(settings),
 ];

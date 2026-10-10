@@ -175,6 +175,13 @@ function limitText(limit) {
         const until = GLib.DateTime.new_from_unix_local(Math.floor(limit.override_until)).format('%H:%M');
         return _('Noise limits lifted until %s.').format(until);
     }
+    // Focus (features/focus) overrides the clock.
+    if (limit.focus === 'away')
+        return limit.max_rpm === null || limit.max_rpm === undefined
+            ? _('Focus is Away from home: no noise cap.')
+            : _('Focus is Away from home: capped at %d rpm (%d%%).').format(limit.max_rpm, limit.max_percent);
+    if (limit.focus === 'sleeping')
+        return _('Focus is Sleeping: capped at %d rpm (%d%%).').format(limit.max_rpm, limit.max_percent);
     if (limit.quiet)
         return _('Quiet hours until %s: capped at %d rpm (%d%%).').format(hhmm(limit.until), limit.max_rpm, limit.max_percent);
     return _('Daytime: capped at %d rpm (%d%%).').format(limit.max_rpm, limit.max_percent);

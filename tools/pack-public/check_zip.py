@@ -18,7 +18,7 @@ import zipfile
 LOCAL_DIRS = (
     "features/writing/", "features/zerotier/", "features/media/", "features/claude/",
     "features/sysmon/", "features/clipboard/", "features/killprocess/", "features/break/",
-    "features/formulas/", "features/brightness/",
+    "features/formulas/", "features/brightness/", "features/focus/",
     # The Formulas tab's MathJax (tools/fetch-mathjax.py).
     "third_party/",
 )
@@ -101,6 +101,10 @@ BANNED = (
     b"SoftwareBrightness",
     b"LOCAL_PARTS",
     b"addUnderBrightness",
+    # Focus (a part, not a tab).
+    b"features/focus",
+    b"focus-enabled",
+    b"FocusPart",
     b"brightness",
     b"Brightness",
     b"mathjax",

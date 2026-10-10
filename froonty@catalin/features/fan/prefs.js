@@ -35,6 +35,14 @@ export function fanPage(settings) {
     settings.bind('fan-enabled', show, 'active', Gio.SettingsBindFlags.DEFAULT);
     group.add(show);
 
+    // Focus (features/focus): where you are picks the pad's noise cap.
+    const focus = new Adw.SwitchRow({
+        title: _('Focus in Quick Settings'),
+        subtitle: _('Working, Sleeping, Away from home or Auto. Away lifts the pad’s noise cap; Sleeping holds the quiet-hours cap.'),
+    });
+    settings.bind('focus-enabled', focus, 'active', Gio.SettingsBindFlags.DEFAULT);
+    group.add(focus);
+
     const [, [lower, upper]] = settings.settings_schema.get_key('fan-interval')
         .get_range().recursiveUnpack();
     const interval = Adw.SpinRow.new_with_range(lower, upper, 1);

@@ -8518,6 +8518,8 @@ async function testBrightness() {
     let s = settings();
     const menuActors = () => quickSettingsMenu()._overlay.get_n_children();
     const menusBefore = menuActors();
+    // Stop Froonty also takes Focus's toggle, and its menu, away.
+    const focusMenus = focusToggles().length;
     check('brightness: off by default, nothing on the stage or in Quick Settings',
         !s.get_boolean('brightness-enabled') && !brightnessLayer() && brightnessSliders().length === 0);
 
@@ -8577,7 +8579,8 @@ async function testBrightness() {
     s.set_boolean('running', false);
     await sleep(SETTLE_MS);
     check('brightness: Stop Froonty takes the layer, the slider and its menu away',
-        !brightnessLayer() && brightnessSliders().length === 0 && menuActors() === menusBefore);
+        !brightnessLayer() && brightnessSliders().length === 0 && menuActors() === menusBefore - focusMenus,
+        `menus=${menuActors()}/${menusBefore} focus=${focusMenus}`);
     s.set_boolean('running', true);
     await sleep(SETTLE_MS);
     check('brightness: Start brings them back', Boolean(brightnessLayer()) && brightnessSliders().length === 1);
@@ -8589,6 +8592,88 @@ async function testBrightness() {
     for (const key of ['brightness-enabled', 'brightness-level', 'brightness-min', 'brightness-monitors'])
         s.reset(key);
     await sleep(SETTLE_MS);
+}
+
+// ---------------------------------------------------------------- focus
+
+// Focus's toggle (features/focus/quickToggle.js): the one with a menu of modes.
+const focusToggles = () => quickSettingsMenu()._grid.get_children()
+    .filter(item => item.title === 'Focus' && item._items instanceof Map);
+const focusFile = () => GLib.build_filenamev([GLib.get_user_state_dir(), 'focus', 'mode.json']);
+const focusOnDisk = () => {
+    try {
+        return JSON.parse(new TextDecoder().decode(GLib.file_get_contents(focusFile())[1])).mode;
+    } catch {
+        return null;
+    }
+};
+const focusIcon = () => focusToggles()[0]?.get_parent() && extension()?.stateObj?._parts
+    ?.find(part => part._toggle === focusToggles()[0])?._icon;
+const focusNotifications = () => (Main.messageTray.getSources?.() ?? [])
+    .flatMap(source => source.notifications ?? [])
+    .filter(n => n.title === 'Focus is Away from home');
+
+async function testFocus() {
+    const s = settings();
+    GLib.unlink(focusFile());
+    s.reset('focus-last');
+    s.set_boolean('running', false);
+    await sleep(SETTLE_MS);
+    s.set_boolean('running', true);
+    await sleep(SETTLE_MS);
+    let [toggle] = focusToggles();
+    check('focus: one Focus toggle in Quick Settings, Auto with no file', focusToggles().length === 1 &&
+        toggle.subtitle === 'Auto' && !toggle.checked, `${focusToggles().length} ${toggle?.subtitle}`);
+    check('focus: its menu lists Working, Sleeping, Away from home, Auto',
+        JSON.stringify([...toggle._items.values()].map(item => item.label.text)) ===
+        JSON.stringify(['Working', 'Sleeping', 'Away from home', 'Auto']));
+    check('focus: no top-bar icon in Auto', focusIcon() && !focusIcon().visible);
+
+    toggle._items.get('away').activate(null);
+    await sleep(SETTLE_MS);
+    check('focus: picking Away writes it to the state file, checks the toggle and shows the top-bar icon',
+        focusOnDisk() === 'away' && toggle.checked && toggle.subtitle === 'Away from home' &&
+        focusIcon()?.visible && s.get_string('focus-last') === 'away', `${focusOnDisk()} ${toggle.subtitle}`);
+
+    GLib.file_set_contents(focusFile(), '{"mode": "sleeping"}\n');
+    await sleep(1500);
+    check('focus: a mode written by another program shows (file monitor)',
+        toggle.subtitle === 'Sleeping' && toggle._items.get('sleeping')._ornament === 2, toggle.subtitle);
+
+    toggle.emit('clicked', 1);
+    await sleep(SETTLE_MS);
+    check('focus: the toggle on a mode switches to Auto', focusOnDisk() === 'auto' && !toggle.checked);
+    toggle.emit('clicked', 1);
+    await sleep(SETTLE_MS);
+    check('focus: and back to the last mode picked in the menu (Away)', focusOnDisk() === 'away' && toggle.checked,
+        `${focusOnDisk()}`);
+
+    // Froonty starting again while Away (a login or an unlock) asks whether you are back.
+    s.set_boolean('running', false);
+    await sleep(SETTLE_MS);
+    check('focus: Stop Froonty takes the toggle away', focusToggles().length === 0);
+    s.set_boolean('running', true);
+    await sleep(SETTLE_MS);
+    [toggle] = focusToggles();
+    check('focus: starting while Away asks "Focus is Away from home" once', focusNotifications().length === 1,
+        `${focusNotifications().length}`);
+    toggle._items.get('working').activate(null);
+    await sleep(SETTLE_MS);
+    check('focus: picking Working withdraws the question', focusNotifications().length === 0 &&
+        focusOnDisk() === 'working' && !focusIcon()?.visible);
+
+    s.set_boolean('focus-enabled', false);
+    await sleep(SETTLE_MS);
+    check('focus: off takes the toggle away; the mode stays on disk', focusToggles().length === 0 &&
+        focusOnDisk() === 'working');
+    s.reset('focus-enabled');
+    await sleep(SETTLE_MS);
+    check('focus: on again brings one toggle back, on the mode on disk', focusToggles().length === 1 &&
+        focusToggles()[0].subtitle === 'Working');
+
+    GLib.unlink(focusFile());
+    s.reset('focus-last');
+    await sleep(1500);
 }
 
 async function testPublicBuild() {
@@ -8910,7 +8995,7 @@ const ONLY_TESTS = {
     testPointer, testHubLayout, testDatePill, testCalendarMenu, testEmptyHub,
     testSettingsButton, testKillProcess, testCpuLoadButton, testFormulas,
     testNotesHeader, testClaude, testClipboard, testClipboardSwitcher, testNotesMath,
-    testWriting, testWritingFixes, testStartup, testBrightness, testFan,
+    testWriting, testWritingFixes, testStartup, testBrightness, testFocus, testFan,
 };
 
 export async function runAll(outDir) {
@@ -8982,6 +9067,7 @@ export async function runAll(outDir) {
         await testCoversPanelClock(outDir);
         await testMonitors();
         await testBrightness();
+        await testFocus();
         await testMedia(outDir);
         await testMediaPill(outDir);
         await testMediaExtras(outDir);
