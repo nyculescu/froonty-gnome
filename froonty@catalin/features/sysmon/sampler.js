@@ -253,6 +253,8 @@ export class Sampler {
         if (withCores) {
             result.cores = cpus.map(cpu => ({
                 cpu,
+                // The physical core (threads of one share it), for the Fan tab.
+                core: hw.coreIds.get(cpu) ?? null,
                 load: loadPercent(previous?.cpus.get(cpu), stat?.cpus.get(cpu)),
                 ghz: clocks.has(cpu) ? clocks.get(cpu) / 1000 : null,
                 temp: coreTemps.get(hw.coreIds.get(cpu)) ?? null,

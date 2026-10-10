@@ -694,11 +694,12 @@ async function testHub(outDir) {
         const [w, h] = pill().get_transformed_size();
         check('hub: selecting a tab creates, starts and activates it',
             log.join(',') === 'start,view,active', log.join(','));
-        // The height is a minimum: the island grows to show every tab.
-        const lastTab = boxOf(island()._hub._tabColumn.get_children().at(-1));
+        // The height is a minimum: the island grows to show every tab and
+        // ⚙️ under them (the side column's bottom).
+        const sideBottom = boxOf(island()._hub.settingsButton);
         check('hub: island resizes to the feature\'s hubSize',
             w === 420 * scale() && h >= 300 * scale() &&
-            (h === 300 * scale() || h - (lastTab.y2 - boxOf(pill()).y1) <= 16 * scale()),
+            (h === 300 * scale() || h - (sideBottom.y2 - boxOf(pill()).y1) <= 16 * scale()),
             `${w}x${h}`);
         check('hub: selected tab is remembered',
             settings().get_string('hub-last-tab') === 'test-fake');
@@ -8674,6 +8675,144 @@ async function testPublicBuild() {
     check('public build: re-enable succeeds', await setExtensionEnabled(true), stateName());
 }
 
+// Fan tab. run.sh points fan-llano-path at a fake llano.py that keeps the
+// pad's state in a file and logs each command; FROONTY_TEST_LLANO runs the
+// same checks on the real pad (then the fake's log is not read). The
+// temperatures are this computer's own /sys and nvidia-smi.
+async function testFan(outDir) {
+    const s = settings();
+    const real = Boolean(GLib.getenv('FROONTY_TEST_LLANO'));
+    const fakeLog = () => {
+        try {
+            return new TextDecoder().decode(GLib.file_get_contents(`${outDir}/fake-llano.log`)[1]);
+        } catch (e) {
+            return '';
+        }
+    };
+    const systemctlLog = () => {
+        try {
+            return new TextDecoder().decode(GLib.file_get_contents(
+                `${claudeDir()}/systemctl.log`)[1]);
+        } catch (e) {
+            return '';
+        }
+    };
+    s.set_boolean('fan-enabled', true);
+    await sleep(animationWait());
+    island().expand();
+    await sleep(animationWait());
+    await clickActor(tabButton('fan'));
+    await sleep(animationWait());
+    const fan = island()._hub._entries.get('fan');
+    const service = fan?.service;
+    const view = fan?.view;
+    check('fan: the tab opens and polls', island()._hub.activeFeature?.id === 'fan' &&
+        service?._timerId > 0, `active=${island()._hub.activeFeature?.id}`);
+
+    await waitFor(() => service.status && service.history.length >= 2, 10000);
+    check('fan: the pad\'s status reaches the tab',
+        service.status && view._speedLabel.text === `${service.status.speed}%` &&
+        view._detail.text.includes('raw '), `${view._speedLabel.text} | ${view._detail.text}`);
+    check('fan: the CPU temperature is read and in the legend',
+        typeof service.temps?.cpu === 'number' && view._legendItems[0].text.endsWith('°C'),
+        `${service.temps?.cpu} ${view._legendItems[0]?.text}`);
+    check('fan: each physical core has a bar',
+        view._coreChart._cores.length > 0 && view._coresSummary.text.includes('cores'),
+        `${view._coreChart._cores.length} cores, ${view._coresSummary.text}`);
+    check('fan: the history grows with each sample', service.history.length >= 2,
+        `${service.history.length} points`);
+    await screenshotTop(outDir, 'fan', 640);
+
+    // Off: a real click on the button.
+    const offButton = view._slider.get_parent().get_next_sibling().get_first_child();
+    await clickActor(offButton);
+    await waitFor(() => !service.busy && service.status?.speed === 0, 5000);
+    check('fan: Off sets the pad to 0 % under software control',
+        service.status?.speed === 0 && service.control === 'software' &&
+        (real || fakeLog().includes('speed 0\n')), `${JSON.stringify(service.status)}`);
+
+    // The slider, clicked at about 40 % of its width.
+    const box = boxOf(view._slider);
+    await clickAt(box.x1 + 0.4 * (box.x2 - box.x1), (box.y1 + box.y2) / 2);
+    const wanted = Math.round(view._slider.value * 100);
+    await waitFor(() => !service.busy && service.status?.speed === wanted, 5000);
+    check('fan: clicking the slider sets that speed',
+        wanted > 20 && wanted < 60 && service.status?.speed === wanted &&
+        view._targetLabel.text === `${wanted}%`, `slider ${wanted}, pad ${service.status?.speed}`);
+    // A poll after the hold must not move the slider back.
+    await sleep(2500);
+    check('fan: the slider stays where it was put',
+        Math.round(view._slider.value * 100) === wanted, `${Math.round(view._slider.value * 100)}`);
+
+    // Release: like the pad, the status still says software; the tab says released.
+    const releaseButton = offButton.get_parent().get_last_child();
+    await clickActor(releaseButton);
+    await waitFor(() => !service.busy && service.control === 'released', 5000);
+    check('fan: Release hands control back and says so',
+        service.control === 'released' && view._detail.text.startsWith('Released') &&
+        (real || fakeLog().trim().endsWith('release')), view._detail.text);
+    await screenshotTop(outDir, 'fan-released', 640);
+
+    // The recommendation: none without fan_lut.json; with one, its speed,
+    // the leading device, and Apply sets it. The table's flat rows make it
+    // 35 % for the CPU and 25 % for the GPU, whatever the temperatures.
+    check('fan: without fan_lut.json, the tab says how to build it',
+        service.lutError === 'missing' && view._recommendLabel.text === 'No recommendation yet' &&
+        view._recommendDetail.text.includes('lut_sweep.py') && !view._applyButton.visible,
+        `${view._recommendLabel.text} | ${view._recommendDetail.text}`);
+    GLib.file_set_contents(`${outDir}/fan_lut.json`, JSON.stringify({
+        built: '2026-10-09',
+        devices: {cpu: {rows: [[0, 35], [200, 35]]}, gpu: {rows: [[0, 25], [200, 25]]}},
+    }));
+    s.set_string('fan-lut-path', '');
+    s.set_string('fan-lut-path', `${outDir}/fan_lut.json`);
+    await waitFor(() => service.recommendation?.fan === 35, 5000);
+    check('fan: the table\'s speed, with the device that leads',
+        view._recommendLabel.text === 'Recommended 35%' && view._recommendDetail.text.startsWith('CPU ') &&
+        view._recommendDetail.text.includes('leads') && view._applyButton.visible,
+        `${view._recommendLabel.text} | ${view._recommendDetail.text}`);
+    await clickActor(view._applyButton);
+    await waitFor(() => !service.busy && service.status?.speed === 35, 5000);
+    check('fan: Apply sets the recommended speed', service.status?.speed === 35 &&
+        Math.round(view._slider.value * 100) === 35 && !view._applyButton.reactive,
+        `pad ${service.status?.speed}, slider ${Math.round(view._slider.value * 100)}`);
+    await screenshotTop(outDir, 'fan-recommended', 640);
+
+    // A unit that drives the pad by itself: named, and stopped from the tab.
+    GLib.file_set_contents(`${claudeDir()}/systemctl.is-active`, 'active\ninactive\n');
+    await waitFor(() => view._stopButton.visible, (s.get_int('fan-interval') + 2) * 1000);
+    check('fan: a running llano-guard is named, with a Stop button',
+        view._noticeRow.visible && view._notice.text.startsWith('llano-guard') && view._stopButton.visible,
+        view._notice.text);
+    await screenshotTop(outDir, 'fan-guard', 640);
+    await clickActor(view._stopButton);
+    await waitFor(() => !view._noticeRow.visible, 5000);
+    check('fan: Stop stops llano-guard\'s unit and the notice goes',
+        systemctlLog().includes('--user stop llano-guard.service') && !view._noticeRow.visible,
+        systemctlLog().split('\n').filter(l => l.includes('stop')).join(' | '));
+
+    // A wrong llano.py location says where to set it.
+    const script = s.get_string('fan-llano-path');
+    s.set_string('fan-llano-path', '/nonexistent/llano.py');
+    await waitFor(() => service.error === 'no-script', 5000);
+    check('fan: a missing llano.py is explained',
+        view._noticeRow.visible && view._notice.text.includes('Settings → Fan') && !view._stopButton.visible,
+        view._notice.text);
+    s.set_string('fan-llano-path', script);
+    await waitFor(() => service.error === null && service.status, 5000);
+    check('fan: the right location again clears it', !view._noticeRow.visible, view._notice.text);
+
+    // Off screen, nothing is read.
+    await clickActor(tabButton('sysmon'));
+    await sleep(animationWait());
+    check('fan: another tab stops the polling', service._timerId === 0);
+    await clickActor(tabButton('fan'));
+    await sleep(animationWait());
+    island().collapse();
+    await sleep(animationWait());
+    check('fan: collapsing the island stops the polling', service._timerId === 0);
+}
+
 // FROONTY_TEST_ONLY=testA,testB runs only those checks (while debugging).
 const ONLY_TESTS = {
     testClaudeAttention, testClaudeAttentionWindows,
@@ -8682,7 +8821,7 @@ const ONLY_TESTS = {
     testPointer, testHubLayout, testDatePill, testCalendarMenu, testEmptyHub,
     testSettingsButton, testKillProcess, testCpuLoadButton, testFormulas,
     testNotesHeader, testClaude, testClipboard, testClipboardSwitcher, testNotesMath,
-    testWriting, testWritingFixes, testStartup, testBrightness,
+    testWriting, testWritingFixes, testStartup, testBrightness, testFan,
 };
 
 export async function runAll(outDir) {
@@ -8745,6 +8884,7 @@ export async function runAll(outDir) {
         await testWriting(outDir);
         await testWritingFixes(outDir);
         await testKillProcess(outDir);
+        await testFan(outDir);
         await testCpuLoadButton();
         await testFormulas(outDir);
         await testNotesMath(outDir);

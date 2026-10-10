@@ -875,6 +875,91 @@
     font-size: 0.78em;
 }
 
+/* local:begin fan (working-tree only; tools/pack-public strips it) */
+/* Fan feature: the cooling pad, then the temperatures. Sections, headings,
+   names and details reuse the Btop classes. */
+.froonty-fan {
+    spacing: 4px;
+}
+.froonty-fan-speed {
+    margin-left: 8px;
+    font-size: 1.3em;
+    font-weight: 800;
+    font-feature-settings: "tnum";
+}
+.froonty-fan-slider-row {
+    spacing: 10px;
+    padding-top: 2px;
+}
+.froonty-fan-target {
+    min-width: 3.2em;
+    text-align: right;
+    font-size: 0.9em;
+    font-feature-settings: "tnum";
+    color: rgba(255, 255, 255, 0.85);
+}
+.froonty-fan-buttons {
+    spacing: 6px;
+}
+.froonty-fan-button {
+    border-radius: 6px;
+    padding: 3px 10px;
+    font-size: 0.85em;
+    background-color: rgba(255, 255, 255, 0.08);
+}
+.froonty-fan-button:hover,
+.froonty-fan-button:focus {
+    background-color: rgba(255, 255, 255, 0.16);
+}
+.froonty-fan-button:active {
+    background-color: rgba(255, 255, 255, 0.24);
+}
+.froonty-fan-recommend {
+    spacing: 8px;
+    padding: 4px 0 2px 0;
+}
+/* Apply while the pad is already at the recommended speed. */
+.froonty-fan-button:insensitive {
+    color: rgba(255, 255, 255, 0.4);
+}
+.froonty-fan-notice-row {
+    spacing: 8px;
+}
+.froonty-fan-notice {
+    color: #ffbe6f;
+    font-size: 0.85em;
+}
+.froonty-fan-legend {
+    spacing: 14px;
+}
+.froonty-fan-legend-item {
+    spacing: 5px;
+}
+.froonty-fan-swatch {
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+}
+.froonty-fan-legend-name {
+    font-size: 0.85em;
+    color: rgba(255, 255, 255, 0.55);
+}
+.froonty-fan-legend-value {
+    font-size: 0.9em;
+    font-weight: bold;
+    font-feature-settings: "tnum";
+}
+/* Chart text in the same small size as Btop's details. */
+.froonty-fan-chart {
+    height: 150px;
+    font-size: 0.72em;
+}
+.froonty-fan-cores {
+    height: 60px;
+    font-size: 0.72em;
+}
+/* local:end fan */
+
 /* Clipboard feature: the history, newest first; the entry now on the
    clipboard is outlined. */
 .froonty-clipboard {

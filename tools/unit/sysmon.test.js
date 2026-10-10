@@ -274,8 +274,8 @@ test('the first sample has no load or speed; the second does', async () => {
 test('each thread has its load and its core temperature', async () => {
     const {second} = await twoSamples(machine(), ['cpu'], true);
     eq(second.cpu.cores, [
-        {cpu: 0, load: 100, ghz: 3.4, temp: 55},
-        {cpu: 1, load: 33.333333333333336, ghz: 1.6, temp: 58},
+        {cpu: 0, core: 0, load: 100, ghz: 3.4, temp: 55},
+        {cpu: 1, core: 4, load: 33.333333333333336, ghz: 1.6, temp: 58},
     ]);
 });
 

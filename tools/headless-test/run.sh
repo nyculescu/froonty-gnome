@@ -239,9 +239,39 @@ chmod +x "$FROONTY_CLAUDE_CODE"
 cat >"$FROONTY_SYSTEMCTL" <<'EOF'
 #!/bin/sh
 echo "$*" >>"$CLAUDE_CONFIG_DIR/systemctl.log"
+# The Fan tab's `is-active` answers, when a check has written them.
+case "$*" in
+*is-active*) cat "$CLAUDE_CONFIG_DIR/systemctl.is-active" 2>/dev/null ;;
+*stop\ llano*) rm -f "$CLAUDE_CONFIG_DIR/systemctl.is-active" ;;
+esac
 exit 0
 EOF
 chmod +x "$FROONTY_SYSTEMCTL"
+
+# Fan tab: a stand-in for llano-v12-linux's llano.py, so the real cooling
+# pad is never driven (FROONTY_TEST_LLANO=/path/to/llano.py runs the
+# checks against the real pad instead). Same commands and output; like the pad, release keeps the
+# speed and the status still says software (0x80).
+cat >"$WORK/fake-llano.py" <<'EOF'
+import os, sys
+here = os.path.dirname(os.path.abspath(__file__))
+state_path = os.path.join(here, 'fake-llano.state')
+with open(os.path.join(here, 'fake-llano.log'), 'a') as log:
+    log.write(' '.join(sys.argv[1:]) + '\n')
+st, speed = (0x88, 60)
+if os.path.exists(state_path):
+    st, speed = (int(v) for v in open(state_path).read().split())
+args = sys.argv[1:]
+if len(args) == 2 and args[0] == 'speed':
+    st, speed = 0x80, int(args[1])
+elif args not in (['status'], ['release']):
+    sys.exit('usage')
+open(state_path, 'w').write(f'{st} {speed}')
+body = [st, speed, 0, 0x82, 4, 0, 0xff]
+raw = ' '.join(f'{b:02x}' for b in body + [(0xff - sum(body)) & 0xff])
+ctl = 'software' if st == 0x80 else 'pad'
+print(f'speed {speed}% ({ctl} control)  lights off  raw {raw}')
+EOF
 
 # Media tab: apps for the fake players (fake-mpris.js) to name, one music
 # player and one browser, never shown in the app grid.
@@ -264,6 +294,10 @@ cat >"$XDG_CONFIG_HOME/glib-2.0/settings/keyfile" <<EOF
 enabled-extensions=['$HELPER', '$UUID']
 disable-user-extensions=false
 welcome-dialog-last-shown-version='999'
+
+[org/gnome/shell/extensions/froonty]
+fan-llano-path='${FROONTY_TEST_LLANO:-$WORK/fake-llano.py}'
+fan-lut-path='$WORK/fan_lut.json'
 EOF
 
 # A private, empty "system" bus: without it the test shell would talk to the

@@ -218,6 +218,38 @@
       <summary>Btop: each thread unfolded</summary>
     </key>
 
+    <!-- Fan feature, the llano V12 Ultra cooling pad (docs/features/fan.md) -->
+    <key name="fan-enabled" type="b">
+      <default>true</default>
+      <summary>Show the Fan tab</summary>
+      <description>The cooling pad's speed and the CPU and GPU temperatures, read while the tab is on screen and not at all otherwise.</description>
+    </key>
+    <key name="fan-interval" type="i">
+      <range min="1" max="10"/>
+      <default>2</default>
+      <summary>Fan tab refresh interval (s)</summary>
+    </key>
+    <key name="fan-llano-path" type="s">
+      <default>'/srv/shared/Workspace/Hobby/llano-v12-linux/llano.py'</default>
+      <summary>Where llano.py is</summary>
+      <description>The llano-v12-linux command-line tool, run with /usr/bin/python3.</description>
+    </key>
+    <key name="fan-lut-path" type="s">
+      <default>'/srv/shared/Workspace/Hobby/llano-v12-linux/fan_lut.json'</default>
+      <summary>Where the fan recommendation table is</summary>
+      <description>llano-v12-linux's fan_lut.json (research/build_lut.py): fan speeds by CPU and GPU temperature.</description>
+    </key>
+    <key name="fan-width" type="i">
+      <range min="320" max="960"/>
+      <default>460</default>
+      <summary>Fan island width</summary>
+    </key>
+    <key name="fan-height" type="i">
+      <range min="300" max="900"/>
+      <default>560</default>
+      <summary>Fan island height</summary>
+    </key>
+
     <!-- Media feature (docs/features/media.md) -->
     <key name="media-enabled" type="b">
       <default>true</default>

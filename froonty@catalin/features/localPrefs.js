@@ -7,6 +7,7 @@ import {addIconPath as addBreakIconPath, breakPage} from './break/prefs.js';
 import {brightnessPage} from './brightness/prefs.js';
 import {addIconPath as addClaudeIconPath, claudePage} from './claude/prefs.js';
 import {clipboardPage} from './clipboard/prefs.js';
+import {fanPage} from './fan/prefs.js';
 import {formulasPage} from './formulas/prefs.js';
 import {killProcessPage} from './killprocess/prefs.js';
 import {mediaPage} from './media/prefs.js';
@@ -31,6 +32,7 @@ export function addLocalPrefs(window, settings) {
         mediaPage(settings),
         claudePage(settings),
         sysmonPage(settings),
+        fanPage(settings),
         clipboardPage(settings),
         killProcessPage(settings),
         breakPage(settings),

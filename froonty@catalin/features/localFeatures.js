@@ -2,14 +2,15 @@
 // Features of the working tree that are not in the public build yet:
 // tools/pack-public replaces this file with an empty list, and their
 // settings tabs come from localPrefs.js. Each moves to registry.js once it
-// is submitted to extensions.gnome.org (ZeroTier, Writing and Formulas
-// stay local). LOCAL_PARTS (Software brightness) are not tabs.
+// is submitted to extensions.gnome.org (ZeroTier, Writing, Formulas and
+// Fan stay local). LOCAL_PARTS (Software brightness) are not tabs.
 
 // `break` is a reserved word.
 import breakFeature from './break/index.js';
 import {SoftwareBrightness} from './brightness/overlay.js';
 import claude from './claude/index.js';
 import clipboard from './clipboard/index.js';
+import fan from './fan/index.js';
 import formulas from './formulas/index.js';
 import killprocess from './killprocess/index.js';
 import media from './media/index.js';
@@ -21,6 +22,7 @@ export const LOCAL_FEATURES = [
     media,
     claude,
     sysmon,
+    fan,
     clipboard,
     killprocess,
     breakFeature,
