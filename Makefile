@@ -17,7 +17,7 @@ GNOME_EXTENSIONS ?= /usr/bin/gnome-extensions
 SOURCE_DIRS := $(filter-out schemas third_party,$(notdir $(patsubst %/,%,$(wildcard $(SRC)/*/))))
 MATHJAX := $(SRC)/third_party/mathjax/fetched.json
 
-.PHONY: schemas mathjax install uninstall pack unit test log clean devkit devkit-public
+.PHONY: schemas mathjax third-party install uninstall pack unit test log clean devkit devkit-public
 
 schemas: $(SRC)/schemas/gschemas.compiled
 
@@ -34,6 +34,12 @@ mathjax:
 
 $(MATHJAX):
 	python3 tools/fetch-mathjax.py $(SRC)
+
+# Submodules carrying local patches (third_party/patches/<name>/): applied
+# on a `froonty` branch over the commit the superproject records. The Fan
+# tab's llano.py is third_party/llano-v12-linux/llano.py once patched.
+third-party:
+	bash tools/patch-third-party.sh
 
 # Copies the extension into the user's extensions directory. A copy, not a
 # symlink: GNOME Shell loads extensions once, at login, and a link into a

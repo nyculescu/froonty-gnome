@@ -1,3 +1,9 @@
 [submodule "third_party/livenerf"]
 	path = third_party/livenerf
 	url = https://github.com/ninjahawk/livenerf
+[submodule "third_party/llano-v12-linux"]
+	path = third_party/llano-v12-linux
+	url = https://github.com/stiege/llano-v12-linux.git
+[submodule "third_party/asusctl"]
+	path = third_party/asusctl
+	url = https://gitlab.com/asus-linux/asusctl.git

@@ -230,12 +230,12 @@
       <summary>Fan tab refresh interval (s)</summary>
     </key>
     <key name="fan-llano-path" type="s">
-      <default>'/srv/shared/Workspace/Hobby/llano-v12-linux/llano.py'</default>
+      <default>'/srv/shared/Workspace/Hobby/Froonty/third_party/llano-v12-linux/llano.py'</default>
       <summary>Where llano.py is</summary>
       <description>The llano-v12-linux command-line tool, run with /usr/bin/python3.</description>
     </key>
     <key name="fan-lut-path" type="s">
-      <default>'/srv/shared/Workspace/Hobby/llano-v12-linux/fan_lut.json'</default>
+      <default>'/srv/shared/Workspace/Hobby/Froonty/third_party/llano-v12-linux/fan_lut.json'</default>
       <summary>Where the fan recommendation table is</summary>
       <description>llano-v12-linux's fan_lut.json (research/build_lut.py): fan speeds by CPU and GPU temperature.</description>
     </key>

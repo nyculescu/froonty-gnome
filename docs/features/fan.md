@@ -4,10 +4,19 @@ Status: **first iteration, implemented.** Working tree only (not in `make pack` 
 
 The llano V12 Ultra laptop cooling pad, driven from the island, and the
 temperatures it is there for. The pad is reached through
-[llano-v12-linux](../../../llano-v12-linux)'s `llano.py`, run with
+[llano-v12-linux](../../third_party/llano-v12-linux)'s `llano.py`, run with
 `/usr/bin/python3` (GJS has no ioctl, and the pad speaks HID feature
 reports). Access without a password needs that project's udev rule
 (`contrib/70-llano.rules`).
+
+llano-v12-linux is a submodule at upstream's commit; this PC's changes
+(the panic lock and control log, the LUT sweep and `fan_lut.json`, the
+noise limits) are patches in `third_party/patches/llano-v12-linux/`,
+applied on a `froonty` branch by `make third-party`. The settings'
+defaults point into `third_party/llano-v12-linux`. To change llano, commit
+in that branch, then refresh the patches:
+`git -C third_party/llano-v12-linux format-patch -q --no-signature -o ../patches/llano-v12-linux <upstream commit>..froonty`
+(remove the old files first).
 
 ## Look
 

@@ -1,0 +1,271 @@
+From ee44a50b78118a06fc6fb4cc84d3615cfba38d5a Mon Sep 17 00:00:00 2001
+From: Catalin Niculescu <cn.cata@gmail.com>
+Date: Fri, 9 Oct 2026 22:40:14 -0700
+Subject: [PATCH 3/8] Fan recommendation table from an 82-minute load x fan
+ sweep
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+fan_lut.json from research/lut_sweep_2026-10-09.csv (i9-13980HX, RTX 4080
+Laptop GPU): GPU 30 % up to ~42 °C, 60 % from ~47 °C (100 % never beat 60 %
+by more than 1 °C); CPU 30 % up to 58 °C, 100 % from 84 °C (0 % fan
+throttled 85 % of the time at full load). The CPU rows between 58 and 84 °C
+rest on noisy duty-cycled loads; the README says so. The CPU guard section
+moves after the fan-curve daemon's text, which it had split.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ README.md                         |  46 ++++++++---
+ fan_lut.json                      | 129 ++++++++++++++++++++++++++++++
+ research/lut_sweep_2026-10-09.csv |  41 ++++++++++
+ 3 files changed, 206 insertions(+), 10 deletions(-)
+ create mode 100644 fan_lut.json
+ create mode 100644 research/lut_sweep_2026-10-09.csv
+
+diff --git a/README.md b/README.md
+index f0dc486..ca1169d 100644
+--- a/README.md
++++ b/README.md
+@@ -32,16 +32,6 @@ cp contrib/llanod.service ~/.config/systemd/user/   # edit the path if the repo
+ systemctl --user enable --now llanod
+ ```
+ 
+-### CPU guard
+-
+-```bash
+-systemd-run --user --unit=llano-guard /usr/bin/python3 $PWD/cpu_guard.py   # engage at 95 °C, aim for 92 °C
+-journalctl --user -u llano-guard -f                                        # watch it
+-systemctl --user stop llano-guard                                          # restore the starting speed and release
+-```
+-
+-It leaves the pad alone until the smoothed CPU package temperature reaches `--high` (95 °C). Then it adds `--step` (10 %) every `--step-every` (15 s) while the CPU is above `--target` (92 °C), and holds once the CPU is at or below it. Once the CPU is `--cool-margin` (5 °C) below the target, it steps back down, restores the starting speed and releases. Don't run it alongside `llanod`, since both rewrite the speed every poll. Given the CPU sweep below, expect it to reach 100 % with the CPU still above the target under an all-core load.
+-
+ The curve in `llanod.py` maps the NVIDIA GPU temperature (`nvidia-smi`) to fan speed:
+ 
+ | GPU °C | ≤65 | 75 | 80 | ≥84 |
+@@ -70,6 +60,42 @@ The extra cooling shows up only as about 3 % more clock, which isn't worth the n
+ 
+ The temperature is smoothed, and speed rises immediately but drops only after a 3 °C fall. Each poll the daemon reads the pad's status and rewrites the speed if the pad isn't already there under software control. So while it runs, the pad's roller is overridden within a couple of seconds. Stopping the service (`systemctl --user stop llanod`) hands control back to the roller. If the pad disappears, the daemon logs it and reconnects when it comes back.
+ 
++### CPU guard
++
++```bash
++systemd-run --user --unit=llano-guard /usr/bin/python3 $PWD/cpu_guard.py   # engage at 95 °C, aim for 92 °C
++journalctl --user -u llano-guard -f                                        # watch it
++systemctl --user stop llano-guard                                          # restore the starting speed and release
++```
++
++It leaves the pad alone until the smoothed CPU package temperature reaches `--high` (95 °C). Then it adds `--step` (10 %) every `--step-every` (15 s) while the CPU is above `--target` (92 °C), and holds once the CPU is at or below it. Once the CPU is `--cool-margin` (5 °C) below the target, it steps back down, restores the starting speed and releases. Don't run it alongside `llanod`, since both rewrite the speed every poll. Given the CPU sweep below, expect it to reach 100 % with the CPU still above the target under an all-core load.
++
++### Fan recommendation table
++
++`fan_lut.json` gives a fan speed for the CPU and the GPU temperatures; Froonty's Fan tab shows it with an Apply button. It comes from a load × fan sweep on this laptop (i9-13980HX, RTX 4080 Laptop GPU): each device from full load down to idle (100/70/40/20/0 %, idle under 5 % utilization), the pad at 100/60/30/0 % at each load, 60 s to settle and 45 s measured (`research/lut_sweep_2026-10-09.csv`, 82 min).
++
++```bash
++nvcc -O3 -Xcompiler -U_GNU_SOURCE -o research/gpu_stress research/gpu_stress.cu   # CUDA load generator
++python3 research/lut_sweep.py gpu cpu                                              # stop llanod / llano-guard first
++python3 research/build_lut.py research/lut_sweep_DATE.csv                          # writes fan_lut.json
++```
++
++For each load, the recommended speed is the slowest one within 1.5 °C of the coolest measured, with at most 2 points more throttling. It is keyed by the temperature the device runs at with that speed; rows are made non-decreasing, interpolated between and clamped at the ends. The higher of the CPU's and the GPU's speeds wins.
++
++| GPU °C | ≤42 | 47–64 |
++|---|---|---|
++| fan % | 30 | 60 |
++
++| CPU °C | ≤58 | 70 | ≥84 |
++|---|---|---|---|
++| fan % | 30 | 62 | 100 |
++
++- **GPU:** 100 % fan was never more than 1 °C cooler than 60 % (full load: 63.0 vs 64.0 °C; 0 % fan: 71.7 °C), and nothing throttled.
++- **CPU at high load:** the pad matters here. At full load, 0 % fan throttled 85 % of the time (0 % at 100 % fan); at 70 % load, throttling went 3 → 30 → 65 → 72 % as the fan slowed.
++- **GPU load heats the CPU:** at full GPU load the CPU sat at 79 °C with the fan at 100 % and 93 °C at 0 %, so under GPU load the CPU's row usually leads.
++- **Low confidence between 58 and 84 °C (CPU):** the duty-cycled 20 % and 40 % CPU loads gave readings that did not fall with more fan (at 20 % load, 100 % fan read hottest). Bursts at boost clocks, and probably the laptop's own fans, outweighed the pad there. A sweep with whole threads busy instead of a duty cycle, measured for longer, would pin it down.
++- These numbers differ from the earlier sweeps above, which name an RTX 3080 Ti and 20 threads; those may come from another machine.
++
+ ## Protocol
+ 
+ The device has one vendor-defined HID interface (usage page `0xFF00`) with no report IDs: a 64-byte input report, a 64-byte output report and an 8-byte feature report. Everything that matters goes through the **feature report**. Every report's 8 bytes sum to `0xFF`, so byte 7 is the bitwise NOT of the sum of bytes 0–6.
+diff --git a/fan_lut.json b/fan_lut.json
+new file mode 100644
+index 0000000..aa133b1
+--- /dev/null
++++ b/fan_lut.json
+@@ -0,0 +1,129 @@
++{
++ "source": "lut_sweep_2026-10-09.csv",
++ "built": "2026-10-09",
++ "rule": "slowest fan within 1.5 \u00b0C of the coolest at each load, at most 2.0 points more throttling; the higher of the devices leads",
++ "devices": {
++  "gpu": {
++   "rows": [
++    [
++     31.0,
++     30
++    ],
++    [
++     42.3,
++     30
++    ],
++    [
++     47.1,
++     60
++    ],
++    [
++     54.9,
++     60
++    ],
++    [
++     64.0,
++     60
++    ]
++   ],
++   "loads": [
++    {
++     "load": 100,
++     "fan": 60,
++     "temp": 64.0,
++     "coolest": 63.0,
++     "fan_spread_c": 8.7
++    },
++    {
++     "load": 70,
++     "fan": 60,
++     "temp": 54.9,
++     "coolest": 54.3,
++     "fan_spread_c": 6.9
++    },
++    {
++     "load": 40,
++     "fan": 60,
++     "temp": 47.1,
++     "coolest": 46.5,
++     "fan_spread_c": 5.0
++    },
++    {
++     "load": 20,
++     "fan": 30,
++     "temp": 42.3,
++     "coolest": 41.5,
++     "fan_spread_c": 3.5
++    },
++    {
++     "load": 0,
++     "fan": 30,
++     "temp": 31.0,
++     "coolest": 31.0,
++     "fan_spread_c": 1.7
++    }
++   ]
++  },
++  "cpu": {
++   "rows": [
++    [
++     40.5,
++     30
++    ],
++    [
++     58.1,
++     30
++    ],
++    [
++     84.3,
++     100
++    ],
++    [
++     87.4,
++     100
++    ],
++    [
++     90.4,
++     100
++    ]
++   ],
++   "loads": [
++    {
++     "load": 100,
++     "fan": 100,
++     "temp": 87.4,
++     "coolest": 87.4,
++     "fan_spread_c": 7.4
++    },
++    {
++     "load": 70,
++     "fan": 100,
++     "temp": 90.4,
++     "coolest": 90.4,
++     "fan_spread_c": 4.6
++    },
++    {
++     "load": 40,
++     "fan": 100,
++     "temp": 84.3,
++     "coolest": 84.3,
++     "fan_spread_c": 8.5
++    },
++    {
++     "load": 20,
++     "fan": 30,
++     "temp": 58.1,
++     "coolest": 58.1,
++     "fan_spread_c": 9.5
++    },
++    {
++     "load": 0,
++     "fan": 30,
++     "temp": 40.5,
++     "coolest": 39.7,
++     "fan_spread_c": 2.4
++    }
++   ]
++  }
++ }
++}
+diff --git a/research/lut_sweep_2026-10-09.csv b/research/lut_sweep_2026-10-09.csv
+new file mode 100644
+index 0000000..15ccdde
+--- /dev/null
++++ b/research/lut_sweep_2026-10-09.csv
+@@ -0,0 +1,41 @@
++device,load,fan,temp,other_temp,util,power_w,clock_mhz,throttle_pct
++gpu,100,100,63.0,79.3,100.0,116.6,2400,0.0
++gpu,100,60,64.0,83.0,100.0,116.9,2400,0.0
++gpu,100,30,66.9,86.8,100.0,118.1,2400,0.0
++gpu,100,0,71.7,93.2,100.0,120.0,2385,0.0
++gpu,70,100,54.3,65.4,71.8,91.2,2400,0.0
++gpu,70,60,54.9,67.9,71.7,91.3,2400,0.0
++gpu,70,30,56.3,69.0,71.7,91.7,2400,0.0
++gpu,70,0,61.2,74.7,71.5,92.8,2400,0.0
++gpu,40,100,46.5,57.1,41.7,66.4,2415,0.0
++gpu,40,60,47.1,56.1,42.6,66.4,2415,0.0
++gpu,40,30,48.1,57.1,44.1,66.6,2415,0.0
++gpu,40,0,51.5,61.2,41.7,66.8,2400,0.0
++gpu,20,100,41.5,47.8,22.2,46.5,2280,0.0
++gpu,20,60,41.6,47.6,22.5,46.5,2280,0.0
++gpu,20,30,42.3,48.5,22.3,46.7,2280,0.0
++gpu,20,0,45.0,52.5,22.3,46.8,2280,0.0
++gpu,0,100,31.0,39.2,1.7,2.6,210,0.0
++gpu,0,60,31.0,39.3,1.2,2.6,210,0.0
++gpu,0,30,31.0,39.1,0.8,2.5,210,0.0
++gpu,0,0,32.7,41.1,4.2,2.6,210,0.0
++cpu,100,100,87.4,,99.3,,3486,0.0
++cpu,100,60,90.1,,97.3,,3513,0.0
++cpu,100,30,92.3,,96.9,,3516,1.1
++cpu,100,0,94.8,,95.7,,3366,85.2
++cpu,70,100,90.4,,70.4,,3608,3.0
++cpu,70,60,90.7,,70.6,,3431,30.1
++cpu,70,30,94.7,,70.5,,3251,64.7
++cpu,70,0,95.0,,70.4,,3493,72.1
++cpu,40,100,84.3,,40.6,,2005,25.8
++cpu,40,60,91.1,,40.3,,3407,25.1
++cpu,40,30,86.6,,40.3,,2696,27.4
++cpu,40,0,92.8,,40.3,,2850,41.3
++cpu,20,100,67.6,,20.4,,3168,0.0
++cpu,20,60,62.5,,20.5,,2796,0.0
++cpu,20,30,58.1,,20.4,,2089,0.0
++cpu,20,0,65.9,,20.4,,2459,0.1
++cpu,0,100,39.7,,0.5,,1039,0.0
++cpu,0,60,40.1,,0.5,,946,0.0
++cpu,0,30,40.5,,0.6,,965,0.0
++cpu,0,0,42.1,,0.7,,1044,0.0

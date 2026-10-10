@@ -1,0 +1,46 @@
+From fde11cba9628a0ead00da428f937d8d476602453 Mon Sep 17 00:00:00 2001
+From: Catalin Niculescu <cn.cata@gmail.com>
+Date: Sat, 10 Oct 2026 00:14:59 -0700
+Subject: [PATCH 8/8] noise: 1 % is the pad's lowest level, 300 rpm (display: 1
+ % 300, 2 % 350)
+
+The Fan tab showed ~325 rpm at 1 % while the pad ran 300.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ NOISE.md | 2 +-
+ noise.py | 8 ++++----
+ 2 files changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/NOISE.md b/NOISE.md
+index d36effe..ced5656 100644
+--- a/NOISE.md
++++ b/NOISE.md
+@@ -24,7 +24,7 @@ These are phone sound-meter readings at the user's ears, taken on 2026-10-09 (`r
+ 
+ At low activity, the speed made no difference to the temperatures between 500 and 800 rpm (CPU 40–41 °C, GPU 32–33 °C).
+ 
+-**Percent to rpm:** rpm ≈ 300 + 25 × percent. The pad's display read 600 rpm at 12 %, which is the one measured point. The other two anchors are assumptions: 300 rpm is the lowest level and 2800 rpm the top at 100 %. The line agrees with an older observation of 50 % ≈ 1550 rpm. More readings from the display would firm it up.
++**Percent to rpm:** rpm ≈ 300 + 25 × percent from 2 % up, and 1 % is the pad's lowest level, 300 rpm. Measured on the pad's display: 1 % → 300 rpm, 2 % → 350 rpm, 12 % → 600 rpm. 2800 rpm at 100 % is an assumption. The line agrees with an older observation of 50 % ≈ 1550 rpm. More readings from the display would firm it up.
+ 
+ | percent | 4 | 12 | 28 | 35 | 48 | 68 | 100 |
+ |---|---|---|---|---|---|---|---|
+diff --git a/noise.py b/noise.py
+index e9f3df3..624cfa3 100644
+--- a/noise.py
++++ b/noise.py
+@@ -14,10 +14,10 @@ import os
+ from pathlib import Path
+ 
+ DEFAULTS = {
+-    # [percent, rpm]: rpm ~ 300 + 25 x percent. Measured: 12 % showed 600 rpm on the pad's display
+-    # (2026-10-09). Assumed: 100 % is the pad's top level, 2800 rpm; 300 rpm is its lowest level.
+-    # Consistent with the README's 50 % ~ 1550 rpm. More display readings would firm it up.
+-    'percent_rpm': [[0, 0], [1, 325], [12, 600], [100, 2800]],
++    # [percent, rpm]: rpm ~ 300 + 25 x percent from 2 % up; 1 % is the pad's lowest level, 300 rpm.
++    # Measured on the pad's display: 1 % 300 rpm, 2 % 350 rpm, 12 % 600 rpm (2026-10-09/10).
++    # Assumed: 100 % is the pad's top level, 2800 rpm (consistent with the README's 50 % ~ 1550 rpm).
++    'percent_rpm': [[0, 0], [1, 300], [2, 350], [12, 600], [100, 2800]],
+     'percent_rpm_measured': 'partly',
+     # [rpm, dB at the user's ears], 2026-10-09; the laptop alone was 37.5 dB.
+     'ear_db': [[0, 37.5], [300, 40.5], [400, 43.0], [500, 45.5], [600, 49.5], [700, 51.5],

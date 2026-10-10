@@ -1,0 +1,27 @@
+From e97d1ace342033eb130a7162c7f1d13f4742f19a Mon Sep 17 00:00:00 2001
+From: Catalin Niculescu <cn.cata@gmail.com>
+Date: Fri, 9 Oct 2026 23:17:10 -0700
+Subject: [PATCH 6/8] Noise: 62 dB at the ears for 1175 rpm, ear-level
+ estimates
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ research/noise_2026-10-09.txt | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/research/noise_2026-10-09.txt b/research/noise_2026-10-09.txt
+index fc5de01..6772f21 100644
+--- a/research/noise_2026-10-09.txt
++++ b/research/noise_2026-10-09.txt
+@@ -15,6 +15,11 @@ Fit to the three readings: dB ~ 57 + 30 * log10(rpm / 300), i.e. about +30 dB pe
+ (300 -> 1175: +18.5 dB over x3.9; 1175 -> 1550: +3.5 dB over x1.32). Predicted: 400 rpm ~61 dB,
+ 1000 ~73, 2000 ~82, 2800 ~86.
+ 
++At the ears (the user's listening position) 1175 rpm read 62 dB, 13.5 dB under the reading by
++the pad. Assuming that offset holds at every speed (same source, same distance), the ear-level
++estimates are: 300 rpm ~44 dB, 400 ~47, 1000 ~60, 1550 ~65.5, 2000 ~68.5, 2800 ~73. The low
++end is the least sure: near 300-400 rpm the room's own background noise may dominate.
++
+ Percent -> rpm is not measured. One README observation (after 50 %, one roller step gave
+ 1550 rpm) suggests about 29 rpm per percent, so 400 rpm ~14 %, 1000 ~35 %, 1500 ~52 %,
+ 2000 ~70 %; to be checked against the display.

@@ -1,0 +1,287 @@
+From 08b819dfa856293ec91c738f2a463b5ecd412a59 Mon Sep 17 00:00:00 2001
+From: Catalin Niculescu <cn.cata@gmail.com>
+Date: Fri, 9 Oct 2026 22:43:13 -0700
+Subject: [PATCH 4/8] llano.py lock/unlock/last: a panic lock and a log of who
+ drove the pad
+
+- lock: fan to 0 % under software control, then every Pad write raises
+  LlanoLocked until unlock, which restores the speed and control from
+  before. llanod and cpu_guard log the lock once and wait.
+- Every write appends {time, by, pid, action, speed} to
+  ~/.local/state/llano/control.log (last 200); `by` is $LLANO_CLIENT, else
+  the systemd unit, else the script (llano.py names its parent).
+- The lock binds programs using Pad, not one writing hidraw itself; the
+  README says a lock no user program can lift needs a root helper.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ README.md    |   5 +++
+ cpu_guard.py |  13 +++++-
+ llano.py     | 113 +++++++++++++++++++++++++++++++++++++++++++++++++--
+ llanod.py    |  11 ++++-
+ 4 files changed, 136 insertions(+), 6 deletions(-)
+
+diff --git a/README.md b/README.md
+index ca1169d..7a2332b 100644
+--- a/README.md
++++ b/README.md
+@@ -15,8 +15,13 @@ python3 llano.py status          # speed 60% (pad control)  lights on  raw 88 3c
+ python3 llano.py speed 100       # software control, fan at 100 %
+ python3 llano.py speed 0         # fan off
+ python3 llano.py release         # hand speed control back to the pad's roller
++python3 llano.py lock            # panic: fan off, and every program using Pad is refused
++python3 llano.py unlock          # back to the speed and control from before the lock
++python3 llano.py last            # who changed the pad last
+ ```
+ 
++The lock and a log of who drove the pad (`control.log`, last 200 writes: `$LLANO_CLIENT`, else the systemd unit, else the script) live in `~/.local/state/llano`. The lock binds everything that goes through `Pad` (this CLI, `llanod`, `cpu_guard`, the research scripts, Froonty's Fan tab); `llanod` and `cpu_guard` wait while it holds. It cannot stop a program that writes `/dev/hidraw*` itself, since the udev rule gives all of the user's programs access: a lock no user program can lift needs a root helper. The pad's roller always works.
++
+ If you get `Permission denied`, install the udev rule, which gives the logged-in user access to the pad:
+ 
+ ```bash
+diff --git a/cpu_guard.py b/cpu_guard.py
+index 68989f6..9e14f9f 100644
+--- a/cpu_guard.py
++++ b/cpu_guard.py
+@@ -20,7 +20,7 @@ import signal
+ import sys
+ import time
+ 
+-from llano import LlanoError, Pad
++from llano import LlanoError, LlanoLocked, Pad
+ from llanod import SMOOTHING, cpu_temp
+ 
+ log = logging.getLogger('cpu_guard')
+@@ -46,6 +46,7 @@ def main():
+     start = 0         # pad speed when we engaged; stepping below it releases
+     last_step = 0.0
+     smoothed = None
++    locked = False
+ 
+     def release(reason: str):
+         nonlocal speed
+@@ -54,6 +55,8 @@ def main():
+             try:
+                 pad.set_speed(start)  # release keeps the current speed, so restore the starting one first
+                 pad.release()
++            except LlanoLocked:
++                log.info('pad locked off: leaving it as it is')
+             except (LlanoError, OSError) as e:
+                 log.warning('release failed: %s', e)
+         speed = None
+@@ -96,6 +99,14 @@ def main():
+                 st = pad.status()
+                 if (st[0], st[1]) != (0x80, speed):
+                     pad.set_speed(speed)
++                if locked:
++                    log.info('pad unlocked: guarding again')
++                locked = False
++        except LlanoLocked:
++            # llano.py lock (the panic button): wait without touching it.
++            if not locked:
++                log.info('pad locked off: waiting for unlock')
++            locked = True
+         except (LlanoError, OSError) as e:
+             log.warning('pad unavailable, retrying: %s', e)
+             if pad:
+diff --git a/llano.py b/llano.py
+index 2cca4e0..ab83157 100644
+--- a/llano.py
++++ b/llano.py
+@@ -15,8 +15,18 @@ sum to 0xFF (byte 7 = ~sum of bytes 0-6).
+   python3 llano.py status
+   python3 llano.py speed 0-100     # take software control and set the fan speed
+   python3 llano.py release         # hand speed control back to the pad's buttons
++  python3 llano.py lock            # fan off; every Pad write is refused until unlock
++  python3 llano.py unlock          # back to the speed and control from before the lock
++  python3 llano.py last            # who changed the pad last (control.log)
++
++The lock and the control log live in $XDG_STATE_HOME/llano (~/.local/state/llano). The lock
++binds every program that drives the pad through Pad (this CLI, llanod, cpu_guard, the
++research scripts, Froonty's Fan tab); a program writing /dev/hidraw* itself is not stopped,
++since the udev rule gives every program of the user access. The pad's roller still works.
++Each write logs who made it: $LLANO_CLIENT, else the systemd unit, else the script.
+ """
+ import fcntl
++import json
+ import os
+ import sys
+ import time
+@@ -30,6 +40,68 @@ class LlanoError(Exception):
+     pass
+ 
+ 
++class LlanoLocked(LlanoError):
++    pass
++
++
++LOG_KEEP = 200
++
++
++def state_dir() -> Path:
++    return Path(os.environ.get('XDG_STATE_HOME') or Path.home() / '.local/state') / 'llano'
++
++
++def read_lock() -> dict | None:
++    """The lock's record ({time, by, speed, ctl} from before it), or None when unlocked."""
++    try:
++        return json.loads((state_dir() / 'lock').read_text())
++    except FileNotFoundError:
++        return None
++    except (OSError, ValueError):
++        return {}  # unreadable, still locked
++
++
++def client() -> str:
++    """Who is driving the pad, for the control log."""
++    if os.environ.get('LLANO_CLIENT'):
++        return os.environ['LLANO_CLIENT']
++    try:
++        for line in Path('/proc/self/cgroup').read_text().splitlines():
++            unit = line.rsplit('/', 1)[-1]
++            if unit.endswith('.service') and '@' not in unit and not unit.startswith(('app-', 'vte-spawn')):
++                return unit.removesuffix('.service')
++    except OSError:
++        pass
++    script = Path(sys.argv[0]).name
++    if script == 'llano.py':
++        try:
++            parent = Path(f'/proc/{os.getppid()}/comm').read_text().strip()
++            return f'llano.py (from {parent})'
++        except OSError:
++            return 'llano.py'
++    return script
++
++
++def log_control(action: str, speed: int | None) -> None:
++    entry = {'time': round(time.time(), 1), 'by': client(), 'pid': os.getpid(), 'action': action, 'speed': speed}
++    try:
++        state_dir().mkdir(parents=True, exist_ok=True)
++        path = state_dir() / 'control.log'
++        lines = path.read_text().splitlines()[-(LOG_KEEP - 1):] if path.exists() else []
++        tmp = path.with_suffix('.tmp')
++        tmp.write_text('\n'.join(lines + [json.dumps(entry)]) + '\n')
++        tmp.replace(path)
++    except OSError:
++        pass  # the log is a courtesy; the pad command itself succeeded
++
++
++def last_control() -> dict | None:
++    try:
++        return json.loads((state_dir() / 'control.log').read_text().splitlines()[-1])
++    except (OSError, ValueError, IndexError):
++        return None
++
++
+ def HIDIOCSFEATURE(n: int) -> int:  # _IOC(_IOC_WRITE|_IOC_READ, 'H', 0x06, len)
+     return (3 << 30) | (n << 16) | (ord('H') << 8) | 0x06
+ 
+@@ -76,17 +148,42 @@ class Pad:
+             raise LlanoError(f'unexpected status report: {rep.hex(" ")}')
+         return rep
+ 
+-    def _write_state(self, ctl: int, speed: int) -> None:
++    def _write_state(self, ctl: int, speed: int, action: str, *, unlocked: bool = False) -> None:
++        if not unlocked and read_lock() is not None:
++            raise LlanoLocked('the pad is locked off (llano.py unlock to start it again)')
+         cur = self.status()  # keep on/off and lighting as they are
+         self._set_feature(command(bytes([ctl, speed, cur[2], cur[3], cur[4], cur[5], cur[6]])))
++        log_control(action, speed)
+ 
+     def set_speed(self, pct: int) -> None:
+         if not 0 <= pct <= 100:
+             raise LlanoError(f'speed must be 0-100, got {pct}')
+-        self._write_state(CTL_SOFTWARE, pct)
++        self._write_state(CTL_SOFTWARE, pct, 'speed')
+ 
+     def release(self) -> None:
+-        self._write_state(CTL_PAD, self.status()[1])
++        self._write_state(CTL_PAD, self.status()[1], 'release')
++
++    def lock(self) -> None:
++        """Fan off under software control, and refuse every write until unlock()."""
++        if read_lock() is not None:
++            return
++        cur = self.status()
++        record = {'time': round(time.time(), 1), 'by': client(), 'speed': cur[1],
++                  'ctl': 'software' if cur[0] == 0x80 else 'pad'}
++        self._write_state(CTL_SOFTWARE, 0, 'lock', unlocked=True)
++        state_dir().mkdir(parents=True, exist_ok=True)
++        (state_dir() / 'lock').write_text(json.dumps(record) + '\n')
++
++    def unlock(self) -> None:
++        """Back to the speed (and the pad's control, if it had it) from before the lock."""
++        record = read_lock()
++        if record is None:
++            return
++        (state_dir() / 'lock').unlink(missing_ok=True)
++        speed = record.get('speed', 0) if isinstance(record.get('speed'), int) else 0
++        self._write_state(CTL_SOFTWARE, speed, 'unlock')
++        if record.get('ctl') == 'pad':
++            self.release()
+ 
+ 
+ def describe(rep: bytes) -> str:
+@@ -96,6 +193,10 @@ def describe(rep: bytes) -> str:
+ 
+ def main():
+     args = sys.argv[1:]
++    if args == ['last']:
++        entry = last_control()
++        print(json.dumps(entry) if entry else 'no control logged yet')
++        return
+     try:
+         with Pad() as pad:
+             if args == ['status']:
+@@ -104,10 +205,14 @@ def main():
+                 pad.set_speed(int(args[1]))
+             elif args == ['release']:
+                 pad.release()
++            elif args == ['lock']:
++                pad.lock()
++            elif args == ['unlock']:
++                pad.unlock()
+             else:
+                 sys.exit(__doc__)
+             time.sleep(0.1)
+-            print(describe(pad.status()))
++            print(('LOCKED  ' if read_lock() is not None else '') + describe(pad.status()))
+     except LlanoError as e:
+         sys.exit(str(e))
+ 
+diff --git a/llanod.py b/llanod.py
+index 638309b..2f1f2b5 100644
+--- a/llanod.py
++++ b/llanod.py
+@@ -23,7 +23,7 @@ import sys
+ import time
+ from pathlib import Path
+ 
+-from llano import LlanoError, Pad
++from llano import LlanoError, LlanoLocked, Pad
+ 
+ # (temperature °C, fan %) points, linearly interpolated, clamped at the ends.
+ GPU_CURVE = [(65, 30), (75, 40), (80, 60), (84, 80)]
+@@ -68,6 +68,7 @@ def main():
+     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
+ 
+     pad, current, smoothed = None, None, None
++    locked = False
+ 
+     def stop(signum, _frame):
+         log.info('signal %d: handing speed control back to the pad', signum)
+@@ -100,6 +101,14 @@ def main():
+                         log.info('pad changed to %d%% (status %02x); restoring %d%%', st[1], st[0], target)
+                     pad.set_speed(target)
+                 current = target
++                if locked:
++                    log.info('pad unlocked: driving it again')
++                locked = False
++            except LlanoLocked:
++                # llano.py lock (the panic button): wait without touching it.
++                if not locked:
++                    log.info('pad locked off: waiting for unlock')
++                locked, current = True, None
+             except (LlanoError, OSError) as e:
+                 log.warning('pad unavailable, retrying: %s', e)
+                 if pad:

@@ -1,0 +1,656 @@
+From 71a9dc7cff6fa88decc4bb4ae820a0f29165d512 Mon Sep 17 00:00:00 2001
+From: Catalin Niculescu <cn.cata@gmail.com>
+Date: Sat, 10 Oct 2026 00:05:16 -0700
+Subject: [PATCH 7/8] Noise limits, the noise spec, and sustained step-down
+ measurements
+
+- noise.py / NOISE.md: percent -> rpm (rpm ~ 300 + 25 x %, anchored on the
+  display's 600 rpm at 12 %), rpm -> dB at the ears (the user's phone
+  readings), warning bands, and the limits: 600 rpm in quiet hours
+  (weekdays 22:00-07:00), 2000 rpm by day; all overridable in
+  ~/.config/llano/noise.json.
+- llano.py caps every speed to the limit in force (logged with the speed
+  asked for); `loud` lifts it until quiet hours end (2 h by day), `quiet`
+  restores it; `enforce` lowers a software-set speed above it and leaves
+  the roller alone; `noise` prints the limit. Status output adds a
+  `noise {json}` line.
+- contrib/llano-enforce.{service,timer} + install-enforcer.sh: a user
+  timer running `llano.py enforce` every 5 minutes and at 22:00.
+- research/step_down.py: 100 -> 0 % in 10 % steps, CPU (whole threads),
+  GPU (CUDA duty cycle) or both, 45 s per step, pad untouched (600 rpm);
+  results for CPU then GPU, and both together. lut_sweep's idle check
+  takes the median of three GPU readings.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ NOISE.md                                  |  59 +++++++++
+ README.md                                 |   4 +
+ contrib/install-enforcer.sh               |  13 ++
+ contrib/llano-enforce.service             |   8 ++
+ contrib/llano-enforce.timer               |  11 ++
+ llano.py                                  |  54 +++++++-
+ noise.py                                  | 150 ++++++++++++++++++++++
+ research/lut_sweep.py                     |   8 +-
+ research/step_down.py                     | 122 ++++++++++++++++++
+ research/step_down_2026-10-09_both.csv    |  12 ++
+ research/step_down_2026-10-09_cpu_gpu.csv |  23 ++++
+ 11 files changed, 454 insertions(+), 10 deletions(-)
+ create mode 100644 NOISE.md
+ create mode 100644 contrib/install-enforcer.sh
+ create mode 100644 contrib/llano-enforce.service
+ create mode 100644 contrib/llano-enforce.timer
+ create mode 100644 noise.py
+ create mode 100644 research/step_down.py
+ create mode 100644 research/step_down_2026-10-09_both.csv
+ create mode 100644 research/step_down_2026-10-09_cpu_gpu.csv
+
+diff --git a/NOISE.md b/NOISE.md
+new file mode 100644
+index 0000000..d36effe
+--- /dev/null
++++ b/NOISE.md
+@@ -0,0 +1,59 @@
++# Noise: measurements, warnings and limits
++
++The pad is set in percent, but what you hear is rpm. This page says how loud each speed is at the listening position, which speeds count as quiet, audible or loud, and the limits that `llano.py` applies by itself. The code is `noise.py`. Every value below can be changed in `~/.config/llano/noise.json`, using the same keys in lower case.
++
++## Measurements
++
++These are phone sound-meter readings at the user's ears, taken on 2026-10-09 (`research/noise_2026-10-09.txt`). The meter isn't calibrated, so the differences between readings matter more than the absolute values. With the pad off, the laptop alone measured 37–38 dB (CPU 43 °C, GPU 35 °C).
++
++| rpm | dB at the ears | user's note |
++|---|---|---|
++| 0 (pad off) | 37.5 | the laptop alone |
++| 300 | 40–41 | |
++| 400 | 42–44 | bearable, enough for normal use |
++| 500 | 45–46 | |
++| 600 | 49–50 | **the most that may run at night** |
++| 700 | 51–52 | |
++| 800 | 53–54 | at low activity, more speed changes nothing |
++| 900 | 55–56 | |
++| 1000 | 57 | loud from here on |
++| 1175 | 62 | |
++| 1500 | | like a small vacuum cleaner |
++| 2000 | | sometimes needed to bring a temperature down |
++| 2800 | | unbearable |
++
++At low activity, the speed made no difference to the temperatures between 500 and 800 rpm (CPU 40–41 °C, GPU 32–33 °C).
++
++**Percent to rpm:** rpm ≈ 300 + 25 × percent. The pad's display read 600 rpm at 12 %, which is the one measured point. The other two anchors are assumptions: 300 rpm is the lowest level and 2800 rpm the top at 100 %. The line agrees with an older observation of 50 % ≈ 1550 rpm. More readings from the display would firm it up.
++
++| percent | 4 | 12 | 28 | 35 | 48 | 68 | 100 |
++|---|---|---|---|---|---|---|---|
++| rpm | 400 | 600 | 1000 | 1175 | 1500 | 2000 | 2800 |
++
++## Warning bands
++
++Froonty's Fan tab colours the estimated rpm and dB by band.
++
++| band | up to | at the ears | colour |
++|---|---|---|---|
++| quiet | 400 rpm | ≤ 44 dB | green |
++| night level | 600 rpm | ≤ 50 dB | lime |
++| audible | 1000 rpm | ≤ 57 dB | yellow |
++| loud | 2000 rpm | ≈ 69 dB (estimated) | orange |
++| very loud | above 2000 rpm | | red |
++
++## Limits
++
++`llano.py` caps every speed it is asked to set. That covers the CLI, `llanod`, `cpu_guard`, the research scripts and the Fan tab. A capped write is logged with the speed that was asked for.
++
++- **Quiet hours: weekdays 22:00–07:00, 600 rpm (12 %).** A moment counts as quiet when its own day is Monday to Friday and the time is at or after 22:00 or before 07:00. So Friday 22:00–24:00 is quiet, but the hours after midnight on Saturday are not. Likewise Sunday 22:00–24:00 is not quiet, but Monday 00:00–07:00 is. Change `quiet_days`, `quiet_from` and `quiet_to` to change this.
++- **Daytime: 2000 rpm (68 %).** 2800 rpm is never needed for cooling (`fan_lut.json`: full speed was at most 1 °C cooler than 60 %) and is unbearable.
++- **Manual overrides:**
++  - `llano.py loud`, or **Loud until 07:00** in the Fan tab, lifts the limits until the current quiet hours end. By day it lifts them for 2 hours. `llano.py quiet` puts them back and lowers the speed at once.
++  - Turning the **roller** is manual too. While the pad reports its own control, nothing lowers its speed.
++  - The **lock** (`llano.py lock`, the Fan lock panic button) turns the fan off whatever the limits say.
++- **Enforcement:** the `llano-enforce` user timer runs `llano.py enforce` every 5 minutes, and again at 22:00 on weekdays. It lowers a software-set speed that is above the limit in force, so a fast speed set in the evening does not run all night. Install it with `contrib/install-enforcer.sh`. Remove it with `systemctl --user disable --now llano-enforce.timer`.
++
++## Not covered
++
++A program that writes `/dev/hidraw*` itself bypasses the limits, as it bypasses the lock. Only an always-running daemon could catch the pad being changed between two timer runs; the 5-minute timer is the compromise.
+diff --git a/README.md b/README.md
+index 7a2332b..1a7e533 100644
+--- a/README.md
++++ b/README.md
+@@ -18,8 +18,12 @@ python3 llano.py release         # hand speed control back to the pad's roller
+ python3 llano.py lock            # panic: fan off, and every program using Pad is refused
+ python3 llano.py unlock          # back to the speed and control from before the lock
+ python3 llano.py last            # who changed the pad last
++python3 llano.py loud            # lift the noise limits until quiet hours end
++python3 llano.py quiet           # back to the noise limits
+ ```
+ 
++**Noise limits** ([NOISE.md](NOISE.md)): every speed is capped to 600 rpm (12 %) in quiet hours (weekdays 22:00–07:00) and 2000 rpm (68 %) by day, unless lifted with `loud`. `contrib/install-enforcer.sh` installs a user timer that lowers a software-set speed above the limit every 5 minutes; the roller is left alone. The status output's second line, `noise {json}`, gives the estimated rpm and dB at the ears and the limit in force.
++
+ The lock and a log of who drove the pad (`control.log`, last 200 writes: `$LLANO_CLIENT`, else the systemd unit, else the script) live in `~/.local/state/llano`. The lock binds everything that goes through `Pad` (this CLI, `llanod`, `cpu_guard`, the research scripts, Froonty's Fan tab); `llanod` and `cpu_guard` wait while it holds. It cannot stop a program that writes `/dev/hidraw*` itself, since the udev rule gives all of the user's programs access: a lock no user program can lift needs a root helper. The pad's roller always works.
+ 
+ If you get `Permission denied`, install the udev rule, which gives the logged-in user access to the pad:
+diff --git a/contrib/install-enforcer.sh b/contrib/install-enforcer.sh
+new file mode 100644
+index 0000000..3d2190a
+--- /dev/null
++++ b/contrib/install-enforcer.sh
+@@ -0,0 +1,13 @@
++#!/bin/sh
++# Installs the noise-limit timer for the current user (no sudo):
++# ~/.config/systemd/user/llano-enforce.{service,timer}, enabled and started.
++# Remove: systemctl --user disable --now llano-enforce.timer
++set -eu
++REPO=$(cd "$(dirname "$0")/.." && pwd)
++DEST=${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user
++mkdir -p "$DEST"
++sed "s|@REPO@|$REPO|" "$REPO/contrib/llano-enforce.service" >"$DEST/llano-enforce.service"
++cp "$REPO/contrib/llano-enforce.timer" "$DEST/llano-enforce.timer"
++systemctl --user daemon-reload
++systemctl --user enable --now llano-enforce.timer
++systemctl --user list-timers llano-enforce.timer --no-pager
+diff --git a/contrib/llano-enforce.service b/contrib/llano-enforce.service
+new file mode 100644
+index 0000000..90a3d1d
+--- /dev/null
++++ b/contrib/llano-enforce.service
+@@ -0,0 +1,8 @@
++[Unit]
++Description=llano V12 Ultra pad: lower a software-set speed above the noise limit
++
++[Service]
++Type=oneshot
++# contrib/install-enforcer.sh writes the repository's path here.
++ExecStart=/usr/bin/python3 @REPO@/llano.py enforce
++Environment=LLANO_CLIENT=noise limit (timer)
+diff --git a/contrib/llano-enforce.timer b/contrib/llano-enforce.timer
+new file mode 100644
+index 0000000..7dce8e2
+--- /dev/null
++++ b/contrib/llano-enforce.timer
+@@ -0,0 +1,11 @@
++[Unit]
++Description=llano V12 Ultra pad: check the noise limit every 5 minutes
++
++[Timer]
++OnCalendar=*:0/5
++# Also right when quiet hours start (NOISE.md: weekdays 22:00).
++OnCalendar=Mon..Fri 22:00
++Persistent=false
++
++[Install]
++WantedBy=timers.target
+diff --git a/llano.py b/llano.py
+index ab83157..6f8ae01 100644
+--- a/llano.py
++++ b/llano.py
+@@ -18,12 +18,20 @@ sum to 0xFF (byte 7 = ~sum of bytes 0-6).
+   python3 llano.py lock            # fan off; every Pad write is refused until unlock
+   python3 llano.py unlock          # back to the speed and control from before the lock
+   python3 llano.py last            # who changed the pad last (control.log)
++  python3 llano.py loud            # lift the noise limits until quiet hours end (or for 2 h by day)
++  python3 llano.py quiet           # back to the noise limits
++  python3 llano.py noise           # the noise limit in force, as JSON
++  python3 llano.py enforce         # lower a software-set speed above the limit (the timer runs this)
+ 
+ The lock and the control log live in $XDG_STATE_HOME/llano (~/.local/state/llano). The lock
+ binds every program that drives the pad through Pad (this CLI, llanod, cpu_guard, the
+ research scripts, Froonty's Fan tab); a program writing /dev/hidraw* itself is not stopped,
+ since the udev rule gives every program of the user access. The pad's roller still works.
+ Each write logs who made it: $LLANO_CLIENT, else the systemd unit, else the script.
++
++Noise limits (noise.py, NOISE.md): every speed is capped to the limit in force (600 rpm in quiet
++hours, weekdays 22:00-07:00; 2000 rpm by day), unless `llano.py loud` lifted it. A speed the pad
++holds under its own control (the roller) is the user's and is left alone.
+ """
+ import fcntl
+ import json
+@@ -32,6 +40,8 @@ import sys
+ import time
+ from pathlib import Path
+ 
++import noise
++
+ VID, PID = 0x374A, 0xB101
+ CTL_PAD, CTL_SOFTWARE = 0x00, 0x01
+ 
+@@ -82,8 +92,10 @@ def client() -> str:
+     return script
+ 
+ 
+-def log_control(action: str, speed: int | None) -> None:
++def log_control(action: str, speed: int | None, requested: int | None = None) -> None:
+     entry = {'time': round(time.time(), 1), 'by': client(), 'pid': os.getpid(), 'action': action, 'speed': speed}
++    if requested is not None and requested != speed:
++        entry['requested'] = requested
+     try:
+         state_dir().mkdir(parents=True, exist_ok=True)
+         path = state_dir() / 'control.log'
+@@ -148,17 +160,33 @@ class Pad:
+             raise LlanoError(f'unexpected status report: {rep.hex(" ")}')
+         return rep
+ 
+-    def _write_state(self, ctl: int, speed: int, action: str, *, unlocked: bool = False) -> None:
++    def _write_state(self, ctl: int, speed: int, action: str, *, unlocked: bool = False,
++                     requested: int | None = None) -> None:
+         if not unlocked and read_lock() is not None:
+             raise LlanoLocked('the pad is locked off (llano.py unlock to start it again)')
+         cur = self.status()  # keep on/off and lighting as they are
+         self._set_feature(command(bytes([ctl, speed, cur[2], cur[3], cur[4], cur[5], cur[6]])))
+-        log_control(action, speed)
++        log_control(action, speed, requested)
+ 
+-    def set_speed(self, pct: int) -> None:
++    def set_speed(self, pct: int, action: str = 'speed') -> int:
++        """Sets the speed, capped to the noise limit in force; returns the speed set."""
+         if not 0 <= pct <= 100:
+             raise LlanoError(f'speed must be 0-100, got {pct}')
+-        self._write_state(CTL_SOFTWARE, pct, 'speed')
++        applied = min(pct, noise.limit()['max_percent'])
++        self._write_state(CTL_SOFTWARE, applied, action, requested=pct)
++        return applied
++
++    def enforce(self) -> bool:
++        """Lowers a software-set speed above the limit in force; True when it did."""
++        if read_lock() is not None:
++            return False
++        st = self.status()
++        if st[0] != 0x80:  # under the pad's own control: the roller is the user's choice
++            return False
++        if st[1] <= noise.limit()['max_percent']:
++            return False
++        self.set_speed(st[1], 'enforce')
++        return True
+ 
+     def release(self) -> None:
+         self._write_state(CTL_PAD, self.status()[1], 'release')
+@@ -181,14 +209,16 @@ class Pad:
+             return
+         (state_dir() / 'lock').unlink(missing_ok=True)
+         speed = record.get('speed', 0) if isinstance(record.get('speed'), int) else 0
+-        self._write_state(CTL_SOFTWARE, speed, 'unlock')
++        self.set_speed(speed, 'unlock')
+         if record.get('ctl') == 'pad':
+             self.release()
+ 
+ 
+ def describe(rep: bytes) -> str:
++    """The status line, then a `noise {json}` line: rpm and dB estimates and the limit in force."""
+     ctl = 'software' if rep[0] == 0x80 else 'pad'
+-    return f'speed {rep[1]}% ({ctl} control)  lights {"off" if rep[3] & 0x80 else "on"}  raw {rep.hex(" ")}'
++    line = f'speed {rep[1]}% ({ctl} control)  lights {"off" if rep[3] & 0x80 else "on"}  raw {rep.hex(" ")}'
++    return line + '\nnoise ' + json.dumps(noise.describe(rep[1]))
+ 
+ 
+ def main():
+@@ -197,6 +227,9 @@ def main():
+         entry = last_control()
+         print(json.dumps(entry) if entry else 'no control logged yet')
+         return
++    if args == ['noise']:
++        print(json.dumps(noise.limit()))
++        return
+     try:
+         with Pad() as pad:
+             if args == ['status']:
+@@ -209,6 +242,13 @@ def main():
+                 pad.lock()
+             elif args == ['unlock']:
+                 pad.unlock()
++            elif args == ['enforce']:
++                pad.enforce()
++            elif args in (['loud'], ['quiet']):
++                noise.set_override(args == ['loud'])
++                log_control(args[0], None)
++                if args == ['quiet']:
++                    pad.enforce()
+             else:
+                 sys.exit(__doc__)
+             time.sleep(0.1)
+diff --git a/noise.py b/noise.py
+new file mode 100644
+index 0000000..e9f3df3
+--- /dev/null
++++ b/noise.py
+@@ -0,0 +1,150 @@
++"""Noise model and limits for the llano V12 Ultra pad (NOISE.md).
++
++The pad speaks percent; people hear rpm. PERCENT_RPM maps one to the other (an estimate until
++measured against the pad's display), EAR_DB the rpm to the noise at the user's ears (measured
++with a phone app, research/noise_2026-10-09.txt). The limits: a cap during quiet hours
++(weekdays 22:00-07:00, 600 rpm) and a daytime cap (2000 rpm). `llano.py loud` lifts them until
++the end of the current quiet hours (or for DAY_OVERRIDE_H hours by day).
++
++Every value can be overridden in $XDG_CONFIG_HOME/llano/noise.json (same keys, lower case).
++"""
++import datetime
++import json
++import os
++from pathlib import Path
++
++DEFAULTS = {
++    # [percent, rpm]: rpm ~ 300 + 25 x percent. Measured: 12 % showed 600 rpm on the pad's display
++    # (2026-10-09). Assumed: 100 % is the pad's top level, 2800 rpm; 300 rpm is its lowest level.
++    # Consistent with the README's 50 % ~ 1550 rpm. More display readings would firm it up.
++    'percent_rpm': [[0, 0], [1, 325], [12, 600], [100, 2800]],
++    'percent_rpm_measured': 'partly',
++    # [rpm, dB at the user's ears], 2026-10-09; the laptop alone was 37.5 dB.
++    'ear_db': [[0, 37.5], [300, 40.5], [400, 43.0], [500, 45.5], [600, 49.5], [700, 51.5],
++               [800, 53.5], [900, 55.5], [1000, 57.0], [1175, 62.0]],
++    # Monday = 0. A moment is quiet when its own weekday is listed and its time is at or after
++    # `from` or before `to`.
++    'quiet_days': [0, 1, 2, 3, 4],
++    'quiet_from': '22:00',
++    'quiet_to': '07:00',
++    'quiet_max_rpm': 600,
++    'day_max_rpm': 2000,
++    'day_override_h': 2,
++    # Bands for warnings: the highest rpm of each, then their names (NOISE.md).
++    'bands': [[400, 'quiet'], [600, 'night'], [1000, 'audible'], [2000, 'loud'], [100000, 'very loud']],
++}
++
++
++def state_dir() -> Path:
++    return Path(os.environ.get('XDG_STATE_HOME') or Path.home() / '.local/state') / 'llano'
++
++
++def policy() -> dict:
++    p = dict(DEFAULTS)
++    path = Path(os.environ.get('XDG_CONFIG_HOME') or Path.home() / '.config') / 'llano/noise.json'
++    try:
++        p.update(json.loads(path.read_text()))
++    except (OSError, ValueError):
++        pass
++    return p
++
++
++def _interp(points, x):
++    if x <= points[0][0]:
++        return points[0][1]
++    for (x0, y0), (x1, y1) in zip(points, points[1:]):
++        if x <= x1:
++            return y0 + (y1 - y0) * (x - x0) / (x1 - x0) if x1 > x0 else y1
++    (x0, y0), (x1, y1) = points[-2], points[-1]
++    return y1 + (y1 - y0) * (x - x1) / (x1 - x0) if x1 > x0 else y1  # beyond the last: extended
++
++
++def rpm(percent: float, p: dict | None = None) -> int:
++    return round(_interp((p or policy())['percent_rpm'], percent))
++
++
++def percent(rpm_value: float, p: dict | None = None) -> int:
++    """The highest whole percent whose rpm stays at or under rpm_value."""
++    p = p or policy()
++    return max((pct for pct in range(101) if rpm(pct, p) <= rpm_value), default=0)
++
++
++def ear_db(rpm_value: float, p: dict | None = None) -> float:
++    """dB at the ears; above the last reading, +30 dB per tenfold rpm (research/noise_2026-10-09.txt)."""
++    import math
++    points = (p or policy())['ear_db']
++    if rpm_value <= points[-1][0]:
++        return round(_interp(points, rpm_value), 1)
++    top_rpm, top_db = points[-1]
++    return round(top_db + 30 * math.log10(rpm_value / top_rpm), 1)
++
++
++def band(rpm_value: float, p: dict | None = None) -> str:
++    return next(name for top, name in (p or policy())['bands'] if rpm_value <= top)
++
++
++def _hm(text):
++    h, m = text.split(':')
++    return datetime.time(int(h), int(m))
++
++
++def quiet_window(now: datetime.datetime, p: dict | None = None):
++    """(quiet now, when the current quiet or day stretch ends)."""
++    p = p or policy()
++    start, end = _hm(p['quiet_from']), _hm(p['quiet_to'])
++
++    def quiet(t):
++        return t.weekday() in p['quiet_days'] and (t.time() >= start or t.time() < end)
++
++    is_quiet = quiet(now)
++    t = now.replace(second=0, microsecond=0)
++    for _ in range(8 * 24 * 60 // 15):  # the next change, in 15-minute steps (times are on the quarter)
++        t += datetime.timedelta(minutes=15 - t.minute % 15)
++        if quiet(t) != is_quiet:
++            return is_quiet, t
++    return is_quiet, None
++
++
++def override_until() -> float | None:
++    try:
++        until = float((state_dir() / 'loud-until').read_text())
++    except (OSError, ValueError):
++        return None
++    return until if until > datetime.datetime.now().timestamp() else None
++
++
++def set_override(on: bool) -> float | None:
++    path = state_dir() / 'loud-until'
++    if not on:
++        path.unlink(missing_ok=True)
++        return None
++    p = policy()
++    now = datetime.datetime.now()
++    is_quiet, change = quiet_window(now, p)
++    until = change if is_quiet and change else now + datetime.timedelta(hours=p['day_override_h'])
++    state_dir().mkdir(parents=True, exist_ok=True)
++    path.write_text(f'{until.timestamp():.0f}\n')
++    return until.timestamp()
++
++
++def limit(now: datetime.datetime | None = None) -> dict:
++    """The cap in force: {quiet, until (ISO), max_rpm, max_percent, override_until}."""
++    p = policy()
++    now = now or datetime.datetime.now()
++    is_quiet, change = quiet_window(now, p)
++    over = override_until()
++    max_rpm = None if over else (p['quiet_max_rpm'] if is_quiet else p['day_max_rpm'])
++    return {
++        'quiet': is_quiet,
++        'until': change.isoformat(timespec='minutes') if change else None,
++        'max_rpm': max_rpm,
++        'max_percent': 100 if max_rpm is None else percent(max_rpm, p),
++        'override_until': over,
++        'mapping_measured': p['percent_rpm_measured'],
++    }
++
++
++def describe(speed_percent: int) -> dict:
++    p = policy()
++    r = rpm(speed_percent, p)
++    return {'rpm': r, 'ear_db': ear_db(r, p), 'band': band(r, p), 'limit': limit()}
+diff --git a/research/lut_sweep.py b/research/lut_sweep.py
+index e456a11..ea6a4e3 100644
+--- a/research/lut_sweep.py
++++ b/research/lut_sweep.py
+@@ -119,10 +119,12 @@ class GpuLoad:
+ 
+ 
+ def check_idle():
+-    before = cpu_times()
+-    time.sleep(3)
++    before, gpus = cpu_times(), []
++    for _ in range(3):  # the median: one reading can catch the GPU waking up
++        gpus.append(gpu_sample()[1])
++        time.sleep(1)
+     util = cpu_util(before, cpu_times())
+-    gpu = gpu_sample()[1]
++    gpu = statistics.median(gpus)
+     if util > 10 or gpu > 10:
+         sys.exit(f'not idle: CPU {util:.0f} %, GPU {gpu:.0f} %; stop other work first')
+ 
+diff --git a/research/step_down.py b/research/step_down.py
+new file mode 100644
+index 0000000..09663f7
+--- /dev/null
++++ b/research/step_down.py
+@@ -0,0 +1,122 @@
++"""Sustained load stepped down 100 % -> 0 % in 10 % steps (CPU, GPU, or both at once), pad left as it is.
++
++CPU load: whole busy threads (100 % = every logical CPU, 90 % = 90 % of them, ...), which holds
++steadier than a duty cycle. GPU load: research/gpu_stress at that duty cycle. Each step holds
++HOLD_S, discards the first SETTLE_S and averages the rest: CPU package and GPU temperatures,
++clocks, utilization, GPU power, CPU throttling, and each temperature's drift over the averaged
++part (°C per minute: near 0 means it had settled). Writes research/step_down_DATE.csv.
++Does not touch the pad (it records its state); refuses to start while the CPU is busy. The GPU
++is not required to be idle (an editor rendering on it is normal use): its baseline is printed.
++
++    python3 research/step_down.py [cpu] [gpu] [both]     # both: CPU and GPU at the same level together
++"""
++import csv
++import datetime
++import multiprocessing as mp
++import os
++import statistics
++import subprocess
++import sys
++import time
++from pathlib import Path
++
++HERE = Path(__file__).resolve().parent
++sys.path.insert(0, str(HERE.parent))
++from llano import Pad  # noqa: E402
++from llanod import cpu_temp  # noqa: E402
++from lut_sweep import GPU_ABORT_C, GPU_STRESS, THROTTLE_MS, cpu_times, cpu_util, gpu_sample, mean_clock_mhz  # noqa: E402
++
++LEVELS = list(range(100, -1, -10))
++HOLD_S, SETTLE_S, SAMPLE_S = 45, 30, 1.5
++FIELDS = ['device', 'load', 'cpu_c', 'gpu_c', 'cpu_drift_c_min', 'gpu_drift_c_min', 'cpu_util', 'gpu_util',
++          'cpu_mhz', 'gpu_mhz', 'gpu_w', 'cpu_throttle_pct', 'pad']
++
++
++def spin(stop):
++    x = 0
++    while not stop.is_set():
++        for _ in range(100000):
++            x = (x * 1103515245 + 12345) & 0xFFFFFFFF
++
++
++def slope(ts, ys):
++    """Least-squares slope, per minute."""
++    mt, my = statistics.mean(ts), statistics.mean(ys)
++    den = sum((t - mt) ** 2 for t in ts)
++    return 60 * sum((t - mt) * (y - my) for t, y in zip(ts, ys)) / den if den else 0.0
++
++
++def hold(device, level, pad_state):
++    t0 = time.monotonic()
++    while time.monotonic() - t0 < SETTLE_S:
++        if device == 'gpu' and gpu_sample()[0] >= GPU_ABORT_C:
++            raise RuntimeError('GPU too hot, aborting')
++        time.sleep(SAMPLE_S)
++    rows, cpu0, thr0, t1 = [], cpu_times(), int(THROTTLE_MS.read_text()), time.monotonic()
++    while time.monotonic() - t0 < HOLD_S:
++        g = gpu_sample()
++        if g[0] >= GPU_ABORT_C:
++            raise RuntimeError('GPU too hot, aborting')
++        rows.append((time.monotonic(), cpu_temp(), g[0], g[1], g[2], g[3], mean_clock_mhz()))
++        time.sleep(SAMPLE_S)
++    elapsed = time.monotonic() - t1
++    ts = [r[0] for r in rows]
++    m = lambda i: statistics.mean(r[i] for r in rows)
++    return [device, level, round(m(1), 1), round(m(2), 1),
++            round(slope(ts, [r[1] for r in rows]), 2), round(slope(ts, [r[2] for r in rows]), 2),
++            round(cpu_util(cpu0, cpu_times()), 1), round(m(3), 1), round(m(6)), round(m(5)), round(m(4), 1),
++            round(100 * (int(THROTTLE_MS.read_text()) - thr0) / (elapsed * 1000), 1), pad_state]
++
++
++def main():
++    devices = sys.argv[1:] or ['cpu', 'gpu']
++    before = cpu_times()
++    gpus = []
++    for _ in range(5):
++        gpus.append(gpu_sample())
++        time.sleep(1)
++    if cpu_util(before, cpu_times()) > 10:
++        sys.exit('the CPU is busy; stop other work first')
++    print(f'GPU baseline: {statistics.mean(g[1] for g in gpus):.0f} % busy, '
++          f'{statistics.mean(g[2] for g in gpus):.1f} W, {statistics.mean(g[0] for g in gpus):.0f} °C', flush=True)
++    with Pad() as pad:
++        st = pad.status()
++    pad_state = f'{st[1]}% {"software" if st[0] == 0x80 else "pad"}'
++    out = HERE / f'step_down_{datetime.date.today()}_{"_".join(devices)}.csv'
++    print(f'pad left at {pad_state}; {len(devices) * len(LEVELS) * HOLD_S / 60:.0f} min', flush=True)
++    with open(out, 'w', newline='') as f:
++        w = csv.writer(f)
++        w.writerow(FIELDS)
++        for device in devices:
++            procs, stop, gpu = [], mp.Event(), None
++            try:
++                for level in LEVELS:
++                    if device in ('cpu', 'both'):
++                        want = round(os.cpu_count() * level / 100)
++                        while len(procs) > want:
++                            procs.pop().terminate()
++                        while len(procs) < want:
++                            p = mp.Process(target=spin, args=(stop,), daemon=True)
++                            p.start()
++                            procs.append(p)
++                    if device in ('gpu', 'both'):
++                        if gpu:
++                            gpu.terminate()
++                            gpu.wait(10)
++                        gpu = subprocess.Popen([str(GPU_STRESS), str(level)], stdout=subprocess.DEVNULL) if level else None
++                    row = hold(device, level, pad_state)
++                    w.writerow(row)
++                    f.flush()
++                    print(' '.join(f'{k}={v}' for k, v in zip(FIELDS, row)), flush=True)
++            finally:
++                stop.set()
++                for p in procs:
++                    p.terminate()
++                if gpu:
++                    gpu.terminate()
++                    gpu.wait(10)
++    print(f'wrote {out}', flush=True)
++
++
++if __name__ == '__main__':
++    main()
+diff --git a/research/step_down_2026-10-09_both.csv b/research/step_down_2026-10-09_both.csv
+new file mode 100644
+index 0000000..ee3f6f3
+--- /dev/null
++++ b/research/step_down_2026-10-09_both.csv
+@@ -0,0 +1,12 @@
++device,load,cpu_c,gpu_c,cpu_drift_c_min,gpu_drift_c_min,cpu_util,gpu_util,cpu_mhz,gpu_mhz,gpu_w,cpu_throttle_pct,pad
++both,100,72.1,68.7,12.9,17.58,99.6,97.4,2395,2391,118.4,0.0,12% pad
++both,90,84.0,76.4,-3.34,0.0,94.2,90.7,2731,2385,114.9,0.0,12% pad
++both,80,82.0,73.6,0.0,8.11,84.7,80.9,2725,2385,104.8,0.0,12% pad
++both,70,81.0,68.2,-1.91,-12.89,71.9,71.7,2664,2385,96.9,0.0,12% pad
++both,60,81.5,69.6,2.15,-5.72,62.2,60.9,2425,2385,87.5,0.0,12% pad
++both,50,83.8,68.0,3.82,-4.29,52.4,50.5,2408,2400,78.2,0.0,12% pad
++both,40,84.3,61.1,0.72,2.15,42.7,41.8,2435,2400,70.0,0.0,12% pad
++both,30,85.8,60.3,-1.43,-22.19,33.1,30.6,2330,2280,55.4,0.0,12% pad
++both,20,94.9,55.3,-5.02,4.54,20.3,22.0,2087,2280,48.7,90.1,12% pad
++both,10,95.0,51.0,0.96,0.0,10.3,11.1,1811,2280,39.9,79.3,12% pad
++both,0,48.9,39.8,6.91,-7.15,0.5,1.0,1253,212,2.8,0.0,12% pad
+diff --git a/research/step_down_2026-10-09_cpu_gpu.csv b/research/step_down_2026-10-09_cpu_gpu.csv
+new file mode 100644
+index 0000000..aaa363b
+--- /dev/null
++++ b/research/step_down_2026-10-09_cpu_gpu.csv
+@@ -0,0 +1,23 @@
++device,load,cpu_c,gpu_c,cpu_drift_c_min,gpu_drift_c_min,cpu_util,gpu_util,cpu_mhz,gpu_mhz,gpu_w,cpu_throttle_pct,pad
++cpu,100,94.9,48.3,-4.92,11.47,99.4,2.4,3564,210,3.6,72.9,12% pad
++cpu,90,95.0,53.0,-0.48,0.0,91.4,1.5,3544,210,3.8,84.9,12% pad
++cpu,80,95.1,54.0,3.57,0.0,82.0,1.0,3536,210,3.9,88.5,12% pad
++cpu,70,94.6,54.8,1.9,3.81,69.8,1.3,3373,210,3.9,83.3,12% pad
++cpu,60,95.0,54.0,3.81,0.0,60.0,2.3,3032,210,3.9,84.8,12% pad
++cpu,50,95.0,53.0,3.33,0.0,50.8,1.3,3026,210,3.8,88.2,12% pad
++cpu,40,95.0,52.0,0.0,0.0,41.4,3.8,2622,210,3.8,95.2,12% pad
++cpu,30,94.7,51.0,2.62,0.0,32.0,1.9,2656,210,3.7,95.6,12% pad
++cpu,20,94.8,48.2,-3.33,-3.81,19.6,4.5,1996,210,3.6,91.8,12% pad
++cpu,10,95.2,45.4,-2.86,-5.71,10.3,8.9,1819,260,3.8,86.6,12% pad
++cpu,0,47.2,38.6,-5.72,-5.72,0.6,2.0,1279,210,3.2,0.0,12% pad
++gpu,100,83.8,66.3,11.01,9.81,3.7,100.0,1297,2397,117.7,0.0,12% pad
++gpu,90,91.7,69.9,2.63,2.15,3.7,90.9,1378,2400,110.7,21.3,12% pad
++gpu,80,83.9,69.5,-52.44,-5.51,3.2,81.7,1303,2385,104.2,8.4,12% pad
++gpu,70,80.2,67.5,7.18,9.82,2.8,71.5,1343,2385,94.8,0.0,12% pad
++gpu,60,74.5,63.3,-2.6,25.12,2.6,61.0,1285,2400,85.5,0.0,12% pad
++gpu,50,73.4,57.3,14.36,5.02,2.4,50.8,1307,2400,76.2,0.0,12% pad
++gpu,40,63.3,55.7,42.79,-24.63,2.1,41.4,1373,2400,67.9,0.0,12% pad
++gpu,30,61.7,52.6,17.47,-23.91,1.8,30.8,1353,2280,54.2,0.0,12% pad
++gpu,20,54.7,49.4,-14.09,11.48,1.4,21.8,1317,2280,47.8,0.0,12% pad
++gpu,10,51.1,46.5,-5.99,-13.17,0.9,11.1,1177,2280,39.2,0.0,12% pad
++gpu,0,45.9,37.4,-4.53,-5.72,0.6,2.7,1237,210,2.7,0.0,12% pad
