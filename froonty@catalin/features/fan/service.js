@@ -58,6 +58,10 @@ export class FanService extends Emitter {
         this.errorMessage = '';
         /** Active units that drive the pad by themselves (pad.js CONTROLLER_UNITS). */
         this.controllers = [];
+        /** The panic lock's record (pad.js parseLock), or null when unlocked. */
+        this.lock = null;
+        /** Who drove the pad last (pad.js parseLastControl), or null. */
+        this.lastControl = null;
         /** Latest temperatures: {cpu, gpus: [{id, name, temp, asleep}], cores: [{core, temp, threads}]}. */
         this.temps = null;
         /** [{t, cpu, gpus: {id: temp}, fan}], oldest first, t in seconds. */
@@ -131,6 +135,12 @@ export class FanService extends Emitter {
         this._queue({args: ['release'], released: true});
     }
 
+    /** The panic lock: fan off and llano.py refusing every write, or back. */
+    setLocked(locked) {
+        this._released = false;
+        this._queue({args: [locked ? 'lock' : 'unlock']});
+    }
+
     async stopController(unit) {
         await this._pad.stopUnit(unit);
         this._released = true;
@@ -169,6 +179,16 @@ export class FanService extends Emitter {
         this._timerId = 0;
     }
 
+    async _readState() {
+        const dir = this._pad.stateDir();
+        const [lock, log] = await Promise.all([
+            this._io.read(`${dir}/lock`, this._cancellable),
+            this._io.read(`${dir}/control.log`, this._cancellable),
+        ]);
+        this.lock = this._pad.parseLock(lock);
+        this.lastControl = this._pad.parseLastControl(log);
+    }
+
     _tick() {
         this._queue({args: ['status']}, {poll: true});
         this._pad.controllers(this._cancellable).then(units => {
@@ -193,7 +213,8 @@ export class FanService extends Emitter {
         this._busy = true;
         try {
             const {status, error, message} = await this._pad.llano(this._script, command.args);
-            this.status = status;
+            // A write refused by the lock leaves the pad as it was.
+            this.status = status ?? (error === 'locked' ? this.status : null);
             this.error = error;
             this.errorMessage = message;
             if (command.released)
@@ -201,6 +222,8 @@ export class FanService extends Emitter {
             // Turning the roller after a release: the pad is in charge again.
             if (status?.control === 'pad')
                 this._released = false;
+            // Before the command counts as done, so no poll slips in between.
+            await this._readState();
         } catch (e) {
             this.status = null;
             this.error = 'failed';

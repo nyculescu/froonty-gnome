@@ -918,6 +918,11 @@
     spacing: 8px;
     padding: 4px 0 2px 0;
 }
+/* Lock off while the pad is locked: Unlock, in the warning colour. */
+.froonty-fan-button:checked {
+    color: #ffbe6f;
+    background-color: rgba(255, 190, 111, 0.16);
+}
 /* Apply while the pad is already at the recommended speed. */
 .froonty-fan-button:insensitive {
     color: rgba(255, 255, 255, 0.4);

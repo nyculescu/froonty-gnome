@@ -4,7 +4,10 @@
 // reports. Every command (status, speed N, release) prints the pad's state
 // after it, ending in the raw 8-byte status report, which is what is read
 // here. Also the user's systemd units that drive the pad by themselves
-// (llanod, llano-guard), which would undo the slider within seconds.
+// (llanod, llano-guard), which would undo the slider within seconds, and
+// llano.py's state in $XDG_STATE_HOME/llano: the panic lock (while it is
+// there, every write through llano.py is refused) and the log of who
+// drove the pad last (control.log; Froonty's own writes say "Froonty").
 // No St.
 
 import Gio from 'gi://Gio';
@@ -47,8 +50,38 @@ export function parseStatus(text) {
     };
 }
 
+/** Where llano.py keeps its lock and control log. */
+export const stateDir = () => `${GLib.get_user_state_dir()}/llano`;
+
+/**
+ * The lock's record ({time, by, speed, ctl}) from the lock file's text,
+ * or null when there is no lock (text null). Unreadable is still a lock.
+ */
+export function parseLock(text) {
+    if (text === null || text === undefined)
+        return null;
+    try {
+        return JSON.parse(text) ?? {};
+    } catch (e) {
+        return {};
+    }
+}
+
+/** The latest control.log entry ({time, by, pid, action, speed}), or null. */
+export function parseLastControl(text) {
+    const last = (text ?? '').trim().split('\n').pop();
+    try {
+        const entry = JSON.parse(last);
+        return entry && typeof entry.by === 'string' ? entry : null;
+    } catch (e) {
+        return null;
+    }
+}
+
 /** Why llano.py failed, from its standard error. */
 export function failureKind(stderr) {
+    if (/locked off/.test(stderr))
+        return 'locked';
     if (/can't open file|No such file or directory: '.*llano/.test(stderr))
         return 'no-script';
     if (/not found/.test(stderr))
@@ -64,12 +97,19 @@ export function activeUnits(stdout) {
     return CONTROLLER_UNITS.filter((_unit, i) => states[i]?.trim() === 'active');
 }
 
-/** Runs `argv` (no shell): {ok, stdout, stderr}; ok is false on a failure or timeout. */
-async function run(argv, cancellable = null) {
+/**
+ * Runs `argv` (no shell): {ok, stdout, stderr}; ok is false on a failure or
+ * timeout. `env`: variables to set for it.
+ */
+async function run(argv, cancellable = null, env = {}) {
     let proc;
     try {
-        proc = Gio.Subprocess.new(argv,
-            Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE);
+        const launcher = new Gio.SubprocessLauncher({
+            flags: Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE,
+        });
+        for (const [name, value] of Object.entries(env))
+            launcher.setenv(name, value, true);
+        proc = launcher.spawnv(argv);
     } catch (e) {
         return {ok: false, stdout: '', stderr: e.message};
     }
@@ -93,13 +133,15 @@ async function run(argv, cancellable = null) {
 }
 
 /**
- * Runs llano.py with `args` (['status'], ['speed', '40'], ['release']).
+ * Runs llano.py with `args` (['status'], ['speed', '40'], ['release'],
+ * ['lock'], ['unlock']); its control log names Froonty.
  *
  * @returns {Promise<{status: ?object, error: ?string, message: string}>}
  *   status as parseStatus; error null or a failureKind
  */
 export async function llano(script, args, cancellable = null) {
-    const {ok, stdout, stderr} = await run([PYTHON, script, ...args], cancellable);
+    const {ok, stdout, stderr} = await run([PYTHON, script, ...args], cancellable,
+        {LLANO_CLIENT: 'Froonty'});
     const status = ok ? parseStatus(stdout) : null;
     if (status)
         return {status, error: null, message: ''};

@@ -249,28 +249,51 @@ EOF
 chmod +x "$FROONTY_SYSTEMCTL"
 
 # Fan tab: a stand-in for llano-v12-linux's llano.py, so the real cooling
-# pad is never driven (FROONTY_TEST_LLANO=/path/to/llano.py runs the
-# checks against the real pad instead). Same commands and output; like the pad, release keeps the
-# speed and the status still says software (0x80).
+# pad is never driven (FROONTY_TEST_LLANO=/path/to/llano.py runs the checks
+# against the real pad instead). Same commands, output and state files
+# ($XDG_STATE_HOME/llano: the lock, control.log); like the pad, release
+# keeps the speed and the status still says software (0x80).
 cat >"$WORK/fake-llano.py" <<'EOF'
-import os, sys
+import json, os, sys, time
 here = os.path.dirname(os.path.abspath(__file__))
 state_path = os.path.join(here, 'fake-llano.state')
+llano_dir = os.path.join(os.environ['XDG_STATE_HOME'], 'llano')
+lock_path = os.path.join(llano_dir, 'lock')
+os.makedirs(llano_dir, exist_ok=True)
 with open(os.path.join(here, 'fake-llano.log'), 'a') as log:
     log.write(' '.join(sys.argv[1:]) + '\n')
 st, speed = (0x88, 60)
 if os.path.exists(state_path):
     st, speed = (int(v) for v in open(state_path).read().split())
 args = sys.argv[1:]
-if len(args) == 2 and args[0] == 'speed':
-    st, speed = 0x80, int(args[1])
-elif args not in (['status'], ['release']):
+locked = os.path.exists(lock_path)
+action = None
+if len(args) == 2 and args[0] == 'speed' or args == ['release']:
+    if locked:
+        sys.exit('the pad is locked off (llano.py unlock to start it again)')
+    if args == ['release']:
+        action = 'release'
+    else:
+        st, speed, action = 0x80, int(args[1]), 'speed'
+elif args == ['lock'] and not locked:
+    json.dump({'time': time.time(), 'by': os.environ.get('LLANO_CLIENT', 'test'), 'speed': speed,
+               'ctl': 'software' if st == 0x80 else 'pad'}, open(lock_path, 'w'))
+    st, speed, action = 0x80, 0, 'lock'
+elif args == ['unlock'] and locked:
+    record = json.load(open(lock_path))
+    os.remove(lock_path)
+    st, speed, action = 0x80, record['speed'], 'unlock'
+elif args not in (['status'], ['lock'], ['unlock']):
     sys.exit('usage')
+if action:
+    with open(os.path.join(llano_dir, 'control.log'), 'a') as log:
+        log.write(json.dumps({'time': time.time(), 'by': os.environ.get('LLANO_CLIENT', 'test'),
+                              'pid': os.getpid(), 'action': action, 'speed': speed}) + '\n')
 open(state_path, 'w').write(f'{st} {speed}')
 body = [st, speed, 0, 0x82, 4, 0, 0xff]
 raw = ' '.join(f'{b:02x}' for b in body + [(0xff - sum(body)) & 0xff])
 ctl = 'software' if st == 0x80 else 'pad'
-print(f'speed {speed}% ({ctl} control)  lights off  raw {raw}')
+print(('LOCKED  ' if os.path.exists(lock_path) else '') + f'speed {speed}% ({ctl} control)  lights off  raw {raw}')
 EOF
 
 # Media tab: apps for the fake players (fake-mpris.js) to name, one music

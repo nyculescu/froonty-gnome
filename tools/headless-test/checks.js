@@ -8792,15 +8792,68 @@ async function testFan(outDir) {
         systemctlLog().split('\n').filter(l => l.includes('stop')).join(' | '));
 
     // A wrong llano.py location says where to set it.
-    const script = s.get_string('fan-llano-path');
+    const scriptPath = s.get_string('fan-llano-path');
     s.set_string('fan-llano-path', '/nonexistent/llano.py');
     await waitFor(() => service.error === 'no-script', 5000);
     check('fan: a missing llano.py is explained',
         view._noticeRow.visible && view._notice.text.includes('Settings → Fan') && !view._stopButton.visible,
         view._notice.text);
-    s.set_string('fan-llano-path', script);
+    s.set_string('fan-llano-path', scriptPath);
     await waitFor(() => service.error === null && service.status, 5000);
     check('fan: the right location again clears it', !view._noticeRow.visible, view._notice.text);
+
+    // Who changed the pad last: Froonty's own writes say so.
+    await waitFor(() => view._lastChange.text.includes('Froonty'), 5000);
+    check('fan: the last change names Froonty and what it did',
+        /^Last change: Froonty (set \d+%|unlocked it at \d+%) · \d\d:\d\d:\d\d$/.test(view._lastChange.text),
+        view._lastChange.text);
+
+    // The lock, from the tab: fan off, every speed control held, and
+    // llano.py refuses a speed while it holds; Unlock gives the speed back.
+    const before = service.status?.speed;
+    await clickActor(view._lockButton);
+    await waitFor(() => !service.busy && service.lock && service.status?.speed === 0 &&
+        view._slider.value === 0, 5000);
+    check('fan: Lock off turns the fan off and says who locked it',
+        service.status?.speed === 0 && view._notice.text.startsWith('Locked off by Froonty') &&
+        view._lockButton.label === 'Unlock' && !view._slider.reactive && view._lastChange.text.includes('locked it off'),
+        `${service.status?.speed} | ${view._notice.text} | ${view._lastChange.text}`);
+    service.setSpeed(80);
+    await waitFor(() => !service.busy, 5000);
+    check('fan: while locked, llano.py refuses a new speed',
+        service.error === 'locked' && service.lock && service.status?.speed === 0 &&
+        view._speedLabel.text === '0%' && Math.round(view._slider.value * 100) === 0,
+        `error=${service.error} slider=${Math.round(view._slider.value * 100)}`);
+    await screenshotTop(outDir, 'fan-locked', 640);
+    await clickActor(view._lockButton);
+    await waitFor(() => !service.busy && !service.lock && service.status?.speed === before, 5000);
+    check('fan: Unlock gives back the speed from before', service.status?.speed === before &&
+        !view._noticeRow.visible && view._slider.reactive, `${service.status?.speed} (was ${before})`);
+
+    // The Fan lock panic button, and a lock from outside (the command line)
+    // reaching it through its file monitor.
+    s.set_strv('panic-buttons', ['fan-lock']);
+    await sleep(SETTLE_MS);
+    const [lockButton] = island()._hub._panicBar._buttons;
+    check('fan: the "Fan lock" panic button is in the bar, named',
+        lockButton?.actor.accessible_name === 'Fan lock: click to turn it off and lock it',
+        `${lockButton?.actor.accessible_name}`);
+    await clickActor(lockButton.actor);
+    await waitFor(() => lockButton.actor.checked, 5000);
+    const iconPath = () => lockButton.actor.child.gicon?.get_file?.()?.get_path() ?? '';
+    await waitFor(() => service.lock, (s.get_int('fan-interval') + 2) * 1000);
+    check('fan: clicking it locks the pad off: checked, the crossed-out fan, the tab says so',
+        lockButton.actor.checked && iconPath().endsWith('froonty-fan-off-symbolic.svg') &&
+        service.lock?.by === 'Froonty' && service.status?.speed === 0,
+        `checked=${lockButton.actor.checked} icon=${iconPath()} speed=${service.status?.speed}`);
+    const script = s.get_string('fan-llano-path');
+    GLib.spawn_sync(null, ['/usr/bin/python3', script, 'unlock'], null, GLib.SpawnFlags.DEFAULT, null);
+    await waitFor(() => !lockButton.actor.checked, 8000);
+    check('fan: an unlock from the command line reaches the button',
+        !lockButton.actor.checked && iconPath().endsWith('froonty-fan-symbolic.svg'),
+        `checked=${lockButton.actor.checked}`);
+    s.reset('panic-buttons');
+    await sleep(SETTLE_MS);
 
     // Off screen, nothing is read.
     await clickActor(tabButton('sysmon'));

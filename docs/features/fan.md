@@ -11,15 +11,19 @@ reports). Access without a password needs that project's udev rule
 
 ## Look
 
-Size 460 × 560 px by default (`fan-width`, `fan-height`; drag the open
+Size 460 × 620 px by default (`fan-width`, `fan-height`; drag the open
 island's corner to change it).
 
 - **Cooling pad:** the speed in big type; under it the control (software,
-  the pad's roller, or released), the lights and the raw status report.
-  A slider 0–100 %, then **Off**, **50 %**, **100 %** and **Release**.
+  the pad's roller, or released), the lights and the raw status report,
+  and **Last change**: who drove the pad last, what they did and when
+  (llano.py's `control.log`), or the pad's roller when its status says so.
+  A slider 0–100 %, then **Off**, **50 %**, **100 %**, **Lock off** /
+  **Unlock** and **Release**.
 - **Recommended:** the speed `fan_lut.json` gives for the current CPU and
   GPU temperatures, which device leads, and **Apply**. Without the table,
   how to build it.
+- **Locked:** who locked it and when; every speed control is held.
 - **Notices:** the pad missing, no access (the udev rule), `llano.py` not
   found, or `llano-guard` / `llanod` running (they set the speed by
   themselves and would undo the slider), with **Stop it**.
@@ -45,6 +49,22 @@ island's corner to change it).
   in llano-v12-linux). The speed is interpolated between rows and clamped
   at the ends; the machine's is the higher of the CPU's and the GPU's.
   The table is read again on each visit.
+
+## Lock and the Fan lock panic button
+
+`llano.py lock` turns the fan off and writes `$XDG_STATE_HOME/llano/lock`;
+while it is there llano.py refuses every speed and release, so nothing
+that drives the pad through it (the CLI, llanod, cpu_guard, the research
+scripts, this tab) can start the fan. `unlock` restores the speed and
+control from before. The **Fan lock** panic button (panic/fanLock.js)
+toggles it and follows the lock file with a file monitor, so a lock from
+the command line shows at once; the tab's **Lock off** does the same.
+
+What it cannot do: stop a program that opens `/dev/hidraw*` itself, since
+the udev rule gives every program of the user access. A lock that no user
+program can lift needs root (a helper that de-authorizes the USB device,
+unlocked with the password through polkit); see llano-v12-linux's README.
+The pad's roller always works.
 
 ## Settings (Settings → Fan)
 

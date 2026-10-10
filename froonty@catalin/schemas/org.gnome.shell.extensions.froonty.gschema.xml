@@ -246,7 +246,7 @@
     </key>
     <key name="fan-height" type="i">
       <range min="300" max="900"/>
-      <default>560</default>
+      <default>620</default>
       <summary>Fan island height</summary>
     </key>
 

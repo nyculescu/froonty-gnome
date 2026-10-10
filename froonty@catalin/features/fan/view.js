@@ -61,7 +61,42 @@ const bandRgb = temp => BANDS.find(([upTo]) => temp < upTo)[1];
 // A GPU worth a line: one with a temperature, or an NVIDIA one asleep.
 const shownGpus = gpus => (gpus ?? []).filter(gpu => known(gpu.temp) || gpu.asleep);
 
+const clock = time => GLib.DateTime.new_from_unix_local(Math.floor(time)).format('%H:%M:%S');
+
+// "Last change: …" from llano.py's control log; the pad's own status says
+// when its roller was turned since (it then reports pad control again).
+function lastChangeText(service) {
+    if (service.status?.control === 'pad')
+        return _('Last change: the pad’s roller');
+    const entry = service.lastControl;
+    if (!entry)
+        return _('Last change: none logged yet');
+    let what;
+    switch (entry.action) {
+    case 'speed':
+        what = _('set %d%%').format(entry.speed);
+        break;
+    case 'release':
+        what = _('handed it to the roller');
+        break;
+    case 'lock':
+        what = _('locked it off');
+        break;
+    case 'unlock':
+        what = _('unlocked it at %d%%').format(entry.speed);
+        break;
+    default:
+        what = entry.action;
+    }
+    return _('Last change: %s %s · %s').format(entry.by, what, clock(entry.time));
+}
+
 function noticeText(service) {
+    if (service.lock) {
+        const by = service.lock.by ? _(' by %s at %s').format(service.lock.by, clock(service.lock.time)) : '';
+        return _('Locked off%s. No program that drives the pad through llano.py can start the fan; the pad’s roller still can.')
+            .format(by);
+    }
     switch (service.error) {
     case 'not-found':
         return _('The cooling pad is not connected (USB 374a:b101).');
@@ -154,6 +189,8 @@ export class FanView {
         box.add_child(heading);
         this._detail = new St.Label({style_class: 'froonty-sysmon-detail'});
         box.add_child(this._detail);
+        this._lastChange = new St.Label({style_class: 'froonty-sysmon-detail'});
+        box.add_child(this._lastChange);
 
         const sliderRow = new St.BoxLayout({style_class: 'froonty-fan-slider-row'});
         this._slider = new Slider(0);
@@ -180,9 +217,15 @@ export class FanView {
         buttons.add_child(this._button(_('50 %'), () => this._setSpeed(50)));
         buttons.add_child(this._button(_('100 %'), () => this._setSpeed(100)));
         buttons.add_child(new St.Widget({x_expand: true}));
+        this._lockButton = this._button(_('Lock off'), () => this._service.setLocked(!this._service.lock),
+            _('Turn the fan off and keep every program from starting it'));
+        buttons.add_child(this._lockButton);
         buttons.add_child(this._button(_('Release'), () => this._service.release(),
             _('Hand speed control back to the pad’s roller')));
         box.add_child(buttons);
+        // Everything that sets a speed, held while the pad is locked.
+        this._speedControls = [this._slider, ...buttons.get_children()
+            .filter(child => child instanceof St.Button && child !== this._lockButton)];
 
         // The recommendation (lut.js): its speed, which device leads, Apply.
         const recommendRow = new St.BoxLayout({style_class: 'froonty-fan-recommend'});
@@ -280,7 +323,15 @@ export class FanView {
         const notice = noticeText(service);
         this._notice.text = notice;
         this._noticeRow.visible = Boolean(notice);
-        this._stopButton.visible = !service.error && service.controllers.length > 0;
+        this._stopButton.visible = !service.lock && !service.error && service.controllers.length > 0;
+        this._lastChange.text = lastChangeText(service);
+        const locked = Boolean(service.lock);
+        this._lockButton.label = locked ? _('Unlock') : _('Lock off');
+        this._lockButton.checked = locked;
+        for (const control of this._speedControls) {
+            control.reactive = !locked;
+            control.opacity = locked ? 110 : 255;
+        }
 
         const held = this._dragging || service.busy ||
             GLib.get_monotonic_time() / 1000 < this._holdUntil;
@@ -319,7 +370,7 @@ export class FanView {
             this._recommendDetail.text = DASH;
         }
         this._applyButton.visible = Boolean(rec) && !service.lutError;
-        this._applyButton.reactive = rec?.fan !== service.status?.speed;
+        this._applyButton.reactive = !service.lock && rec?.fan !== service.status?.speed;
     }
 
     // One swatch, name and value per series; rebuilt when the GPUs change.

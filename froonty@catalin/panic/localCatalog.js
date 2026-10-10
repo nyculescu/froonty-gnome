@@ -42,6 +42,17 @@ export const LOCAL_PANIC_BUTTONS = [
         description: _ => _('Pauses every player that is playing. Click again to resume the ones it paused.'),
     },
     {
+        // The cooling pad off and locked there (llano.py lock); a second
+        // click unlocks it (panic/fanLock.js, docs/features/fan.md). The
+        // icon is bundled (features/fan/icons).
+        id: 'fan-lock',
+        icon: 'froonty-fan-symbolic',
+        title: _ => _('Fan lock'),
+        description: _ => _('Turns the cooling pad off and keeps every program that drives it ' +
+            'through llano.py from starting it. Click again to unlock it, back to its speed. ' +
+            'The pad’s roller still works.'),
+    },
+    {
         // The Break tab's sit/stand tracker (features/break); the icon is
         // bundled there (features/break/icons).
         id: 'sit-stand',
