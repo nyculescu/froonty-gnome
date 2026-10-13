@@ -982,6 +982,19 @@
     color: #ffffff;
     background-color: rgba(53, 132, 228, 0.75);
 }
+/* The pad noise slider's stages: dots on the Quick Settings slider's track. */
+.froonty-pad-noise-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 4px;
+    border: 1px solid rgba(0, 0, 0, 0.55);
+}
+.froonty-pad-noise-dot:hover {
+    width: 12px;
+    height: 12px;
+    border-radius: 6px;
+    border-color: #ffffff;
+}
 /* local:end fan */
 
 /* Clipboard feature: the history, newest first; the entry now on the

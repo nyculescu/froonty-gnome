@@ -1,0 +1,364 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Copilot <223556219+Copilot@users.noreply.github.com>
+Subject: [PATCH] Remove Focus and clock-based pad caps; add RPM targets
+
+Remove the time-based limits and Focus integration, expose direct RPM targets,
+and retire the enforcer timer files.
+
+diff --git a/NOISE.md b/NOISE.md
+index 08d99bf..4201e9b 100644
+--- a/NOISE.md
++++ b/NOISE.md
+@@ -1,6 +1,6 @@
+-# Noise: measurements, warnings and limits
++# Noise: measurements and estimates
+ 
+-The pad is set in percent, but what you hear is rpm. This page says how loud each speed is at the listening position, which speeds count as quiet, audible or loud, and the limits that `llano.py` applies by itself. The code is `noise.py`. Every value below can be changed in `~/.config/llano/noise.json`, using the same keys in lower case.
++The pad is set in percent, but what you hear is rpm. This page describes estimated noise at the listening position and the RPM mapping used by `llano.py`. The code is `noise.py`. The RPM and acoustic measurements can be changed in `~/.config/llano/noise.json`, using the same keys in lower case.
+ 
+ ## Measurements
+ 
+@@ -12,7 +12,7 @@ These are phone sound-meter readings at the user's ears, taken on 2026-10-09 (`r
+ | 300 | 40–41 | |
+ | 400 | 42–44 | bearable, enough for normal use |
+ | 500 | 45–46 | |
+-| 600 | 49–50 | **the most that may run at night** |
++| 600 | 49–50 | a quiet everyday setting |
+ | 700 | 51–52 | |
+ | 800 | 53–54 | at low activity, more speed changes nothing |
+ | 900 | 55–56 | |
+@@ -42,18 +42,10 @@ Froonty's Fan tab colours the estimated rpm and dB by band.
+ | loud | 2000 rpm | ≈ 69 dB (estimated) | orange |
+ | very loud | above 2000 rpm | | red |
+ 
+-## Limits
++## RPM targets
+ 
+-`llano.py` caps every speed it is asked to set. That covers the CLI, `llanod`, `cpu_guard`, the research scripts and the Fan tab. A capped write is logged with the speed that was asked for.
+-
+-- **Quiet hours: weekdays 22:00–07:00, 600 rpm (12 %).** A moment counts as quiet when its own day is Monday to Friday and the time is at or after 22:00 or before 07:00. So Friday 22:00–24:00 is quiet, but the hours after midnight on Saturday are not. Likewise Sunday 22:00–24:00 is not quiet, but Monday 00:00–07:00 is. Change `quiet_days`, `quiet_from` and `quiet_to` to change this.
+-- **Daytime: 2000 rpm (68 %).** 2800 rpm is never needed for cooling (`fan_lut.json`: full speed was at most 1 °C cooler than 60 %) and is unbearable.
+-- **Manual overrides:**
+-  - `llano.py loud`, or **Loud until 07:00** in the Fan tab, lifts the limits until the current quiet hours end. By day it lifts them for 2 hours. `llano.py quiet` puts them back and lowers the speed at once.
+-  - Turning the **roller** is manual too. While the pad reports its own control, nothing lowers its speed.
+-  - The **lock** (`llano.py lock`, the Fan lock panic button) turns the fan off whatever the limits say.
+-- **Enforcement:** the `llano-enforce` user timer runs `llano.py enforce` every 5 minutes, and again at 22:00 on weekdays. It lowers a software-set speed that is above the limit in force, so a fast speed set in the evening does not run all night. Install it with `contrib/install-enforcer.sh`. Remove it with `systemctl --user disable --now llano-enforce.timer`.
++`llano.py rpm N` sets the highest whole-percent speed whose RPM estimate is at or below `N`. Froonty's Quick Settings pad slider uses this command for continuous targets. Noise stages are estimates, not enforced limits.
+ 
+ ## Not covered
+ 
+-A program that writes `/dev/hidraw*` itself bypasses the limits, as it bypasses the lock. Only an always-running daemon could catch the pad being changed between two timer runs; the 5-minute timer is the compromise.
++A program that writes `/dev/hidraw*` itself bypasses the lock. The pad's roller or another program using llano can change the slider's speed.
+diff --git a/README.md b/README.md
+index f79af92..6d806b5 100644
+--- a/README.md
++++ b/README.md
+@@ -14,19 +14,20 @@ Neither needs any dependencies beyond Python 3.10+ and access to the pad's `/dev
+ python3 llano.py status          # speed 60% (pad control)  lights on  raw 88 3c 00 03 04 00 ff 35
+ python3 llano.py speed 100       # software control, fan at 100 %
+ python3 llano.py speed 0         # lowest speed, 300 rpm: 0 % does not stop the fan
++python3 llano.py rpm 600         # nearest whole-percent setting at or below 600 rpm
+ python3 llano.py off             # the pad off, fan and lights
+ python3 llano.py release         # hand speed control back to the pad's roller
+ python3 llano.py lock            # panic: fan off, and every program using Pad is refused
+ python3 llano.py unlock          # back to the speed and control from before the lock
+ python3 llano.py last            # who changed the pad last
+-python3 llano.py loud            # lift the noise limits until quiet hours end
+-python3 llano.py quiet           # back to the noise limits
+ ```
+ 
+-**Noise limits** ([NOISE.md](NOISE.md)): every speed is capped to 600 rpm (12 %) in quiet hours (weekdays 22:00–07:00) and 2000 rpm (68 %) by day, unless lifted with `loud`. `contrib/install-enforcer.sh` installs a user timer that lowers a software-set speed above the limit every 5 minutes; the roller is left alone. The status output's second line, `noise {json}`, gives the estimated rpm and dB at the ears and the limit in force.
++The status output's second line, `noise {json}`, gives the estimated RPM and dB at the ears. These are informational estimates; speeds are not limited by a clock.
+ 
+ The lock and a log of who drove the pad (`control.log`, last 200 writes: `$LLANO_CLIENT`, else the systemd unit, else the script) live in `~/.local/state/llano`. The lock binds everything that goes through `Pad` (this CLI, `llanod`, `cpu_guard`, the research scripts, Froonty's Fan tab); `llanod` and `cpu_guard` wait while it holds. It cannot stop a program that writes `/dev/hidraw*` itself, since the udev rule gives all of the user's programs access: a lock no user program can lift needs a root helper. The pad's roller always works.
+ 
++If an earlier version installed `llano-enforce.timer`, remove it with `systemctl --user disable --now llano-enforce.timer`. The `enforce` command remains as a compatibility no-op for an already-installed timer.
++
+ If you get `Permission denied`, install the udev rule, which gives the logged-in user access to the pad:
+ 
+ ```bash
+diff --git a/contrib/install-enforcer.sh b/contrib/install-enforcer.sh
+deleted file mode 100644
+index 3d2190a..0000000
+--- a/contrib/install-enforcer.sh
++++ /dev/null
+@@ -1,13 +0,0 @@
+-#!/bin/sh
+-# Installs the noise-limit timer for the current user (no sudo):
+-# ~/.config/systemd/user/llano-enforce.{service,timer}, enabled and started.
+-# Remove: systemctl --user disable --now llano-enforce.timer
+-set -eu
+-REPO=$(cd "$(dirname "$0")/.." && pwd)
+-DEST=${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user
+-mkdir -p "$DEST"
+-sed "s|@REPO@|$REPO|" "$REPO/contrib/llano-enforce.service" >"$DEST/llano-enforce.service"
+-cp "$REPO/contrib/llano-enforce.timer" "$DEST/llano-enforce.timer"
+-systemctl --user daemon-reload
+-systemctl --user enable --now llano-enforce.timer
+-systemctl --user list-timers llano-enforce.timer --no-pager
+diff --git a/contrib/llano-enforce.service b/contrib/llano-enforce.service
+deleted file mode 100644
+index 90a3d1d..0000000
+--- a/contrib/llano-enforce.service
++++ /dev/null
+@@ -1,8 +0,0 @@
+-[Unit]
+-Description=llano V12 Ultra pad: lower a software-set speed above the noise limit
+-
+-[Service]
+-Type=oneshot
+-# contrib/install-enforcer.sh writes the repository's path here.
+-ExecStart=/usr/bin/python3 @REPO@/llano.py enforce
+-Environment=LLANO_CLIENT=noise limit (timer)
+diff --git a/contrib/llano-enforce.timer b/contrib/llano-enforce.timer
+deleted file mode 100644
+index 7dce8e2..0000000
+--- a/contrib/llano-enforce.timer
++++ /dev/null
+@@ -1,11 +0,0 @@
+-[Unit]
+-Description=llano V12 Ultra pad: check the noise limit every 5 minutes
+-
+-[Timer]
+-OnCalendar=*:0/5
+-# Also right when quiet hours start (NOISE.md: weekdays 22:00).
+-OnCalendar=Mon..Fri 22:00
+-Persistent=false
+-
+-[Install]
+-WantedBy=timers.target
+diff --git a/llano.py b/llano.py
+index 9005d65..470ff4c 100644
+--- a/llano.py
++++ b/llano.py
+@@ -17,25 +17,22 @@ sum to 0xFF (byte 7 = ~sum of bytes 0-6).
+   python3 llano.py status
+   python3 llano.py speed 0-100     # take software control and set the fan speed (the pad on, lights too;
+                                    # at 0 % the fan still turns at its slowest)
++  python3 llano.py rpm 300-2800    # set the nearest whole-percent speed at or below this rpm target
+   python3 llano.py off             # the whole pad off: fan and lights
+   python3 llano.py release         # hand speed control back to the pad's buttons
+   python3 llano.py lock            # the pad off; every Pad write is refused until unlock
+   python3 llano.py unlock          # back to the speed and control from before the lock
+   python3 llano.py last            # who changed the pad last (control.log)
+-  python3 llano.py loud            # lift the noise limits until quiet hours end (or for 2 h by day)
+-  python3 llano.py quiet           # back to the noise limits
+-  python3 llano.py noise           # the noise limit in force, as JSON
+-  python3 llano.py enforce         # lower a software-set speed above the limit (the timer runs this)
++  python3 llano.py noise           # noise estimates and compatibility metadata, as JSON
++  python3 llano.py enforce         # compatibility no-op; there is no clock-based speed cap
+ 
+ The lock and the control log live in $XDG_STATE_HOME/llano (~/.local/state/llano). The lock
+ binds every program that drives the pad through Pad (this CLI, llanod, cpu_guard, the
+ research scripts, Froonty's Fan tab); a program writing /dev/hidraw* itself is not stopped,
+ since the udev rule gives every program of the user access. The pad's roller still works.
+ Each write logs who made it: $LLANO_CLIENT, else the systemd unit, else the script.
+-
+-Noise limits (noise.py, NOISE.md): every speed is capped to the limit in force (600 rpm in quiet
+-hours, weekdays 22:00-07:00; 2000 rpm by day), unless `llano.py loud` lifted it. A speed the pad
+-holds under its own control (the roller) is the user's and is left alone.
++Froonty's Quick Settings slider selects the pad RPM directly. Noise figures are estimates;
++they do not impose a speed cap.
+ """
+ import fcntl
+ import json
+@@ -184,24 +181,21 @@ class Pad:
+         log_control(action, speed, requested)
+ 
+     def set_speed(self, pct: int, action: str = 'speed') -> int:
+-        """Sets the speed, capped to the noise limit in force; returns the speed set."""
++        """Sets the requested speed without a clock-based cap; returns the speed set."""
+         if not 0 <= pct <= 100:
+             raise LlanoError(f'speed must be 0-100, got {pct}')
+-        applied = min(pct, noise.limit()['max_percent'])
+-        self._write_state(CTL_SOFTWARE, applied, action, requested=pct)
+-        return applied
++        self._write_state(CTL_SOFTWARE, pct, action, requested=pct)
++        return pct
++
++    def set_rpm(self, target: int) -> int:
++        """Sets the highest whole-percent speed whose estimate is at or below `target` rpm."""
++        if not 300 <= target <= 2800:
++            raise LlanoError(f'rpm target must be 300-2800, got {target}')
++        return self.set_speed(noise.percent(target))
+ 
+     def enforce(self) -> bool:
+-        """Lowers a software-set speed above the limit in force; True when it did."""
+-        if read_lock() is not None:
+-            return False
+-        st = self.status()
+-        if st[0] != 0x80:  # under the pad's own control: the roller is the user's choice
+-            return False
+-        if st[1] <= noise.limit()['max_percent']:
+-            return False
+-        self.set_speed(st[1], 'enforce')
+-        return True
++        """Compatibility no-op; there is no clock-based speed cap to enforce."""
++        return False
+ 
+     def release(self) -> None:
+         self._write_state(CTL_PAD, self.status()[1], 'release')
+@@ -260,6 +254,8 @@ def main():
+                 pass
+             elif len(args) == 2 and args[0] == 'speed':
+                 pad.set_speed(int(args[1]))
++            elif len(args) == 2 and args[0] == 'rpm':
++                pad.set_rpm(int(args[1]))
+             elif args == ['release']:
+                 pad.release()
+             elif args == ['off']:
+@@ -270,11 +266,6 @@ def main():
+                 pad.unlock()
+             elif args == ['enforce']:
+                 pad.enforce()
+-            elif args in (['loud'], ['quiet']):
+-                noise.set_override(args == ['loud'])
+-                log_control(args[0], None)
+-                if args == ['quiet']:
+-                    pad.enforce()
+             else:
+                 sys.exit(__doc__)
+             time.sleep(0.1)
+diff --git a/noise.py b/noise.py
+index e84e366..e544c3e 100644
+--- a/noise.py
++++ b/noise.py
+@@ -2,17 +2,11 @@
+ 
+ The pad speaks percent; people hear rpm. PERCENT_RPM maps one to the other (an estimate until
+ measured against the pad's display), EAR_DB the rpm to the noise at the user's ears (measured
+-with a phone app, research/noise_2026-10-09.txt). The limits: a cap during quiet hours
+-(weekdays 22:00-07:00, 600 rpm) and a daytime cap (2000 rpm). `llano.py loud` lifts them until
+-the end of the current quiet hours (or for DAY_OVERRIDE_H hours by day).
+-
+-Focus (Froonty's Quick Settings toggle, $XDG_STATE_HOME/focus/mode.json): Sleeping holds the
+-quiet-hours cap at any time, Away the away cap (AWAY_MAX_RPM, none by default: nobody is home to
+-hear it); Working and Auto keep the clock's caps.
++with a phone app, research/noise_2026-10-09.txt). Froonty's Quick Settings slider displays these
++estimates while setting the pad speed directly; there is no clock-based cap.
+ 
+ Every value can be overridden in $XDG_CONFIG_HOME/llano/noise.json (same keys, lower case).
+ """
+-import datetime
+ import json
+ import os
+ from pathlib import Path
+@@ -27,25 +21,11 @@ DEFAULTS = {
+     # [rpm, dB at the user's ears], 2026-10-09; the laptop alone was 37.5 dB.
+     'ear_db': [[0, 37.5], [300, 40.5], [400, 43.0], [500, 45.5], [600, 49.5], [700, 51.5],
+                [800, 53.5], [900, 55.5], [1000, 57.0], [1175, 62.0]],
+-    # Monday = 0. A moment is quiet when its own weekday is listed and its time is at or after
+-    # `from` or before `to`.
+-    'quiet_days': [0, 1, 2, 3, 4],
+-    'quiet_from': '22:00',
+-    'quiet_to': '07:00',
+-    'quiet_max_rpm': 600,
+-    'day_max_rpm': 2000,
+-    'day_override_h': 2,
+-    # The cap while Focus is Away; null: none.
+-    'away_max_rpm': None,
+     # Bands for warnings: the highest rpm of each, then their names (NOISE.md).
+     'bands': [[400, 'quiet'], [600, 'night'], [1000, 'audible'], [2000, 'loud'], [100000, 'very loud']],
+ }
+ 
+ 
+-def state_dir() -> Path:
+-    return Path(os.environ.get('XDG_STATE_HOME') or Path.home() / '.local/state') / 'llano'
+-
+-
+ def policy() -> dict:
+     p = dict(DEFAULTS)
+     path = Path(os.environ.get('XDG_CONFIG_HOME') or Path.home() / '.config') / 'llano/noise.json'
+@@ -90,85 +70,15 @@ def band(rpm_value: float, p: dict | None = None) -> str:
+     return next(name for top, name in (p or policy())['bands'] if rpm_value <= top)
+ 
+ 
+-def _hm(text):
+-    h, m = text.split(':')
+-    return datetime.time(int(h), int(m))
+-
+-
+-def quiet_window(now: datetime.datetime, p: dict | None = None):
+-    """(quiet now, when the current quiet or day stretch ends)."""
+-    p = p or policy()
+-    start, end = _hm(p['quiet_from']), _hm(p['quiet_to'])
+-
+-    def quiet(t):
+-        return t.weekday() in p['quiet_days'] and (t.time() >= start or t.time() < end)
+-
+-    is_quiet = quiet(now)
+-    t = now.replace(second=0, microsecond=0)
+-    for _ in range(8 * 24 * 60 // 15):  # the next change, in 15-minute steps (times are on the quarter)
+-        t += datetime.timedelta(minutes=15 - t.minute % 15)
+-        if quiet(t) != is_quiet:
+-            return is_quiet, t
+-    return is_quiet, None
+-
+-
+-def override_until() -> float | None:
+-    try:
+-        until = float((state_dir() / 'loud-until').read_text())
+-    except (OSError, ValueError):
+-        return None
+-    return until if until > datetime.datetime.now().timestamp() else None
+-
+-
+-def set_override(on: bool) -> float | None:
+-    path = state_dir() / 'loud-until'
+-    if not on:
+-        path.unlink(missing_ok=True)
+-        return None
+-    p = policy()
+-    now = datetime.datetime.now()
+-    is_quiet, change = quiet_window(now, p)
+-    until = change if is_quiet and change else now + datetime.timedelta(hours=p['day_override_h'])
+-    state_dir().mkdir(parents=True, exist_ok=True)
+-    path.write_text(f'{until.timestamp():.0f}\n')
+-    return until.timestamp()
+-
+-
+-FOCUS_MODES = ('working', 'sleeping', 'away', 'auto')
+-
+-
+-def focus() -> str:
+-    """The Focus mode Froonty set ($XDG_STATE_HOME/focus/mode.json); 'auto' when none."""
+-    root = Path(os.environ.get('XDG_STATE_HOME') or Path.home() / '.local/state')
+-    try:
+-        mode = json.loads((root / 'focus/mode.json').read_text()).get('mode')
+-    except (OSError, ValueError, AttributeError):
+-        return 'auto'
+-    return mode if mode in FOCUS_MODES else 'auto'
+-
+-
+-def limit(now: datetime.datetime | None = None) -> dict:
+-    """The cap in force: {quiet, until (ISO), max_rpm, max_percent, override_until, focus}."""
++def limit() -> dict:
++    """Compatibility shape for noise status; the speed is selected directly."""
+     p = policy()
+-    now = now or datetime.datetime.now()
+-    is_quiet, change = quiet_window(now, p)
+-    over = override_until()
+-    mode = focus()
+-    if over:
+-        max_rpm = None
+-    elif mode == 'away':
+-        max_rpm = p['away_max_rpm']
+-    elif mode == 'sleeping':
+-        max_rpm = p['quiet_max_rpm']
+-    else:
+-        max_rpm = p['quiet_max_rpm'] if is_quiet else p['day_max_rpm']
+     return {
+-        'quiet': is_quiet,
+-        'until': change.isoformat(timespec='minutes') if change else None,
+-        'max_rpm': max_rpm,
+-        'max_percent': 100 if max_rpm is None else percent(max_rpm, p),
+-        'override_until': over,
+-        'focus': mode,
++        'quiet': False,
++        'until': None,
++        'max_rpm': None,
++        'max_percent': 100,
++        'override_until': None,
+         'mapping_measured': p['percent_rpm_measured'],
+     }
+ 

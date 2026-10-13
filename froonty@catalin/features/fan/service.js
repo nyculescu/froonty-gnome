@@ -67,7 +67,7 @@ export class FanService extends Emitter {
         this.lock = null;
         /** Who drove the pad last (pad.js parseLastControl), or null. */
         this.lastControl = null;
-        /** The speed's rpm, dB at the ears, band and the noise limit (pad.js parseNoise), or null. */
+        /** The speed's rpm, dB at the ears and band (pad.js parseNoise), or null. */
         this.noise = null;
         /** Latest temperatures: {cpu, gpus: [{id, name, temp, asleep}], cores: [{core, temp, threads}]}. */
         this.temps = null;
@@ -169,11 +169,6 @@ export class FanService extends Emitter {
     setLocked(locked) {
         this._released = false;
         this._queue({args: [locked ? 'lock' : 'unlock']});
-    }
-
-    /** Lifts the noise limits until quiet hours end (llano.py loud), or puts them back. */
-    setLoud(loud) {
-        this._queue({args: [loud ? 'loud' : 'quiet']});
     }
 
     /** Switches the laptop's platform profile (asus.js PROFILES' numbers). */
@@ -305,15 +300,12 @@ export class FanService extends Emitter {
     }
 
     // The NVIDIA (or hottest) GPU stands for 'gpu', as in the sweep.
-    // Capped to the noise limit in force (llano.py would cap it anyway);
-    // `wanted` keeps what the table asks for.
     _recommend() {
         const gpuTemps = (this.temps?.gpus ?? []).map(gpu => gpu.temp).filter(t => t !== null && t !== undefined);
         const rec = this.lut && this.temps
             ? recommend(this.lut, {cpu: this.temps.cpu, gpu: gpuTemps.length ? Math.max(...gpuTemps) : null})
             : null;
-        const cap = this.noise?.limit?.max_percent ?? 100;
-        this.recommendation = rec && {...rec, wanted: rec.fan, fan: Math.min(rec.fan, cap)};
+        this.recommendation = rec;
     }
 
     async _sample() {

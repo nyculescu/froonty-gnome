@@ -83,8 +83,7 @@ export function parseLastControl(text) {
 
 /**
  * llano.py's `noise {json}` line: the speed's rpm and dB at the ears, its
- * band, and the limit in force ({quiet, until, max_rpm, max_percent,
- * override_until}); null when there is none (an older llano.py).
+ * band, and compatibility metadata; null when there is none (an older llano.py).
  */
 export function parseNoise(text) {
     const match = /^noise (\{.*\})\s*$/m.exec(text ?? '');
@@ -153,8 +152,8 @@ async function run(argv, cancellable = null, env = {}) {
 }
 
 /**
- * Runs llano.py with `args` (['status'], ['speed', '40'], ['release'],
- * ['lock'], ['unlock'], ['loud'], ['quiet']); its control log names Froonty.
+ * Runs llano.py with `args` (['status'], ['speed', '40'], ['rpm', '600'],
+ * ['release'], ['lock'], ['unlock']); its control log names Froonty.
  *
  * @returns {Promise<{status: ?object, noise: ?object, error: ?string, message: string}>}
  *   status as parseStatus, noise as parseNoise; error null or a failureKind

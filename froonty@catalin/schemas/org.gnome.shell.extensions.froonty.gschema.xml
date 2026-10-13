@@ -547,16 +547,11 @@
       <summary>Break: sit down after standing this long (min)</summary>
     </key>
 
-    <!-- Focus (features/focus, docs/features/focus.md) -->
-    <key name="focus-enabled" type="b">
+    <!-- Pad noise slider (features/padNoiseSlider, docs/features/pad-noise-slider.md) -->
+    <key name="cooling-slider-enabled" type="b">
       <default>true</default>
-      <summary>Focus in Quick Settings</summary>
-      <description>Working, Sleeping, Away from home or Auto, kept in ~/.local/state/focus/mode.json for llano's noise caps.</description>
-    </key>
-    <key name="focus-last" type="s">
-      <default>'working'</default>
-      <summary>The last Focus mode chosen</summary>
-      <description>What the Focus toggle switches to from Auto.</description>
+      <summary>Pad noise slider in Quick Settings</summary>
+      <description>Show a continuous llano pad RPM slider with noise-stage markers when Froonty runs.</description>
     </key>
 
     <!-- Software display brightness (features/brightness, docs/features/brightness.md) -->

@@ -146,6 +146,18 @@ async function screenshotTop(outDir, name, height = 260) {
     return path;
 }
 
+async function screenshotTopRight(outDir, name, height = 260) {
+    const monitor = Main.layoutManager.primaryMonitor;
+    const width = Math.min(840, monitor.width);
+    const path = GLib.build_filenamev([outDir, `${name}.png`]);
+    const stream = Gio.File.new_for_path(path)
+        .replace(null, false, Gio.FileCreateFlags.NONE, null);
+    await new Shell.Screenshot().screenshot_area(
+        monitor.x + monitor.width - width, monitor.y, width, height, stream);
+    stream.close(null);
+    return path;
+}
+
 function countHandlers(instance, signal) {
     try {
         const [name, detail] = signal.split('::');
@@ -8518,8 +8530,8 @@ async function testBrightness() {
     let s = settings();
     const menuActors = () => quickSettingsMenu()._overlay.get_n_children();
     const menusBefore = menuActors();
-    // Stop Froonty also takes Focus's toggle, and its menu, away.
-    const focusMenus = focusToggles().length;
+    // Stop Froonty also takes the pad noise slider and its menu away.
+    const padNoiseSliderMenus = padNoiseSliders().length;
     check('brightness: off by default, nothing on the stage or in Quick Settings',
         !s.get_boolean('brightness-enabled') && !brightnessLayer() && brightnessSliders().length === 0);
 
@@ -8579,8 +8591,8 @@ async function testBrightness() {
     s.set_boolean('running', false);
     await sleep(SETTLE_MS);
     check('brightness: Stop Froonty takes the layer, the slider and its menu away',
-        !brightnessLayer() && brightnessSliders().length === 0 && menuActors() === menusBefore - focusMenus,
-        `menus=${menuActors()}/${menusBefore} focus=${focusMenus}`);
+        !brightnessLayer() && brightnessSliders().length === 0 && menuActors() === menusBefore - padNoiseSliderMenus,
+        `menus=${menuActors()}/${menusBefore} padNoiseSliders=${padNoiseSliderMenus}`);
     s.set_boolean('running', true);
     await sleep(SETTLE_MS);
     check('brightness: Start brings them back', Boolean(brightnessLayer()) && brightnessSliders().length === 1);
@@ -8594,86 +8606,41 @@ async function testBrightness() {
     await sleep(SETTLE_MS);
 }
 
-// ---------------------------------------------------------------- focus
+// ---------------------------------------------------------------- cooling modes
 
-// Focus's toggle (features/focus/quickToggle.js): the one with a menu of modes.
-const focusToggles = () => quickSettingsMenu()._grid.get_children()
-    .filter(item => item.title === 'Focus' && item._items instanceof Map);
-const focusFile = () => GLib.build_filenamev([GLib.get_user_state_dir(), 'focus', 'mode.json']);
-const focusOnDisk = () => {
-    try {
-        return JSON.parse(new TextDecoder().decode(GLib.file_get_contents(focusFile())[1])).mode;
-    } catch {
-        return null;
-    }
-};
-const focusIcon = () => focusToggles()[0]?.get_parent() && extension()?.stateObj?._parts
-    ?.find(part => part._toggle === focusToggles()[0])?._icon;
-const focusNotifications = () => (Main.messageTray.getSources?.() ?? [])
-    .flatMap(source => source.notifications ?? [])
-    .filter(n => n.title === 'Focus is Away from home');
+const padNoiseSliders = () => quickSettingsMenu()._grid.get_children()
+    .filter(item => item._stageMarkers instanceof Map);
 
-async function testFocus() {
+async function testPadNoiseSlider(outDir) {
     const s = settings();
-    GLib.unlink(focusFile());
-    s.reset('focus-last');
     s.set_boolean('running', false);
     await sleep(SETTLE_MS);
     s.set_boolean('running', true);
     await sleep(SETTLE_MS);
-    let [toggle] = focusToggles();
-    check('focus: one Focus toggle in Quick Settings, Auto with no file', focusToggles().length === 1 &&
-        toggle.subtitle === 'Auto' && !toggle.checked, `${focusToggles().length} ${toggle?.subtitle}`);
-    check('focus: its menu lists Working, Sleeping, Away from home, Auto',
-        JSON.stringify([...toggle._items.values()].map(item => item.label.text)) ===
-        JSON.stringify(['Working', 'Sleeping', 'Away from home', 'Auto']));
-    check('focus: no top-bar icon in Auto', focusIcon() && !focusIcon().visible);
+    const slider = padNoiseSliders()[0];
+    check('pad noise slider: one Quick Settings slider with six noise stages',
+        padNoiseSliders().length === 1 && slider?._stageMarkers.size === 6,
+        `${padNoiseSliders().length} slider, ${slider?._stageMarkers.size} stages`);
+    check('pad noise slider: noise stages are shown in order',
+        slider && [...slider._stageMarkers.keys()].join(',') ===
+            'Near-silent,Almost quiet,Comfortable,Noticeably loud,Loud,Get out of here loud');
+    quickSettingsMenu().open();
+    await sleep(SETTLE_MS);
+    const grid = quickSettingsMenu()._grid;
+    check('pad noise slider: legend and slider span the same width',
+        slider && Math.abs(slider._sliderRow.get_width() - slider._stageLegend.get_width()) < 1,
+        `${slider?._sliderRow.get_width()} / ${slider?._stageLegend.get_width()}`);
+    check('pad noise slider: occupies both Quick Settings columns',
+        grid.layout_manager.get_child_meta(grid, slider).column_span === 2);
+    await screenshotTopRight(outDir, 'pad-noise-slider', 420);
+    quickSettingsMenu().close();
 
-    toggle._items.get('away').activate(null);
+    s.set_boolean('cooling-slider-enabled', false);
     await sleep(SETTLE_MS);
-    check('focus: picking Away writes it to the state file, checks the toggle and shows the top-bar icon',
-        focusOnDisk() === 'away' && toggle.checked && toggle.subtitle === 'Away from home' &&
-        focusIcon()?.visible && s.get_string('focus-last') === 'away', `${focusOnDisk()} ${toggle.subtitle}`);
-
-    GLib.file_set_contents(focusFile(), '{"mode": "sleeping"}\n');
-    await sleep(1500);
-    check('focus: a mode written by another program shows (file monitor)',
-        toggle.subtitle === 'Sleeping' && toggle._items.get('sleeping')._ornament === 2, toggle.subtitle);
-
-    toggle.emit('clicked', 1);
+    check('pad noise slider: setting off removes it', padNoiseSliders().length === 0);
+    s.reset('cooling-slider-enabled');
     await sleep(SETTLE_MS);
-    check('focus: the toggle on a mode switches to Auto', focusOnDisk() === 'auto' && !toggle.checked);
-    toggle.emit('clicked', 1);
-    await sleep(SETTLE_MS);
-    check('focus: and back to the last mode picked in the menu (Away)', focusOnDisk() === 'away' && toggle.checked,
-        `${focusOnDisk()}`);
-
-    // Froonty starting again while Away (a login or an unlock) asks whether you are back.
-    s.set_boolean('running', false);
-    await sleep(SETTLE_MS);
-    check('focus: Stop Froonty takes the toggle away', focusToggles().length === 0);
-    s.set_boolean('running', true);
-    await sleep(SETTLE_MS);
-    [toggle] = focusToggles();
-    check('focus: starting while Away asks "Focus is Away from home" once', focusNotifications().length === 1,
-        `${focusNotifications().length}`);
-    toggle._items.get('working').activate(null);
-    await sleep(SETTLE_MS);
-    check('focus: picking Working withdraws the question', focusNotifications().length === 0 &&
-        focusOnDisk() === 'working' && !focusIcon()?.visible);
-
-    s.set_boolean('focus-enabled', false);
-    await sleep(SETTLE_MS);
-    check('focus: off takes the toggle away; the mode stays on disk', focusToggles().length === 0 &&
-        focusOnDisk() === 'working');
-    s.reset('focus-enabled');
-    await sleep(SETTLE_MS);
-    check('focus: on again brings one toggle back, on the mode on disk', focusToggles().length === 1 &&
-        focusToggles()[0].subtitle === 'Working');
-
-    GLib.unlink(focusFile());
-    s.reset('focus-last');
-    await sleep(1500);
+    check('pad noise slider: setting on restores one slider', padNoiseSliders().length === 1);
 }
 
 async function testPublicBuild() {
@@ -8888,45 +8855,24 @@ async function testFan(outDir) {
     await waitFor(() => service.error === null && service.status, 5000);
     check('fan: the right location again clears it', !view._noticeRow.visible, view._notice.text);
 
-    // Noise: the speed's rpm and dB, the limit in force, quiet hours capping
-    // a speed, Loud lifting the cap and Back to limits bringing it down.
-    // The fake caps at 12 % while fake-quiet exists, 68 % otherwise.
-    // Off, 0 %, 50 %, 100 %.
+    // Noise estimates are informational; a mode or manual speed is not
+    // constrained by the clock.
     const fiftyButton = offButton.get_next_sibling().get_next_sibling();
-    const pollWait = (s.get_int('fan-interval') + 2) * 1000;
     if (!real) {
-        check('fan: the speed\'s rpm and dB at the ears, and the daytime cap',
+        check('fan: the speed\'s rpm and dB are estimates with no cap',
             /^≈\d+ rpm · ≈\d+ dB at the ears · /.test(view._noiseLabel.text) &&
-            view._limitLabel.text === 'Daytime: capped at 2000 rpm (68%).',
-            `${view._noiseLabel.text} | ${view._limitLabel.text}`);
-        GLib.file_set_contents(`${outDir}/fake-quiet`, '');
-        await waitFor(() => service.noise?.limit?.quiet, pollWait);
-        await clickActor(fiftyButton);
-        await waitFor(() => !service.busy && service.status?.speed === 12, 5000);
-        check('fan: in quiet hours 50 % is capped to 600 rpm (12 %)',
-            service.status?.speed === 12 && view._limitLabel.text.startsWith('Quiet hours until 07:00: capped at 600 rpm (12%)') &&
-            view._loudButton.label === 'Loud until 07:00' && view._noiseLabel.text.startsWith('≈600 rpm'),
-            `${service.status?.speed} | ${view._limitLabel.text} | ${view._loudButton.label} | ${view._noiseLabel.text}`);
-        await screenshotTop(outDir, 'fan-quiet', 640);
-        await clickActor(view._loudButton);
-        await waitFor(() => !service.busy && service.noise?.limit?.override_until, 5000);
+            service.noise?.limit?.max_rpm === null && service.noise?.limit?.max_percent === 100,
+            `${view._noiseLabel.text} | ${JSON.stringify(service.noise?.limit)}`);
         await clickActor(fiftyButton);
         await waitFor(() => !service.busy && service.status?.speed === 50, 5000);
-        check('fan: Loud lifts the cap: 50 % stays 50 %',
-            service.status?.speed === 50 && view._limitLabel.text.startsWith('Noise limits lifted until') &&
-            view._loudButton.label === 'Back to limits', `${service.status?.speed} | ${view._limitLabel.text}`);
-        await clickActor(view._loudButton);
-        await waitFor(() => !service.busy && service.status?.speed === 12, 5000);
-        check('fan: Back to limits brings the speed down to the cap', service.status?.speed === 12 &&
-            !service.noise?.limit?.override_until, `${service.status?.speed}`);
-        GLib.unlink(`${outDir}/fake-quiet`);
-        await waitFor(() => service.noise?.limit?.quiet === false, pollWait);
+        check('fan: a manual speed is not reduced by a clock-based cap',
+            service.status?.speed === 50, `${service.status?.speed}`);
     }
 
     // Who changed the pad last: Froonty's own writes say so.
     await waitFor(() => view._lastChange.text.includes('Froonty'), 5000);
     check('fan: the last change names Froonty and what it did',
-        /^Last change: Froonty (set \d+%|unlocked it at \d+%|put the noise limits back) · \d\d:\d\d:\d\d$/.test(view._lastChange.text),
+        /^Last change: Froonty (set \d+%|unlocked it at \d+%) · \d\d:\d\d:\d\d$/.test(view._lastChange.text),
         view._lastChange.text);
 
     // The lock, from the tab: fan off, every speed control held, and
@@ -8995,7 +8941,7 @@ const ONLY_TESTS = {
     testPointer, testHubLayout, testDatePill, testCalendarMenu, testEmptyHub,
     testSettingsButton, testKillProcess, testCpuLoadButton, testFormulas,
     testNotesHeader, testClaude, testClipboard, testClipboardSwitcher, testNotesMath,
-    testWriting, testWritingFixes, testStartup, testBrightness, testFocus, testFan,
+    testWriting, testWritingFixes, testStartup, testBrightness, testPadNoiseSlider, testFan,
 };
 
 export async function runAll(outDir) {
@@ -9067,7 +9013,7 @@ export async function runAll(outDir) {
         await testCoversPanelClock(outDir);
         await testMonitors();
         await testBrightness();
-        await testFocus();
+        await testPadNoiseSlider();
         await testMedia(outDir);
         await testMediaPill(outDir);
         await testMediaExtras(outDir);

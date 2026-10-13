@@ -11,7 +11,7 @@ reports). Access without a password needs that project's udev rule
 
 llano-v12-linux is a submodule at upstream's commit; this PC's changes
 (the panic lock and control log, the LUT sweep and `fan_lut.json`, the
-noise limits) are patches in `third_party/patches/llano-v12-linux/`,
+RPM/noise model) are patches in `third_party/patches/llano-v12-linux/`,
 applied on a `froonty` branch by `make third-party`. The settings'
 defaults point into `third_party/llano-v12-linux`. To change llano, commit
 in that branch, then add the new commits as the next patch files (N is
@@ -30,10 +30,9 @@ island's corner to change it).
   then the speed's estimated **rpm and dB at the ears**, coloured by noise
   band (llano-v12-linux's NOISE.md: quiet, night level, audible, loud,
   very loud).
-- **Noise limit:** the cap in force ("Quiet hours until 07:00: capped at
-  600 rpm (12%)", or the daytime 2000 rpm) and **Loud until 07:00** /
-  **Back to limits**. A slider position past the cap reads "40% → 12%";
-  the recommendation is capped too ("Recommended 12% (table: 60%, capped)").
+- **Noise estimate:** the current speed's estimated rpm, dB at the ears
+  and noise band. It does not cap manual speeds or impose a clock-based
+  limit. A separate Quick Settings slider shows colored noise stages.
   A slider 0–100 %, then **Off**, **0 %**, **50 %**, **100 %**, **Lock
   off** / **Unlock** and **Release**. The slider and **0 %** keep the pad
   and its lights on (at 0 % the fan turns at its slowest, 300 rpm); **Off**
@@ -140,13 +139,12 @@ program can lift needs root (a helper that de-authorizes the USB device,
 unlocked with the password through polkit); see llano-v12-linux's README.
 The pad's roller always works.
 
-## Noise limits
+## Noise model
 
-llano.py caps every speed to the limit in force (NOISE.md): 600 rpm in
-quiet hours (weekdays 22:00–07:00), 2000 rpm by day, unless `llano.py
-loud` lifted it; a user timer (`llano-enforce`) lowers a software-set speed
-above it every 5 minutes, and the roller is left alone. The tab reads it
-all from llano.py's `noise {json}` line after each command and poll.
+The llano `noise {json}` line reports estimated rpm, dB at the ears and a
+noise band. It does not cap speeds. The Quick Settings slider uses the same
+measurements for its noise-stage guide; see
+[Pad noise slider](./pad-noise-slider.md).
 
 ## Settings (Settings → Fan)
 

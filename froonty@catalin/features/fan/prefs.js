@@ -35,13 +35,12 @@ export function fanPage(settings) {
     settings.bind('fan-enabled', show, 'active', Gio.SettingsBindFlags.DEFAULT);
     group.add(show);
 
-    // Focus (features/focus): where you are picks the pad's noise cap.
-    const focus = new Adw.SwitchRow({
-        title: _('Focus in Quick Settings'),
-        subtitle: _('Working, Sleeping, Away from home or Auto. Away lifts the pad’s noise cap; Sleeping holds the quiet-hours cap.'),
+    const padSlider = new Adw.SwitchRow({
+        title: _('Pad noise slider in Quick Settings'),
+        subtitle: _('Adjust the connected llano pad by RPM, with estimated noise stages.'),
     });
-    settings.bind('focus-enabled', focus, 'active', Gio.SettingsBindFlags.DEFAULT);
-    group.add(focus);
+    settings.bind('cooling-slider-enabled', padSlider, 'active', Gio.SettingsBindFlags.DEFAULT);
+    group.add(padSlider);
 
     const [, [lower, upper]] = settings.settings_schema.get_key('fan-interval')
         .get_range().recursiveUnpack();

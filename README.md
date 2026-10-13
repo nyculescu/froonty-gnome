@@ -218,13 +218,10 @@ feature has a design note in [docs/features/](docs/features/).
   that takes no input; the pointer is not dimmed or copied. Software
   dimming only: the backlight, and its power use, stay as they are. See
   [docs/features/brightness.md](docs/features/brightness.md).
-- **Focus** (working-tree installs only, on by default; Settings → Fan): a
-  Quick Settings toggle telling the computer where you are: Working,
-  Sleeping, Away from home or Auto. The cooling pad's noise cap follows it
-  (llano), and so can other programs: the mode is kept in
-  `~/.local/state/focus/mode.json`. Focus never changes by itself; starting
-  while Away asks whether you are back. See
-  [docs/features/focus.md](docs/features/focus.md).
+- **Pad noise slider** (working-tree installs only, on by default; Settings
+  → Fan): continuously adjusts the connected llano pad from near-silent to
+  its maximum speed, with colored noise-stage markers. See
+  [docs/features/pad-noise-slider.md](docs/features/pad-noise-slider.md).
 - **Always reachable.** With "Show island" off, a puzzle-piece icon in the
   top bar (and the shortcut) opens the settings.
 - **Start at login**, or not. With it off, Froonty waits after login behind
