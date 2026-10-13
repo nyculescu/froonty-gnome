@@ -20,8 +20,9 @@
 //
 // Keyboard order follows the row: panic 1–4, the date pill, panic 5–8,
 // the feature's actions. The hub makes the island wide enough (Hub.minWidth)
-// for both halves around the clock's place, PANIC_GAP clear of the side
-// column and the feature's actions.
+// for both halves around the clock's place, PANIC_GAP clear of the hub's
+// edge and the feature's actions. The row spans the hub, above the side
+// column.
 //
 // The view owns its action buttons and destroys them; the header only
 // places them, gives them the icon-button tooltip, and shows the active
@@ -34,7 +35,7 @@ import St from 'gi://St';
 import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 
 // Room kept between the centred parts (the date pill and the panic
-// groups) and the row's start (the side column) or the feature's actions
+// groups) and the row's start (the hub's left edge) or the feature's actions
 // (logical px).
 export const PANIC_GAP = 8;
 

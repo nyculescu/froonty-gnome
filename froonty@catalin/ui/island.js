@@ -511,10 +511,10 @@ export class Island {
         return {width: Math.max(size.width, needs.width), height: Math.max(size.height, needs.height)};
     }
 
-    // The expanded island's smallest size (stage px): tall enough for every
-    // feature tab and ⚙️, in one column; wide enough that the centred date
-    // pill and the panic buttons beside it clear the side column and the
-    // feature's header buttons (Hub.minWidth). (Off stage there is
+    // The expanded island's smallest size (stage px): tall enough for the
+    // header and, below it, every feature tab and ⚙️ in one column; wide
+    // enough that the centred date pill and the panic buttons beside it
+    // clear the hub's edge and the feature's header buttons (Hub.minWidth). (Off stage there is
     // no theme node, and nothing to show yet.)
     _hubNeeds() {
         if (!this._pill.get_stage())

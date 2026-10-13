@@ -2,22 +2,24 @@
 // The hub: content of the expanded island. It hosts features
 // (features/registry.js) and contains no feature logic of its own:
 //
-//   ┌─────┬──────────────────────────────────────────────────────┐
-//   │ tab │ [p1][p2][p3][p4] (Sat Oct 3 14:05) [p5]…[p8]     [a] │  header
-//   │ tab ├──────────────────────────────────────────────────────┤
-//   │ …   │               active feature's view                  │  content
-//   │     │                                                      │
+//   ┌────────────────────────────────────────────────────────────┐
+//   │ [p1][p2][p3][p4] (Sat Oct 3 14:05) [p5]…[p8]           [a] │  header
+//   ├─────┬──────────────────────────────────────────────────────┤
+//   │ tab │               active feature's view                  │  content
+//   │ tab │                                                      │
+//   │ …   │                                                      │
 //   │ ⚙️  │                                                      │
 //   └─────┴──────────────────────────────────────────────────────┘
-//     side column: the tab column (one icon per feature; its name shows in
-//       a tooltip on hover), and ⚙️ at its bottom: Froonty's settings
-//       window, the same size as a tab but never the active one
-//     header (hubHeader.js): a pill with the date and the time that opens
-//       GNOME's own calendar and notification menu (with GNOME's unread
-//       dot), exactly over GNOME's clock under the island; the panic bar
-//       (max 8) on its two sides, half each (the right one more when
-//       odd), both sides equally wide; [a] the active feature's own
-//       buttons (view.headerActions), at the right end
+//     header (hubHeader.js), across the whole hub: a pill with the date
+//       and the time that opens GNOME's own calendar and notification menu
+//       (with GNOME's unread dot), exactly over GNOME's clock under the
+//       island; the panic bar (max 8) on its two sides, half each (the
+//       right one more when odd), both sides equally wide; [a] the active
+//       feature's own buttons (view.headerActions), at the right end
+//     side column, below the header: the tab column (one icon per feature;
+//       its name shows in a tooltip on hover), and ⚙️ at its bottom:
+//       Froonty's settings window, the same size as a tab but never the
+//       active one
 //
 // Every tab can be turned off. With none on, the side column (⚙️ and any
 // settings shortcuts) and the header stay, and the content says so, with a
@@ -25,12 +27,12 @@
 // than one tab or a settings shortcut is present.
 //
 // The date pill never leaves GNOME's clock: the island is made wider
-// (minWidth) until both halves around it fit PANIC_GAP clear of the side
-// column and the feature's buttons, and taller (minHeight) when the side
-// column needs it.
+// (minWidth) until both halves around it fit PANIC_GAP clear of the hub's
+// edges and the feature's buttons, and taller (minHeight) when the header
+// and the side column below it need it.
 //
-// Keyboard (Tab): the tabs, ⚙️, the header row from left to right (panic
-// 1–4, the date pill, panic 5–8, the feature's buttons), then the view.
+// Keyboard (Tab): the header row from left to right (panic 1–4, the date
+// pill, panic 5–8, the feature's buttons), the tabs, ⚙️, then the view.
 //
 // A feature's view (and its service, if any) is created the first time its
 // tab is selected, and destroyed when the feature is disabled or the hub is
@@ -125,19 +127,24 @@ export class Hub extends EventEmitter {
     }
 
     /**
-     * The height the side column needs (physical pixels: every tab, and
-     * ⚙️ below them), so the island can grow to show them; 0 off stage.
+     * The height the header and the side column below it need (physical
+     * pixels: every tab, and ⚙️ below them), so the island can grow to
+     * show them; 0 off stage.
      */
     get minHeight() {
         // Kept in step on every path, as for minWidth.
-        this._reportedMinHeight = this._side.get_stage() ? this._side.get_preferred_height(-1)[1] : 0;
+        this._reportedMinHeight = this._side.get_stage()
+            ? this._header.actor.get_preferred_height(-1)[1] +
+                this._main.get_theme_node().get_length('spacing') +
+                this._side.get_preferred_height(-1)[1]
+            : 0;
         return this._reportedMinHeight;
     }
 
     /**
      * The width the island's content needs (physical pixels) so that the
-     * date pill and the panic buttons beside it fit between the side
-     * column and the feature's header buttons with PANIC_GAP on each side;
+     * date pill and the panic buttons beside it fit between the hub's left
+     * edge and the feature's header buttons with PANIC_GAP on each side;
      * 0 off stage or with neither a date pill nor panic buttons.
      */
     get minWidth() {
@@ -153,12 +160,12 @@ export class Hub extends EventEmitter {
             return 0;
         const natural = actor => (actor.visible ? actor.get_preferred_width(-1)[1] : 0);
         const gap = PANIC_GAP * St.ThemeContext.get_for_stage(global.stage).scale_factor;
-        const spacing = this._main.get_theme_node().get_length('spacing');
         const [before, after] = this._header.halves();
         // The date pill never moves off the clock: the island, centred on
         // the monitor, is made wide enough for both halves around that
-        // point, the side column before it and the feature's actions after.
-        const lead = natural(this._side) + spacing + gap + before;
+        // point, and the feature's actions after it. The header spans the
+        // hub: the side column is below it, not beside it.
+        const lead = gap + before;
         const trail = after + gap + natural(this._header.actions);
         const rtl = this.actor.get_text_direction() === Clutter.TextDirection.RTL;
         const offset = rtl ? -this._clockOffset() : this._clockOffset();
@@ -248,8 +255,20 @@ export class Hub extends EventEmitter {
         this.actor.add_action(new Clutter.ClickGesture({required_button: Clutter.BUTTON_PRIMARY}));
         this._tooltip = new Tooltip();
 
-        const main = new St.BoxLayout({style_class: 'froonty-hub', x_expand: true, y_expand: true});
+        // The header row across the top, the side column and the content
+        // below it.
+        const main = new St.BoxLayout({
+            style_class: 'froonty-hub',
+            orientation: Clutter.Orientation.VERTICAL,
+            x_expand: true,
+            y_expand: true,
+        });
         this._main = main;
+        const body = new St.BoxLayout({
+            style_class: 'froonty-hub-body',
+            x_expand: true,
+            y_expand: true,
+        });
         // The side column: tabs and settings shortcuts at the top, ⚙️ at the
         // bottom. It shows with any number of tabs on; the tab column itself
         // only with more than one tab or a settings shortcut.
@@ -266,7 +285,7 @@ export class Hub extends EventEmitter {
         this._side.add_child(new St.Widget({y_expand: true}));
         this.settingsButton = this._buildSettingsButton(openSettings);
         this._side.add_child(this.settingsButton);
-        main.add_child(this._side);
+        body.add_child(this._side);
         // Before they are first shown (styled), the tabs measure short.
         // Once laid out they are measured again, and the island follows if
         // that changed; their own height does not change while the island
@@ -278,12 +297,6 @@ export class Hub extends EventEmitter {
                 this.emit('size-changed');
         });
 
-        const right = new St.BoxLayout({
-            style_class: 'froonty-hub-main',
-            orientation: Clutter.Orientation.VERTICAL,
-            x_expand: true,
-            y_expand: true,
-        });
         // The header row: the date pill centred on the island with the
         // panic buttons on its two sides, and the active feature's buttons
         // at the right end (hubHeader.js places them). Only the buttons
@@ -312,16 +325,16 @@ export class Hub extends EventEmitter {
         });
         this._empty = this._buildEmptyNotice(openSettings);
         this._content.add_child(this._empty);
-        right.add_child(this._header.actor);
-        right.add_child(this._content);
-        main.add_child(right);
+        body.add_child(this._content);
+        main.add_child(this._header.actor);
+        main.add_child(body);
 
-        // The panic buttons, the date pill's text, the feature's buttons and
-        // the side column change width with the settings, the clock and the
-        // active tab; once laid out, the island follows if the room they
-        // need changed (as for minHeight).
+        // The panic buttons, the date pill's text and the feature's buttons
+        // change width with the settings, the clock and the active tab;
+        // once laid out, the island follows if the room they need changed
+        // (as for minHeight).
         this._reportedMinWidth = 0;
-        for (const actor of [...this._header.centred, this._header.actions, this._side]) {
+        for (const actor of [...this._header.centred, this._header.actions]) {
             actor.connect('notify::allocation', () => {
                 const reported = this._reportedMinWidth;
                 if (actor.mapped && this.minWidth !== reported)

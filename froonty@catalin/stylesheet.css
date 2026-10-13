@@ -137,19 +137,22 @@
     spacing: 4px;
 }
 
-.froonty-hub-main {
+/* Below the header: the side column, then the content. */
+.froonty-hub-body {
     spacing: 6px;
 }
 
-/* The side column: the feature tabs at the top, ⚙️ at the bottom, with a
-   thin divider (ui/hub.js). */
+/* The side column, below the header: the feature tabs at the top, ⚙️ at
+   the bottom, with a thin divider (ui/hub.js). */
 .froonty-hub-side {
     padding-right: 6px;
     border-right: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+/* Feature tabs and ⚙️: a fine dark-grey rounded outline. */
 .froonty-tab {
     margin-bottom: 2px;
+    border: 1px solid #3d3d3d;
 }
 
 /* Panic bar: up to 8 quick actions, in two groups beside the date pill.

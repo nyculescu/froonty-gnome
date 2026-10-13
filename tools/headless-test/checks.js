@@ -481,12 +481,14 @@ function islandFrame() {
 // The hub header as the user sees it: the date pill and the panic groups
 // in order, none overlapping another, level; the date pill's middle (or,
 // without one, the groups') on the island's, or else the parts moved no
-// further than needed to stay 8 px clear of the side column and of the
-// feature's buttons; all inside the island.
+// further than needed to stay 8 px clear of the hub's left edge and of the
+// feature's buttons; all inside the island. The header spans the hub, above
+// the side column.
 function headerPlacement(hub = island()._hub) {
     const parts = hub._header.centred.filter(a => a.visible).map(boxOf);
     const isle = boxOf(pill());
     const side = boxOf(hub._side);
+    const header = boxOf(hub._header.actor);
     const actions = hub._header.actions.visible ? boxOf(hub._header.actions) : null;
     const gap = 8 * scale();
     const middle = b => (b.x1 + b.x2) / 2;
@@ -498,8 +500,8 @@ function headerPlacement(hub = island()._hub) {
     const clock = Main.panel.statusArea.dateMenu?.container;
     const target = clock?.mapped ? middle(boxOf(clock)) : middle(isle);
     const offset = anchor - target;
-    // The header row starts past the side column and the hub's spacing.
-    const leftRoom = first.x1 - boxOf(hub._header.actor).x1;
+    // The header row starts at the hub's left edge; the side column is below it.
+    const leftRoom = first.x1 - header.x1;
     const rightRoom = (actions ? actions.x1 : boxOf(hub.actor).x2) - last.x2;
     const ordered = parts.every((b, i) => i === 0 || b.x1 >= parts[i - 1].x2);
     const level = parts.every(b => Math.abs(middle({x1: b.y1, x2: b.y2}) - middle({x1: first.y1, x2: first.y2})) <= 2);
@@ -507,13 +509,14 @@ function headerPlacement(hub = island()._hub) {
     // Both panic groups as wide as each other.
     const groups = hub._panicBar.groups.filter(g => g.visible).map(boxOf);
     const equal = groups.length < 2 || Math.abs((groups[0].x2 - groups[0].x1) - (groups[1].x2 - groups[1].x1)) <= 1;
-    const clear = leftRoom >= gap - 1 && first.x1 - side.x2 >= gap - 1 && rightRoom >= gap - 1;
+    const clear = leftRoom >= gap - 1 && rightRoom >= gap - 1 && side.y1 >= header.y2 &&
+        header.x1 <= side.x1 + 1;
     const inside = first.x1 >= isle.x1 && last.x2 <= isle.x2 && (!actions || actions.x2 <= isle.x2);
     return {
         ok: ordered && level && centred && equal && clear && inside,
         centred,
         detail: `parts ${parts.map(b => `[${b.x1},${b.x2}]`).join(' ')} anchor ${anchor} clock ${target} ` +
-            `island [${isle.x1},${isle.x2}] side ends ${side.x2} actions ${actions ? `[${actions.x1},${actions.x2}]` : 'none'} ` +
+            `island [${isle.x1},${isle.x2}] header [${header.x1},${header.y2}] side starts [${side.x1},${side.y1}] actions ${actions ? `[${actions.x1},${actions.x2}]` : 'none'} ` +
             `ordered=${ordered} level=${level} centred=${centred} equal=${equal} clear=${clear} inside=${inside}`,
     };
 }
@@ -4679,23 +4682,25 @@ async function testSettingsButton(outDir) {
         `visible=${tip.visible} text=${tip.text}`);
     await movePointerTo(...pillCenter());
     await sleep(SETTLE_MS);
-    // The side column counts in the island's size: its height (every tab
-    // and ⚙️) and its width (beside the header's centred parts).
+    // The island is as tall as the header plus the side column below it
+    // (every tab and ⚙️); the side column takes no header width.
     const side = hub._side;
-    check('⚙️: the island is as tall as the side column needs, at least',
-        hub.minHeight === side.get_preferred_height(-1)[1] && hub.minHeight > 0 &&
-        p.y2 - p.y1 >= hub.minHeight && g.y2 <= p.y2,
-        `minHeight ${hub.minHeight}, side column ${side.get_preferred_height(-1)[1]}, island ${p.y2 - p.y1}`);
-    const halves = hub._header.halves();
     const spacing = hub._main.get_theme_node().get_length('spacing');
+    const needed = hub._header.actor.get_preferred_height(-1)[1] + spacing +
+        side.get_preferred_height(-1)[1];
+    check('⚙️: the island is as tall as the header and the side column need, at least',
+        hub.minHeight === needed && hub.minHeight > 0 &&
+        p.y2 - p.y1 >= hub.minHeight && g.y2 <= p.y2,
+        `minHeight ${hub.minHeight}, needed ${needed}, island ${p.y2 - p.y1}`);
+    const halves = hub._header.halves();
     const actionsWidth = hub._header.actions.visible ? hub._header.actions.get_preferred_width(-1)[1] : 0;
-    // Room for both halves around the clock's place: the side column
-    // before the pill, the feature's actions after it.
+    // Room for both halves around the clock's place: the hub's edge before
+    // the pill, the feature's actions after it; the side column is below.
     const offset = island()._geometry.clockOffset();
-    const lead = side.get_preferred_width(-1)[1] + spacing + 8 * scale() + halves[0];
+    const lead = 8 * scale() + halves[0];
     const trail = halves[1] + 8 * scale() + actionsWidth;
     const expectedMin = Math.ceil(2 * Math.max(lead - offset, trail + offset));
-    check('⚙️: the side column\'s width counts in the island\'s minimum width',
+    check('⚙️: the side column below the header takes no room from the minimum width',
         hub.minWidth === expectedMin && side.get_preferred_width(-1)[1] > 0,
         `minWidth ${hub.minWidth}, expected ${expectedMin} (side column ${side.get_preferred_width(-1)[1]})`);
     await screenshotTop(outDir, 'expanded-with-settings-button');
@@ -4738,22 +4743,24 @@ async function testSettingsButton(outDir) {
         `windows=${settingsWindows().length} focus=${global.display.focus_window?.get_title()}`);
     await closeSettingsWindows();
 
-    // Keyboard: Tab from the focused pill reaches ⚙️ right after the last
-    // tab, then goes on to the header's first panic button; Enter and
+    // Keyboard: Tab from the focused pill goes through the header row first,
+    // then the tabs, and reaches ⚙️ right after the last tab; Enter and
     // Space activate it.
     island().expand();
     await sleep(animationWait());
     const lastTab = hub._tabColumn.get_last_child();
     const seen = [];
-    for (let i = 0; i < 16 && global.stage.key_focus !== gear; i++) {
+    for (let i = 0; i < 40 && global.stage.key_focus !== gear; i++) {
         await pressKeys(Clutter.KEY_Tab);
         seen.push(global.stage.key_focus);
     }
     check('Tab reaches ⚙️, right after the last tab', global.stage.key_focus === gear && seen.at(-2) === lastTab,
         seen.map(describeActor).join(' → '));
-    await pressKeys(Clutter.KEY_Tab);
-    check('Tab goes on from ⚙️ to the header\'s first panic button',
-        global.stage.key_focus === hub._panicBar.groups[0].get_first_child(), describeActor(global.stage.key_focus));
+    const firstPanic = hub._panicBar.groups[0].get_first_child();
+    const firstTab = hub._tabColumn.get_first_child();
+    check('Tab reaches the header\'s first panic button before the tabs',
+        seen.includes(firstPanic) && seen.indexOf(firstPanic) < seen.indexOf(firstTab),
+        seen.map(describeActor).join(' → '));
     gear.grab_key_focus();
     await pressKeys(Clutter.KEY_Return);
     check('Enter on ⚙️ opens the settings window', await waitForSettingsWindow() !== null);
@@ -5050,16 +5057,17 @@ async function testHubLayout(outDir) {
     const boxes = tabs.map(boxOf);
     const expectedCount = (await expectedTabs()).length;
     // One column; the island grows past expanded-height to show every tab.
-    check('layout: feature tabs are stacked vertically on the left, all inside the island',
+    check('layout: feature tabs are stacked vertically on the left, below the header, all inside the island',
         tabs.length === expectedCount && boxes.every(b => Math.abs(b.x1 - boxes[0].x1) < 1) &&
         boxes.every((b, i) => i === 0 || b.y1 > boxes[i - 1].y1) &&
-        boxes[0].x2 <= boxOf(hub._content).x1 && boxes.at(-1).y2 <= boxOf(pill()).y2,
+        boxes[0].x2 <= boxOf(hub._content).x1 && boxes.at(-1).y2 <= boxOf(pill()).y2 &&
+        boxes[0].y1 >= boxOf(hub._header.actor).y2,
         `${boxes.map(b => `[${b.x1},${b.y1}]`).join(' ')} island bottom=${boxOf(pill()).y2}`);
     // The header: the date pill exactly over GNOME's clock (the Notes tab
     // at its default width, the first tab, with "All notes" at the right
     // end).
     const atDefault = headerPlacement(hub);
-    check('layout: the date pill is exactly over GNOME\'s clock, its panic buttons beside it, clear of the side column and "All notes"',
+    check('layout: the date pill is exactly over GNOME\'s clock, its panic buttons beside it, the side column below the header',
         atDefault.ok, atDefault.detail);
     settings().set_int('notes-width', 620);
     await sleep(animationWait());
@@ -6301,7 +6309,7 @@ async function testEmptyHub(outDir) {
 
         island().expand();
         await sleep(animationWait());
-        for (let i = 0; i < 8 && global.stage.key_focus !== hub.emptySettingsButton; i++)
+        for (let i = 0; i < 20 && global.stage.key_focus !== hub.emptySettingsButton; i++)
             await pressKeys(Clutter.KEY_Tab);
         check('empty hub: Tab reaches "Open Settings"', global.stage.key_focus === hub.emptySettingsButton,
             `${global.stage.key_focus}`);

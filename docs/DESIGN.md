@@ -214,11 +214,11 @@ The hub (`ui/hub.js`) is the expanded content:
 
 ```
 hub     BinLayout, reactive (stops clicks from reaching the pill)
- ├ main     [side column] [header / content]
- │            side column  tab column (GridLayout, TAB_COLUMNS = 1; only with more than one tab on)
- │                         at the top, ⚙️ at the bottom; always shown; the island grows to fit it
+ ├ main     header across the whole hub, then [side column] [content] below it
  │            header   [panic 1–4] (date pill: "Sat Oct 3 14:05" + GNOME's unread dot) [panic 5–8] … [feature actions]
  │                     (HeaderLayout: the date pill exactly over GNOME's clock; equal-width panic groups)
+ │            side column  tab column (GridLayout, TAB_COLUMNS = 1; only with more than one tab on)
+ │                         at the top, ⚙️ at the bottom; always shown; the island grows to fit it
  │            content  the active tab's view, or, while no tab is on, a notice and "Open Settings"
  └ overlay  tooltips (click-through, fixed positions)
 ```
@@ -235,16 +235,20 @@ hub     BinLayout, reactive (stops clicks from reaching the pill)
   The active feature's buttons sit at the right end. The pill never moves
   off the clock: `Hub.minWidth` makes the island (centred on the monitor)
   wide enough for both halves around that point, `PANIC_GAP` (8 px) clear
-  of the side column before it and the feature's buttons after it. The row
+  of the hub's left edge and the feature's buttons after it. The header
+  spans the whole hub and the side column starts below it (2026-10-13), so
+  the tabs take no room from the panic buttons and the date pill. The row
   reports a minimum width of 0, so it never squeezes the content.
 - **⚙️** (`hub.settingsButton`) is pinned to the bottom of the side column
   with a tab's size and look (20 px icon, `froonty-tab`), never checked,
-  named "Settings" with its tooltip on its right, as the tabs'. The side
-  column shows with one tab or none on (for ⚙️); `Hub.minHeight` is its
-  natural height (every tab and ⚙️).
-- **Keyboard order** (St follows the actor tree): the tabs, ⚙️, the
-  header from left to right (panic 1–4, the date pill, panic 5–8, the
-  feature's buttons), then the view.
+  named "Settings" with its tooltip on its right, as the tabs'. Tabs and
+  ⚙️ have a fine dark-grey rounded outline (1 px, #3d3d3d). The side
+  column shows with one tab or none on (for ⚙️); `Hub.minHeight` is the
+  header's height, the hub's spacing and the side column's natural height
+  (every tab and ⚙️).
+- **Keyboard order** (St follows the actor tree): the header from left to
+  right (panic 1–4, the date pill, panic 5–8, the feature's buttons), the
+  tabs, ⚙️, then the view.
 
 - The header's **date pill** (`ui/hubHeader.js`) is an `St.Button`
   styled like the collapsed pill, as tall as the panic buttons beside it.
@@ -657,9 +661,9 @@ input through Clutter virtual devices and cover:
   tabs (Notes at 360, Btop and Clipboard at 280) widening the island with
   nothing overlapping, the groups centred together without a date pill;
   ⚙️ at the bottom of the side column with a tab's size, its tooltip, its
-  window by click, Enter and Space, the keyboard order (last tab → ⚙️ →
-  first panic button), and the side column counted in the island's
-  minimum width and height. The settings page (a GTK unit test) takes 8
+  window by click, Enter and Space, the keyboard order (header first, then
+  the tabs, last tab → ⚙️), the side column below the header, and the
+  island's minimum width and height (header plus side column). The settings page (a GTK unit test) takes 8
   buttons and refuses a 9th.
 - **Panic buttons:** real mute and unmute, following changes made elsewhere,
   and the settings rules. Block camera: click and keyboard toggle GNOME's
