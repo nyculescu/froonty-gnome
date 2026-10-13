@@ -2068,6 +2068,12 @@ async function testClaudeFreshness(view, service, button) {
         claudeRows(view)[1][1] === '44%' && claudeRows(view)[2][1] === '18%',
         JSON.stringify(claudeRows(view)));
     check('claude button: follows the status line', await waitFor(() => button._number.text === '66'));
+    settings().set_string('claude-panic-usage-window', 'weekly');
+    check('claude button: weekly selection follows the weekly status-line reading',
+        await waitFor(() => button._number.text === '44') &&
+        button.actor.accessible_name === 'Claude weekly usage: 44%',
+        `${button._number.text} / ${button.actor.accessible_name}`);
+    settings().set_string('claude-panic-usage-window', 'session');
 
     refresher._power.reason = null;
     refresher._power.emit('changed');
@@ -4256,6 +4262,11 @@ async function testClaude(outDir) {
     check('claude button: the session usage over the Spark, number only',
         button._number.text === '13' && button.actor.accessible_name === 'Claude session usage: 13%',
         `${button._number.text} / ${button.actor.accessible_name}`);
+    settings().set_string('claude-panic-usage-window', 'weekly');
+    check('claude button: choosing weekly usage updates the button',
+        button._number.text === '33' && button.actor.accessible_name === 'Claude weekly usage: 33%',
+        `${button._number.text} / ${button.actor.accessible_name}`);
+    settings().set_string('claude-panic-usage-window', 'session');
 
     const rows = claudeRows(view);
     const text = JSON.stringify(rows);
@@ -4399,6 +4410,7 @@ async function testClaude(outDir) {
         !hub()._entries.has('claude') && service._monitor === null && network.handlers.size === 0 &&
         hub().activeFeature?.id === firstTabId());
     settings().reset('claude-enabled');
+    settings().reset('claude-panic-usage-window');
     settings().reset('panic-buttons');
     await sleep(SETTLE_MS);
     island().collapse();

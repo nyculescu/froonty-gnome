@@ -144,6 +144,15 @@
       <summary>Ask Claude Code for fresh usage</summary>
       <description>When the Claude tab or its panic button comes on screen, run Claude Code's /usage (at most once a minute) so its usage cache is current. Off: only Froonty's Claude Code status line updates Session and Weekly. Froonty turns this off as Power Saver mode or a battery below 20% (on battery) begins, and back on as it ends if it was Froonty that turned it off; turning it on meanwhile is kept.</description>
     </key>
+    <key name="claude-panic-usage-window" type="s">
+      <choices>
+        <choice value="session"/>
+        <choice value="weekly"/>
+      </choices>
+      <default>'session'</default>
+      <summary>Usage window shown in the Claude panic button</summary>
+      <description>Whether the Claude panic button shows current session usage or weekly usage.</description>
+    </key>
     <key name="claude-ask-paused-for-power" type="b">
       <default>false</default>
       <summary>Internal: fresh usage turned off for low power</summary>

@@ -39,7 +39,32 @@ export function claudePage(settings) {
     settings.bind('claude-enabled', enabled, 'active', Gio.SettingsBindFlags.DEFAULT);
     group.add(enabled);
 
+    const panicUsageGroup = new Adw.PreferencesGroup({
+        title: _('Panic button'),
+        description: _('Choose which Claude usage window appears in the Claude panic button.'),
+    });
+    const panicUsage = new Adw.ComboRow({
+        title: _('Usage to show'),
+        model: Gtk.StringList.new([_('Current session'), _('Weekly session')]),
+    });
+    const panicUsageWindows = ['session', 'weekly'];
+    let syncingPanicUsage = false;
+    const syncPanicUsage = () => {
+        syncingPanicUsage = true;
+        panicUsage.selected = Math.max(
+            panicUsageWindows.indexOf(settings.get_string('claude-panic-usage-window')), 0);
+        syncingPanicUsage = false;
+    };
+    syncPanicUsage();
+    panicUsage.connect('notify::selected', () => {
+        if (!syncingPanicUsage)
+            settings.set_string('claude-panic-usage-window', panicUsageWindows[panicUsage.selected]);
+    });
+    settings.connect('changed::claude-panic-usage-window', syncPanicUsage);
+    panicUsageGroup.add(panicUsage);
+
     page.add(group);
+    page.add(panicUsageGroup);
     const freshness = freshnessGroup(settings);
     page.add(freshness.group);
     const attention = attentionGroup(settings);

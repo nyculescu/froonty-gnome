@@ -17,7 +17,9 @@ import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js'
 
 import {sparkIcon} from '../features/claude/icon.js';
 import {ClaudeService} from '../features/claude/service.js';
-import {SESSION} from '../features/claude/usage.js';
+import {SESSION, WEEKLY} from '../features/claude/usage.js';
+
+const USAGE_WINDOW_KEY = 'claude-panic-usage-window';
 
 export class ClaudeSessionButton {
     /**
@@ -28,6 +30,7 @@ export class ClaudeSessionButton {
      */
     constructor(title, {selectTab, settings = null}) {
         this._title = title;
+        this._settings = settings;
 
         this._number = new St.Label({
             style_class: 'froonty-claude-session-number',
@@ -64,11 +67,14 @@ export class ClaudeSessionButton {
         this._service = new ClaudeService({settings});
         this._service.start();
         this._serviceId = this._service.connect('changed', () => this._sync());
+        this._settingsId = settings?.connect(`changed::${USAGE_WINDOW_KEY}`, () => this._sync()) ?? 0;
         this._sync();
     }
 
     destroy() {
         this._service.disconnect(this._serviceId);
+        if (this._settingsId)
+            this._settings.disconnect(this._settingsId);
         this._service.stop();
         this.actor.destroy();
     }
@@ -79,19 +85,22 @@ export class ClaudeSessionButton {
 
     _sync() {
         const {usage, online} = this._service;
-        const session = usage?.windows.find(w => w.kind === SESSION);
+        const kind = this._settings?.get_string(USAGE_WINDOW_KEY) ?? SESSION;
+        const weekly = kind === WEEKLY;
+        const session = usage?.windows.find(w => w.kind === kind);
+        const title = weekly ? _('Claude weekly usage') : this._title;
         // After a renewal, what was used since is not known.
         const known = online && session &&
             (session.resetsAt === null || session.resetsAt > Date.now());
         if (known) {
             const percent = Math.min(100, Math.round(session.percent));
             this._number.text = `${percent}`;
-            this.actor.accessible_name = _('%s: %d%%').format(this._title, percent);
+            this.actor.accessible_name = _('%s: %d%%').format(title, percent);
         } else {
             this._number.text = '?';
             this.actor.accessible_name = online
-                ? _('%s: unknown').format(this._title)
-                : _('%s: unknown (no internet connection)').format(this._title);
+                ? _('%s: unknown').format(title)
+                : _('%s: unknown (no internet connection)').format(title);
         }
     }
 }

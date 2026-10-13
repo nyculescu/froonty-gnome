@@ -133,7 +133,10 @@ Froonty reads a different one.
   the session's usage in orange, as large as the button allows, over a
   faint grey Spark, number only;
   "?" when unknown; a click opens this tab. Add it in Settings → Panic
-  buttons. It has its own `ClaudeService`, active while the island is open.
+  buttons. In Settings → Claude → Panic button, choose Current session or
+  Weekly session; the button follows the choice immediately and says which
+  window it shows in its accessible name. It has its own `ClaudeService`,
+  active while the island is open.
   See [panic-buttons.md](panic-buttons.md).
 
 ## 3. Where the numbers come from
