@@ -29,6 +29,22 @@ function stageText(stage) {
     return _('%s · %d RPM').format(_(stage.name), stage.rpm);
 }
 
+function prioritizeSliderHandle(slider, dots) {
+    const width = slider.get_width();
+    if (!width)
+        return;
+    const radius = slider.get_stage()
+        ? slider.get_theme_node().get_length('-slider-handle-radius') : 0;
+    const trackWidth = Math.max(0, width - 2 * radius);
+    const handleX = radius + trackWidth * slider.value;
+    for (const dot of dots) {
+        const dotX = radius + trackWidth * dot._fraction;
+        // Let the slider receive presses on its knob, even when a stage dot
+        // is directly underneath it. The slider then owns the drag sequence.
+        dot.reactive = Math.abs(dotX - handleX) > radius + 6;
+    }
+}
+
 // Puts each dot where the slider's knob is drawn for its value: GNOME's
 // Slider centres the knob at radius + (width - 2 radius) x value.
 const DotsLayout = GObject.registerClass(
@@ -129,6 +145,10 @@ class PadNoiseSlider extends QuickSlider {
             });
             this._dots.add_child(dot);
         }
+        const updateDotInput = () => prioritizeSliderHandle(slider, this._dots.get_children());
+        slider.connect('notify::value', updateDotInput);
+        slider.connect('notify::width', updateDotInput);
+        updateDotInput();
         this.connect('destroy', () => {
             this._tooltip.actor.destroy();
             this._tooltip = null;
@@ -154,6 +174,7 @@ export class PadNoiseSliderPart {
         this._padPresent = false;
         this._following = false;
         this._pendingRpm = null;
+        this._changeGeneration = 0;
         this._rpm = 600;
         this._error = '';
         this._settings.connectObject(
@@ -213,6 +234,7 @@ export class PadNoiseSliderPart {
     async _refresh() {
         if (this._refreshing || this._applying || !this._slider)
             return;
+        const generation = this._changeGeneration;
         this._refreshing = true;
         try {
             this._padPresent = await this._padConnected();
@@ -226,7 +248,9 @@ export class PadNoiseSliderPart {
                 this._error = result.message || result.error;
             } else {
                 this._error = '';
-                if (result.noise?.rpm !== undefined) {
+                if (result.noise?.rpm !== undefined &&
+                    generation === this._changeGeneration &&
+                    this._pendingRpm === null && !this._applying) {
                     this._rpm = snapRpm(result.noise.rpm);
                     this._following = true;
                     this._slider.slider.value = rpmToSlider(this._rpm);
@@ -254,6 +278,7 @@ export class PadNoiseSliderPart {
     _onSliderValue() {
         if (this._following)
             return;
+        this._changeGeneration++;
         this._rpm = sliderToRpm(this._slider.slider.value);
         // The knob moves in the pad's 50 RPM steps, not freely.
         this._following = true;
@@ -301,6 +326,7 @@ export class PadNoiseSliderPart {
                     this._pendingRpm = null;
                     break;
                 }
+                this._changeGeneration++;
                 this._error = '';
             }
         } catch (e) {

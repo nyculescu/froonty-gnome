@@ -8607,7 +8607,7 @@ async function testBrightness() {
 // ---------------------------------------------------------------- cooling modes
 
 const padNoiseSliders = () => quickSettingsMenu()._grid.get_children()
-    .filter(item => item._stageMarkers instanceof Map);
+    .filter(item => item._dots instanceof St.Widget && item._sliderRow);
 
 async function testPadNoiseSlider(outDir) {
     const s = settings();
@@ -8616,20 +8616,21 @@ async function testPadNoiseSlider(outDir) {
     s.set_boolean('running', true);
     await sleep(SETTLE_MS);
     const slider = padNoiseSliders()[0];
+    const dots = slider?._dots.get_children() ?? [];
+    const stages = dots.map(dot => dot.accessible_name?.replace(/ · \d+ RPM$/, ''));
     check('pad noise slider: one Quick Settings slider with six noise stages',
-        padNoiseSliders().length === 1 && slider?._stageMarkers.size === 6,
-        `${padNoiseSliders().length} slider, ${slider?._stageMarkers.size} stages`);
+        padNoiseSliders().length === 1 && dots.length === 6,
+        `${padNoiseSliders().length} slider, ${dots.length} stages`);
     check('pad noise slider: noise stages are shown in order',
-        slider && [...slider._stageMarkers.keys()].join(',') ===
+        slider && stages.join(',') ===
             'Near-silent,Almost quiet,Comfortable,Noticeably loud,Loud,Get out of here loud');
     quickSettingsMenu().open();
     await sleep(SETTLE_MS);
     const grid = quickSettingsMenu()._grid;
-    check('pad noise slider: legend and slider span the same width',
-        slider && Math.abs(slider._sliderRow.get_width() - slider._stageLegend.get_width()) < 1,
-        `${slider?._sliderRow.get_width()} / ${slider?._stageLegend.get_width()}`);
+    check('pad noise slider: six stage dots overlay the slider',
+        slider && slider._dots.get_parent() && dots.length === 6);
     check('pad noise slider: occupies both Quick Settings columns',
-        grid.layout_manager.get_child_meta(grid, slider).column_span === 2);
+        slider && grid.layout_manager.get_child_meta(grid, slider).column_span === 2);
     await screenshotTopRight(outDir, 'pad-noise-slider', 420);
     quickSettingsMenu().close();
 
@@ -8905,7 +8906,7 @@ export async function runAll(outDir) {
         await testCoversPanelClock(outDir);
         await testMonitors();
         await testBrightness();
-        await testPadNoiseSlider();
+        await testPadNoiseSlider(outDir);
         await testTimezonePlanner();
         await testMedia(outDir);
         await testMediaPill(outDir);

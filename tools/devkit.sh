@@ -54,6 +54,7 @@ if [[ "${1:-}" == "--inner" ]]; then
     trap '[[ -n "$shell" ]] && { pkill -P "$shell" -f mutter-devkit; kill "$shell"; wait "$shell"; } 2>/dev/null
         kill $audio 2>/dev/null; rm -f "$SANDBOX/env"' EXIT
     trap 'exit 130' INT TERM
+    trap 'exit 129' HUP
     sleep 1
 
     # The devkit window draws on your desktop (wayland-host); apps the
@@ -221,4 +222,5 @@ inner=$!
 trap 'kill "$inner" 2>/dev/null; wait "$inner" 2>/dev/null; kill "$system_bus" 2>/dev/null
     rm -f "$SANDBOX/env" "$SANDBOX/system_bus"' EXIT
 trap 'exit 130' INT TERM
+trap 'exit 129' HUP
 wait "$inner"

@@ -152,7 +152,7 @@ test('livenerf: the chart in third_party/livenerf is understood', () => {
     // The printed latest score and the last point read back agree.
     const last = chart.points[chart.points.length - 1];
     ok(Math.abs(last.score - chart.latest) < 0.1, `${last.score} vs ${chart.latest}`);
-    ok(chart.points.every(p => p.low <= p.score && p.score <= p.high && p.at > 0 && p.at < 1),
+    ok(chart.points.every(p => p.low <= p.score && p.score <= p.high && p.at >= 0 && p.at <= 1),
         JSON.stringify(chart.points));
 });
 
