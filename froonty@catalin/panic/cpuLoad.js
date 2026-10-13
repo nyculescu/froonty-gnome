@@ -83,7 +83,7 @@ export class CpuLoadButton {
             return;
         }
         const rounded = Math.round(percent);
-        this._number.text = `${rounded}`;
+        this._number.text = `${rounded}%`;
         this._number.add_style_class_name(levelClass(rounded));
         this.actor.accessible_name = _('%s: %d%%').format(this.actor.accessible_name, rounded);
     }

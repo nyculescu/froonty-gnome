@@ -4090,8 +4090,8 @@ async function testCpuLoadButton() {
     island().expand();
     await sleep(animationWait());
     check('cpu button: the machine load appears after the follow-up sample',
-        await waitFor(() => /^\d+$/.test(button._number.text), 3000) &&
-        Number(button._number.text) <= 100 &&
+        await waitFor(() => /^\d+%$/.test(button._number.text), 3000) &&
+        parseInt(button._number.text, 10) <= 100 &&
         button.actor.accessible_name.startsWith('CPU load:'),
         `${button._number.text} ${button._number.style_class} ${button.actor.accessible_name}`);
     check('cpu button: displays the selected CPU icon',
@@ -4112,8 +4112,8 @@ async function testCpuLoadButton() {
     island().expand();
     await sleep(animationWait());
     check('cpu button: the machine\'s own load, 0 to 100',
-        await waitFor(() => /^\d+$/.test(button._number.text), 3000) &&
-        Number(button._number.text) <= 100, button._number.text);
+        await waitFor(() => /^\d+%$/.test(button._number.text), 3000) &&
+        parseInt(button._number.text, 10) <= 100, button._number.text);
     await clickActor(button.actor);
     await sleep(animationWait());
     check('cpu button: a click opens the Btop tab', island()._hub.activeFeature?.id === 'sysmon',

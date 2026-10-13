@@ -793,8 +793,9 @@
 .froonty-sysmon-cell-4 { color: #ff7800; }
 .froonty-sysmon-cell-5 { color: #e01b24; }
 .froonty-sysmon-cell-empty { color: #5e5c64; }
-/* The CPU load panic button: as the Claude session button, the number in
-   the level colours over a faint processor chip. */
+/* The load and thermometer panic buttons: the number with its unit ("37%",
+   "76°C") in the level colours over a faint CPU/GPU/RAM or thermometer icon;
+   the unit needs the smaller size to fit "100%". */
 .froonty-icon-button.froonty-sysmon-cpu,
 .froonty-icon-button.froonty-sysmon-temp {
     padding: 0;
@@ -814,6 +815,7 @@
     letter-spacing: -0.5px;
     font-feature-settings: "tnum";
 }
+.froonty-sysmon-cpu-number,
 .froonty-sysmon-temp-number {
     font-size: 11px;
     letter-spacing: -0.4px;

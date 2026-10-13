@@ -85,7 +85,7 @@ Added 2026-10-04, off by default, local builds only:
 
 | Id | What it shows | A click |
 |---|---|---|
-| `cpu-load` | One selected metric—CPU load, GPU load or RAM usage (0–100, no "%")—as large as the button allows, over its CPU/GPU/RAM icon; the number in the Btop tab's level colours; "?" before the first reading | Opens the Btop tab |
+| `cpu-load` | One selected metric—CPU load, GPU load or RAM usage, 0–100 with "%" ("37%"), over its CPU/GPU/RAM icon; the number in the Btop tab's level colours; "?" before the first reading | Opens the Btop tab |
 | `temperature` | Average CPU temperature, maximum CPU temperature, GPU temperature, or the one linked to the load button, in °C ("76°C") overlaid on a thermometer, green-to-yellow-to-red (green through 50 °C, red at 100 °C). Linked to RAM load it shows the average CPU temperature: general-purpose RAM temperature is not available | Opens the Btop tab |
 
 Their choices are in Settings → Btop → Panic buttons. Both share one
