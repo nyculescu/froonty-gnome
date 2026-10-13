@@ -66,13 +66,16 @@ class DotsLayout extends Clutter.LayoutManager {
 
 const PadNoiseSlider = GObject.registerClass(
 class PadNoiseSlider extends QuickSlider {
-    _init() {
+    _init(openSettings) {
         super._init({
-            // The Fan settings shortcut's bundled icon (weather-wind is missing from some themes).
+            // The bundled icon works where weather-wind is missing.
             gicon: fanIcon(),
             iconLabel: _('llano pad speed'),
             style_class: 'quick-slider froonty-pad-noise-slider',
         });
+        this._openSettings = openSettings;
+        this.icon_reactive = true;
+        this.connect('icon-clicked', () => this._openSettings('fan'));
         this.accessible_name = _('llano pad speed');
         this.slider.accessible_name = _('Pad speed');
 
@@ -139,8 +142,9 @@ class PadNoiseSlider extends QuickSlider {
 });
 
 export class PadNoiseSliderPart {
-    constructor(settings) {
+    constructor(settings, openSettings) {
         this._settings = settings;
+        this._openSettings = openSettings;
         this._slider = null;
         this._cancelPlace = null;
         this._timerId = 0;
@@ -174,7 +178,7 @@ export class PadNoiseSliderPart {
 
     _show() {
         if (!this._slider) {
-            this._slider = new PadNoiseSlider();
+            this._slider = new PadNoiseSlider(this._openSettings);
             this._slider.slider.value = rpmToSlider(this._rpm);
             this._slider.slider.connectObject('notify::value', () => this._onSliderValue(), this);
             this._cancelPlace = addUnderBrightness(this._slider);

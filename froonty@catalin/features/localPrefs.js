@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// The settings tabs of localFeatures.js's features, in the same order,
-// then Brightness (a part, not a tab).
+// The settings pages of the local features (including Fan, which is not a
+// hub tab), in their navigation order, then Brightness (a part, not a tab).
 // tools/pack-public replaces this file with one that adds none.
 
 import {addIconPath as addBreakIconPath, breakPage} from './break/prefs.js';

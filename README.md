@@ -216,18 +216,26 @@ feature has a design note in [docs/features/](docs/features/).
   DDC/CI, as some Samsung Smart Monitors). It darkens the chosen monitors
   (external ones by default, built-in screen, or all) with a neutral layer;
   an optional warm tint is adjustable separately. The layers take no input,
-  and the pointer is not dimmed or copied. Software dimming only: the
-  backlight, and its power use, stay as they are. See
+  and the pointer is not dimmed or copied. Click the slider's display icon
+  to open Brightness settings. Software dimming only: the backlight, and
+  its power use, stay as they are. See
   [docs/features/brightness.md](docs/features/brightness.md).
 - **Pad noise slider** (working-tree installs only, on by default; Settings
   → Fan): continuously adjusts the connected llano pad from near-silent to
   its maximum speed, with colored noise-stage markers. See
   [docs/features/pad-noise-slider.md](docs/features/pad-noise-slider.md).
-- **Fan settings** (working-tree installs only): the fan icon in the island's
-  left rail opens Settings → Fan for pad controls, including Lock off,
-  Release, Off and Recommended / Apply, plus ASUS laptop fan controls.
-  The existing CPU/GPU temperature sampling and recommendation remain
-  unchanged.
+- **Time zone planner** (working-tree installs only): add any number of
+  cities in Settings → Time zones, and mark up to two favourites. Their
+  current hours appear on the Quick Settings button. Click it for a
+  Vancouver-based planner, whose slider compares your favourites across a
+  24-hour window centered on now. Dublin and Timisoara are the defaults.
+  See
+  [docs/features/timezone-planner.md](docs/features/timezone-planner.md).
+- **Fan settings** (working-tree installs only): Settings → Fan has pad
+  controls, including Lock off, Release, Off and Recommended / Apply, plus
+  ASUS laptop fan controls. The fan icon beside the Quick Settings slider
+  opens those settings. The existing CPU/GPU temperature sampling and
+  recommendation remain unchanged.
 - **Always reachable.** With "Show island" off, a puzzle-piece icon in the
   top bar (and the shortcut) opens the settings.
 - **Start at login**, or not. With it off, Froonty waits after login behind
@@ -330,8 +338,9 @@ froonty@catalin/             the extension (this directory is what gets installe
 │   ├── formulas/            Formulas tab: palettes, templates, guide; renderer/:
 │   │                        MathJax in a helper process and its client;
 │   │                        notes/: formulas drawn in both notes editors
-│   └── brightness/          Software brightness (not a tab): dim/tint layers,
-│                            its Quick Settings slider, levels, prefs
+│   ├── brightness/          Software brightness (not a tab): dim/tint layers,
+│   │                        its Quick Settings slider, levels, prefs
+│   └── timezonePlanner/     Vancouver-based timezone comparison window
 ├── panic/                   panic button catalog, factories, buttons (mute,
 │                            Claude session, block camera, pause media,
 │                            sit/stand), prefs
@@ -485,6 +494,8 @@ The keys behind it:
 | `corner-radius` | 14 | Clamped to half the height by St |
 | `animation-duration` | 250 ms | GNOME's enable-animations setting still applies |
 | `panic-buttons` | microphone, sound | Panic buttons in bar order, at most 8 (half on each side of the date pill, the right side one more when odd) |
+| `timezone-planner-cities` | Dublin, Timisoara | Saved city names and IANA timezone IDs (local builds) |
+| `timezone-planner-favorites` | Dublin, Timisoara | Up to two city timezones shown on the Quick Settings button (local builds) |
 | `media-enabled` | `true` | Show the Media tab |
 | `media-show-in-pill` / `media-track-notice` | `true` | Cover and bars beside the time while music plays; a new song's title for 3 s |
 | `media-include-other-players` | `true` | Follow browsers and video players automatically (off: only when chosen) |

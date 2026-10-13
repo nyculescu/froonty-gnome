@@ -568,14 +568,11 @@ async function clickActor(actor) {
 }
 
 // The hub tabs: features without an enable key and those whose key is on,
-// in registry order. Settings shortcuts are counted separately.
+// in registry order.
 async function expectedTabs() {
     const {FEATURES} = await import(`file://${extension().path}/features/registry.js`);
-    return FEATURES.filter(f => !f.settingsPage &&
-        (!f.enabledKey || settings().get_boolean(f.enabledKey)));
+    return FEATURES.filter(f => !f.enabledKey || settings().get_boolean(f.enabledKey));
 }
-const settingsShortcutCount = hub =>
-    [...hub._entries.values()].filter(entry => entry.feature.settingsPage).length;
 
 async function testHub(outDir) {
     const hub = island()._hub;
@@ -584,19 +581,19 @@ async function testHub(outDir) {
     for (const feature of wasOn)
         settings().set_boolean(feature.enabledKey, false);
     await sleep(SETTLE_MS);
-    check('hub: every tab can be off: Fan settings remains available beside the notice',
-        hub._tabColumn.visible && hub._tabColumn.get_n_children() === 1 &&
-        hub._entries.size === 1 && settingsShortcutCount(hub) === 1 &&
-        hub.activeFeature === null && hub._empty.visible);
+    check('hub: every tab can be off without a Fan shortcut',
+        !hub._tabColumn.visible && hub._tabColumn.get_n_children() === 0 &&
+        hub._entries.size === 0 && hub.activeFeature === null && hub._empty.visible);
     settings().reset('notes-enabled');
     await sleep(SETTLE_MS);
-    check('hub: a single feature and the Fan settings shortcut both appear',
-        hub._tabColumn.visible && hub._tabColumn.get_n_children() === 2 &&
+    check('hub: the single Notes tab appears without a Fan shortcut',
+        !hub._tabColumn.visible && hub._tabColumn.get_n_children() === 1 &&
+        hub._entries.size === 1 && !hub._entries.has('fan') &&
         hub.activeFeature?.id === 'notes' && !hub._empty.visible);
     settings().reset('zerotier-enabled');
     await sleep(SETTLE_MS);
     check('hub: enabling a feature adds its tab',
-        hub._tabColumn.visible && hub._tabColumn.get_n_children() === 3);
+        hub._tabColumn.visible && hub._tabColumn.get_n_children() === 2);
     for (const feature of wasOn) {
         if (settings().get_default_value(feature.enabledKey).unpack())
             settings().reset(feature.enabledKey);
@@ -607,8 +604,8 @@ async function testHub(outDir) {
     const names = hub._tabColumn.get_children().map(b => b.accessible_name);
     const expected = (await expectedTabs()).map(f => f.title);
     check(`hub: tabs follow the registry order (${expected.join(', ')}); Notes first, no Clock, Calendar or Notifications tab`,
-        names.filter(name => name !== 'Fan settings').join(',') === expected.join(',') &&
-        names.includes('Fan settings') && names[0] === 'Notes' &&
+        names.join(',') === expected.join(',') && !hub._entries.has('fan') &&
+        names[0] === 'Notes' &&
         !['Clock', 'Calendar', 'Notifications'].some(name => names.includes(name)),
         names.join(','));
     check('hub: the tab shown before stays shown as the others come back',
@@ -700,7 +697,7 @@ async function testHub(outDir) {
         await setExtensionEnabled(false);
         await setExtensionEnabled(true);
         check('hub: a registered feature adds a tab',
-            island()._hub._tabColumn.get_n_children() === tabsBefore + settingsShortcutCount(island()._hub) + 1,
+            island()._hub._tabColumn.get_n_children() === tabsBefore + 1,
             `${island()._hub._tabColumn.get_n_children()} buttons, ${tabsBefore} tabs before`);
         check('hub: a feature is not created before its tab is selected',
             log.length === 0, log.join(','));
@@ -5097,7 +5094,7 @@ async function testHubLayout(outDir) {
     await sleep(animationWait());
     const tabs = hub._tabColumn.get_children();
     const boxes = tabs.map(boxOf);
-    const expectedCount = (await expectedTabs()).length + settingsShortcutCount(hub);
+    const expectedCount = (await expectedTabs()).length;
     // One column; the island grows past expanded-height to show every tab.
     check('layout: feature tabs are stacked vertically on the left, all inside the island',
         tabs.length === expectedCount && boxes.every(b => Math.abs(b.x1 - boxes[0].x1) < 1) &&
@@ -6320,8 +6317,8 @@ async function testEmptyHub(outDir) {
         const content = boxOf(hub._content);
         const n = boxOf(notice);
         check('empty hub: with every tab off the island opens: no tab, no column, a notice centred in the content',
-            island().expanded && hub.activeFeature === null && hub._entries.size === 1 &&
-            hub._tabColumn.visible && hub._tabColumn.get_n_children() === 1 && notice.mapped &&
+            island().expanded && hub.activeFeature === null && hub._entries.size === 0 &&
+            !hub._tabColumn.visible && hub._tabColumn.get_n_children() === 0 && notice.mapped &&
             n.x1 >= content.x1 - 0.5 && n.x2 <= content.x2 + 0.5 && n.y1 >= content.y1 - 0.5 &&
             n.y2 <= content.y2 + 0.5 && Math.abs((n.x1 + n.x2) - (content.x1 + content.x2)) <= 2 &&
             Math.abs((n.y1 + n.y2) - (content.y1 + content.y2)) <= 2,
@@ -6366,9 +6363,9 @@ async function testEmptyHub(outDir) {
         await sleep(animationWait());
         check('empty hub: a tab turned back on shows at once, without the notice',
             hub.activeFeature?.id === 'notes' && hub._entries.get('notes')?.view?.actor.mapped &&
-            !notice.visible && hub._tabColumn.visible);
+            !notice.visible && !hub._tabColumn.visible);
         const single = settingsButtonPlacement(hub);
-        check('empty hub: one tab on beside Fan settings, with ⚙️ at the bottom',
+        check('empty hub: one tab on, with ⚙️ at the bottom',
             single.ok && hub._side.get_preferred_width(-1)[1] > 0, single.detail);
         s.set_boolean('notes-enabled', false);
         await sleep(animationWait());
@@ -6380,7 +6377,7 @@ async function testEmptyHub(outDir) {
         s.set_boolean('notes-enabled', true);
         await sleep(animationWait());
         check('empty hub: two tabs on: the column is back',
-            hub._tabColumn.visible && hub._tabColumn.get_n_children() === 3 && !notice.visible &&
+            hub._tabColumn.visible && hub._tabColumn.get_n_children() === 2 && !notice.visible &&
             hub.activeFeature !== null);
         island().collapse();
         await sleep(animationWait());
@@ -6401,7 +6398,7 @@ async function testEmptyHub(outDir) {
         await sleep(SETTLE_MS);
     }
     check('empty hub: every tab is back, the first one shown',
-        island()._hub._entries.size === (await expectedTabs()).length + settingsShortcutCount(island()._hub) &&
+        island()._hub._entries.size === (await expectedTabs()).length &&
         island()._hub.activeFeature?.id === firstTabId());
 }
 
@@ -8843,23 +8840,23 @@ async function testPublicBuild() {
 }
 
 
-async function testFanSettingsShortcut() {
+async function testFanSliderSettingsButton() {
     const hub = island()._hub;
-    const entry = hub._entries.get('fan');
+    const slider = extension().stateObj._parts.find(part => part._slider?._iconButton)?._slider;
     const active = hub.activeFeature?.id ?? null;
-    check('fan: the left-rail icon is a settings button, not a hub tab',
-        entry?.button instanceof St.Button && entry.feature.settingsPage &&
-        !entry.view && !entry.service && active !== 'fan');
-    if (!entry)
-        return;
-    const openSettings = island()._ctx.openSettings;
     let openedPage = '';
-    island()._ctx.openSettings = page => openedPage = page;
-    entry.button.emit('clicked', null);
-    island()._ctx.openSettings = openSettings;
-    check('fan: the icon opens Froonty → Fan settings without switching tabs',
+    if (!slider)
+        return check('fan: Quick Settings icon opens Fan settings', false, 'slider unavailable');
+    const openSettings = slider._openSettings;
+    slider._openSettings = page => openedPage = page;
+    check('fan: the Quick Settings icon is an enabled button, not a hub entry',
+        !hub._entries.has('fan') && slider._iconButton.reactive &&
+        slider._iconButton instanceof St.Button);
+    slider._iconButton.emit('clicked', null);
+    slider._openSettings = openSettings;
+    check('fan: clicking the Quick Settings icon opens Fan settings without switching tabs',
         openedPage === 'fan' && hub.activeFeature?.id === active,
-        `requested=${openedPage}, visible=${entry.button.visible}, mapped=${entry.button.mapped}`);
+        `requested=${openedPage}, active=${hub.activeFeature?.id}`);
 }
 
 // FROONTY_TEST_ONLY=testA,testB runs only those checks (while debugging).
@@ -8871,7 +8868,8 @@ const ONLY_TESTS = {
     testSettingsButton, testKillProcess, testCpuLoadButton, testFormulas,
     testNotesHeader, testClaude, testClipboard, testClipboardSwitcher, testNotesMath,
     testWriting, testWritingFixes, testStartup, testBrightness, testPadNoiseSlider,
-    testFanSettingsShortcut,
+    testTimezonePlanner,
+    testFanSliderSettingsButton,
 };
 
 export async function runAll(outDir) {
@@ -8934,7 +8932,7 @@ export async function runAll(outDir) {
         await testWriting(outDir);
         await testWritingFixes(outDir);
         await testKillProcess(outDir);
-        await testFanSettingsShortcut();
+        await testFanSliderSettingsButton();
         await testCpuLoadButton();
         await testFormulas(outDir);
         await testNotesMath(outDir);

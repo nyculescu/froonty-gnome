@@ -3,15 +3,14 @@
 // tools/pack-public replaces this file with an empty list, and their
 // settings pages come from localPrefs.js. Each moves to registry.js once it
 // is submitted to extensions.gnome.org (ZeroTier, Writing, Formulas and
-// Fan stay local). Fan is a settings shortcut, not a hub tab. LOCAL_PARTS
-// (Software brightness, pad noise slider) are not tabs.
+// Fan stay local). LOCAL_PARTS (Software brightness, pad noise slider)
+// are not tabs.
 
 // `break` is a reserved word.
 import breakFeature from './break/index.js';
 import {SoftwareBrightness} from './brightness/overlay.js';
 import claude from './claude/index.js';
 import clipboard from './clipboard/index.js';
-import fan from './fan/index.js';
 import {PadNoiseSliderPart} from './padNoiseSlider/quickSlider.js';
 import formulas from './formulas/index.js';
 import killprocess from './killprocess/index.js';
@@ -25,7 +24,6 @@ export const LOCAL_FEATURES = [
     media,
     claude,
     sysmon,
-    fan,
     clipboard,
     killprocess,
     breakFeature,
@@ -38,6 +36,6 @@ export const LOCAL_FEATURES = [
 // made from the settings.
 export const LOCAL_PARTS = [
     (settings, openSettings) => new SoftwareBrightness(settings, openSettings),
-    settings => new PadNoiseSliderPart(settings),
+    (settings, openSettings) => new PadNoiseSliderPart(settings, openSettings),
     (settings, openSettings) => new TimezonePlannerPart(settings, openSettings),
 ];

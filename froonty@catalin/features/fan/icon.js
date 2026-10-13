@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// A three-bladed fan, bundled for the Fan settings shortcut and page.
+// A three-bladed fan, bundled for the Quick Settings slider and Fan page.
 
 import Gio from 'gi://Gio';
 

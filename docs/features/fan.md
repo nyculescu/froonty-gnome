@@ -2,10 +2,11 @@
 
 Status: **implemented for local builds; not included in `make pack`.**
 
-The fan icon in Froonty's left rail opens **Settings → Fan**. Fan controls
-and telemetry live on that preferences page; the island no longer has a Fan
-tab. The page exposes the llano V12 Ultra cooling pad and, on supported ASUS
-ROG/TUF laptops, the laptop fan profiles and custom-curve switch.
+Fan controls and telemetry live on **Froonty → Settings → Fan**; there is no
+Fan button in the island's left rail. The fan icon beside the Quick Settings
+pad slider opens that page. It exposes the llano V12 Ultra cooling pad and,
+on supported ASUS ROG/TUF laptops, the laptop fan profiles and custom-curve
+switch.
 
 ## Cooling pad
 
