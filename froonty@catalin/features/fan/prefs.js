@@ -86,7 +86,7 @@ function recommendationText(service) {
         service.lut?.built ? ` · ${_('table of %s').format(service.lut.built)}` : '');
 }
 
-export function fanPage(settings, window) {
+export function fanPage(settings, pageStack, window) {
     addIconPath();
     const page = new Adw.PreferencesPage({
         name: 'fan',
@@ -96,8 +96,8 @@ export function fanPage(settings, window) {
 
     const service = new FanService(settings);
     service.start();
-    const setActive = () => service.setActive(!window || window.visible_page_name === 'fan');
-    const pageChangedId = window?.connect('notify::visible-page', setActive) ?? 0;
+    const setActive = () => service.setActive(!pageStack || pageStack.visible_child_name === 'fan');
+    const pageChangedId = pageStack?.connect('notify::visible-child-name', setActive) ?? 0;
     setActive();
 
     const pad = new Adw.PreferencesGroup({
@@ -277,7 +277,7 @@ export function fanPage(settings, window) {
     window?.connect('close-request', () => {
         service.disconnect(changedId);
         if (pageChangedId)
-            window.disconnect(pageChangedId);
+            pageStack.disconnect(pageChangedId);
         service.stop();
         return false;
     });

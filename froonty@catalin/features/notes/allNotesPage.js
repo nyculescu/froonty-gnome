@@ -101,20 +101,27 @@ function formatDate(ms) {
  *
  * @param {Adw.PreferencesWindow} window
  * @param {Gio.Settings} settings
+ * @param {Adw.NavigationView} [navigationView] custom settings navigation
  */
-export function attachAllNotes(window, settings) {
+export function attachAllNotes(window, settings, navigationView = window) {
     let page = null;
     let pushed = false;
     const show = () => {
         if (pushed)
             return;
         page ??= new AllNotesPage(window, settings, () => (pushed = false));
-        window.push_subpage(page.navigationPage);
+        if (navigationView === window)
+            window.push_subpage(page.navigationPage);
+        else
+            navigationView.push(page.navigationPage);
         pushed = true;
     };
     const hide = () => {
         if (pushed)
-            window.pop_subpage();
+            if (navigationView === window)
+                window.pop_subpage();
+            else
+                navigationView.pop();
     };
     const sync = () => (settings.get_string(VIEW_KEY) === 'all-notes' ? show() : hide());
     const ids = [

@@ -23,7 +23,7 @@ import {spinRow, switchRow} from './prefs/rows.js';
 
 const CLOCK_FORMATS = ['system', '24h', '12h'];
 
-// Tabs, in display order. The window opens on the first one.
+// Pages, in display order. The window opens on the first one.
 const GENERAL_PAGE = 'general';
 const APPEARANCE_PAGE = 'appearance';
 const PREFS_PAGE_KEY = 'prefs-page';
@@ -39,36 +39,127 @@ export default class FroontyPreferences extends ExtensionPreferences {
         addLocalIconPaths();
         // local:end local-features
 
-        // With more than one page, Adw.PreferencesWindow shows them as tabs
-        // (a view switcher in the header bar).
+        const pageStack = new Gtk.Stack({
+            hexpand: true,
+            vexpand: true,
+            transition_type: Gtk.StackTransitionType.NONE,
+        });
         const names = new Set();
-        for (const page of [
+        const pages = [
             this._generalPage(settings),
             this._appearancePage(settings),
             panicPage(settings),
             // Feature pages in the hub's tab order (features/registry.js).
             notesPage(settings),
-        ]) {
-            window.add(page);
-            names.add(page.name);
-        }
+        ];
         // local:begin local-features
-        for (const name of addLocalPrefs(window, settings))
-            names.add(name);
+        pages.push(...addLocalPrefs(window, settings, pageStack));
         // local:end local-features
-        window.visible_page_name = GENERAL_PAGE;
+
+        const pageRows = new Map();
+        const sidebar = new Gtk.ListBox({
+            selection_mode: Gtk.SelectionMode.SINGLE,
+            css_classes: ['navigation-sidebar'],
+        });
+        for (const page of pages) {
+            pageStack.add_named(page, page.name);
+            names.add(page.name);
+            const label = new Gtk.Label({
+                label: page.title,
+                xalign: 0,
+                wrap: true,
+                hexpand: true,
+                margin_top: 6,
+                margin_bottom: 6,
+            });
+            const contents = new Gtk.Box({
+                orientation: Gtk.Orientation.HORIZONTAL,
+                spacing: 10,
+                margin_start: 12,
+                margin_end: 12,
+            });
+            contents.append(new Gtk.Image({
+                icon_name: page.icon_name,
+                pixel_size: 16,
+            }));
+            contents.append(label);
+            const row = new Gtk.ListBoxRow({child: contents});
+            row._pageName = page.name;
+            sidebar.append(row);
+            pageRows.set(page.name, row);
+        }
+
+        const pageScroller = new Gtk.ScrolledWindow({
+            child: sidebar,
+            hscrollbar_policy: Gtk.PolicyType.NEVER,
+            width_request: 180,
+            vexpand: true,
+        });
+        const split = new Gtk.Paned({
+            orientation: Gtk.Orientation.HORIZONTAL,
+            position: 220,
+            resize_start_child: false,
+            shrink_start_child: false,
+            hexpand: true,
+            vexpand: true,
+        });
+        split.set_start_child(pageScroller);
+        split.set_end_child(pageStack);
+        sidebar.connect('row-selected', (_sidebar, row) => {
+            if (row)
+                pageStack.visible_child_name = row._pageName;
+        });
+        const selectPage = name => {
+            const row = pageRows.get(name);
+            if (!row)
+                return false;
+            sidebar.select_row(row);
+            pageStack.visible_child_name = name;
+            return true;
+        };
+
+        const title = new Adw.WindowTitle({
+            title: pages[0].title,
+            subtitle: window.title,
+        });
+        pageStack.connect('notify::visible-child-name', () => {
+            const page = pages.find(item => item.name === pageStack.visible_child_name);
+            if (page)
+                title.title = page.title;
+        });
+        sidebar.select_row(pageRows.get(GENERAL_PAGE));
+
+        const toolbar = new Adw.ToolbarView();
+        toolbar.add_top_bar(new Adw.HeaderBar({title_widget: title}));
+        toolbar.set_content(split);
+        const rootPage = new Adw.NavigationPage({
+            tag: 'settings',
+            title: window.title,
+            child: toolbar,
+        });
+        const navigationView = new Adw.NavigationView();
+        navigationView.add(rootPage);
+        window.search_enabled = false;
+        window.set_default_size(960, 700);
+        // The preferences service checks for at least one registered page.
+        window.add(new Adw.PreferencesPage({
+            name: 'settings',
+            title: window.title,
+        }));
+        window.set_content(navigationView);
+
         // The All notes page (a subpage), when the island asked for it.
-        attachAllNotes(window, settings);
-        this._followPrefsPage(window, settings, names);
+        attachAllNotes(window, settings, navigationView);
+        this._followPrefsPage(window, settings, names, selectPage);
     }
 
     // A tab's "Open Settings" button names the page to show (prefs-page),
     // also while the window is already open; the key is emptied after.
-    _followPrefsPage(window, settings, names) {
+    _followPrefsPage(window, settings, names, selectPage) {
         const show = () => {
             const name = settings.get_string(PREFS_PAGE_KEY);
             if (names.has(name))
-                window.visible_page_name = name;
+                selectPage(name);
             if (name)
                 settings.reset(PREFS_PAGE_KEY);
         };

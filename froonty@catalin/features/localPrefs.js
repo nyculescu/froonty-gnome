@@ -24,16 +24,19 @@ export function addLocalIconPaths() {
 }
 
 /**
- * Adds the local features' settings tabs.
+ * Creates the local features' settings pages.
  *
- * @returns {string[]} their page names
+ * @param {Adw.PreferencesWindow} window
+ * @param {Gio.Settings} settings
+ * @param {Gtk.Stack} pageStack settings pages, used to track the active page
+ * @returns {Adw.PreferencesPage[]}
  */
-export function addLocalPrefs(window, settings) {
+export function addLocalPrefs(window, settings, pageStack) {
     const pages = [
         mediaPage(settings),
         claudePage(settings),
         sysmonPage(settings),
-        fanPage(settings, window),
+        fanPage(settings, pageStack, window),
         clipboardPage(settings),
         killProcessPage(settings),
         breakPage(settings),
@@ -44,7 +47,5 @@ export function addLocalPrefs(window, settings) {
         brightnessPage(settings),
         timezonesPage(settings),
     ];
-    for (const page of pages)
-        window.add(page);
-    return pages.map(page => page.name);
+    return pages;
 }
