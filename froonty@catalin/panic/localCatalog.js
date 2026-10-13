@@ -27,11 +27,12 @@ export const LOCAL_PANIC_BUTTONS = [
         title: _ => _('Claude session usage'),
     },
     {
-        // Not an action: the CPU load at a glance; a click opens the Btop
-        // tab. Its source and icon are chosen in Settings → Btop.
+        // Not an action: CPU, GPU or RAM load at a glance; a click opens
+        // the Btop tab. Its source and icon are chosen in Settings → Btop.
+        // The id stays 'cpu-load' so saved bars keep it.
         id: 'cpu-load',
         icon: 'froonty-cpu-symbolic',
-        title: _ => _('CPU load'),
+        title: _ => _('System resource load'),
     },
     {
         // Temperature or RAM usage at a glance; its source is selected in
