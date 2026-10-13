@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Clipboard tab (docs/features/clipboard.md): the history, newest first.
 // Each entry is a small row (a few lines of text, a thumbnail, or the
-// files' names) with a wider preview while hovered; a click puts it back
+// files' names) with a wider preview on right-click; a click puts it back
 // on the clipboard, ready to be pasted. Rows are rebuilt only while the
 // tab is on screen.
 
@@ -14,11 +14,11 @@ import {gettext as _, ngettext} from 'resource:///org/gnome/shell/extensions/ext
 import {Tooltip} from '../../core/tooltip.js';
 import {excerpt, uriName, uriPath} from './entries.js';
 
-// Small preview in the row; the wider one in the hover bubble.
-const ROW_LINES = 3;
-const ROW_WIDTH = 60;
+// Small preview in the row; the wider one opens on right-click.
+const ROW_LINES = 4;
+const ROW_WIDTH = 50;
 const BUBBLE_LINES = 12;
-const BUBBLE_WIDTH = 80;
+const BUBBLE_WIDTH = 60;
 const BUBBLE_FILES = 10;
 // Thumbnails are this tall, in proportion, and at most as wide as the CSS allows.
 const THUMBNAIL_HEIGHT = 56;
@@ -55,9 +55,10 @@ export class ClipboardView {
         this._clock = ctx.clock;
         this._active = false;
         this._dirty = true;
+        this._tooltipMotionSource = 0;
 
         // Content, plus an overlay layer (fixed positions, click-through)
-        // for the hover bubble.
+        // for the preview bubble.
         this.actor = new St.Widget({
             layout_manager: new Clutter.BinLayout(),
             x_expand: true,
@@ -133,22 +134,20 @@ export class ClipboardView {
         overlay.add_child(this._tooltip.actor);
         this.actor.add_child(overlay);
 
-        this._tooltip.attach(this._plainButton, () =>
-            _('Paste as plain text: the next paste has no formatting'), 'below');
-
         this._recorderId = this._recorder.connect('changed', () => this._onChanged());
         this._sync();
     }
 
     destroy() {
         this._recorder.disconnect(this._recorderId);
+        this._hideTooltip();
         this.actor.destroy();
     }
 
     setActive(active) {
         this._active = active;
         if (!active)
-            this._tooltip.hide();
+            this._hideTooltip();
         else if (this._dirty)
             this._sync();
     }
@@ -161,7 +160,7 @@ export class ClipboardView {
 
     _sync() {
         this._dirty = false;
-        this._tooltip.hide();
+        this._hideTooltip();
         const {shown: entries, loaded, currentId, lastSkip} = this._recorder;
 
         if (!loaded)
@@ -221,7 +220,17 @@ export class ClipboardView {
             child: inner,
         });
         button.connect('clicked', () => this._recorder.copy(entry.id));
-        this._tooltip.attach(button, () => this._bubble(entry), 'below');
+        const showPreview = () => {
+            this._tooltip.show(button, this._bubble(entry), 'below');
+            this._watchTooltipPointer();
+        };
+        const rightClick = new Clutter.ClickGesture({
+            required_button: Clutter.BUTTON_SECONDARY,
+            recognize_on_press: true,
+        });
+        rightClick.connect('recognize', showPreview);
+        button.add_action(rightClick);
+        button.connect('popup-menu', showPreview);
         row.add_child(button);
 
         const remove = new St.Button({
@@ -235,6 +244,28 @@ export class ClipboardView {
         remove.connect('clicked', () => this._recorder.remove(entry.id));
         row.add_child(remove);
         return row;
+    }
+
+    _hideTooltip() {
+        if (this._tooltipMotionSource) {
+            GLib.source_remove(this._tooltipMotionSource);
+            this._tooltipMotionSource = 0;
+        }
+        this._tooltip.hide();
+    }
+
+    _watchTooltipPointer() {
+        if (this._tooltipMotionSource)
+            GLib.source_remove(this._tooltipMotionSource);
+        const [startX, startY] = global.get_pointer();
+        this._tooltipMotionSource = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 25, () => {
+            const [x, y] = global.get_pointer();
+            if (x === startX && y === startY)
+                return GLib.SOURCE_CONTINUE;
+            this._tooltipMotionSource = 0;
+            this._hideTooltip();
+            return GLib.SOURCE_REMOVE;
+        });
     }
 
     _preview(entry) {
