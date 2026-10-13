@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// The Fan tab's recommendation: llano-v12-linux's fan_lut.json, built from
+// Fan settings' recommendation: llano-v12-linux's fan_lut.json, built from
 // a load x fan sweep (research/lut_sweep.py, research/build_lut.py). Each
 // device has rows of [temperature °C, fan %], sorted by temperature and
 // non-decreasing in fan; between rows the speed is interpolated, outside

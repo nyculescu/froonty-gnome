@@ -1,16 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Fan tab (docs/features/fan.md): the cooling pad's state and the CPU and
-// GPU temperatures, read while the tab is on screen and not at all
-// otherwise, as the Btop tab does (same Sampler, so a sleeping NVIDIA GPU
-// is not woken up). The temperature history outlives a visit, with a gap
-// for the time away, and keeps the last HISTORY_S.
+// Fan settings (docs/features/fan.md): the cooling pad's state and the CPU
+// and GPU temperatures, read while the settings window is open. The same
+// Sampler as Btop is used, so a sleeping NVIDIA GPU is not woken up.
 //
 // Pad commands run one at a time (pad.js spawns llano.py). A new speed
 // replaces one still waiting, so dragging the slider sends only the
 // latest; a status poll only runs when nothing waits.
 //
 // The recommended speed comes from llano-v12-linux's fan_lut.json (lut.js),
-// read again on each visit, so a new sweep shows without a restart.
+// read on each settings-page visit, so a new sweep shows without a restart.
 //
 // The laptop's own fans, profile and curves (asus.js, through asusd) are
 // read with the temperatures, so a tick ends in one 'changed'.
@@ -319,14 +317,14 @@ export class FanService extends Emitter {
             const [snapshot] = await Promise.all([
                 this._sampler.sample(['cpu', 'gpu'], {cores: true, now, cancellable}),
                 this.laptop.refresh(cancellable).catch(e =>
-                    console.warn(`Froonty: Fan tab laptop read failed: ${e.message}`)),
+                    console.warn(`Froonty: Fan settings laptop read failed: ${e.message}`)),
             ]);
             if (!snapshot || cancellable?.is_cancelled())
                 return;
             this._record(snapshot, now);
             this.emit('changed');
         } catch (e) {
-            console.warn(`Froonty: Fan tab sample failed: ${e.message}`);
+            console.warn(`Froonty: Fan settings sample failed: ${e.message}`);
         } finally {
             this._sampling = false;
         }

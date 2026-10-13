@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// A three-bladed fan, bundled, for the Fan tab. Laid out as an icon theme
-// for the settings window (prefs.js).
+// A three-bladed fan, bundled for the Fan settings shortcut and page.
 
 import Gio from 'gi://Gio';
 

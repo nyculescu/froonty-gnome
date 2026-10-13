@@ -214,14 +214,20 @@ feature has a design note in [docs/features/](docs/features/).
   Settings → Brightness): a second brightness slider in Quick Settings,
   under GNOME's, for monitors whose brightness GNOME cannot set (no
   DDC/CI, as some Samsung Smart Monitors). It darkens the chosen monitors
-  (external ones by default, built-in screen, or all) with a black layer
-  that takes no input; the pointer is not dimmed or copied. Software
-  dimming only: the backlight, and its power use, stay as they are. See
+  (external ones by default, built-in screen, or all) with a neutral layer;
+  an optional warm tint is adjustable separately. The layers take no input,
+  and the pointer is not dimmed or copied. Software dimming only: the
+  backlight, and its power use, stay as they are. See
   [docs/features/brightness.md](docs/features/brightness.md).
 - **Pad noise slider** (working-tree installs only, on by default; Settings
   → Fan): continuously adjusts the connected llano pad from near-silent to
   its maximum speed, with colored noise-stage markers. See
   [docs/features/pad-noise-slider.md](docs/features/pad-noise-slider.md).
+- **Fan settings** (working-tree installs only): the fan icon in the island's
+  left rail opens Settings → Fan for pad controls, including Lock off,
+  Release, Off and Recommended / Apply, plus ASUS laptop fan controls.
+  The existing CPU/GPU temperature sampling and recommendation remain
+  unchanged.
 - **Always reachable.** With "Show island" off, a puzzle-piece icon in the
   top bar (and the shortcut) opens the settings.
 - **Start at login**, or not. With it off, Froonty waits after login behind
@@ -324,7 +330,7 @@ froonty@catalin/             the extension (this directory is what gets installe
 │   ├── formulas/            Formulas tab: palettes, templates, guide; renderer/:
 │   │                        MathJax in a helper process and its client;
 │   │                        notes/: formulas drawn in both notes editors
-│   └── brightness/          Software brightness (not a tab): the black layer,
+│   └── brightness/          Software brightness (not a tab): dim/tint layers,
 │                            its Quick Settings slider, levels, prefs
 ├── panic/                   panic button catalog, factories, buttons (mute,
 │                            Claude session, block camera, pause media,
@@ -509,6 +515,7 @@ The keys behind it:
 | `brightness-enabled` | `false` | Software brightness: its slider in Quick Settings (local builds) |
 | `brightness-level` / `brightness-min` | 100 / 10 | Its level and the slider's left end, in percent |
 | `brightness-monitors` | `external` | `external` (all but a built-in screen), `built-in` or `all` |
+| `brightness-warmth` | `0` | Optional warm tint strength, 0-100 (maximum opacity 25%) |
 | `prefs-page` | `''` | The settings tab to show next (internal; "Open Settings → Writing") |
 | `break-enabled` | `false` | Show the Break tab and follow GNOME's break reminders |
 | `break-pill-reminders` | `true` | Remind in the island; GNOME's Wellbeing notifications are off meanwhile |

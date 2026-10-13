@@ -218,16 +218,11 @@
       <summary>Btop: each thread unfolded</summary>
     </key>
 
-    <!-- Fan feature, the llano V12 Ultra cooling pad (docs/features/fan.md) -->
-    <key name="fan-enabled" type="b">
-      <default>true</default>
-      <summary>Show the Fan tab</summary>
-      <description>The cooling pad's speed and the CPU and GPU temperatures, read while the tab is on screen and not at all otherwise.</description>
-    </key>
+    <!-- Fan controls and telemetry in Settings (docs/features/fan.md) -->
     <key name="fan-interval" type="i">
       <range min="1" max="10"/>
       <default>2</default>
-      <summary>Fan tab refresh interval (s)</summary>
+      <summary>Fan settings refresh interval (s)</summary>
     </key>
     <key name="fan-llano-path" type="s">
       <default>'/srv/shared/Workspace/Hobby/Froonty/third_party/llano-v12-linux/llano.py'</default>
@@ -239,17 +234,6 @@
       <summary>Where the fan recommendation table is</summary>
       <description>llano-v12-linux's fan_lut.json (research/build_lut.py): fan speeds by CPU and GPU temperature.</description>
     </key>
-    <key name="fan-width" type="i">
-      <range min="320" max="960"/>
-      <default>460</default>
-      <summary>Fan island width</summary>
-    </key>
-    <key name="fan-height" type="i">
-      <range min="300" max="900"/>
-      <default>620</default>
-      <summary>Fan island height</summary>
-    </key>
-
     <!-- Media feature (docs/features/media.md) -->
     <key name="media-enabled" type="b">
       <default>true</default>
@@ -558,7 +542,7 @@
     <key name="brightness-enabled" type="b">
       <default>false</default>
       <summary>Software display brightness</summary>
-      <description>Darkens the chosen monitors with a black layer, with a slider in Quick Settings. No DDC/CI or backlight; the pointer is not dimmed.</description>
+      <description>Dimming slider in Quick Settings for monitors GNOME cannot control. Optional warm tint is adjusted separately. The pointer is not dimmed.</description>
     </key>
     <key name="brightness-level" type="i">
       <range min="0" max="100"/>
@@ -581,6 +565,12 @@
       <default>'external'</default>
       <summary>Monitors software brightness dims</summary>
       <description>external: every monitor but a laptop's built-in screen (all of them on a desktop); built-in: the built-in screen; all: every monitor.</description>
+    </key>
+    <key name="brightness-warmth" type="i">
+      <range min="0" max="100"/>
+      <default>0</default>
+      <summary>Warm tint strength (%)</summary>
+      <description>Optional amber tint applied separately from software dimming; 0 disables the tint.</description>
     </key>
 
     <!-- local-only: the Writing tab (docs/features/writing.md); tools/pack-public strips the writing-* keys and this comment -->

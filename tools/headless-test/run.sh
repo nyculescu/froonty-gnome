@@ -101,8 +101,10 @@ CONF
 
     eval_js "'import(\"file://$HERE/checks.js\").then(m => m.runAll(\"$WORK\")).then(r => { imports.gi.GLib.file_set_contents(\"$WORK/results.json\", JSON.stringify(r, null, 1)); return r.filter(x => !x.ok).length; })'"
 
-    # Preferences smoke test: prefs.js runs in the separate, D-Bus activated
-    # org.gnome.Shell.Extensions process; its stderr lands in eval.out.
+    # Preferences smoke test: show the Fan page (when present), so its
+    # GTK controls and FanService are initialized in the separate,
+    # D-Bus-activated org.gnome.Shell.Extensions process.
+    eval_js "'Main.extensionManager.lookup(\"$UUID\").stateObj._settings.set_string(\"prefs-page\", \"fan\")'" >/dev/null
     echo "== prefs"
     "$GDBUS" call --session --dest org.gnome.Shell.Extensions \
         --object-path /org/gnome/Shell/Extensions \

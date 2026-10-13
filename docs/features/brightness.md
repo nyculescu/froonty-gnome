@@ -1,7 +1,7 @@
 # Feature: Software brightness
 
 Status: **implemented**, 2026-10-06, from a contributed patch
-(`Froonty_software_brightness.patch`, reworked before merging; §5).
+(`Froonty_software_brightness.patch`, reworked before merging; §6).
 Working-tree only (`make install`): not in `make pack` output yet.
 **Off by default.**
 
@@ -9,11 +9,11 @@ A second brightness slider in Quick Settings, under GNOME's, for monitors
 whose brightness GNOME cannot set: a monitor that `ddcutil` sees but that
 reports DDC/CI as unsupported (some Samsung Smart Monitors), or one behind
 an adapter that does not pass DDC/CI through. Froonty darkens those
-monitors with a black layer.
+monitors with a neutral dimming layer and, optionally, a separate warm tint.
 
 It is software dimming: the backlight stays as it is, so it saves no
-power, and black stays as black as the panel makes it. It is not a
-night light (no colour change).
+power. The default tint is off; when enabled it is an independent, subtle
+amber overlay and does not change the brightness slider's meaning.
 
 ## 1. Use
 
@@ -28,20 +28,41 @@ slider takes that place).
 - **Lowest brightness (%):** the slider's left end, 10 % by default
   (5-90 %), so a screen never goes black. Raising it brightens a darker
   level at once.
+- **Warm tint (%):** off by default; adjust its strength independently of
+  dimming. Its maximum opacity is 25% to avoid a full amber wash.
 
-The slider at its right end (100 %) puts no layer at all.
+The slider at its right end (100 %) puts no dimming layer on screen. A
+warm tint can still be active at that level.
 
-## 2. How it works
+## 2. Why dimming and tint are separate
+
+The software brightness slider still dims with a neutral black layer:
+source-over black attenuates every channel without lifting black levels.
+GNOME's Night Light instead exposes color temperature as a separate warm/
+cold adjustment ([GNOME help](https://help.gnome.org/gnome-help/display-night-light.html));
+Redshift documents color temperature and brightness as distinct adjustments,
+and recommends desktop-integrated color features over gamma-ramp workarounds
+([Redshift README](https://github.com/sharpbracket/redshift#technical-details-gamma-ramps)).
+Froonty's optional tint follows that separation rather than making brightness
+itself change color.
+
+This is still a compositor overlay, not a display color transform: at high
+tint settings even dark colors take on a little amber. Keep the tint at 0
+for neutral color; GNOME Night Light is the better choice for a full
+display-wide color-temperature adjustment.
+
+## 3. How it works
 
 `features/brightness/overlay.js`, an extension part (made by
 `extension.js` from `localFeatures.js`'s `LOCAL_PARTS`): it lives while
 Froonty runs and follows `brightness-enabled` itself.
 
-- **The layer:** one `St.Widget` on `global.stage` (not `uiGroup`), with
-  one black child per dimmed monitor at that monitor's geometry and an
-  opacity of 255 × (100 − level) / 100. It is raised again whenever
-  something is added to the stage, so it stays over the top bar, the
-  island, menus and notifications.
+- **The layers:** one `St.Widget` on `global.stage` (not `uiGroup`), with
+  separate tint and dimming child layers. The tint is warm amber and its
+  opacity is capped at 64/255 (25%); the neutral black dimming opacity is
+  255 × (100 − level) / 100. Tint is stacked beneath dimming. The stage
+  layer is raised whenever something is added, so it stays over the top
+  bar, the island, menus and notifications.
 - **The pointer:** the layer is not reactive and is hidden from picking
   (`Shell.util_set_hidden_from_pick`), so clicks and hover go through.
   GNOME's pointer is not a stage actor (on Wayland usually a hardware
@@ -60,11 +81,11 @@ Froonty runs and follows `brightness-enabled` itself.
   writes whole percents to `brightness-level`.
 - **Monitors added or removed:** `Main.layoutManager` `monitors-changed`.
 
-Pure logic (targets, opacity, the slider's scale) is in
+Pure logic (targets, opacities, the slider's scale) is in
 `features/brightness/levels.js`, unit-tested in
 `tools/unit/brightness.test.js`.
 
-## 3. Settings
+## 4. Settings
 
 | Key | Default | |
 |---|---|---|
@@ -72,8 +93,9 @@ Pure logic (targets, opacity, the slider's scale) is in
 | `brightness-level` | 100 | The level, in percent (0-100; never applied below the minimum) |
 | `brightness-min` | 10 | The slider's left end (5-90) |
 | `brightness-monitors` | `external` | `external`, `built-in` or `all` |
+| `brightness-warmth` | 0 | Optional tint strength (0-100; opacity capped at 25%) |
 
-## 4. Limits
+## 5. Limits
 
 - **The lock screen is not dimmed:** GNOME disables extensions while the
   screen is locked, so the layer goes with them and comes back on unlock.
@@ -88,7 +110,7 @@ Pure logic (targets, opacity, the slider's scale) is in
   pointer stays undimmed, and a fullscreen video or game (if Mutter scans
   a fullscreen window out directly, the layer might not show over it).
 
-## 5. Changes from the contributed patch
+## 6. Changes from the contributed patch
 
 The patch (written against 0.9.0-rc0, with a full snapshot of the
 project, `Froonty_0.9.0_rc0_software_brightness.zip`, that differed from

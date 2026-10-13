@@ -19,9 +19,10 @@
 //       odd), both sides equally wide; [a] the active feature's own
 //       buttons (view.headerActions), at the right end
 //
-// Every tab can be turned off. With none on, the side column (⚙️) and the
-// header stay, and the content says so, with a button that opens Settings.
-// The tab column itself shows only while more than one tab is on.
+// Every tab can be turned off. With none on, the side column (⚙️ and any
+// settings shortcuts) and the header stay, and the content says so, with a
+// button that opens Settings. The tab column itself shows only while more
+// than one tab or a settings shortcut is present.
 //
 // The date pill never leaves GNOME's clock: the island is made wider
 // (minWidth) until both halves around it fit PANIC_GAP clear of the side
@@ -249,9 +250,9 @@ export class Hub extends EventEmitter {
 
         const main = new St.BoxLayout({style_class: 'froonty-hub', x_expand: true, y_expand: true});
         this._main = main;
-        // The side column: the tabs at the top, ⚙️ at the bottom. It shows
-        // with any number of tabs on (⚙️ is always there); the tab column
-        // in it only with more than one.
+        // The side column: tabs and settings shortcuts at the top, ⚙️ at the
+        // bottom. It shows with any number of tabs on; the tab column itself
+        // only with more than one tab or a settings shortcut.
         this._side = new St.BoxLayout({
             style_class: 'froonty-hub-side',
             orientation: Clutter.Orientation.VERTICAL,
@@ -354,7 +355,8 @@ export class Hub extends EventEmitter {
     // rebuilds the tab column in registry order.
     _syncTabs() {
         const enabled = this._features.filter(f =>
-            !f.enabledKey || this._settings.get_boolean(f.enabledKey));
+            f.settingsPage || !f.enabledKey || this._settings.get_boolean(f.enabledKey));
+        const tabs = enabled.filter(f => !f.settingsPage);
 
         for (const id of [...this._entries.keys()]) {
             if (!enabled.some(f => f.id === id))
@@ -369,19 +371,19 @@ export class Hub extends EventEmitter {
         });
         // A single tab is not a choice; keep the column out of the way
         // (the side column stays, for ⚙️).
-        this._tabColumn.visible = enabled.length > 1;
+        this._tabColumn.visible = enabled.length > 1 || enabled.some(f => f.settingsPage);
         // No tab on: the header stays, and the content says so.
-        this._empty.visible = enabled.length === 0;
+        this._empty.visible = tabs.length === 0;
         // More or fewer tabs may need another island height (minHeight).
         this.emit('size-changed');
 
-        if (!this._entries.has(this._activeId)) {
+        if (!tabs.some(f => f.id === this._activeId)) {
             this._activeId = null;
             // The tab shown last; if it is gone or off (the Clock tab, which
             // is no more), the first one that is on.
             const last = this._settings.get_string(LAST_TAB_KEY);
-            if (enabled.length)
-                this.select(this._entries.has(last) ? last : enabled[0].id);
+            if (tabs.length)
+                this.select(tabs.some(f => f.id === last) ? last : tabs[0].id);
             else
                 this._header.showActions(null);
         }
@@ -430,7 +432,12 @@ export class Hub extends EventEmitter {
             track_hover: true,
             child: new St.Icon(iconParams),
         });
-        button.connect('clicked', () => this.select(feature.id));
+        button.connect('clicked', () => {
+            if (feature.settingsPage)
+                this._ctx.openSettings(feature.id);
+            else
+                this.select(feature.id);
+        });
         this._tooltip.attach(button, () => feature.title, 'right');
 
         const entry = {feature, button, view: null, service: null};

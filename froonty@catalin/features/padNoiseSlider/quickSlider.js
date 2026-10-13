@@ -68,7 +68,7 @@ const PadNoiseSlider = GObject.registerClass(
 class PadNoiseSlider extends QuickSlider {
     _init() {
         super._init({
-            // The Fan tab's bundled fan (weather-wind is missing from some themes).
+            // The Fan settings shortcut's bundled icon (weather-wind is missing from some themes).
             gicon: fanIcon(),
             iconLabel: _('llano pad speed'),
             style_class: 'quick-slider froonty-pad-noise-slider',

@@ -32,7 +32,7 @@ export function addLocalPrefs(window, settings) {
         mediaPage(settings),
         claudePage(settings),
         sysmonPage(settings),
-        fanPage(settings),
+        fanPage(settings, window),
         clipboardPage(settings),
         killProcessPage(settings),
         breakPage(settings),

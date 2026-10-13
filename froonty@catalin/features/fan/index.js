@@ -1,25 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Fan tab: the llano V12 Ultra cooling pad, the laptop's own fans (asusd)
-// and the temperatures they are there for (docs/features/fan.md). Working
-// tree only.
+// Fan settings shortcut. The page is in Froonty's preferences, not the hub.
 
 import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 
 import {fanIcon} from './icon.js';
-import {FanService} from './service.js';
-import {FanView} from './view.js';
-
 export default {
     id: 'fan',
+    settingsPage: true,
     get title() {
-        return _('Fan');
+        return _('Fan settings');
     },
     get icon() {
         return fanIcon();
     },
-    enabledKey: 'fan-enabled',
-    // Drag the open island's corner to change it.
-    hubSizeKeys: {width: 'fan-width', height: 'fan-height'},
-    createService: ctx => new FanService(ctx.settings),
-    createView: (_ctx, service) => new FanView(service),
 };

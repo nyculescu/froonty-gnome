@@ -28,9 +28,14 @@ export function appliedLevel(level, minimum) {
     return Math.min(100, Math.max(minimum, level));
 }
 
-/** The black overlay's opacity (0-255) for a level. */
+/** The dimming overlay's opacity (0-255) for a level. */
 export function overlayOpacity(level) {
     return Math.round(255 * (100 - level) / 100);
+}
+
+/** A warm tint's opacity (0-255), capped at 25% to keep it subtle. */
+export function warmthOpacity(warmth) {
+    return Math.round(64 * Math.min(100, Math.max(0, warmth)) / 100);
 }
 
 /** Where the Quick Settings slider stands (0-1): it spans minimum-100 %. */

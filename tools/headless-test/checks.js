@@ -566,13 +566,15 @@ async function clickActor(actor) {
     await clickAt((b.x1 + b.x2) / 2, (b.y1 + b.y2) / 2);
 }
 
-// The tabs the hub should show: every feature without an enable key,
-// and those whose key is on, in registry order. Computed, so features
-// that are on by default can be added without editing these checks.
+// The hub tabs: features without an enable key and those whose key is on,
+// in registry order. Settings shortcuts are counted separately.
 async function expectedTabs() {
     const {FEATURES} = await import(`file://${extension().path}/features/registry.js`);
-    return FEATURES.filter(f => !f.enabledKey || settings().get_boolean(f.enabledKey));
+    return FEATURES.filter(f => !f.settingsPage &&
+        (!f.enabledKey || settings().get_boolean(f.enabledKey)));
 }
+const settingsShortcutCount = hub =>
+    [...hub._entries.values()].filter(entry => entry.feature.settingsPage).length;
 
 async function testHub(outDir) {
     const hub = island()._hub;
@@ -581,17 +583,19 @@ async function testHub(outDir) {
     for (const feature of wasOn)
         settings().set_boolean(feature.enabledKey, false);
     await sleep(SETTLE_MS);
-    check('hub: every tab can be off: no tab, no column, the notice instead',
-        !hub._tabColumn.visible && hub._tabColumn.get_n_children() === 0 && hub._entries.size === 0 &&
+    check('hub: every tab can be off: Fan settings remains available beside the notice',
+        hub._tabColumn.visible && hub._tabColumn.get_n_children() === 1 &&
+        hub._entries.size === 1 && settingsShortcutCount(hub) === 1 &&
         hub.activeFeature === null && hub._empty.visible);
     settings().reset('notes-enabled');
     await sleep(SETTLE_MS);
-    check('hub: a single feature hides the tab row (and the notice goes)',
-        !hub._tabColumn.visible && hub.activeFeature?.id === 'notes' && !hub._empty.visible);
+    check('hub: a single feature and the Fan settings shortcut both appear',
+        hub._tabColumn.visible && hub._tabColumn.get_n_children() === 2 &&
+        hub.activeFeature?.id === 'notes' && !hub._empty.visible);
     settings().reset('zerotier-enabled');
     await sleep(SETTLE_MS);
     check('hub: enabling a feature adds its tab',
-        hub._tabColumn.visible && hub._tabColumn.get_n_children() === 2);
+        hub._tabColumn.visible && hub._tabColumn.get_n_children() === 3);
     for (const feature of wasOn) {
         if (settings().get_default_value(feature.enabledKey).unpack())
             settings().reset(feature.enabledKey);
@@ -602,7 +606,8 @@ async function testHub(outDir) {
     const names = hub._tabColumn.get_children().map(b => b.accessible_name);
     const expected = (await expectedTabs()).map(f => f.title);
     check(`hub: tabs follow the registry order (${expected.join(', ')}); Notes first, no Clock, Calendar or Notifications tab`,
-        names.join(',') === expected.join(',') && names[0] === 'Notes' &&
+        names.filter(name => name !== 'Fan settings').join(',') === expected.join(',') &&
+        names.includes('Fan settings') && names[0] === 'Notes' &&
         !['Clock', 'Calendar', 'Notifications'].some(name => names.includes(name)),
         names.join(','));
     check('hub: the tab shown before stays shown as the others come back',
@@ -694,8 +699,8 @@ async function testHub(outDir) {
         await setExtensionEnabled(false);
         await setExtensionEnabled(true);
         check('hub: a registered feature adds a tab',
-            island()._hub._tabColumn.get_n_children() === tabsBefore + 1,
-            `${island()._hub._tabColumn.get_n_children()} tabs, ${tabsBefore} before`);
+            island()._hub._tabColumn.get_n_children() === tabsBefore + settingsShortcutCount(island()._hub) + 1,
+            `${island()._hub._tabColumn.get_n_children()} buttons, ${tabsBefore} tabs before`);
         check('hub: a feature is not created before its tab is selected',
             log.length === 0, log.join(','));
 
@@ -5091,7 +5096,7 @@ async function testHubLayout(outDir) {
     await sleep(animationWait());
     const tabs = hub._tabColumn.get_children();
     const boxes = tabs.map(boxOf);
-    const expectedCount = (await expectedTabs()).length;
+    const expectedCount = (await expectedTabs()).length + settingsShortcutCount(hub);
     // One column; the island grows past expanded-height to show every tab.
     check('layout: feature tabs are stacked vertically on the left, all inside the island',
         tabs.length === expectedCount && boxes.every(b => Math.abs(b.x1 - boxes[0].x1) < 1) &&
@@ -6314,8 +6319,8 @@ async function testEmptyHub(outDir) {
         const content = boxOf(hub._content);
         const n = boxOf(notice);
         check('empty hub: with every tab off the island opens: no tab, no column, a notice centred in the content',
-            island().expanded && hub.activeFeature === null && hub._entries.size === 0 &&
-            !hub._tabColumn.visible && notice.mapped &&
+            island().expanded && hub.activeFeature === null && hub._entries.size === 1 &&
+            hub._tabColumn.visible && hub._tabColumn.get_n_children() === 1 && notice.mapped &&
             n.x1 >= content.x1 - 0.5 && n.x2 <= content.x2 + 0.5 && n.y1 >= content.y1 - 0.5 &&
             n.y2 <= content.y2 + 0.5 && Math.abs((n.x1 + n.x2) - (content.x1 + content.x2)) <= 2 &&
             Math.abs((n.y1 + n.y2) - (content.y1 + content.y2)) <= 2,
@@ -6360,9 +6365,9 @@ async function testEmptyHub(outDir) {
         await sleep(animationWait());
         check('empty hub: a tab turned back on shows at once, without the notice',
             hub.activeFeature?.id === 'notes' && hub._entries.get('notes')?.view?.actor.mapped &&
-            !notice.visible && !hub._tabColumn.visible);
+            !notice.visible && hub._tabColumn.visible);
         const single = settingsButtonPlacement(hub);
-        check('empty hub: one tab on: no tab column, the side column holds ⚙️ alone, at its bottom',
+        check('empty hub: one tab on beside Fan settings, with ⚙️ at the bottom',
             single.ok && hub._side.get_preferred_width(-1)[1] > 0, single.detail);
         s.set_boolean('notes-enabled', false);
         await sleep(animationWait());
@@ -6374,7 +6379,7 @@ async function testEmptyHub(outDir) {
         s.set_boolean('notes-enabled', true);
         await sleep(animationWait());
         check('empty hub: two tabs on: the column is back',
-            hub._tabColumn.visible && hub._tabColumn.get_n_children() === 2 && !notice.visible &&
+            hub._tabColumn.visible && hub._tabColumn.get_n_children() === 3 && !notice.visible &&
             hub.activeFeature !== null);
         island().collapse();
         await sleep(animationWait());
@@ -6395,7 +6400,7 @@ async function testEmptyHub(outDir) {
         await sleep(SETTLE_MS);
     }
     check('empty hub: every tab is back, the first one shown',
-        island()._hub._entries.size === (await expectedTabs()).length &&
+        island()._hub._entries.size === (await expectedTabs()).length + settingsShortcutCount(island()._hub) &&
         island()._hub.activeFeature?.id === firstTabId());
 }
 
@@ -8522,6 +8527,10 @@ async function testBreak(outDir) {
 
 const brightnessLayer = () => global.stage.get_children()
     .find(actor => actor.name === 'froonty-brightness') ?? null;
+const brightnessChildLayer = name => brightnessLayer()?.get_children()
+    .find(actor => actor.name === name) ?? null;
+const warmthOverlays = () => brightnessChildLayer('froonty-brightness-tint-layer')?.get_children() ?? [];
+const dimOverlays = () => brightnessChildLayer('froonty-brightness-dim-layer')?.get_children() ?? [];
 const quickSettingsMenu = () => Main.panel.statusArea.quickSettings.menu;
 const brightnessSliders = () => quickSettingsMenu()._grid.get_children()
     .filter(item => item.slider?.accessible_name === 'Software brightness');
@@ -8530,10 +8539,9 @@ async function testBrightness() {
     let s = settings();
     const menuActors = () => quickSettingsMenu()._overlay.get_n_children();
     const menusBefore = menuActors();
-    // Stop Froonty also takes the pad noise slider and its menu away.
-    const padNoiseSliderMenus = padNoiseSliders().length;
     check('brightness: off by default, nothing on the stage or in Quick Settings',
-        !s.get_boolean('brightness-enabled') && !brightnessLayer() && brightnessSliders().length === 0);
+        !s.get_boolean('brightness-enabled') && s.get_int('brightness-warmth') === 0 &&
+        !brightnessLayer() && brightnessSliders().length === 0);
 
     s.set_boolean('brightness-enabled', true);
     await sleep(SETTLE_MS);
@@ -8543,21 +8551,39 @@ async function testBrightness() {
         brightnessSliders().length === 1 && gnome.get_next_sibling() === slider &&
         quickSettingsMenu()._grid.layout_manager.get_child_meta(
             quickSettingsMenu()._grid, slider).column_span === 2);
-    check('brightness: at 100 % the layer is on top of the stage and empty',
-        global.stage.get_last_child() === brightnessLayer() && brightnessLayer().get_n_children() === 0);
+    check('brightness: at 100 % with no tint, the layer is on top and has no monitor overlays',
+        global.stage.get_last_child() === brightnessLayer() &&
+        warmthOverlays().length === 0 && dimOverlays().length === 0);
 
-    s.set_int('brightness-level', 40);
-    await sleep(SETTLE_MS);
     const monitors = Main.layoutManager.monitors;
-    const overlays = () => brightnessLayer().get_children();
     const covers = (overlay, m) => overlay.x === m.x && overlay.y === m.y &&
         overlay.width === m.width && overlay.height === m.height;
+    s.set_int('brightness-warmth', 50);
+    await sleep(SETTLE_MS);
+    check('brightness: warmth at full brightness adds only a subtle tint, not dimming',
+        warmthOverlays().length === monitors.length && dimOverlays().length === 0 &&
+        warmthOverlays().every((tint, i) => covers(tint, monitors[i]) && tint.opacity === 32));
+    check('brightness: tint is stacked below the neutral dimming layer',
+        brightnessLayer().get_children()[0] === brightnessChildLayer('froonty-brightness-tint-layer') &&
+        brightnessLayer().get_children()[1] === brightnessChildLayer('froonty-brightness-dim-layer'));
+
+    s.set_int('brightness-warmth', 0);
+    s.set_int('brightness-level', 40);
+    await sleep(SETTLE_MS);
     // The test session's virtual monitors are not built-in panels, so
     // "External monitors" (the default) is all of them.
     check('brightness: 40 % puts a black layer at 60 % over every external monitor',
-        overlays().length === monitors.length &&
-        overlays().every((overlay, i) => covers(overlay, monitors[i]) && overlay.opacity === 153),
-        overlays().map(o => `${o.x},${o.y} ${o.width}x${o.height} @${o.opacity}`).join('; '));
+        dimOverlays().length === monitors.length &&
+        dimOverlays().every((overlay, i) => covers(overlay, monitors[i]) && overlay.opacity === 153),
+        dimOverlays().map(o => `${o.x},${o.y} ${o.width}x${o.height} @${o.opacity}`).join('; '));
+    s.set_int('brightness-warmth', 50);
+    await sleep(SETTLE_MS);
+    check('brightness: tint remains independent while dimming is active',
+        warmthOverlays().length === monitors.length &&
+        warmthOverlays().every((tint, i) => covers(tint, monitors[i]) && tint.opacity === 32) &&
+        dimOverlays().every(overlay => overlay.opacity === 153));
+    s.set_int('brightness-warmth', 0);
+    await sleep(SETTLE_MS);
     check('brightness: the slider follows the setting (40 % between 10 and 100 %)',
         Math.abs(slider.slider.value - 30 / 90) < 0.001, `${slider.slider.value}`);
     const m = monitors[0];
@@ -8568,31 +8594,32 @@ async function testBrightness() {
 
     s.set_string('brightness-monitors', 'built-in');
     await sleep(SETTLE_MS);
-    check('brightness: "Built-in screen" with no built-in panel dims nothing', overlays().length === 0);
+    check('brightness: "Built-in screen" with no built-in panel dims nothing', dimOverlays().length === 0);
     s.set_string('brightness-monitors', 'all');
     await sleep(SETTLE_MS);
-    check('brightness: "All monitors" dims every monitor', overlays().length === monitors.length);
+    check('brightness: "All monitors" dims every monitor', dimOverlays().length === monitors.length);
 
     slider.slider.value = 0;
     await sleep(SETTLE_MS);
     check('brightness: the slider\'s left end is the minimum (10 %)',
-        s.get_int('brightness-level') === 10 && overlays()[0]?.opacity === 230, `${s.get_int('brightness-level')}`);
+        s.get_int('brightness-level') === 10 && dimOverlays()[0]?.opacity === 230, `${s.get_int('brightness-level')}`);
     s.set_int('brightness-min', 30);
     await sleep(SETTLE_MS);
     check('brightness: a higher minimum applies at once, the slider at its left end',
-        overlays()[0]?.opacity === 179 && slider.slider.value === 0, `${overlays()[0]?.opacity}`);
+        dimOverlays()[0]?.opacity === 179 && slider.slider.value === 0, `${dimOverlays()[0]?.opacity}`);
 
     await lockUnlock();
     s = settings();
     check('brightness: a screen lock and unlock bring back one slider and the layer, no menu left behind',
-        brightnessSliders().length === 1 && overlays().length === monitors.length &&
+        brightnessSliders().length === 1 && dimOverlays().length === monitors.length &&
         menuActors() === menusBefore + 1, `sliders=${brightnessSliders().length} menus=${menuActors()}/${menusBefore}`);
 
     s.set_boolean('running', false);
     await sleep(SETTLE_MS);
     check('brightness: Stop Froonty takes the layer, the slider and its menu away',
-        !brightnessLayer() && brightnessSliders().length === 0 && menuActors() === menusBefore - padNoiseSliderMenus,
-        `menus=${menuActors()}/${menusBefore} padNoiseSliders=${padNoiseSliderMenus}`);
+        !brightnessLayer() && brightnessSliders().length === 0 && menuActors() <= menusBefore,
+        `layer=${Boolean(brightnessLayer())} sliders=${brightnessSliders().length} ` +
+        `menus=${menuActors()}/${menusBefore}`);
     s.set_boolean('running', true);
     await sleep(SETTLE_MS);
     check('brightness: Start brings them back', Boolean(brightnessLayer()) && brightnessSliders().length === 1);
@@ -8601,7 +8628,10 @@ async function testBrightness() {
     await sleep(SETTLE_MS);
     check('brightness: off takes everything away again',
         !brightnessLayer() && brightnessSliders().length === 0 && menuActors() === menusBefore);
-    for (const key of ['brightness-enabled', 'brightness-level', 'brightness-min', 'brightness-monitors'])
+    for (const key of [
+        'brightness-enabled', 'brightness-level', 'brightness-min', 'brightness-monitors',
+        'brightness-warmth',
+    ])
         s.reset(key);
     await sleep(SETTLE_MS);
 }
@@ -8727,210 +8757,24 @@ async function testPublicBuild() {
     check('public build: re-enable succeeds', await setExtensionEnabled(true), stateName());
 }
 
-// Fan tab. run.sh points fan-llano-path at a fake llano.py that keeps the
-// pad's state in a file and logs each command; FROONTY_TEST_LLANO runs the
-// same checks on the real pad (then the fake's log is not read). The
-// temperatures are this computer's own /sys and nvidia-smi.
-async function testFan(outDir) {
-    const s = settings();
-    const real = Boolean(GLib.getenv('FROONTY_TEST_LLANO'));
-    const fakeLog = () => {
-        try {
-            return new TextDecoder().decode(GLib.file_get_contents(`${outDir}/fake-llano.log`)[1]);
-        } catch (e) {
-            return '';
-        }
-    };
-    const systemctlLog = () => {
-        try {
-            return new TextDecoder().decode(GLib.file_get_contents(
-                `${claudeDir()}/systemctl.log`)[1]);
-        } catch (e) {
-            return '';
-        }
-    };
-    s.set_boolean('fan-enabled', true);
-    await sleep(animationWait());
-    island().expand();
-    await sleep(animationWait());
-    await clickActor(tabButton('fan'));
-    await sleep(animationWait());
-    const fan = island()._hub._entries.get('fan');
-    const service = fan?.service;
-    const view = fan?.view;
-    check('fan: the tab opens and polls', island()._hub.activeFeature?.id === 'fan' &&
-        service?._timerId > 0, `active=${island()._hub.activeFeature?.id}`);
 
-    await waitFor(() => service.status && service.history.length >= 2, 10000);
-    check('fan: the pad\'s status reaches the tab',
-        service.status && view._speedLabel.text === (service.status.off ? 'Off' : `${service.status.speed}%`) &&
-        view._detail.text.includes('raw '), `${view._speedLabel.text} | ${view._detail.text}`);
-    check('fan: the CPU temperature is read and in the legend',
-        typeof service.temps?.cpu === 'number' && view._legendItems[0].text.endsWith('°C'),
-        `${service.temps?.cpu} ${view._legendItems[0]?.text}`);
-    check('fan: each physical core has a bar',
-        view._coreChart._cores.length > 0 && view._coresSummary.text.includes('cores'),
-        `${view._coreChart._cores.length} cores, ${view._coresSummary.text}`);
-    check('fan: the history grows with each sample', service.history.length >= 2,
-        `${service.history.length} points`);
-    await screenshotTop(outDir, 'fan', 640);
-
-    // Off: a real click on the button.
-    const offButton = view._slider.get_parent().get_next_sibling().get_first_child();
-    await clickActor(offButton);
-    await waitFor(() => !service.busy && service.status?.speed === 0, 5000);
-    check('fan: Off switches the pad off under software control, and says Off',
-        service.status?.speed === 0 && service.status?.off && service.control === 'software' &&
-        view._speedLabel.text === 'Off' && view._detail.text.includes('pad off') &&
-        (real || fakeLog().includes('off\n')), `${JSON.stringify(service.status)} | ${view._detail.text}`);
-
-    // The slider, clicked at about 40 % of its width.
-    const box = boxOf(view._slider);
-    await clickAt(box.x1 + 0.4 * (box.x2 - box.x1), (box.y1 + box.y2) / 2);
-    const wanted = Math.round(view._slider.value * 100);
-    await waitFor(() => !service.busy && service.status?.speed === wanted, 5000);
-    check('fan: clicking the slider sets that speed',
-        wanted > 20 && wanted < 60 && service.status?.speed === wanted &&
-        view._targetLabel.text === `${wanted}%`, `slider ${wanted}, pad ${service.status?.speed}`);
-    // A poll after the hold must not move the slider back.
-    await sleep(2500);
-    check('fan: the slider stays where it was put',
-        Math.round(view._slider.value * 100) === wanted, `${Math.round(view._slider.value * 100)}`);
-
-    // Release: like the pad, the status still says software; the tab says released.
-    const releaseButton = offButton.get_parent().get_last_child();
-    await clickActor(releaseButton);
-    await waitFor(() => !service.busy && service.control === 'released', 5000);
-    check('fan: Release hands control back and says so',
-        service.control === 'released' && view._detail.text.startsWith('Released') &&
-        (real || fakeLog().trim().endsWith('release')), view._detail.text);
-    await screenshotTop(outDir, 'fan-released', 640);
-
-    // The recommendation: none without fan_lut.json; with one, its speed,
-    // the leading device, and Apply sets it. The table's flat rows make it
-    // 35 % for the CPU and 25 % for the GPU, whatever the temperatures.
-    check('fan: without fan_lut.json, the tab says how to build it',
-        service.lutError === 'missing' && view._recommendLabel.text === 'No recommendation yet' &&
-        view._recommendDetail.text.includes('lut_sweep.py') && !view._applyButton.visible,
-        `${view._recommendLabel.text} | ${view._recommendDetail.text}`);
-    GLib.file_set_contents(`${outDir}/fan_lut.json`, JSON.stringify({
-        built: '2026-10-09',
-        devices: {cpu: {rows: [[0, 35], [200, 35]]}, gpu: {rows: [[0, 25], [200, 25]]}},
-    }));
-    s.set_string('fan-lut-path', '');
-    s.set_string('fan-lut-path', `${outDir}/fan_lut.json`);
-    await waitFor(() => service.recommendation?.fan === 35, 5000);
-    check('fan: the table\'s speed, with the device that leads',
-        view._recommendLabel.text === 'Recommended 35%' && view._recommendDetail.text.startsWith('CPU ') &&
-        view._recommendDetail.text.includes('leads') && view._applyButton.visible,
-        `${view._recommendLabel.text} | ${view._recommendDetail.text}`);
-    await clickActor(view._applyButton);
-    await waitFor(() => !service.busy && service.status?.speed === 35, 5000);
-    check('fan: Apply sets the recommended speed', service.status?.speed === 35 &&
-        Math.round(view._slider.value * 100) === 35 && !view._applyButton.reactive,
-        `pad ${service.status?.speed}, slider ${Math.round(view._slider.value * 100)}`);
-    await screenshotTop(outDir, 'fan-recommended', 640);
-
-    // A unit that drives the pad by itself: named, and stopped from the tab.
-    GLib.file_set_contents(`${claudeDir()}/systemctl.is-active`, 'active\ninactive\n');
-    await waitFor(() => view._stopButton.visible, (s.get_int('fan-interval') + 2) * 1000);
-    check('fan: a running llano-guard is named, with a Stop button',
-        view._noticeRow.visible && view._notice.text.startsWith('llano-guard') && view._stopButton.visible,
-        view._notice.text);
-    await screenshotTop(outDir, 'fan-guard', 640);
-    await clickActor(view._stopButton);
-    await waitFor(() => !view._noticeRow.visible, 5000);
-    check('fan: Stop stops llano-guard\'s unit and the notice goes',
-        systemctlLog().includes('--user stop llano-guard.service') && !view._noticeRow.visible,
-        systemctlLog().split('\n').filter(l => l.includes('stop')).join(' | '));
-
-    // A wrong llano.py location says where to set it.
-    const scriptPath = s.get_string('fan-llano-path');
-    s.set_string('fan-llano-path', '/nonexistent/llano.py');
-    await waitFor(() => service.error === 'no-script', 5000);
-    check('fan: a missing llano.py is explained',
-        view._noticeRow.visible && view._notice.text.includes('Settings → Fan') && !view._stopButton.visible,
-        view._notice.text);
-    s.set_string('fan-llano-path', scriptPath);
-    await waitFor(() => service.error === null && service.status, 5000);
-    check('fan: the right location again clears it', !view._noticeRow.visible, view._notice.text);
-
-    // Noise estimates are informational; a mode or manual speed is not
-    // constrained by the clock.
-    const fiftyButton = offButton.get_next_sibling().get_next_sibling();
-    if (!real) {
-        check('fan: the speed\'s rpm and dB are estimates with no cap',
-            /^≈\d+ rpm · ≈\d+ dB at the ears · /.test(view._noiseLabel.text) &&
-            service.noise?.limit?.max_rpm === null && service.noise?.limit?.max_percent === 100,
-            `${view._noiseLabel.text} | ${JSON.stringify(service.noise?.limit)}`);
-        await clickActor(fiftyButton);
-        await waitFor(() => !service.busy && service.status?.speed === 50, 5000);
-        check('fan: a manual speed is not reduced by a clock-based cap',
-            service.status?.speed === 50, `${service.status?.speed}`);
-    }
-
-    // Who changed the pad last: Froonty's own writes say so.
-    await waitFor(() => view._lastChange.text.includes('Froonty'), 5000);
-    check('fan: the last change names Froonty and what it did',
-        /^Last change: Froonty (set \d+%|unlocked it at \d+%) · \d\d:\d\d:\d\d$/.test(view._lastChange.text),
-        view._lastChange.text);
-
-    // The lock, from the tab: fan off, every speed control held, and
-    // llano.py refuses a speed while it holds; Unlock gives the speed back.
-    const before = service.status?.speed;
-    await clickActor(view._lockButton);
-    await waitFor(() => !service.busy && service.lock && service.status?.speed === 0 &&
-        view._slider.value === 0, 5000);
-    check('fan: Lock off turns the fan off and says who locked it',
-        service.status?.speed === 0 && view._notice.text.startsWith('Locked off by Froonty') &&
-        view._lockButton.label === 'Unlock' && !view._slider.reactive && view._lastChange.text.includes('locked it off'),
-        `${service.status?.speed} | ${view._notice.text} | ${view._lastChange.text}`);
-    service.setSpeed(80);
-    await waitFor(() => !service.busy, 5000);
-    check('fan: while locked, llano.py refuses a new speed',
-        service.error === 'locked' && service.lock && service.status?.speed === 0 &&
-        view._speedLabel.text === 'Off' && Math.round(view._slider.value * 100) === 0,
-        `error=${service.error} slider=${Math.round(view._slider.value * 100)}`);
-    await screenshotTop(outDir, 'fan-locked', 640);
-    await clickActor(view._lockButton);
-    await waitFor(() => !service.busy && !service.lock && service.status?.speed === before, 5000);
-    check('fan: Unlock gives back the speed from before', service.status?.speed === before &&
-        !view._noticeRow.visible && view._slider.reactive, `${service.status?.speed} (was ${before})`);
-
-    // The Fan lock panic button, and a lock from outside (the command line)
-    // reaching it through its file monitor.
-    s.set_strv('panic-buttons', ['fan-lock']);
-    await sleep(SETTLE_MS);
-    const [lockButton] = island()._hub._panicBar._buttons;
-    check('fan: the "Fan lock" panic button is in the bar, named',
-        lockButton?.actor.accessible_name === 'Fan lock: click to turn it off and lock it',
-        `${lockButton?.actor.accessible_name}`);
-    await clickActor(lockButton.actor);
-    await waitFor(() => lockButton.actor.checked, 5000);
-    const iconPath = () => lockButton.actor.child.gicon?.get_file?.()?.get_path() ?? '';
-    await waitFor(() => service.lock, (s.get_int('fan-interval') + 2) * 1000);
-    check('fan: clicking it locks the pad off: checked, the crossed-out fan, the tab says so',
-        lockButton.actor.checked && iconPath().endsWith('froonty-fan-off-symbolic.svg') &&
-        service.lock?.by === 'Froonty' && service.status?.speed === 0,
-        `checked=${lockButton.actor.checked} icon=${iconPath()} speed=${service.status?.speed}`);
-    const script = s.get_string('fan-llano-path');
-    GLib.spawn_sync(null, ['/usr/bin/python3', script, 'unlock'], null, GLib.SpawnFlags.DEFAULT, null);
-    await waitFor(() => !lockButton.actor.checked, 8000);
-    check('fan: an unlock from the command line reaches the button',
-        !lockButton.actor.checked && iconPath().endsWith('froonty-fan-symbolic.svg'),
-        `checked=${lockButton.actor.checked}`);
-    s.reset('panic-buttons');
-    await sleep(SETTLE_MS);
-
-    // Off screen, nothing is read.
-    await clickActor(tabButton('sysmon'));
-    await sleep(animationWait());
-    check('fan: another tab stops the polling', service._timerId === 0);
-    await clickActor(tabButton('fan'));
-    await sleep(animationWait());
-    island().collapse();
-    await sleep(animationWait());
-    check('fan: collapsing the island stops the polling', service._timerId === 0);
+async function testFanSettingsShortcut() {
+    const hub = island()._hub;
+    const entry = hub._entries.get('fan');
+    const active = hub.activeFeature?.id ?? null;
+    check('fan: the left-rail icon is a settings button, not a hub tab',
+        entry?.button instanceof St.Button && entry.feature.settingsPage &&
+        !entry.view && !entry.service && active !== 'fan');
+    if (!entry)
+        return;
+    const openSettings = island()._ctx.openSettings;
+    let openedPage = '';
+    island()._ctx.openSettings = page => openedPage = page;
+    entry.button.emit('clicked', null);
+    island()._ctx.openSettings = openSettings;
+    check('fan: the icon opens Froonty → Fan settings without switching tabs',
+        openedPage === 'fan' && hub.activeFeature?.id === active,
+        `requested=${openedPage}, visible=${entry.button.visible}, mapped=${entry.button.mapped}`);
 }
 
 // FROONTY_TEST_ONLY=testA,testB runs only those checks (while debugging).
@@ -8941,7 +8785,8 @@ const ONLY_TESTS = {
     testPointer, testHubLayout, testDatePill, testCalendarMenu, testEmptyHub,
     testSettingsButton, testKillProcess, testCpuLoadButton, testFormulas,
     testNotesHeader, testClaude, testClipboard, testClipboardSwitcher, testNotesMath,
-    testWriting, testWritingFixes, testStartup, testBrightness, testPadNoiseSlider, testFan,
+    testWriting, testWritingFixes, testStartup, testBrightness, testPadNoiseSlider,
+    testFanSettingsShortcut,
 };
 
 export async function runAll(outDir) {
@@ -9004,7 +8849,7 @@ export async function runAll(outDir) {
         await testWriting(outDir);
         await testWritingFixes(outDir);
         await testKillProcess(outDir);
-        await testFan(outDir);
+        await testFanSettingsShortcut();
         await testCpuLoadButton();
         await testFormulas(outDir);
         await testNotesMath(outDir);

@@ -39,8 +39,8 @@ llano command failing.
   dragging, and an in-flight command is followed by the newest target.
 - Froonty reads the pad's current RPM when it is connected and does not
   overwrite that speed on startup or reconnection.
-- The slider and estimates do not affect the Fan tab slider, the pad's
-  roller, or any ASUS laptop profile.
+- The slider and estimates are independent of the manual controls in Fan
+  settings, the pad's roller, and any ASUS laptop profile.
 - A lock or llano command failure is shown under the slider. Disconnecting
   the pad disables the slider until it is detected again.
 

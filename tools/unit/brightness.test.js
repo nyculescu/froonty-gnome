@@ -4,6 +4,7 @@
 
 import {
     appliedLevel, levelFromSlider, overlayOpacity, sliderValue, TARGETS, targetMonitors,
+    warmthOpacity,
 } from '../../froonty@catalin/features/brightness/levels.js';
 import {done, eq, ok, test} from './test.js';
 
@@ -40,6 +41,14 @@ test('the overlay: none at 100 %, black at 0 %', () => {
     eq(overlayOpacity(100), 0);
     eq(overlayOpacity(0), 255);
     eq(overlayOpacity(50), 128);
+});
+
+test('warmth is independent and capped at 25% opacity', () => {
+    eq(warmthOpacity(0), 0);
+    eq(warmthOpacity(50), 32);
+    eq(warmthOpacity(100), 64);
+    eq(warmthOpacity(-1), 0);
+    eq(warmthOpacity(101), 64);
 });
 
 test('the slider spans the minimum to 100 %', () => {

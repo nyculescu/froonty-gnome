@@ -18,8 +18,8 @@ export function brightnessPage(settings) {
     const group = new Adw.PreferencesGroup({
         title: _('Software brightness'),
         description: _('For monitors whose brightness GNOME cannot set (no DDC/CI): Froonty ' +
-            'darkens them with a black layer, with its own slider in Quick Settings. The ' +
-            'backlight stays as it is, so this saves no power. The mouse pointer is not dimmed.'),
+            'dims them in software. The separate warm tint can be adjusted below. The backlight ' +
+            'stays as it is, so this saves no power. The mouse pointer is not dimmed.'),
     });
     group.add(switchRow(settings, 'brightness-enabled', _('Software brightness'),
         _('A second brightness slider in Quick Settings, under GNOME\'s')));
@@ -44,6 +44,10 @@ export function brightnessPage(settings) {
     });
     settings.connect('changed::brightness-monitors', syncMonitorsRow);
     group.add(monitorsRow);
+
+    const warmth = spinRow(settings, 'brightness-warmth', _('Warm tint (%)'), 5);
+    warmth.subtitle = _('Adds a subtle amber tone; 0 turns it off and does not change dimming');
+    group.add(warmth);
 
     const minimum = spinRow(settings, 'brightness-min', _('Lowest brightness (%)'), 5);
     minimum.subtitle = _('The slider\'s left end, so a screen never goes black');

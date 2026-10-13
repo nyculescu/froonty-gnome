@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// The Fan tab's cooling pad (llano V12 Ultra), through its command-line
+// Fan settings' cooling pad (llano V12 Ultra), through its command-line
 // tool llano.py: GJS has no ioctl, and the pad is driven by HID feature
 // reports. Every command (status, speed N, release) prints the pad's state
 // after it, ending in the raw 8-byte status report, which is what is read

@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Features of the working tree that are not in the public build yet:
 // tools/pack-public replaces this file with an empty list, and their
-// settings tabs come from localPrefs.js. Each moves to registry.js once it
+// settings pages come from localPrefs.js. Each moves to registry.js once it
 // is submitted to extensions.gnome.org (ZeroTier, Writing, Formulas and
-// Fan stay local). LOCAL_PARTS (Software brightness, pad noise slider) are not tabs.
+// Fan stay local). Fan is a settings shortcut, not a hub tab. LOCAL_PARTS
+// (Software brightness, pad noise slider) are not tabs.
 
 // `break` is a reserved word.
 import breakFeature from './break/index.js';
