@@ -8551,6 +8551,9 @@ async function testBrightness() {
         brightnessSliders().length === 1 && gnome.get_next_sibling() === slider &&
         quickSettingsMenu()._grid.layout_manager.get_child_meta(
             quickSettingsMenu()._grid, slider).column_span === 2);
+    check('brightness: slider icon is an accessible button for opening its settings',
+        slider.iconReactive && slider._iconButton.reactive &&
+        slider._iconButton.accessible_name === 'Brightness settings');
     check('brightness: at 100 % with no tint, the layer is on top and has no monitor overlays',
         global.stage.get_last_child() === brightnessLayer() &&
         warmthOverlays().length === 0 && dimOverlays().length === 0);
@@ -8623,6 +8626,11 @@ async function testBrightness() {
     s.set_boolean('running', true);
     await sleep(SETTLE_MS);
     check('brightness: Start brings them back', Boolean(brightnessLayer()) && brightnessSliders().length === 1);
+
+    const [currentSlider] = brightnessSliders();
+    currentSlider._iconButton.emit('clicked', currentSlider._iconButton);
+    check('brightness: clicking the icon opens the Brightness settings page',
+        s.get_string('prefs-page') === 'brightness', s.get_string('prefs-page'));
 
     s.set_boolean('brightness-enabled', false);
     await sleep(SETTLE_MS);

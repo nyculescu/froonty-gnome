@@ -99,7 +99,12 @@ export default class FroontyExtension extends Extension {
                 .map(f => f.createExtensionPart(this._settings));
             // local:begin local-features
             // Parts that are not a tab's (Software brightness).
-            this._parts.push(...LOCAL_PARTS.map(create => create(this._settings)));
+            this._parts.push(...LOCAL_PARTS.map(create => create(
+                this._settings,
+                page => {
+                    this._settings.set_string('prefs-page', page);
+                    this._settingsWindow.open();
+                })));
             // local:end local-features
         } else if (!this._running) {
             for (const part of this._parts)

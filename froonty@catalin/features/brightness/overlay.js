@@ -28,9 +28,14 @@ const KEYS = [
 
 const BrightnessSlider = GObject.registerClass(
 class BrightnessSlider extends QuickSlider {
-    _init() {
-        super._init({iconName: 'display-brightness-symbolic'});
+    _init(openSettings) {
+        super._init({
+            iconName: 'display-brightness-symbolic',
+            iconReactive: true,
+            iconLabel: _('Brightness settings'),
+        });
         this.slider.accessible_name = _('Software brightness');
+        this.connect('icon-clicked', openSettings);
     }
 });
 
@@ -42,8 +47,9 @@ function builtInMonitors() {
 }
 
 export class SoftwareBrightness {
-    constructor(settings) {
+    constructor(settings, openSettings) {
         this._settings = settings;
+        this._openSettings = openSettings;
         this._layer = null;
         this._tintLayer = null;
         this._dimLayer = null;
@@ -62,6 +68,7 @@ export class SoftwareBrightness {
         this._settings.disconnectObject(this);
         this._hide();
         this._settings = null;
+        this._openSettings = null;
     }
 
     _sync() {
@@ -95,7 +102,7 @@ export class SoftwareBrightness {
         global.stage.connectObject('child-added', () => this._raise(), this);
         Main.layoutManager.connectObject('monitors-changed', () => this._apply(), this);
 
-        this._slider = new BrightnessSlider();
+        this._slider = new BrightnessSlider(() => this._openSettings('brightness'));
         this._slider.slider.connectObject('notify::value', () => {
             if (this._following)
                 return;

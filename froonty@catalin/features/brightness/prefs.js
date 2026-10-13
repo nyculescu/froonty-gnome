@@ -50,7 +50,8 @@ export function brightnessPage(settings) {
     group.add(warmth);
 
     const minimum = spinRow(settings, 'brightness-min', _('Lowest brightness (%)'), 5);
-    minimum.subtitle = _('The slider\'s left end, so a screen never goes black');
+    minimum.subtitle = _('The slider\'s dimmest allowed level; raising it only brightens the screen ' +
+        'if the current level is below it');
     group.add(minimum);
 
     page.add(group);

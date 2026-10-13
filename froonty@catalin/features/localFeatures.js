@@ -36,6 +36,6 @@ export const LOCAL_FEATURES = [
 // Not hub tabs: parts that live while Froonty runs (extension.js), each
 // made from the settings.
 export const LOCAL_PARTS = [
-    settings => new SoftwareBrightness(settings),
+    (settings, openSettings) => new SoftwareBrightness(settings, openSettings),
     settings => new PadNoiseSliderPart(settings),
 ];

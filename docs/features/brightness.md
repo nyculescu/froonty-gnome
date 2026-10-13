@@ -20,14 +20,16 @@ amber overlay and does not change the brightness slider's meaning.
 Settings → Brightness → **Software brightness** on. The slider then sits
 right under GNOME's brightness slider in Quick Settings (where GNOME has
 one; on a desktop without a backlight GNOME shows none, and Froonty's
-slider takes that place).
+slider takes that place). Click the slider's display icon to open Froonty's
+Brightness settings directly.
 
 - **Monitors:** **External monitors** (the default): every monitor but a
   laptop's built-in screen, so on a desktop all of them. **Built-in
   screen**: only the laptop's own screen. **All monitors**.
 - **Lowest brightness (%):** the slider's left end, 10 % by default
-  (5-90 %), so a screen never goes black. Raising it brightens a darker
-  level at once.
+  (5-90 %), so a screen never goes black. It is a floor, not an extra
+  dimming control: raising it only changes the picture if the current
+  Quick Settings level is below the new floor.
 - **Warm tint (%):** off by default; adjust its strength independently of
   dimming. Its maximum opacity is 25% to avoid a full amber wash.
 
