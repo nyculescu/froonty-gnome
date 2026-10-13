@@ -244,6 +244,61 @@
 .froonty-notes-action.froonty-notes-action-gray:active { color: #ffffff; background-color: rgba(228, 228, 228, 0.38); }
 .froonty-notes-action.froonty-notes-action-charcoal:active { color: #ffffff; background-color: rgba(110, 110, 110, 0.60); }
 
+/* local:begin timezone-planner (local) */
+/* Timezone planner (features/timezonePlanner): a compact modal for comparing
+   Vancouver with the two manually selected cities. */
+
+.froonty-timezone-content {
+    min-width: 520px;
+    spacing: 12px;
+}
+
+.froonty-timezone-title {
+    font-size: 1.2em;
+    font-weight: bold;
+}
+
+.froonty-timezone-description,
+.froonty-timezone-hint {
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.froonty-timezone-city,
+.froonty-timezone-range,
+.froonty-timezone-controls {
+    spacing: 12px;
+}
+
+.froonty-timezone-city {
+    padding: 8px 10px;
+    border-radius: 8px;
+    background-color: rgba(255, 255, 255, 0.06);
+}
+
+.froonty-timezone-name {
+    font-weight: bold;
+}
+
+.froonty-timezone-date {
+    min-width: 90px;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.froonty-timezone-time {
+    min-width: 52px;
+    font-weight: bold;
+    font-feature-settings: "tnum";
+}
+
+.froonty-timezone-range {
+    spacing: 8px;
+}
+
+.froonty-timezone-message {
+    color: #ff8a8a;
+}
+/* local:end timezone-planner */
+
 /* The hub header's date pill (ui/hubHeader.js): the collapsed pill's
    look, as tall as the icon buttons beside it. A press opens GNOME's own
    calendar and notification menu. */

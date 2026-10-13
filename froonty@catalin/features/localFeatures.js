@@ -17,6 +17,7 @@ import formulas from './formulas/index.js';
 import killprocess from './killprocess/index.js';
 import media from './media/index.js';
 import sysmon from './sysmon/index.js';
+import {TimezonePlannerPart} from './timezonePlanner/quickSettings.js';
 import writing from './writing/index.js';
 import zerotier from './zerotier/index.js';
 
@@ -38,4 +39,5 @@ export const LOCAL_FEATURES = [
 export const LOCAL_PARTS = [
     (settings, openSettings) => new SoftwareBrightness(settings, openSettings),
     settings => new PadNoiseSliderPart(settings),
+    (settings, openSettings) => new TimezonePlannerPart(settings, openSettings),
 ];

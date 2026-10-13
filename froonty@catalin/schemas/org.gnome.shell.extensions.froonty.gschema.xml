@@ -65,6 +65,18 @@
       <description>At most 8 ids from panic/catalog.js (half on each side of the hub header's date pill, the right side one more when odd); unknown ids are ignored.</description>
     </key>
 
+    <!-- local-only timezone planner -->
+    <key name="timezone-planner-cities" type="as">
+      <default>['Dublin|Europe/Dublin', 'Timisoara|Europe/Bucharest']</default>
+      <summary>Timezone planner cities</summary>
+      <description>Saved city names and IANA timezone IDs, separated by a vertical bar.</description>
+    </key>
+    <key name="timezone-planner-favorites" type="as">
+      <default>['Europe/Dublin', 'Europe/Bucharest']</default>
+      <summary>Timezone planner favourite cities</summary>
+      <description>Timezone IDs shown in Quick Settings; at most two city favourites.</description>
+    </key>
+
     <!-- Notes feature (docs/features/notes.md) -->
     <key name="notes-enabled" type="b">
       <default>true</default>

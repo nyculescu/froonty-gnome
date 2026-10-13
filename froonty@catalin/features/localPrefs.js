@@ -12,6 +12,7 @@ import {formulasPage} from './formulas/prefs.js';
 import {killProcessPage} from './killprocess/prefs.js';
 import {mediaPage} from './media/prefs.js';
 import {sysmonPage} from './sysmon/prefs.js';
+import {timezonesPage} from './timezonePlanner/prefs.js';
 import {writingPage} from './writing/prefs.js';
 import {addIconPath as addZeroTierIconPath, zeroTierPage} from './zerotier/prefs.js';
 
@@ -41,6 +42,7 @@ export function addLocalPrefs(window, settings) {
         formulasPage(settings),
         // Not a hub tab (localFeatures.js, LOCAL_PARTS).
         brightnessPage(settings),
+        timezonesPage(settings),
     ];
     for (const page of pages)
         window.add(page);

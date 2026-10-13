@@ -5,6 +5,7 @@
 // Reaches into Shell and Froonty private fields on purpose. This is a test
 // probe, not product code.
 
+import Atk from 'gi://Atk';
 import Clutter from 'gi://Clutter';
 import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
@@ -8681,6 +8682,82 @@ async function testPadNoiseSlider(outDir) {
     check('pad noise slider: setting on restores one slider', padNoiseSliders().length === 1);
 }
 
+const timezonePlannerButtons = () => quickSettingsMenu()._grid.get_children()
+    .filter(item => item.accessible_name?.startsWith('Time zone planner'));
+
+async function testTimezonePlanner() {
+    const s = settings();
+    s.reset('timezone-planner-cities');
+    s.reset('timezone-planner-favorites');
+    await sleep(SETTLE_MS);
+    const [button] = timezonePlannerButtons();
+    check('timezone planner: one accessible action button in Quick Settings',
+        timezonePlannerButtons().length === 1 && button instanceof St.Button &&
+        button.accessible_role === Atk.Role.PUSH_BUTTON,
+        `buttons=${timezonePlannerButtons().length}`);
+    check('timezone planner button: occupies one Quick Settings column',
+        button && quickSettingsMenu()._grid.layout_manager
+            .get_child_meta(quickSettingsMenu()._grid, button).column_span === 1);
+    if (!button) {
+        s.reset('timezone-planner-cities');
+        return;
+    }
+    const part = extension()?.stateObj?._parts.find(item => item._button === button);
+    quickSettingsMenu().open();
+    await sleep(SETTLE_MS);
+    button.emit('clicked', null);
+    await sleep(SETTLE_MS);
+    const planner = part?._planner;
+    check('timezone planner: button opens a modal planner with Vancouver and two defaults',
+        planner && planner._cityTimeLabels.length === 2 && Main.modalCount > 0 &&
+        planner._vancouverTime.text !== '',
+        `cities=${planner?._cityTimeLabels.length}, modal=${Main.modalCount}`);
+    if (!planner) {
+        s.reset('timezone-planner-cities');
+        return;
+    }
+
+    const beforeDrag = [
+        planner._vancouverTime.text,
+        ...planner._cityTimeLabels.map(city => city.time.text),
+    ];
+    planner._slider.value = 0.75;
+    check('timezone planner: dragging right advances all cities from the same instant',
+        planner._vancouverTime.text !== beforeDrag[0] &&
+        planner._cityTimeLabels.every((city, index) => city.time.text !== beforeDrag[index + 1]),
+        `${planner._vancouverTime.text} ${planner._cityTimeLabels.map(city => city.time.text).join(', ')}`);
+
+    s.set_strv('timezone-planner-cities', [
+        ...s.get_strv('timezone-planner-cities'), 'Toronto|America/Toronto',
+    ]);
+    s.set_strv('timezone-planner-favorites', ['Europe/Dublin', 'America/Toronto']);
+    check('timezone planner: planner follows the two selected favourites',
+        planner._cityTimeLabels.length === 2 &&
+        planner._cityTimeLabels.some(city => city.timezone === 'America/Toronto'),
+        planner._cityTimeLabels.map(city => city.timezone).join(', '));
+    check('timezone planner button: favourite city names and their current hours replace its generic text',
+        part._button._label.text.includes('Dublin') &&
+        part._button._label.text.includes('Toronto') &&
+        !part._button._label.text.includes('Time zones') &&
+        part._button._label.text.split('\n').length === 2,
+        part._button._label.text);
+    planner.close();
+    await sleep(SETTLE_MS);
+    check('timezone planner: closing the window releases its modal grab', Main.modalCount === 0,
+        `modal=${Main.modalCount}`);
+
+    s.set_boolean('running', false);
+    await sleep(SETTLE_MS);
+    check('timezone planner: Stop Froonty removes its Quick Settings button',
+        timezonePlannerButtons().length === 0);
+    s.set_boolean('running', true);
+    await sleep(SETTLE_MS);
+    check('timezone planner: Start Froonty restores one button',
+        timezonePlannerButtons().length === 1, `buttons=${timezonePlannerButtons().length}`);
+    s.reset('timezone-planner-cities');
+    s.reset('timezone-planner-favorites');
+}
+
 async function testPublicBuild() {
     check('public build: no software brightness (local-only) in Quick Settings or on the stage',
         !brightnessLayer() && brightnessSliders().length === 0 &&
@@ -8867,6 +8944,7 @@ export async function runAll(outDir) {
         await testMonitors();
         await testBrightness();
         await testPadNoiseSlider();
+        await testTimezonePlanner();
         await testMedia(outDir);
         await testMediaPill(outDir);
         await testMediaExtras(outDir);

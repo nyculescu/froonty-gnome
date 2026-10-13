@@ -39,7 +39,8 @@ rm -rf "$STAGED/third_party/mathjax"
 rmdir "$STAGED/third_party" 2>/dev/null || true
 python3 "$ROOT/tools/pack-public/strip-local-schema.py" \
     "$STAGED/schemas/org.gnome.shell.extensions.froonty.gschema.xml"
-python3 "$ROOT/tools/pack-public/strip_local.py" "$STAGED/stylesheet.css" zerotier writing formulas fan
+python3 "$ROOT/tools/pack-public/strip_local.py" "$STAGED/stylesheet.css" \
+    zerotier writing formulas fan timezone-planner
 # Only what extension.js and prefs.js reach, and only their settings keys
 # and CSS; the description says what this build has.
 python3 "$ROOT/tools/pack-public/prune.py" "$STAGED"

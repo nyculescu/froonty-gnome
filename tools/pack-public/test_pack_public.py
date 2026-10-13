@@ -219,6 +219,7 @@ class PackTest(unittest.TestCase):
         # The Calendar and Notifications tabs are gone; the message tray
         # modules only the local Claude attention bar imports stay out.
         self.assertFalse([n for n in names if n.startswith(("features/calendar", "features/notifications"))])
+        self.assertFalse([n for n in names if n.startswith("features/timezonePlanner/")])
         self.assertNotIn("shell/messageTray.js", names)
         self.assertNotIn("shell/notificationStore.js", names)
         # The clipboard switcher's input method adapter, local like its tab.
@@ -249,6 +250,8 @@ class PackTest(unittest.TestCase):
         self.assertNotIn(b'name="writing-', schema)
         self.assertNotIn(b'name="zerotier-', schema)
         self.assertNotIn(b'name="formulas-', schema)
+        self.assertNotIn(b'name="timezone-planner-', schema)
+        self.assertNotIn(b"froonty-timezone", css)
         self.assertNotIn(b"froonty-formulas", css)
         self.assertNotIn(b'name="calendar-', schema)
         self.assertNotIn(b'name="notifications-', schema)
