@@ -38,7 +38,7 @@ export function timezonesPage(settings) {
     const page = new Adw.PreferencesPage({
         name: 'time-zones',
         title: _('Time zones'),
-        icon_name: 'x-office-calendar-symbolic',
+        icon_name: 'clock-symbolic',
     });
     const cityGroup = new Adw.PreferencesGroup({
         title: _('Cities'),

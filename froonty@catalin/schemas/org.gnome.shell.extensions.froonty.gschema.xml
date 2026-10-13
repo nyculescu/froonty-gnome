@@ -198,6 +198,16 @@
       <summary>Btop refresh interval (s)</summary>
       <description>How often the Btop tab reads the machine while it is on screen.</description>
     </key>
+    <key name="sysmon-panic-load-source" type="s">
+      <default>'cpu'</default>
+      <summary>Btop panic load source</summary>
+      <description>Which single load metric the panic load button shows: cpu, gpu or memory.</description>
+    </key>
+    <key name="sysmon-panic-temp-source" type="s">
+      <default>'load-source'</default>
+      <summary>Btop panic thermometer source</summary>
+      <description>Average CPU temperature, maximum CPU temperature, GPU temperature, or the one linked to the panic load source (average CPU for cpu and memory, GPU for gpu).</description>
+    </key>
     <key name="sysmon-show-cpu" type="b">
       <default>true</default>
       <summary>Btop: show the CPU</summary>

@@ -7,6 +7,7 @@ import {CpuLoadButton} from './cpuLoad.js';
 import {FanLockButton} from './fanLock.js';
 import {PauseMediaButton} from './pauseMedia.js';
 import {SitStandButton} from './sitStand.js';
+import {TemperatureButton} from './temperature.js';
 
 export const LOCAL_FACTORIES = {
     'claude-session': (title, actions) => new ClaudeSessionButton(title, actions),
@@ -14,4 +15,5 @@ export const LOCAL_FACTORIES = {
     'fan-lock': (title, actions) => new FanLockButton(title, actions),
     'pause-media': (title, actions) => new PauseMediaButton(title, actions),
     'sit-stand': (title, actions) => new SitStandButton(title, actions),
+    temperature: (title, actions) => new TemperatureButton(title, actions),
 };

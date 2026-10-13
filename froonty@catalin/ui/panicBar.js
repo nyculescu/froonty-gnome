@@ -13,6 +13,9 @@ import St from 'gi://St';
 
 import {panicGroups, sanitize} from '../panic/catalog.js';
 import {createPanicButton} from '../panic/registry.js';
+// local:begin local-features (working-tree only; tools/pack-public strips it)
+import {PanicMetricsService} from '../features/sysmon/panicMetrics.js';
+// local:end local-features
 
 const KEY = 'panic-buttons';
 
@@ -84,6 +87,11 @@ export class PanicBar {
         this._actions = actions;
         this._buttons = [];
         this._shown = false;
+        this._metrics = null;
+        // local:begin local-features
+        this._metrics = new PanicMetricsService(settings);
+        this._metrics.start();
+        // local:end local-features
         // Hidden while empty: no spacing for nothing.
         this.groups = [true, false].map(leading => new St.Widget({
             style_class: 'froonty-panic-bar',
@@ -98,6 +106,7 @@ export class PanicBar {
     destroy() {
         this._settings.disconnectObject(this);
         this._destroyButtons();
+        this._metrics?.stop();
         for (const group of this.groups)
             group.destroy();
     }
@@ -107,13 +116,17 @@ export class PanicBar {
         this._shown = shown;
         for (const button of this._buttons)
             button.setActive?.(shown);
+        this._syncMetrics();
     }
 
     _rebuild() {
         this._tooltip.hide();
         this._destroyButtons();
+        const actions = this._metrics
+            ? {...this._actions, metrics: this._metrics} : this._actions;
         this._buttons = sanitize(this._settings.get_strv(KEY))
-            .map(id => createPanicButton(id, this._actions)).filter(Boolean);
+            .map(id => createPanicButton(id, actions))
+            .filter(Boolean);
         panicGroups(this._buttons).forEach((buttons, i) => {
             for (const button of buttons) {
                 this.groups[i].add_child(button.actor);
@@ -122,6 +135,11 @@ export class PanicBar {
             }
             this.groups[i].visible = buttons.length > 0;
         });
+        this._syncMetrics();
+    }
+
+    _syncMetrics() {
+        this._metrics?.setActive(this._shown && this._buttons.some(button => button.usesMetrics));
     }
 
     _destroyButtons() {

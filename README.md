@@ -104,10 +104,10 @@ feature has a design note in [docs/features/](docs/features/).
   - Labels: right-click a note's tab (or Menu / Shift+F10) to add or remove
     them. They live in a hidden `.froonty-labels.json`; the `.md` files
     stay plain Markdown.
-  - **All notes**, a button at the right end of the header on the Notes
-    tab (tinted with the note's colour), opens every note in a window: search them all, filter
-    by labels (all of them, or any), and read or edit them there, drawn
-    rendered and with the same formatting bar as the island.
+  - **All notes**, in a note tab's right-click menu, opens every note in a
+    window: search them all, filter by labels (all of them, or any), and
+    read or edit them there, drawn rendered and with the same formatting
+    bar as the island.
   - Formulas (working-tree installs only): `$…$` and `$$…$$` show as
     rendered math in both editors, off the line being edited; that line
     shows the LaTeX. The files stay plain Markdown. See

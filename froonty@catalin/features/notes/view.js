@@ -11,9 +11,8 @@
 // Renders NotesService state; typing goes to service.setText().
 // ⤴ folds the tools row away for a taller editor; ⤵ brings it back
 // (notes-show-tools). The formatting toggles light up for the formatting
-// at the cursor. A right-click on a tab opens that note's labels
-// (labelMenu.js). In the hub header, while this tab is shown: "All notes"
-// (headerActions.js), tinted with the note's colour.
+// at the cursor. A right-click on a tab opens note actions and labels
+// (labelMenu.js), including the All notes window.
 
 import Clutter from 'gi://Clutter';
 import Gio from 'gi://Gio';
@@ -26,7 +25,6 @@ import {keepCursorVisible} from '../../core/textScroll.js';
 import {ColorPicker} from './colorPicker.js';
 import {COLOR_IDS} from './colors.js';
 import {FormatBar} from './formatBar.js';
-import {AllNotesButton} from './headerActions.js';
 import {LabelMenu} from './labelMenu.js';
 import {MarkdownStyler} from './styler.js';
 import {NoteTabs} from './tabs.js';
@@ -46,10 +44,15 @@ export class NotesView {
         this._foldUp = foldIcon('up');
         this._foldDown = foldIcon('down');
 
-        // Hub header, at its right end (owned here, placed by the hub).
-        this._allNotes = new AllNotesButton(() => ctx.openSettingsWindow('all-notes'));
-        this.headerActions = [this._allNotes.actor];
-        this._labelMenu = new LabelMenu(ctx, service);
+        this._labelMenu = new LabelMenu(ctx, service, {
+            onAllNotes: () => ctx.openSettingsWindow('all-notes'),
+            onRename: async name => {
+                await service.select(name);
+                if (this._service && service.selected === name)
+                    this._tabs.renameSelected();
+            },
+            onTrash: name => service.trash(name),
+        });
 
         // Content, plus an overlay layer (fixed positions, click-through) for
         // the tab name bubble.
@@ -163,7 +166,6 @@ export class NotesView {
         this._service.disconnect(this._changedId);
         this._service = null;
         this._labelMenu.destroy();
-        this._allNotes.destroy();
         this.actor.destroy();
     }
 
@@ -306,7 +308,6 @@ export class NotesView {
             ? _('Hide formatting tools') : _('Show formatting tools');
         this._colorPicker.setColor(this._service.color);
         this._setTint(this._service.color);
-        this._allNotes.setColor(this._service.color);
         this._scroll.visible = hasNote;
         this._empty.visible = !hasNote;
         // An error, or else what happened to the note (a conflict copy),

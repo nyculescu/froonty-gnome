@@ -19,9 +19,9 @@ Status: **implemented (v1)**. Decisions made 2026-09-28:
   changes its width and height (`notes-width`, `notes-height`; applies
   live), and **Default size** goes back to 428×319. The descriptor names
   the keys (`hubSizeKeys`) instead of a fixed `hubSize`.
-- **Renaming** (double-click) swaps the tab's content for an entry of a
-  fixed width (10em). It used to expand into the row's spare width, which
-  an overflowing row does not have: the entry shrank to a sliver.
+- **Renaming** from a tab's right-click menu swaps its content for an entry
+  of a fixed width (10em). It used to expand into the row's spare width,
+  which an overflowing row does not have: the entry shrank to a sliver.
 - **Middle-click** on a tab moves that note to the Trash at once, like
   closing a browser tab (it can be restored from the Trash).
 - A **Wrap lines** toggle at the end of the formatting bar (one setting for
@@ -29,10 +29,9 @@ Status: **implemented (v1)**. Decisions made 2026-09-28:
   line and the note scrolls horizontally; the view follows the cursor both
   ways.
 - Each note has a **colour**, like Windows Sticky Notes: yellow (default),
-  green, pink, purple, blue, gray or charcoal. It tints the editor, the
-  round colour button that chooses it, and the All notes button in the hub
-  header. Tabs show no colour dot (2026-10-02, user request: "No reason to
-  have it and diminish the space").
+  green, pink, purple, blue, gray or charcoal. It tints the editor and the
+  round colour button that chooses it. Tabs show no colour dot (2026-10-02,
+  user request: "No reason to have it and diminish the space").
 - **Order and colours** are kept in a hidden `.froonty.json` in the notes
   folder, so the `.md` files stay plain Markdown. A note restored from the
   Trash comes back yellow.
@@ -283,25 +282,22 @@ should disappear".
 
 ### What shows
 
-- **Hub header, Notes tab only:** `[panic] (date pill) [panic] … [All notes]`. An
-  icon button like its neighbours (`edit-find-symbolic`, tooltip and
-  accessible name "All notes"), with a faint wash of the selected note's
-  colour behind the icon: alpha 0.16 at rest, 0.28 on hover or focus,
-  0.38 pressed (charcoal 0.30/0.48/0.60: #3b3b3b would vanish on the
-  black island). Tab order: ⚙️ (at the bottom of the tab column) → panic
-  buttons → date pill → All notes. A click collapses the island (which
-  saves the open note) and opens the settings window on its All notes
-  page, or raises it. Other tabs show nothing at the header's right end
-  (the date pill was 📅 until 2026-10-03, and ⚙️ sat at the header's
-  right end until 2026-10-04).
+- **All notes:** the Notes header has no extra button. Right-click any note
+  tab, or use Menu / Shift+F10 on a focused tab, then choose **All notes**
+  to open the settings window on its All notes page or raise it. Opening
+  the window collapses the island after saving the open note.
 - **The tab row** keeps the note tabs, "+" and the fold button only; the
-  tools row is unchanged. A tab shows its name, and × on hover or while
-  selected. No colour dot, and labels never show there.
-- **A note's labels:** right-click its tab, or Menu / Shift+F10 on a
-  focused tab. A GNOME popup menu opens under the tab:
+  tools row is unchanged. A tab shows only its name: there is no hover close
+  button. No colour dot, and labels never show there.
+- **A note's menu:** right-click its tab, or Menu / Shift+F10 on a focused
+  tab. A GNOME popup menu opens under the tab with Rename and Move to Trash
+  actions as well as the labels:
 
   ```
-  ┌ Labels · Plan ───────────────┐  title (plain text)
+  ┌ Note · Plan ─────────────────┐  title (plain text)
+  │ All notes                    │
+  │ Rename                       │
+  │ Move to Trash                │
   │ [Filter or add a label…    ] │  has the focus
   │ ✓ q4                         │  this note's labels, then the others,
   │ ✓ work                       │    each by name; the order holds while
@@ -316,7 +312,7 @@ should disappear".
   the list. Click, Space or Return flips a label, written at once, and the
   menu stays open. Escape or a click outside closes only the menu: the
   island stays open and the focus goes back where it was. If the labels
-  file cannot be read, the menu says so and offers nothing else.
+  file cannot be read, its label section says so and offers no label actions.
 - **The All notes page** is a subpage of Froonty's settings window, the GTK
   window GNOME's extension preferences service runs: a real window (Alt+Tab,
   resizable, stays open through a screen lock) whose back arrow leads to
@@ -343,10 +339,9 @@ should disappear".
     change; not while typing in the editor, so rows do not move. A note the
     filter hides stays open in the pane.
   - It opens on the note last used in the island (`notes-last`), else the
-    newest. It follows the island again whenever the island has moved to
-    another note since the window last looked: when the page is shown
-    again, or the window is raised (the island's button raises it without
-    changing the view key). A note picked in the window stays while the
+    newest. While open, it follows the island when it switches to a
+    different note, and also follows when the page is shown or the window
+    raised after an island switch. A note picked in the window stays while the
     island stays on its note.
   - Another notes folder (Settings → Notes): the page starts over there,
     also when the folder changed while the page was hidden. The open note
@@ -545,10 +540,10 @@ Both save through `noteWriter.js`:
 - **Right-click (the route that shipped):** a `Clutter.ClickGesture` for
   the secondary button with `recognize_on_press`, added to each tab, as
   GNOME's app icons do. It is recognized before St.Button's own gesture,
-  which then neither selects nor renames; the headless tests check both.
+  which then neither selects the tab nor starts a rename; Rename and Move
+  to Trash are explicit menu actions. The headless tests check these paths.
   The fallback (button 3 in `button_mask`, handled in `clicked`) was not
   needed. The keyboard way is St's `popup-menu` signal (Menu, Shift+F10).
-  The double-click detector counts primary presses only.
 - **The menu hangs from the tab's content**, not the tab: a PopupMenu takes
   over its source's Space and Return, which must stay the tab's.
 - **The entry keeps the focus** until the pointer moves over the menu.
@@ -629,9 +624,8 @@ features/notes/
 ├── noteWriter.js autosave of one note: etag checks, conflict copies
 │                 (shared by the island and the window)
 ├── service.js    notes list + selection; queued operations; labels
-├── tabs.js       St: capsule tabs, inline rename, two-step ×, right-click
-├── labelMenu.js  St: a note's labels in a GNOME popup menu
-├── headerActions.js  St: "All notes" in the hub header, tinted
+├── tabs.js       St: capsule tabs, inline rename, right-click
+├── labelMenu.js  St: note actions and labels in a GNOME popup menu
 ├── formatActions.js  pure: the formatting bar's buttons, in order (both
 │                 bars)
 ├── formatBar.js  St: formatting buttons; lights the active toggles
@@ -678,8 +672,9 @@ stub.
 - **Tabs:**
   - capsule tabs with a "+" to add a note
   - the selected note is remembered
-  - rename by double-clicking the tab
-  - a "×" on hover moves the note to the Trash, after confirmation
+  - rename from a tab's right-click menu
+  - move a note to the Trash from its right-click menu; middle-click moves
+    it there at once too
 - **Visual language** is adapted from vorssaint-utils' Scratchpad (layout
   ideas only):
   - capsule tabs 22 px tall

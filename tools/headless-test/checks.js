@@ -913,23 +913,22 @@ async function testNotes(outDir) {
     await typeText('second');
     await screenshotTop(outDir, 'notes-two');
 
-    // Rename the selected (second) note: double-click its tab, type, Enter.
+    // Rename the selected (second) note from its right-click menu.
     const secondTab = view._tabs._box.get_child_at_index(1);
     const b = boxOf(secondTab);
-    const [tx, ty] = [(b.x1 + b.x2) / 2 - 10, (b.y1 + b.y2) / 2];
+    const [tx, ty] = [(b.x1 + b.x2) / 2, (b.y1 + b.y2) / 2];
     pointer.notify_absolute_motion(now(), tx, ty);
     await sleep(50);
-    for (let i = 0; i < 2; i++) {
-        pointer.notify_button(now(), Clutter.BUTTON_PRIMARY, Clutter.ButtonState.PRESSED);
-        pointer.notify_button(now(), Clutter.BUTTON_PRIMARY, Clutter.ButtonState.RELEASED);
-        // eslint-disable-next-line no-await-in-loop
-        await sleep(40);
-    }
+    pointer.notify_button(now(), Clutter.BUTTON_SECONDARY, Clutter.ButtonState.PRESSED);
+    pointer.notify_button(now(), Clutter.BUTTON_SECONDARY, Clutter.ButtonState.RELEASED);
+    await sleep(animationWait());
+    const rename = view._labelMenu._menu.items.find(item => item.label?.text === 'Rename');
+    await clickActor(rename);
     await sleep(SETTLE_MS);
     await typeText('plan');
     await pressKeys(Clutter.KEY_Return);
     await sleep(2 * SETTLE_MS);
-    check('notes: double-click rename renames the file and keeps the text',
+    check('notes: right-click rename renames the file and keeps the text',
         noteFiles().includes('plan.md') && readNote('plan.md') === 'second',
         noteFiles().join(','));
 
@@ -968,13 +967,18 @@ async function testNotes(outDir) {
     check('notes: an external edit reloads the open note',
         view._entry.text === 'edited elsewhere', view._entry.text);
 
-    // × twice moves the selected note to the (isolated) Trash.
-    // Tab content: [name, ×].
-    const close = view._tabs._box.get_child_at_index(0).child.get_child_at_index(1);
-    await clickActor(close);
-    await clickActor(close);
+    // Move a note to the (isolated) Trash from its right-click menu.
+    const toTrashTab = view._tabs._box.get_child_at_index(0);
+    const tb = boxOf(toTrashTab);
+    pointer.notify_absolute_motion(now(), (tb.x1 + tb.x2) / 2, (tb.y1 + tb.y2) / 2);
+    await sleep(50);
+    pointer.notify_button(now(), Clutter.BUTTON_SECONDARY, Clutter.ButtonState.PRESSED);
+    pointer.notify_button(now(), Clutter.BUTTON_SECONDARY, Clutter.ButtonState.RELEASED);
+    await sleep(animationWait());
+    const moveToTrash = view._labelMenu._menu.items.find(item => item.label?.text === 'Move to Trash');
+    await clickActor(moveToTrash);
     await sleep(2 * SETTLE_MS);
-    check('notes: × twice moves the note to the Trash and selects the other',
+    check('notes: right-click Move to Trash selects the other note',
         noteFiles().join(',') === 'plan.md' && service.selected === 'plan',
         `${noteFiles().join(',')} selected=${service.selected}`);
 
@@ -1017,7 +1021,7 @@ async function testNotesTabsAndColors(outDir) {
     check('colour: saved in .froonty.json, not in the .md file',
         meta.colors[service.selected] === 'green' &&
         !readNote(`${service.selected}.md`).includes('green'), JSON.stringify(meta));
-    // No colour dot in any tab (user request): the name only, plus ×.
+    // No colour dot or close button in any tab: the name only.
     const dotted = [];
     const visit = actor => {
         const classes = actor.style_class ?? '';
@@ -1027,10 +1031,9 @@ async function testNotesTabsAndColors(outDir) {
     };
     const allTabs = view._tabs._box.get_children();
     allTabs.forEach(visit);
-    check('tabs: no tab has a colour dot; a tab holds [name, ×]',
-        dotted.length === 0 && allTabs.every(t => t.child.get_n_children() === 2 &&
-            t.child.get_child_at_index(0) instanceof St.Label &&
-            t.child.get_child_at_index(1).has_style_class_name('froonty-note-tab-close')),
+    check('tabs: no tab has a colour dot or close button; a tab holds only its name',
+        dotted.length === 0 && allTabs.every(t => t.child.get_n_children() === 1 &&
+            t.child.get_child_at_index(0) instanceof St.Label),
         dotted.join(', '));
     check('colour: the surface and the colour button show green',
         view._scroll.has_style_class_name('froonty-note-color-green') &&
@@ -1080,16 +1083,15 @@ async function testNotesTabsAndColors(outDir) {
         rowTabs.at(-1).checked && last.x1 >= row.x1 - 1 && last.x2 <= row.x2 + 1,
         `tab=[${last.x1},${last.x2}] row=[${row.x1},${row.x2}] value=${adjustment.value}`);
 
-    // Double-click rename on the last tab of an overflowing row: the entry
+    // Rename from the last tab's context menu: the entry
     // keeps a usable width (it used to shrink to a sliver) and stays in view.
-    pointer.notify_absolute_motion(now(), (last.x1 + last.x2) / 2 - 10, (last.y1 + last.y2) / 2);
+    pointer.notify_absolute_motion(now(), (last.x1 + last.x2) / 2, (last.y1 + last.y2) / 2);
     await sleep(50);
-    for (let i = 0; i < 2; i++) {
-        pointer.notify_button(now(), Clutter.BUTTON_PRIMARY, Clutter.ButtonState.PRESSED);
-        pointer.notify_button(now(), Clutter.BUTTON_PRIMARY, Clutter.ButtonState.RELEASED);
-        // eslint-disable-next-line no-await-in-loop
-        await sleep(40);
-    }
+    pointer.notify_button(now(), Clutter.BUTTON_SECONDARY, Clutter.ButtonState.PRESSED);
+    pointer.notify_button(now(), Clutter.BUTTON_SECONDARY, Clutter.ButtonState.RELEASED);
+    await sleep(animationWait());
+    const renameAction = view._labelMenu._menu.items.find(item => item.label?.text === 'Rename');
+    await clickActor(renameAction);
     await sleep(SETTLE_MS);
     const renameEntry = rowTabs.at(-1).child;
     const entryBox = renameEntry instanceof St.Entry ? boxOf(renameEntry) : null;
@@ -1299,6 +1301,10 @@ async function testNoteLabels(outDir, view, service) {
     check('labels: the menu holds one modal grab; the tab is not selected or renamed',
         Main.modalCount === modalBefore + 1 && service.selected === selectedBefore &&
         !tabs().some(tab => tab.child instanceof St.Entry), state());
+    check('labels: the menu includes All notes, Rename and Move to Trash actions',
+        menu.items.some(item => item.label?.text === 'All notes') &&
+        menu.items.some(item => item.label?.text === 'Rename') &&
+        menu.items.some(item => item.label?.text === 'Move to Trash'));
     check('labels: its entry has the key focus',
         global.stage.key_focus === view._labelMenu._entry?.clutter_text, `${global.stage.key_focus}`);
     await screenshotTop(outDir, 'notes-label-menu', 420);
@@ -1331,7 +1337,7 @@ async function testNoteLabels(outDir, view, service) {
         labelMenuOf(view)?.isOpen === true, state());
     notesFolder().get_child('unrelated.txt').delete(null);
     check('labels: labels never show in the tab',
-        tabs().find(tab => tab.accessible_name === name)?.child.get_n_children() === 2);
+        tabs().find(tab => tab.accessible_name === name)?.child.get_n_children() === 1);
 
     await pressKeys(Clutter.KEY_Escape);
     await sleep(animationWait());
@@ -1368,7 +1374,7 @@ async function testNoteLabels(outDir, view, service) {
     check('labels: and Escape closes it', !labelMenuOf(view) && Main.modalCount === modalBefore, state());
 
     // Regressions: Return selects a focused tab; a right-press then a
-    // left-press on the selected tab is no double-click.
+    // left-press on the selected tab does not rename it.
     focusTab.grab_key_focus();
     await pressKeys(Clutter.KEY_Return);
     await sleep(2 * SETTLE_MS);
@@ -1502,138 +1508,48 @@ async function screenshotAll(outDir, name) {
     stream.close(null);
 }
 
-// Notes' "All notes" in the hub header: at its right end, only on the
-// Notes tab, tinted with the note's colour; it opens the
-// settings window on its All notes page.
+// All notes is available from a note tab's right-click menu.
+async function clickAllNotesMenu(view) {
+    const tab = view._tabs._box.get_children().find(t => t.checked);
+    const b = boxOf(tab);
+    await movePointerTo((b.x1 + b.x2) / 2, (b.y1 + b.y2) / 2);
+    await sleep(50);
+    pointer.notify_button(now(), Clutter.BUTTON_SECONDARY, Clutter.ButtonState.PRESSED);
+    pointer.notify_button(now(), Clutter.BUTTON_SECONDARY, Clutter.ButtonState.RELEASED);
+    await sleep(animationWait());
+    const action = view._labelMenu._menu?.items.find(item => item.label?.text === 'All notes');
+    if (!action)
+        throw new Error('The note context menu has no All notes action');
+    await clickActor(action);
+}
+
 async function testNotesHeader(outDir) {
     const hub = () => island()._hub;
     const modalBefore = Main.modalCount;
     island().expand();
     await sleep(animationWait());
-    await clickActor(tabButton(otherTabId('notes')));
-    await sleep(animationWait());
-    const {view, service} = hub()._entries.get('notes');
-    const button = view._allNotes.actor;
-    check('notes header: "All notes" is not shown on another tab', !button.mapped);
     await clickActor(tabButton('notes'));
     await sleep(animationWait());
-    const mute = hub()._panicBar.groups[0].get_first_child();
-    const [cal, btn, isle, gear] = [hub().calendarButton, button, hub().actor, mute].map(boxOf);
-    const middle = b => (b.y1 + b.y2) / 2;
-    check('notes header: on the Notes tab "All notes" sits at the header\'s right end, right of the date pill, centres level',
-        button.mapped && cal.x2 <= btn.x1 && isle.x2 - btn.x2 <= 1 &&
-        Math.abs(middle(cal) - middle(btn)) <= 2 && Math.abs(middle(gear) - middle(btn)) <= 2,
-        `date pill=[${cal.x1},${cal.y1} - ${cal.x2},${cal.y2}] button=[${btn.x1},${btn.y1} - ${btn.x2},${btn.y2}] ` +
-        `hub ends at ${isle.x2}`);
-    check('notes header: it is an icon button like the panic buttons (16 px icon, same size)',
-        button.child.get_width() === 16 * scale() && Math.abs((btn.x2 - btn.x1) - (gear.x2 - gear.x1)) <= 1 &&
-        Math.abs((btn.y2 - btn.y1) - (gear.y2 - gear.y1)) <= 1,
-        `${btn.x2 - btn.x1}x${btn.y2 - btn.y1}, panic button ${gear.x2 - gear.x1}x${gear.y2 - gear.y1}`);
+    const {view} = hub()._entries.get('notes');
+    check('notes header: there is no All notes button or feature action',
+        !view._allNotes && !view.headerActions?.length && !hub()._header.actions.visible);
     const row = view._tabs.actor.get_children();
     check('notes header: the tab row holds only the note tabs, "+" and the fold button',
         row.length === 3 && row[1] === view._tabs.addButton && row[2] === view._toolsButton,
         row.map(describeActor).join(', '));
 
-    await movePointerTo((btn.x1 + btn.x2) / 2, (btn.y1 + btn.y2) / 2);
-    await sleep(SETTLE_MS);
-    const tip = hub()._tooltip.actor;
-    check('notes header: hovering it says "All notes"',
-        tip.visible && tip.text === 'All notes' && button.accessible_name === 'All notes',
-        `visible=${tip.visible} text=${tip.text}`);
-    const editor = boxOf(view._scroll);
-    const away = [(editor.x1 + editor.x2) / 2, (editor.y1 + editor.y2) / 2];
-    await movePointerTo(...away);
-    await sleep(SETTLE_MS);
-
-    // Keyboard order: ⚙️ (the side column's last) → the panic buttons left
-    // of the date pill → the date pill → those right of it → All notes.
-    const order = [...hub()._panicBar.groups[0].get_children(), hub().calendarButton,
-        ...hub()._panicBar.groups[1].get_children(), button];
-    hub().settingsButton.grab_key_focus();
-    const reached = [];
-    for (let i = 0; i < order.length; i++) {
-        await pressKeys(Clutter.KEY_Tab);
-        reached.push(global.stage.key_focus);
-    }
-    check('notes header: Tab goes ⚙️ → the left panic buttons → the date pill → the right ones → All notes',
-        reached.every((actor, i) => actor === order[i]), reached.map(describeActor).join(' → '));
-    view._entry.clutter_text.grab_key_focus();
-    await sleep(SETTLE_MS);
-
-    // The tint follows the note's colour; ⚙️ stays plain.
-    const background = actor => actor.get_theme_node().get_background_color();
-    const rgba = c => `rgba(${c.red},${c.green},${c.blue},${c.alpha})`;
-    const tints = () => button.style_class.split(/\s+/).filter(c => c.startsWith('froonty-notes-action-'));
-    let restAlpha = 0;
-    for (const color of ['yellow', 'green', 'charcoal']) {
-        await service.setColor(color);
-        await sleep(2 * SETTLE_MS);
-        const c = background(button);
-        const g = background(hub().settingsButton);
-        const hue = color === 'yellow' ? c.red >= c.green && c.green > c.blue
-            : color === 'green' ? c.green > c.red && c.green > c.blue : true;
-        check(`notes header: ${color} note → the button has a faint ${color} wash, ⚙️ none`,
-            tints().join() === `froonty-notes-action-${color}` && c.alpha > 0 && c.alpha < 128 &&
-            g.alpha === 0 && hue, `${tints().join()} ${rgba(c)} ⚙️ ${rgba(g)}`);
-        await screenshotTop(outDir, `notes-header-${color}`, 120);
-        if (color === 'green')
-            restAlpha = c.alpha;
-    }
-    await service.setColor('green');
-    await sleep(2 * SETTLE_MS);
-    await movePointerTo((btn.x1 + btn.x2) / 2, (btn.y1 + btn.y2) / 2);
-    await sleep(SETTLE_MS);
-    const hover = background(button);
-    check('notes header: hovering it deepens the wash', button.hover && hover.alpha > restAlpha,
-        `${rgba(hover)} at rest alpha ${restAlpha}`);
-    await screenshotTop(outDir, 'notes-header-hover', 120);
-    await movePointerTo(...away);
-    button.grab_key_focus();
-    await sleep(SETTLE_MS);
-    const focused = background(button);
-    check('notes header: focused, it keeps the deeper wash and the focus ring',
-        focused.alpha > restAlpha && button.get_theme_node().get_box_shadow() !== null, rgba(focused));
-    await screenshotTop(outDir, 'notes-header-focus', 120);
-    view._entry.clutter_text.grab_key_focus();
-    await service.setColor('yellow');
-    await sleep(2 * SETTLE_MS);
-
-    // Eight panic buttons at the narrowest Notes width: the island grows
-    // so the date pill and its panic groups clear the side column and
-    // "All notes".
-    settings().set_int('notes-width', 360);
-    const removeStandIns = await fillPanicBar(8);
-    await sleep(SETTLE_MS);
-    const [wide] = pill().get_transformed_size();
-    check('notes header: with 8 panic buttons at width 360 the island grows to fit them',
-        wide >= hub().minWidth + islandFrame() - 1 && wide > 360 * scale(),
-        `island ${wide}, needs ${hub().minWidth} + ${islandFrame()}`);
-    const crowded = headerPlacement(hub());
-    check('notes header: 8 panic buttons and the date pill stay 8 px clear of "All notes" and the side column',
-        crowded.ok && button.mapped, crowded.detail);
-    await screenshotTop(outDir, 'notes-header-8-panic-360', 120);
-    removeStandIns();
-    settings().reset('panic-buttons');
-    settings().reset('notes-width');
-    await sleep(animationWait() + SETTLE_MS);
-    const [back] = pill().get_transformed_size();
-    check('notes header: back to the defaults, the island is 428 px wide again',
-        back === 428 * scale(), `${back}`);
-
-    // A click: the island closes (saving the note), the settings window
-    // opens on All notes.
-    await clickActor(button);
+    await clickAllNotesMenu(view);
     const window = await waitForSettingsWindow();
-    check('notes header: a click collapses the island and releases its grab',
+    check('notes menu: All notes collapses the island and releases its grab',
         !island().expanded && Main.modalCount === modalBefore,
         `expanded=${island().expanded} modalCount=${Main.modalCount} before ${modalBefore}`);
-    check('notes header: it asks for the All notes page', viewKey() === 'all-notes', viewKey());
-    check('notes header: the "Froonty" window opens and gets the focus',
-        window !== null && await waitForFocus(window), `focus=${global.display.focus_window?.get_title()}`);
+    check('notes menu: All notes opens the page in the "Froonty" window',
+        viewKey() === 'all-notes' && window !== null && await waitForFocus(window),
+        `focus=${global.display.focus_window?.get_title()} key=${viewKey()}`);
     await sleep(1500);
     await screenshotAll(outDir, 'all-notes-window');
 
-    // Again: the same window is raised.
+    // Again: the same window is raised from the right-click menu.
     Main.overview.show();
     await sleep(animationWait());
     Main.overview.hide();
@@ -1641,9 +1557,9 @@ async function testNotesHeader(outDir) {
     global.display.focus_default_window(global.get_current_time());
     island().expand();
     await sleep(animationWait());
-    await clickActor(view._allNotes.actor);
+    await clickAllNotesMenu(view);
     await sleep(1000);
-    check('notes header: a second click raises the same window',
+    check('notes menu: All notes raises the existing window',
         settingsWindows().length === 1 && global.display.focus_window === window,
         `windows=${settingsWindows().length} focus=${global.display.focus_window?.get_title()}`);
 
@@ -1652,11 +1568,11 @@ async function testNotesHeader(outDir) {
     await sleep(animationWait());
     await clickActor(hub().settingsButton);
     await sleep(1500);
-    check('notes header: ⚙️ asks for the settings page of the same window',
+    check('notes menu: ⚙️ asks for the settings page of the same window',
         viewKey() === 'settings' && settingsWindows().length === 1, viewKey());
     await screenshotAll(outDir, 'all-notes-back-to-settings');
     await closeSettingsWindows();
-    check('notes header: windows closed, the view key is "settings"',
+    check('notes menu: windows closed, the view key is "settings"',
         settingsWindows().length === 0 && await waitForKey('settings'), viewKey());
 }
 
@@ -1680,7 +1596,7 @@ async function testAllNotesWindow(outDir) {
     await sleep(animationWait());
     await clickActor(tabButton('notes'));
     await sleep(animationWait());
-    await clickActor(hub()._entries.get('notes').view._allNotes.actor);
+    await clickAllNotesMenu(hub()._entries.get('notes').view);
     const window = await waitForSettingsWindow();
     const focused = window !== null && await waitForFocus(window);
     await sleep(2000); // the page is shown, the notes read, the search focused
@@ -1721,12 +1637,12 @@ async function testAllNotesWindow(outDir) {
         service.selected === 'e2e' && tabNames().includes('e2e (conflict)'),
         `selected=${service.selected} tabs=${tabNames().join(', ')}`);
 
-    // The island moves to another note; its button raises the window,
+    // The island moves to another note; its menu action raises the window,
     // which follows it (typing goes there, not into the copy).
     await service.select('follow');
     island().expand();
     await sleep(animationWait());
-    await clickActor(view._allNotes.actor);
+    await clickAllNotesMenu(view);
     const raised = await waitForFocus(window);
     await sleep(1500);
     await typeText('#');
@@ -4156,48 +4072,38 @@ async function testKillProcess(outDir) {
 
 const cpuButton = () => island()._hub._panicBar._buttons
     .find(b => b.actor.has_style_class_name('froonty-sysmon-cpu')) ?? null;
+const thermometerButton = () => island()._hub._panicBar._buttons
+    .find(b => b.actor.has_style_class_name('froonty-sysmon-temp')) ?? null;
 
-// The CPU load panic button: the load in the level colours, read only
-// while the island is open; a click opens the Btop tab.
+// The selected system-load panic button: one metric in the level colours,
+// sampled only while the island is open; a click opens the Btop tab.
 async function testCpuLoadButton() {
     settings().set_strv('panic-buttons', ['mute-microphone', 'cpu-load']);
     settings().set_int('sysmon-interval', 1);
     await sleep(SETTLE_MS);
     let button = cpuButton();
     check('cpu button: offered, a "?" over the chip while collapsed, nothing read',
-        button !== null && button._number.text === '?' && button._timeoutId === 0 &&
+        button !== null && button._number.text === '?' &&
+        island()._hub._panicBar._metrics._timeoutId === 0 &&
         button.actor.accessible_name === 'CPU load: unknown',
-        `${button?._number.text} timer=${button?._timeoutId} ${button?.actor.accessible_name}`);
-
-    // /proc/stat's "cpu" line: busy 200 of 1000, then +850 of +1000 (85%),
-    // then +350 of +1000 (35%).
-    const stats = ['cpu  100 0 100 800 0 0 0 0', 'cpu  500 0 550 950 0 0 0 0',
-        'cpu  700 0 700 1600 0 0 0 0'];
-    const reads = [];
-    button._io = {read: async path => {
-        reads.push(path);
-        return stats[Math.min(reads.length - 1, stats.length - 1)];
-    }};
+        `${button?._number.text} timer=${island()._hub._panicBar._metrics._timeoutId} ${button?.actor.accessible_name}`);
     island().expand();
     await sleep(animationWait());
-    check('cpu button: a second after opening, the load, red from 80%',
-        await waitFor(() => button._number.text === '85', 3000) &&
-        button._number.has_style_class_name('froonty-sysmon-cell-5') &&
-        button.actor.accessible_name === 'CPU load: 85%',
+    check('cpu button: the machine load appears after the follow-up sample',
+        await waitFor(() => /^\d+$/.test(button._number.text), 3000) &&
+        Number(button._number.text) <= 100 &&
+        button.actor.accessible_name.startsWith('CPU load:'),
         `${button._number.text} ${button._number.style_class} ${button.actor.accessible_name}`);
-    check('cpu button: then every refresh interval, lime at 35%',
-        await waitFor(() => button._number.text === '35', 3000) &&
-        button._number.has_style_class_name('froonty-sysmon-cell-2') &&
-        !button._number.has_style_class_name('froonty-sysmon-cell-5'),
-        `${button._number.text} ${button._number.style_class}`);
+    check('cpu button: displays the selected CPU icon',
+        button._icon.gicon !== null, `${button._icon.gicon}`);
     island().collapse();
     await sleep(animationWait());
-    const readsWhenClosed = reads.length;
-    await sleep(2500);
-    check('cpu button: collapsed, it stops reading', button._timeoutId === 0 &&
-        reads.length === readsWhenClosed, `timer=${button._timeoutId} reads ${readsWhenClosed} -> ${reads.length}`);
+    check('cpu button: collapsed, its shared sampler stops',
+        island()._hub._panicBar._metrics._timeoutId === 0 &&
+        !island()._hub._panicBar._metrics._active,
+        `timer=${island()._hub._panicBar._metrics._timeoutId}`);
 
-    // A fresh button reads the real /proc/stat.
+    // A fresh button still reads the machine and opens Btop when clicked.
     settings().set_strv('panic-buttons', ['mute-microphone']);
     await sleep(SETTLE_MS);
     settings().set_strv('panic-buttons', ['mute-microphone', 'cpu-load']);
@@ -4216,6 +4122,42 @@ async function testCpuLoadButton() {
     await sleep(animationWait());
     settings().reset('panic-buttons');
     settings().reset('sysmon-interval');
+    await sleep(SETTLE_MS);
+}
+
+async function testTemperatureButton() {
+    settings().set_strv('panic-buttons', ['temperature']);
+    settings().set_string('sysmon-panic-temp-source', 'max-cpu');
+    await sleep(SETTLE_MS);
+    const button = thermometerButton();
+    const metrics = island()._hub._panicBar._metrics;
+    check('thermometer button: available and unknown until a reading arrives',
+        button !== null && button._number.text === '?' && !button._number.get_style(),
+        `${button?._number.text} ${button?._number.get_style()}`);
+
+    metrics.snapshot = {
+        cpu: {temp: 61, cores: [{temp: 63}, {temp: 76}]},
+        gpus: [],
+        memory: null,
+    };
+    metrics.emit('changed');
+    check('thermometer button: maximum CPU temperature is overlaid and colored',
+        button._number.text === '76°C' &&
+        button.actor.accessible_name === 'Temperature: 76 °C' &&
+        button._number.get_style().includes('color: rgb('),
+        `${button._number.text} ${button._number.get_style()} ${button.actor.accessible_name}`);
+
+    settings().set_string('sysmon-panic-temp-source', 'load-source');
+    settings().set_string('sysmon-panic-load-source', 'memory');
+    metrics.snapshot = {cpu: {temp: 61, cores: [{temp: 60}, {temp: 64}]}, memory: {used: 75, total: 100}};
+    metrics.emit('changed');
+    check('thermometer button: following RAM load shows the average CPU temperature, not %',
+        button._number.text === '62°C' &&
+        button.actor.accessible_name === 'Temperature: 62 °C',
+        `${button._number.text} ${button.actor.accessible_name}`);
+    settings().reset('panic-buttons');
+    settings().reset('sysmon-panic-load-source');
+    settings().reset('sysmon-panic-temp-source');
     await sleep(SETTLE_MS);
 }
 
@@ -8874,11 +8816,12 @@ async function testFanSliderSettingsButton() {
 // FROONTY_TEST_ONLY=testA,testB runs only those checks (while debugging).
 const ONLY_TESTS = {
     testClaudeAttention, testClaudeAttentionWindows,
-    testNotes, testMedia, testBreak, testHub, testLifecycle, testPublicBuild,
+    testNotes, testNotesTabsAndColors, testNotesHeader, testAllNotesWindow,
+    testMedia, testBreak, testHub, testLifecycle, testPublicBuild,
     testResizeGrip, testMediaPill, testMediaExtras, testMediaPanic, testMediaChoiceSurvivesLock,
     testPointer, testHubLayout, testDatePill, testCalendarMenu, testEmptyHub,
-    testSettingsButton, testKillProcess, testCpuLoadButton, testFormulas,
-    testNotesHeader, testClaude, testClipboard, testClipboardSwitcher, testNotesMath,
+    testSettingsButton, testKillProcess, testCpuLoadButton, testTemperatureButton, testFormulas,
+    testClaude, testClipboard, testClipboardSwitcher, testNotesMath,
     testWriting, testWritingFixes, testStartup, testBrightness, testPadNoiseSlider,
     testTimezonePlanner,
     testFanSliderSettingsButton,
@@ -8946,6 +8889,7 @@ export async function runAll(outDir) {
         await testKillProcess(outDir);
         await testFanSliderSettingsButton();
         await testCpuLoadButton();
+        await testTemperatureButton();
         await testFormulas(outDir);
         await testNotesMath(outDir);
         await testBreak(outDir);

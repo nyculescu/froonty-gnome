@@ -37,7 +37,7 @@ settings keys keep the `sysmon` id.
 
 ## Polling: only while the tab is on screen
 
-The tab is Froonty's one periodic timer (DESIGN.md §2). No event tells
+The tab uses a periodic timer while it is on screen. No event tells
 when a CPU's load or a GPU's temperature changes, and the readings are
 only worth anything live.
 
@@ -56,6 +56,16 @@ only worth anything live.
 - Sections switched off in Settings are not read. With all of them off
   there is no timer.
 - All reads are asynchronous (Gio); nothing blocks the compositor.
+
+The optional CPU/GPU/RAM load and thermometer panic buttons share a sampler
+while the island is open, at the configured refresh interval. They
+stop sampling when the island collapses. The load button reads only the
+selected source; RAM usage is used as a percentage. The thermometer can show
+the mean of available CPU core temperatures, the hottest available CPU core,
+or the hottest reported GPU. When set to follow the load button, it shows
+average CPU temperature for CPU or RAM load (RAM has no general-purpose
+sensor) and GPU temperature for GPU load, always in °C. CPU package temperature is used when no per-core reading
+is available. Settings → Btop → Panic buttons chooses these sources.
 
 ## What it shows, and where it comes from
 

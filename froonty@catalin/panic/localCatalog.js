@@ -28,10 +28,17 @@ export const LOCAL_PANIC_BUTTONS = [
     },
     {
         // Not an action: the CPU load at a glance; a click opens the Btop
-        // tab. The icon is bundled (features/sysmon/icons).
+        // tab. Its source and icon are chosen in Settings → Btop.
         id: 'cpu-load',
         icon: 'froonty-cpu-symbolic',
         title: _ => _('CPU load'),
+    },
+    {
+        // Temperature or RAM usage at a glance; its source is selected in
+        // Settings → Btop. The icon is bundled with the Btop icons.
+        id: 'temperature',
+        icon: 'froonty-thermometer-symbolic',
+        title: _ => _('Temperature'),
     },
     {
         // Every MPRIS player that plays; a second click resumes the ones it

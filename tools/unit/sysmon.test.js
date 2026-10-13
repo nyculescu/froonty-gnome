@@ -6,6 +6,10 @@ import {
 import {levelCells, levelClass} from '../../froonty@catalin/features/sysmon/level.js';
 import {Sampler, SECTIONS} from '../../froonty@catalin/features/sysmon/sampler.js';
 import {SysmonService} from '../../froonty@catalin/features/sysmon/service.js';
+import {
+    PANIC_LOAD_KEY, PANIC_TEMP_KEY, PanicMetricsService, panicLoad,
+    panicTemperature, temperatureColor,
+} from '../../froonty@catalin/features/sysmon/panicMetrics.js';
 import {done, eq, ok, test} from './test.js';
 
 const CPUINFO = `processor\t: 0
@@ -162,6 +166,39 @@ test('levels: a whole number takes the colour of its 20% band (the CPU load butt
     eq([0, 19, 20, 39, 40, 59, 60, 79, 80, 99, 100].map(cell), [1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 5]);
     eq(cell(-3), 1, 'below 0');
     eq(cell(140), 5, 'over 100');
+});
+
+test('panic metrics: load source reports one selected CPU, GPU or RAM value', () => {
+    const snapshot = {
+        cpu: {load: 41},
+        gpus: [{load: null}, {load: 68}, {load: 32}],
+        memory: {used: 75, total: 100},
+    };
+    eq(panicLoad(snapshot, 'cpu'), 41);
+    eq(panicLoad(snapshot, 'gpu'), 68);
+    eq(panicLoad(snapshot, 'memory'), 75);
+    eq(panicLoad({}, 'gpu'), null);
+});
+
+test('panic thermometer: CPU average/max and GPU in °C; linked RAM falls back to CPU', () => {
+    const snapshot = {
+        cpu: {temp: 61, cores: [{temp: 55}, {temp: 58}, {temp: null}]},
+        gpus: [{temp: 48}, {temp: 66}],
+        memory: {used: 75, total: 100},
+    };
+    eq(panicTemperature(snapshot, 'average-cpu', 'cpu'), 56.5);
+    eq(panicTemperature(snapshot, 'max-cpu', 'cpu'), 58);
+    eq(panicTemperature(snapshot, 'gpu', 'cpu'), 66);
+    eq(panicTemperature(snapshot, 'load-source', 'gpu'), 66);
+    eq(panicTemperature(snapshot, 'load-source', 'memory'), 56.5);
+    eq(panicTemperature({cpu: {temp: 61}}, 'average-cpu', 'cpu'), 61);
+});
+
+test('thermometer colors are green through 50, yellow at 75, and red at 100', () => {
+    eq(temperatureColor(30), 'rgb(51, 209, 122)');
+    eq(temperatureColor(50), 'rgb(51, 209, 122)');
+    eq(temperatureColor(75), 'rgb(246, 211, 45)');
+    eq(temperatureColor(100), 'rgb(224, 27, 36)');
 });
 
 // A fake /proc and /sys: `files` maps paths to text, `links` to targets.
@@ -341,15 +378,23 @@ test('sections that are off are not read', async () => {
 function fakeSettings(values) {
     const handlers = new Map();
     let nextId = 1;
+    const changed = key => {
+        for (const [, {signal, fn}] of handlers) {
+            if (signal === `changed::${key}`)
+                fn();
+        }
+    };
     return {
         get_boolean: key => values[key] ?? true,
         get_int: key => values[key] ?? 2,
+        get_string: key => values[key] ?? '',
         set_boolean: (key, value) => {
             values[key] = value;
-            for (const [, {signal, fn}] of handlers) {
-                if (signal === `changed::${key}`)
-                    fn();
-            }
+            changed(key);
+        },
+        set_string: (key, value) => {
+            values[key] = value;
+            changed(key);
         },
         connect: (signal, fn) => {
             handlers.set(nextId, {signal, fn});
@@ -359,6 +404,22 @@ function fakeSettings(values) {
         handlers,
     };
 }
+
+test('panic sampler reads the union of the selected load and thermometer sources', () => {
+    const settings = fakeSettings({
+        [PANIC_LOAD_KEY]: 'gpu',
+        [PANIC_TEMP_KEY]: 'average-cpu',
+    });
+    const service = new PanicMetricsService(settings, {io: fakeIo(machine()).io});
+    service.start();
+    eq([...service.sections].sort(), ['cpu', 'gpu']);
+    settings.set_string(PANIC_TEMP_KEY, 'load-source');
+    eq([...service.sections], ['gpu']);
+    settings.set_string(PANIC_LOAD_KEY, 'memory');
+    eq([...service.sections].sort(), ['cpu', 'memory']);
+    service.stop();
+    eq(settings.handlers.size, 0);
+});
 
 test('the service polls only while its tab is on screen', async () => {
     const settings = fakeSettings({'sysmon-cores-expanded': false});

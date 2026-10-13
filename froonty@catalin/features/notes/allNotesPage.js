@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // "All notes": a page of the settings window (GTK 4 + libadwaita; nothing
 // from the Shell side) to search every note, filter by labels, and read or
-// edit them. The island's "All notes" button opens it; so does Settings →
-// Notes → All notes. It is a subpage: the back arrow leads to the settings.
+// edit them. A note tab's context menu opens it; so does Settings → Notes →
+// All notes. It is a subpage: the back arrow leads to the settings.
 //
 //   ┌ ← All notes · 12 notes ─────────────────────────────────────────┐
 //   │ [Search notes          ] │ ● Plan            q4 · work [Labels]│
@@ -24,8 +24,8 @@
 // when the user navigates, and back to "settings" when the window closes.
 //
 // The open note: the island's (notes-last) when the page first loads, and
-// again whenever the island has moved to another note since the window
-// last looked (the page is shown again, or the window is raised).
+// again whenever the island moves to another note while the page is open,
+// or the page is shown or window raised after it moved.
 //
 // Create, rename and Trash stay in the island.
 
@@ -190,6 +190,10 @@ class AllNotesPage {
         this._library.connect('changed', (_library, change) => this._onLibraryChanged(change));
         this._library.connect('renamed', (_library, from, to) => this._pane.renamed(from, to));
         this._library.connect('removed', (_library, name) => this._pane.removed(name));
+        this._lastId = settings.connect('changed::notes-last', () => {
+            if (this._library.running)
+                this._followIsland();
+        });
 
         const page = this.navigationPage;
         page.connect('showing', () => {
@@ -219,6 +223,7 @@ class AllNotesPage {
     close() {
         this._pane.stop();
         this._library.stop();
+        this._settings.disconnect(this._lastId);
     }
 
     /** Another notes folder: the page starts over there (now or when shown). */
@@ -231,7 +236,7 @@ class AllNotesPage {
         this._pane.followFolder();
     }
 
-    /** The window was raised (e.g. by the island's All notes button). */
+    /** The window was raised (e.g. from a note tab's context menu). */
     activated() {
         this._followIsland();
     }

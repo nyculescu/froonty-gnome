@@ -10,12 +10,11 @@
 //   row scrolls (wheel or touchpad; edge fade) and keeps the selected tab
 //   in view.
 //
-//   click          select        double-click   rename inline
+//   click          select
 //   middle-click   move the note to the Trash at once (like a browser tab)
-//   right-click    the note's labels (labelMenu.js); so do the Menu key and
-//                  Shift+F10 on a focused tab
-//   × (hover)      first click arms it, second click moves the note to the
-//                  Trash; leaving the tab disarms it (no timer involved)
+//   right-click    note actions and labels (labelMenu.js); so do the Menu
+//                  key and Shift+F10 on a focused tab
+//                  Rename and Move to Trash are there too
 
 import Clutter from 'gi://Clutter';
 import GLib from 'gi://GLib';
@@ -145,9 +144,8 @@ export class NoteTabs {
             // Middle-click closes (trashes) the note, like a browser tab.
             button_mask: St.ButtonMask.ONE | St.ButtonMask.TWO,
         });
-        // The tab's content: [name, ×]. It is also where the label menu
-        // hangs: a PopupMenu takes over its source's Space and Return, which
-        // must stay the tab's.
+        // The label menu hangs from the content: a PopupMenu takes over its
+        // source's Space and Return, which must stay the tab's.
         const content = new St.BoxLayout();
         const label = new St.Label({
             style_class: 'froonty-note-tab-label',
@@ -157,8 +155,6 @@ export class NoteTabs {
         // St.Label ellipsizes by default, which would let the row squeeze it.
         label.clutter_text.ellipsize = Pango.EllipsizeMode.NONE;
         content.add_child(label);
-        const trashButton = this._makeTrashButton(tab, name);
-        content.add_child(trashButton);
         tab.set_child(content);
 
         tab.connect('clicked', (_tab, button) => {
@@ -194,68 +190,14 @@ export class NoteTabs {
             });
         }
 
-        // Clutter 14 events carry no click count; compare press times
-        // against the system double-click time instead.
-        let lastPress = 0;
-        tab.connect('button-press-event', (_actor, event) => {
-            // Only primary presses count: a right-press then a left-press
-            // is no double-click.
-            if (event.get_button() !== Clutter.BUTTON_PRIMARY)
-                return Clutter.EVENT_PROPAGATE;
-            // Presses on × are not rename clicks: × is clicked twice on purpose.
-            if (trashButton.contains(global.stage.get_event_actor(event)))
-                return Clutter.EVENT_PROPAGATE;
-            const time = event.get_time();
-            const doubleClick = time - lastPress <= Clutter.Settings.get_default().double_click_time;
-            lastPress = time;
-            if (selected && doubleClick) {
-                this._startRename(tab, name);
-                return Clutter.EVENT_STOP;
-            }
-            return Clutter.EVENT_PROPAGATE;
-        });
         return tab;
     }
 
-    _makeTrashButton(tab, name) {
-        const button = new St.Button({
-            style_class: 'froonty-note-tab-close',
-            accessible_name: _('Move to Trash'),
-            can_focus: true,
-            child: new St.Icon({icon_name: 'window-close-symbolic'}),
-        });
-        // The × can go away before the tab does (tab teardown disposes children
-        // first; a rename replaces the tab's content), while the tab still
-        // reports hover changes: ignore them from then on.
-        let alive = true;
-        button.connect('destroy', () => (alive = false));
-        const disarm = () => {
-            if (!alive)
-                return;
-            // Takes room only where it is usable: on hover and on the selected
-            // tab, so other tabs stay as narrow as their names. The tab's
-            // right padding shrinks with it, so a bare name stays centred.
-            button.visible = tab.hover || tab.checked;
-            if (button.visible)
-                tab.add_style_class_name('froonty-note-tab-closable');
-            else
-                tab.remove_style_class_name('froonty-note-tab-closable');
-            button.remove_style_class_name('froonty-armed');
-            button.child.icon_name = 'window-close-symbolic';
-            button.accessible_name = _('Move to Trash');
-        };
-        button.connect('clicked', () => {
-            if (button.has_style_class_name('froonty-armed')) {
-                this._callbacks.onTrash(name);
-                return;
-            }
-            button.add_style_class_name('froonty-armed');
-            button.child.icon_name = 'user-trash-symbolic';
-            button.accessible_name = _('Click again to move to Trash');
-        });
-        tab.connect('notify::hover', () => disarm());
-        disarm();
-        return button;
+    /** Starts renaming the selected tab after a context-menu selection. */
+    renameSelected() {
+        const tab = this._box.get_children().find(child => child.checked);
+        if (tab)
+            this._startRename(tab, tab.accessible_name);
     }
 
     _startRename(tab, name) {
@@ -267,13 +209,12 @@ export class NoteTabs {
             text: name,
             can_focus: true,
         });
-        // set_child() only detaches the old content (name, ×); destroy it
+        // set_child() only detaches the old content (name); destroy it
         // explicitly rather than leaving it to the garbage collector.
         this._renaming = tab;
         const oldContent = tab.child;
         tab.set_child(entry);
         oldContent.destroy();
-        tab.remove_style_class_name('froonty-note-tab-closable');
         // The entry shows the full name; the bubble would cover it.
         this._tooltip.hide();
         // The tab changes width: keep it in view once laid out again. After

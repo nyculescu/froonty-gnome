@@ -81,19 +81,18 @@ island opens, follows it while the island stays open, and does nothing while
 the island is collapsed. The bar tells its buttons when the hub is shown
 (`setActive`, optional on a button).
 
-Added 2026-10-04, off by default, local builds only (it reuses the Btop
-tab's code, which is not published yet):
+Added 2026-10-04, off by default, local builds only:
 
 | Id | What it shows | A click |
 |---|---|---|
-| `cpu-load` | The whole processor's load (0–100, no "%"), as large as the button allows, over a faint processor chip, laid out as `claude-session`; the number in the Btop tab's level colours (green under 20%, lime, yellow, orange, red from 80%); "?" before the first reading | Opens the Btop tab |
+| `cpu-load` | One selected metric—CPU load, GPU load or RAM usage (0–100, no "%")—as large as the button allows, over its CPU/GPU/RAM icon; the number in the Btop tab's level colours; "?" before the first reading | Opens the Btop tab |
+| `temperature` | Average CPU temperature, maximum CPU temperature, GPU temperature, or the one linked to the load button, in °C ("76°C") overlaid on a thermometer, green-to-yellow-to-red (green through 50 °C, red at 100 °C). Linked to RAM load it shows the average CPU temperature: general-purpose RAM temperature is not available | Opens the Btop tab |
 
-Also an indicator: "CPU load: 37%". It reads `/proc/stat` only while the
-island is open: a sample when it opens, the first load a second later,
-then one every Btop refresh interval (`sysmon-interval`). Collapsed, its
-timer is gone and nothing is read. The chip is bundled with the Btop tab
-(`features/sysmon/icons`, `froonty-cpu-symbolic`): Adwaita has no
-processor icon.
+Their choices are in Settings → Btop → Panic buttons. Both share one
+sampler, active only while the island is open and at the Btop refresh
+interval. GPU load and temperature use the hottest reported card. The
+thermometer follows the load button by default. Its accessible name and
+tooltip spell out the current reading and unit.
 
 ## 4. Block camera for apps that ask GNOME
 

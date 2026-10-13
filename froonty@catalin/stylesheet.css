@@ -204,46 +204,6 @@
     background-color: rgba(255, 255, 255, 0.12);
 }
 
-/* Notes' "All notes" in the hub header: a faint wash of the selected
-   note's colour sets it apart from the global date pill and panic buttons
-   and ties it to the Notes tab (features/notes/headerActions.js). After the icon-button
-   rules on purpose: same specificity, so these win. The focus ring stays. */
-.froonty-icon-button.froonty-notes-action {
-    color: rgba(255, 255, 255, 0.75);
-}
-
-.froonty-notes-action.froonty-notes-action-yellow { background-color: rgba(255, 243, 168, 0.16); }
-.froonty-notes-action.froonty-notes-action-green { background-color: rgba(205, 239, 196, 0.16); }
-.froonty-notes-action.froonty-notes-action-pink { background-color: rgba(255, 207, 227, 0.16); }
-.froonty-notes-action.froonty-notes-action-purple { background-color: rgba(226, 211, 251, 0.16); }
-.froonty-notes-action.froonty-notes-action-blue { background-color: rgba(207, 228, 255, 0.16); }
-.froonty-notes-action.froonty-notes-action-gray { background-color: rgba(228, 228, 228, 0.16); }
-/* #3b3b3b, the charcoal note, would vanish on the black island. */
-.froonty-notes-action.froonty-notes-action-charcoal { background-color: rgba(110, 110, 110, 0.30); }
-
-.froonty-notes-action.froonty-notes-action-yellow:hover,
-.froonty-notes-action.froonty-notes-action-yellow:focus { color: #ffffff; background-color: rgba(255, 243, 168, 0.28); }
-.froonty-notes-action.froonty-notes-action-green:hover,
-.froonty-notes-action.froonty-notes-action-green:focus { color: #ffffff; background-color: rgba(205, 239, 196, 0.28); }
-.froonty-notes-action.froonty-notes-action-pink:hover,
-.froonty-notes-action.froonty-notes-action-pink:focus { color: #ffffff; background-color: rgba(255, 207, 227, 0.28); }
-.froonty-notes-action.froonty-notes-action-purple:hover,
-.froonty-notes-action.froonty-notes-action-purple:focus { color: #ffffff; background-color: rgba(226, 211, 251, 0.28); }
-.froonty-notes-action.froonty-notes-action-blue:hover,
-.froonty-notes-action.froonty-notes-action-blue:focus { color: #ffffff; background-color: rgba(207, 228, 255, 0.28); }
-.froonty-notes-action.froonty-notes-action-gray:hover,
-.froonty-notes-action.froonty-notes-action-gray:focus { color: #ffffff; background-color: rgba(228, 228, 228, 0.28); }
-.froonty-notes-action.froonty-notes-action-charcoal:hover,
-.froonty-notes-action.froonty-notes-action-charcoal:focus { color: #ffffff; background-color: rgba(110, 110, 110, 0.48); }
-
-.froonty-notes-action.froonty-notes-action-yellow:active { color: #ffffff; background-color: rgba(255, 243, 168, 0.38); }
-.froonty-notes-action.froonty-notes-action-green:active { color: #ffffff; background-color: rgba(205, 239, 196, 0.38); }
-.froonty-notes-action.froonty-notes-action-pink:active { color: #ffffff; background-color: rgba(255, 207, 227, 0.38); }
-.froonty-notes-action.froonty-notes-action-purple:active { color: #ffffff; background-color: rgba(226, 211, 251, 0.38); }
-.froonty-notes-action.froonty-notes-action-blue:active { color: #ffffff; background-color: rgba(207, 228, 255, 0.38); }
-.froonty-notes-action.froonty-notes-action-gray:active { color: #ffffff; background-color: rgba(228, 228, 228, 0.38); }
-.froonty-notes-action.froonty-notes-action-charcoal:active { color: #ffffff; background-color: rgba(110, 110, 110, 0.60); }
-
 /* local:begin timezone-planner (local) */
 /* Timezone planner (features/timezonePlanner): a compact modal for comparing
    Vancouver with the two manually selected cities. */
@@ -463,8 +423,7 @@
     spacing: 4px;
 }
 
-/* Name only; the × (hover, selected tab) takes the right padding's place,
-   so a bare name stays centred (tabs.js toggles -closable with it). */
+/* Tab names stay visible without a hover-only close button. */
 .froonty-note-tab {
     border-radius: 999px;
     padding: 3px 9px;
@@ -472,10 +431,6 @@
     color: rgba(255, 255, 255, 0.7);
     background-color: rgba(255, 255, 255, 0.05);
     transition-duration: 150ms;
-}
-
-.froonty-note-tab.froonty-note-tab-closable {
-    padding-right: 4px;
 }
 
 .froonty-note-tab:hover {
@@ -490,34 +445,6 @@
 
 .froonty-note-tab:focus {
     box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.45);
-}
-
-/* The × keeps its space (no width jump) but is only visible on hover and
-   on the selected tab. */
-.froonty-note-tab-close {
-    border-radius: 999px;
-    padding: 2px;
-    margin-left: 2px;
-    color: transparent;
-}
-
-.froonty-note-tab-close StIcon {
-    icon-size: 12px;
-}
-
-.froonty-note-tab:hover .froonty-note-tab-close,
-.froonty-note-tab:checked .froonty-note-tab-close {
-    color: rgba(255, 255, 255, 0.6);
-}
-
-.froonty-note-tab .froonty-note-tab-close:hover {
-    color: #ffffff;
-    background-color: rgba(255, 255, 255, 0.15);
-}
-
-.froonty-note-tab .froonty-note-tab-close.froonty-armed {
-    color: #ffffff;
-    background-color: #e0454c;
 }
 
 .froonty-note-tab-entry,
@@ -868,22 +795,28 @@
 .froonty-sysmon-cell-empty { color: #5e5c64; }
 /* The CPU load panic button: as the Claude session button, the number in
    the level colours over a faint processor chip. */
-.froonty-icon-button.froonty-sysmon-cpu {
+.froonty-icon-button.froonty-sysmon-cpu,
+.froonty-icon-button.froonty-sysmon-temp {
     padding: 0;
 }
 .froonty-sysmon-cpu-stack {
     width: 30px;
     height: 26px;
 }
-.froonty-sysmon-cpu .froonty-sysmon-cpu-icon {
+.froonty-sysmon-cpu-icon {
     icon-size: 22px;
     color: rgba(255, 255, 255, 0.28);
 }
-.froonty-sysmon-cpu-number {
+.froonty-sysmon-cpu-number,
+.froonty-sysmon-temp-number {
     font-size: 15px;
     font-weight: 800;
     letter-spacing: -0.5px;
     font-feature-settings: "tnum";
+}
+.froonty-sysmon-temp-number {
+    font-size: 11px;
+    letter-spacing: -0.4px;
 }
 .froonty-sysmon-detail {
     font-size: 0.78em;

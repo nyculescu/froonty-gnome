@@ -1,8 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// A note's labels, from a right-click on its tab (or Menu / Shift+F10 on a
-// focused tab): a GNOME popup menu under the tab (ui/contextMenu.js).
+// A note's actions and labels, from a right-click on its tab (or Menu /
+// Shift+F10 on a focused tab): a GNOME popup menu under the tab
+// (ui/contextMenu.js).
 //
-//   ┌ Labels · Plan ───────────────┐
+//   ┌ Note · Plan ─────────────────┐
+//   │ All notes                    │
+//   │ Rename                       │
+//   │ Move to Trash                │
 //   │ [Filter or add a label…    ] │  typing filters; Enter adds or turns on
 //   │ ✓ q4                         │  this note's labels first, then the rest
 //   │ ✓ work                       │  (each by name); the order holds while
@@ -13,6 +17,8 @@
 //
 // Each flip is written at once (service.setLabel) and the menu stays open.
 // Labels never show in the tab itself.
+
+import GLib from 'gi://GLib';
 
 import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 
@@ -26,11 +32,14 @@ export class LabelMenu {
     /**
      * @param {object} ctx feature context (ctx.contextMenu)
      * @param {NotesService} service
+     * @param {object} callbacks actions for the note being shown
      */
-    constructor(ctx, service) {
+    constructor(ctx, service, callbacks) {
         this._ctx = ctx;
         this._service = service;
+        this._callbacks = callbacks;
         this._menu = null;
+        this._pendingAction = null;
         this._labelsId = 0;
         this._changedId = 0;
     }
@@ -50,7 +59,16 @@ export class LabelMenu {
         });
         this._menu = menu;
         this._name = name;
-        menu.addTitle(_('Labels · %s').format(name));
+        menu.addTitle(_('Note · %s').format(name));
+        menu.addAction(_('All notes'), () => {
+            this._closeWithAction(menu, () => this._callbacks.onAllNotes());
+        });
+        menu.addAction(_('Rename'), () => {
+            this._closeWithAction(menu, () => this._callbacks.onRename(name));
+        });
+        menu.addAction(_('Move to Trash'), () => {
+            this._closeWithAction(menu, () => this._callbacks.onTrash(name));
+        });
         if (service.labelsState === 'unreadable') {
             menu.addHint(_('Labels could not be read (.froonty-labels.json)'));
             menu.open();
@@ -103,6 +121,19 @@ export class LabelMenu {
         this._menu = null;
         this._entry = null;
         this._section = null;
+        const action = this._pendingAction;
+        this._pendingAction = null;
+        if (action) {
+            GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+                action();
+                return GLib.SOURCE_REMOVE;
+            });
+        }
+    }
+
+    _closeWithAction(menu, action) {
+        this._pendingAction = action;
+        menu.close();
     }
 
     // The items for the entry's text: matching labels (at most 12), "Add"
