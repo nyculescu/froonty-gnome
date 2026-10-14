@@ -71,7 +71,9 @@ export class NotesService extends Emitter {
         this._writer = null;
         this._monitor = null;
         this._queue = Promise.resolve();
+        this._selectionWrite = Promise.resolve();
         this._refreshQueued = false;
+        this._pollId = 0;
         this._running = false;
     }
 
@@ -81,6 +83,19 @@ export class NotesService extends Emitter {
         this._settingsId = this._settings.connect(`changed::${FOLDER_KEY}`,
             () => this._enqueue(() => this._openFolder()));
         this._opened = this._enqueue(() => this._openFolder());
+        // Gio file monitors are not available in some isolated sessions.
+        // Re-read external changes periodically in those environments too.
+        this._pollId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 2, () => {
+            if (!this._running) {
+                this._pollId = 0;
+                return GLib.SOURCE_REMOVE;
+            }
+            this._enqueue(async () => {
+                await this._refresh();
+                await this._followSharedSelection();
+            });
+            return GLib.SOURCE_CONTINUE;
+        });
     }
 
     /** Resolves when the folder has been opened (for tests). */
@@ -93,6 +108,9 @@ export class NotesService extends Emitter {
         // (a conflict copy included) and touches nothing but files.
         this._writer?.stop();
         this._running = false;
+        if (this._pollId)
+            GLib.source_remove(this._pollId);
+        this._pollId = 0;
         this._cancellable.cancel();
         this._settings.disconnect(this._settingsId);
         this._monitor?.cancel();
@@ -166,7 +184,10 @@ export class NotesService extends Emitter {
      * @returns {Promise} resolves when every write started so far is done
      */
     flush() {
-        return this._writer?.flush() ?? Promise.resolve();
+        return Promise.all([
+            this._writer?.flush() ?? Promise.resolve(),
+            this._selectionWrite,
+        ]);
     }
 
     select(name) {
@@ -297,6 +318,7 @@ export class NotesService extends Emitter {
             }
         }
         await this._refresh();
+        await this._followSharedSelection();
         if (rescued) {
             this.notice = rescued;
             this._changed();
@@ -381,6 +403,23 @@ export class NotesService extends Emitter {
             this._clearSelection();
     }
 
+    // All notes runs in a separate process. The shared marker file keeps its
+    // selection in step even when this session's GSettings backend cannot
+    // watch keyfile changes.
+    async _followSharedSelection() {
+        const store = this._store;
+        if (!store)
+            return;
+        const name = await store.readCurrentNote();
+        if (!this._running || store !== this._store || !name ||
+            name === this.selected || !this.notes.includes(name))
+            return;
+        await this.flush();
+        if (this._writer.dirty || this._writer.busy)
+            return;
+        await this._load(name);
+    }
+
     // Loads a note into the editor. @returns {Promise<boolean>} whether it
     // did (and emitted 'changed'): not when the note is the selected one
     // and nothing changed, or the user's typing is newer.
@@ -416,9 +455,15 @@ export class NotesService extends Emitter {
     }
 
     _clearSelection() {
+        const hadSelection = this.selected !== null;
         this.selected = null;
         this.text = '';
         this.readOnly = null;
+        const store = this._store;
+        if (store && hadSelection) {
+            this._selectionWrite = this._selectionWrite.then(() => store.writeCurrentNote(''))
+                .catch(e => console.warn(`Froonty notes: could not clear the current note: ${e.message}`));
+        }
         this._changed();
     }
 
@@ -468,6 +513,11 @@ export class NotesService extends Emitter {
     _remember(name) {
         if (this._settings.get_string(LAST_KEY) !== name)
             this._settings.set_string(LAST_KEY, name);
+        const store = this._store;
+        if (!store)
+            return;
+        this._selectionWrite = this._selectionWrite.then(() => store.writeCurrentNote(name))
+            .catch(e => console.warn(`Froonty notes: could not publish the current note: ${e.message}`));
     }
 
     _fail(error) {

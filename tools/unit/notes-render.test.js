@@ -23,15 +23,15 @@ const {markdownAttributes} = await import(copy.get_child('styler.js').get_uri())
 const shown = (text, active = -1) =>
     markdownSpans(text, active).map(s => `${s.style}:${text.slice(s.start, s.end)}`);
 
-test('inline formatting, markers hidden off the edited line', () => {
+test('inline formatting stays rendered, with markers hidden', () => {
     eq(shown('a **bold** b'), ['hidden:**', 'bold:bold', 'hidden:**']);
     eq(shown('_it_ and *it*'), ['hidden:*', 'italic:it', 'hidden:*', 'hidden:_', 'italic:it', 'hidden:_']);
     eq(shown('~~gone~~'), ['hidden:~~', 'strike:gone', 'hidden:~~']);
     eq(shown('`x**y**`'), ['hidden:`', 'code:x**y**', 'hidden:`'], 'no bold inside code');
 });
 
-test('the edited line keeps its markers, dimmed', () => {
-    eq(shown('**a**\n**b**', 1), ['hidden:**', 'bold:a', 'hidden:**', 'marker:**', 'bold:b', 'marker:**']);
+test('markers stay hidden on the edited line', () => {
+    eq(shown('**a**\n**b**', 1), ['hidden:**', 'bold:a', 'hidden:**', 'hidden:**', 'bold:b', 'hidden:**']);
 });
 
 test('nested and adjacent spans', () => {
@@ -63,7 +63,7 @@ test('links: the label underlined, brackets and URL hidden', () => {
 
 test('code blocks', () => {
     eq(shown('```\n**x**\n```\n**y**'),
-        ['marker:```', 'fence:**x**', 'marker:```', 'hidden:**', 'bold:y', 'hidden:**']);
+        ['hidden:```', 'fence:**x**', 'hidden:```', 'hidden:**', 'bold:y', 'hidden:**']);
 });
 
 test('offsets: lines by code point, bytes for Pango', () => {
@@ -93,8 +93,8 @@ test('render: emphasis runs over a line break within a paragraph, as in CommonMa
     eq(styled('*one\ntwo*'), ['italic:one\ntwo']);
     eq(styled('**a** and **b\nc** end'), ['bold:a', 'bold:b\nc']);
     const spans = markdownSpans('**x\ny**', 1);
-    eq(spans.filter(s => s.style === 'hidden').map(s => s.start), [0], 'the first line\'s marker hidden');
-    eq(spans.filter(s => s.style === 'marker').map(s => s.start), [5], 'the edited line\'s marker shown');
+    eq(spans.filter(s => s.style === 'hidden').map(s => s.start), [0, 5], 'both lines\' markers hidden');
+    eq(spans.filter(s => s.style === 'marker').map(s => s.start), [], 'the cursor does not reveal markers');
 });
 
 test('render: no emphasis across a blank line, a heading, a list item, spaced markers or snake_case', () => {

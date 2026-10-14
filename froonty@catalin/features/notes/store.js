@@ -33,6 +33,7 @@ Gio._promisify(Gio.OutputStream.prototype, 'close_async');
 
 const PRIORITY = GLib.PRIORITY_DEFAULT;
 const ENUMERATE_BATCH = 64;
+const CURRENT_NOTE_FILE = '.froonty-current-note';
 // Attempts at a free name for a conflict copy, and at a labels update
 // that other writers keep overtaking.
 const COPY_ATTEMPTS = 10;
@@ -65,6 +66,22 @@ export class NotesStore {
     listInfo(cancellable = null) {
         return this._enumerate('standard::name,standard::type,etag::value,' +
             'time::modified,time::modified-usec', cancellable);
+    }
+
+    /** The selected note is shared with the separate preferences process. */
+    async readCurrentNote() {
+        try {
+            const [bytes] = await this.folder.get_child(CURRENT_NOTE_FILE).load_contents_async(null);
+            return new TextDecoder('utf-8', {fatal: true}).decode(bytes).trim() || null;
+        } catch {
+            return null;
+        }
+    }
+
+    /** Atomically publishes the selected note across processes. */
+    async writeCurrentNote(name) {
+        await this.folder.get_child(CURRENT_NOTE_FILE).replace_contents_bytes_async(
+            encode(name), null, false, Gio.FileCreateFlags.NONE, null);
     }
 
     async _enumerate(attributes, cancellable) {

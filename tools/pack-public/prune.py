@@ -6,7 +6,8 @@ localPrefs.js, localCatalog.js and localFactories.js:
 
 1. Modules: only those reachable from extension.js and prefs.js through
    relative imports stay; a feature folder left without any module goes
-   whole (icons and data included), a kept one keeps its icons.
+   whole (icons and data included), a kept one keeps its icons. Explicit
+   `pack:asset` comments retain files that are launched or read at runtime.
 2. Schema: the keys of the features no longer there (PREFIXES) go.
 3. Stylesheet: rules whose every selector names a removed feature's class
    go, with the comments right before them.
@@ -48,11 +49,13 @@ ROOTS = ("extension.js", "prefs.js")
 SCHEMA = "schemas/org.gnome.shell.extensions.froonty.gschema.xml"
 
 IMPORT = re.compile(r"""(?:\bfrom\s+|\bimport\s*\(\s*|^\s*import\s+)['"](\.{1,2}/[^'"]+)['"]""", re.M)
+PACK_ASSET = re.compile(r"^\s*//\s*pack:asset\s+(\.{1,2}/[^\s]+)", re.M)
 
 
 def reachable(root):
-    """Relative paths of the modules reachable from ROOTS."""
+    """Reachable modules and explicitly retained runtime assets."""
     seen = set()
+    assets = set()
     todo = list(ROOTS)
     while todo:
         rel = os.path.normpath(todo.pop())
@@ -66,16 +69,21 @@ def reachable(root):
             text = f.read()
         for spec in IMPORT.findall(text):
             todo.append(os.path.join(os.path.dirname(rel), spec))
-    return seen
+        for spec in PACK_ASSET.findall(text):
+            asset = os.path.normpath(os.path.join(os.path.dirname(rel), spec))
+            if not os.path.isfile(os.path.join(root, asset)):
+                raise SystemExit(f"{asset}: retained asset is missing")
+            assets.add(asset)
+    return seen, assets
 
 
-def prune_modules(root, keep):
+def prune_modules(root, keep, assets=()):
     """Delete unreachable modules, then folders left without a module."""
     removed = []
     for dirpath, _dirs, files in os.walk(root):
         for name in files:
             rel = os.path.relpath(os.path.join(dirpath, name), root)
-            if name.endswith(".js") and rel not in keep:
+            if name.endswith(".js") and rel not in keep and rel not in assets:
                 os.remove(os.path.join(root, rel))
                 removed.append(rel)
     # Bottom-up: a folder goes (with its icons or data) when the folder of
@@ -228,8 +236,8 @@ def check_keys(root, removed):
 
 def main():
     root = sys.argv[1]
-    keep = reachable(root)
-    removed_files = prune_modules(root, keep)
+    keep, assets = reachable(root)
+    removed_files = prune_modules(root, keep, assets)
     _kept, removed = prune_schema(root)
     dropped_classes = prune_css(root)
     problems = check_keys(root, removed)

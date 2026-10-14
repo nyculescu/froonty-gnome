@@ -21,7 +21,7 @@ Status: **0.10.0-rc0**, a release candidate. See [CHANGELOG.md](CHANGELOG.md).
   address, and lyrics from lrclib.net. In local builds only, the Writing
   tab (off by default) runs your Claude Code or calls LanguageTool or a
   local Ollama when you click one of its actions.
-- GJS and native GNOME Shell APIs only.
+- GJS and GNOME APIs; WebKitGTK runs separately for offline Notes rendering.
 
 See [docs/DESIGN.md](docs/DESIGN.md) for the GNOME Shell API analysis (written for 46; see the note there), the list
 of private APIs used, compatibility risks and the NexNotch review. Each
@@ -253,7 +253,7 @@ feature has a design note in [docs/features/](docs/features/).
   Start Froonty and Stop Froonty. A screen lock keeps it stopped; the next
   login follows "Start at login".
 
-> Planned: more panic buttons, rendered Markdown in notes and many more inspired from https://github.com/vorssaint/vorssaint-utils
+> Planned: more panic buttons and many more inspired from https://github.com/vorssaint/vorssaint-utils
 
 ## Requirements and permissions
 
@@ -264,7 +264,7 @@ Each tab can be turned off on its own page in Settings.
 | Tab or button | On at first start | Install (Ubuntu) | Network |
 |---|---|---|---|
 | Island, GNOME's calendar menu | yes | nothing | none |
-| Notes | yes | nothing | none |
+| Notes | yes | nothing; optional `gir1.2-webkit2-4.1` renders rich blocks | none |
 | Panic: mute microphone, mute sound | yes | nothing | none |
 
 - **Island:** makes the top bar clock transparent while the island
@@ -276,7 +276,10 @@ Each tab can be turned off on its own page in Settings.
 - **Notes:** Markdown files in `~/.local/share/froonty/notes`, or a folder
   you choose in Settings → Notes, plus a hidden `.froonty.json` (order and
   colours) and `.froonty-labels.json` (labels) there. Deleted notes go to
-  the Trash.
+  the Trash. Pipe tables, note-relative local images and common flowchart,
+  state and sequence diagrams render offline. The image button copies a
+  chosen file into the note folder. Rendering uses WebKitGTK 4.1 in a helper;
+  without it, the Markdown source remains visible.
 - **Mute microphone, mute sound:** mute your default devices through
   GNOME's sound settings, as Quick Settings does.
 - **After you remove Froonty:** your notes stay, and so do the mute

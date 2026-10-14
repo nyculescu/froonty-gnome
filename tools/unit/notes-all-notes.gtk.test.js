@@ -777,7 +777,7 @@ function stylesAt(ui, offset) {
         .map(name => name.slice('froonty-markdown-'.length)).sort();
 }
 
-test('window: the note is drawn rendered; the edited line shows its markers', async () => {
+test('window: inline formatting stays rendered while editing', async () => {
     const note = '# Title\nsay **hi** and `x`\n- [x] done\n> quote';
     const dir = tempFolder({F: note, E: '😀 **hi**'});
     const {window, ui} = await openWindow(dir, {last: 'F'});
@@ -798,10 +798,10 @@ test('window: the note is drawn rendered; the edited line shows its markers', as
 
     ui.editor.grab_focus();
     ui.select(14);
-    ok(await waitFor(() => stylesAt(ui, 12).includes('marker')), 'the edited line: its markers dimmed');
+    ok(await waitFor(() => stylesAt(ui, 12).includes('hidden')), 'the edited line: its markers stay hidden');
     ok(stylesAt(ui, 0).includes('hidden'), 'another line: hidden');
     ui.select(3);
-    ok(stylesAt(ui, 0).includes('marker') && stylesAt(ui, 12).includes('hidden'), 'they follow the cursor');
+    ok(stylesAt(ui, 0).includes('hidden') && stylesAt(ui, 12).includes('hidden'), 'cursor movement keeps markers hidden');
 
     // Typing restyles; the text, the undo history and the file stay plain.
     ui.select(buffer.get_char_count());
@@ -903,7 +903,7 @@ test('window: formulas are drawn off the edited line, the LaTeX on it; text, fil
     ui.select(3);
     ok(await waitFor(() => pictures(ui).length === 1 && mathTags(ui, 8).length === 0),
         'the edited line: its formula as LaTeX');
-    eq(stylesAt(ui, 7), ['marker'], 'its dollars dimmed');
+    eq(stylesAt(ui, 7), ['hidden'], 'its dollar delimiter is hidden');
     ui.select(40);
     ok(await waitFor(() => pictures(ui).length === 1 && mathTags(ui, 40).length === 0 &&
         mathTags(ui, 8).length > 0), 'inside the block: the block as LaTeX');

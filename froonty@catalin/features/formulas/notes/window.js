@@ -133,12 +133,21 @@ export class WindowMath {
      * @param {number} line the edited line, -1 for none
      * @returns {object[]} the Markdown spans to draw (render.js)
      */
-    update(text, line) {
+    update(text, line, enabled = true) {
         const buffer = this._buffer;
-        const {spans, formulas} = mathMarkdownSpans(text, line);
-        const {color, scale, resource} = this._style();
         for (const tag of [this._hidden, this._refused, ...this._boxTags.values()])
             buffer.remove_tag(tag, ...buffer.get_bounds());
+
+        if (!enabled) {
+            this._placed = [];
+            this._refusals = [];
+            this._pruneBoxTags(new Set());
+            this._queuePlace();
+            return [];
+        }
+
+        const {spans, formulas} = mathMarkdownSpans(text, line);
+        const {color, scale, resource} = this._style();
 
         const requests = [];
         const tags = []; // [tag, start, end], UTF-16 indices

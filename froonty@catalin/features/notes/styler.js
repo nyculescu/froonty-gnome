@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Draws the Notes editor's Markdown rendered (render.js): Pango attributes
-// on the editable Clutter.Text, recomputed on each edit, when the cursor
-// moves to another line (that line shows its markers), and when the editor
-// gains or loses the key focus (without it, every marker is hidden). The
-// text itself, and so the note's file, stays plain Markdown.
+// Coordinates source editing with the flow-based Markdown preview. The
+// Markdown/source button chooses the mode; focus and hover never affect it.
 //
 // Hidden markers are drawn at a twentieth of the size in the muted colour:
 // Pango has no "invisible" attribute (and Clutter ignores Pango's
@@ -14,7 +11,9 @@
 
 import Pango from 'gi://Pango';
 
-import {byteOffsets, lineAt, markdownSpans} from './render.js';
+import {IslandMarkdownBlocks} from './renderer/island.js';
+import {IslandMarkdownPreview} from './renderer/preview.js';
+import {byteOffsets, markdownSpans} from './render.js';
 // local:begin notes-math (working-tree only; tools/pack-public strips it)
 import {IslandMath} from '../formulas/notes/island.js';
 // local:end notes-math
@@ -54,6 +53,9 @@ function attributesFor(style, muted) {
         return [Pango.attr_strikethrough_new(true), mutedColor()];
     case 'marker':
         return [mutedColor()];
+    case 'taskbox':
+        // Preserve the three source characters' width below the checkbox.
+        return [mutedColor()];
     case 'hidden':
         return [mutedColor(), Pango.attr_scale_new(0.05)];
     default:
@@ -82,11 +84,13 @@ export function spanAttributes(text, spans, muted) {
 
 export class MarkdownStyler {
     /** @param {St.Entry} entry the editor; signals die with it */
-    constructor(entry) {
+    constructor(entry, {folder = () => null} = {}) {
         const text = entry.clutter_text;
         this._entry = entry;
         this._text = text;
         this._line = null;
+        this._rendered = true;
+        this._folder = folder;
         // A grey that reads on every note colour until the CSS is known.
         this._muted = {red: 128, green: 128, blue: 128};
         // The note's colour changes the editor's style, and its muted colour.
@@ -97,30 +101,58 @@ export class MarkdownStyler {
             this.update(true);
         });
         text.connect('text-changed', () => this.update(true));
-        text.connect('notify::cursor-position', () => this.update());
-        text.connect('key-focus-in', () => this.update(true));
-        text.connect('key-focus-out', () => this.update(true));
         // local:begin notes-math
         // Formulas drawn as pictures (features/formulas/notes/island.js).
         this.math = new IslandMath(entry, {spanAttributes, restyle: () => this.update(true)});
         // local:end notes-math
+        this.blocks = new IslandMarkdownBlocks(entry, {spanAttributes,
+            restyle: () => this.update(true), folder: this._folder});
+        this.preview = new IslandMarkdownPreview(entry);
         this.update(true);
     }
 
     /** Restyles; unless `force`, only when the edited line changed. */
     update(force = false) {
         const text = this._text;
-        const line = text.has_key_focus()
-            ? lineAt(text.text, text.cursor_position < 0 ? Infinity : text.cursor_position) : -1;
+        const line = -1;
         if (!force && line === this._line)
             return;
         this._line = line;
+        const pictures = this.blocks.pictures(text.text,
+            Math.max(600, this._entry.get_width(), this.preview.widget.get_width()));
+        this.preview.setEditable(text.editable);
+        this.preview.update(text.text, pictures);
+        this.preview.widget.visible = this._rendered;
+        this._entry.visible = !this._rendered;
+        this.blocks.layer.visible = false;
+        this.math.layer.visible = false;
+        this.blocks.attributes(text.text, line, this._muted, new Pango.AttrList(), false);
         // local:begin notes-math
         if (this.math) {
-            text.set_attributes(this.math.attributes(text.text, line, this._muted));
+            text.set_attributes(this.math.attributes(text.text, line, this._muted, false));
             return;
         }
         // local:end notes-math
-        text.set_attributes(markdownAttributes(text.text, line, this._muted));
+        const attrs = this._rendered
+            ? markdownAttributes(text.text, line, this._muted) : new Pango.AttrList();
+        text.set_attributes(attrs);
+    }
+
+    setRendered(rendered) {
+        rendered = Boolean(rendered);
+        if (this._rendered === rendered)
+            return;
+        this._rendered = rendered;
+        this.preview.widget.visible = rendered;
+        this.math.layer.visible = !rendered;
+        this.update(true);
+    }
+
+    setEditable(editable) {
+        this.preview.setEditable(editable);
+    }
+
+    setWrap(wrap) {
+        this.preview.setWrap(wrap);
     }
 }

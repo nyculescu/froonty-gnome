@@ -87,6 +87,16 @@ export function insertLink(state) {
     return result(text, before.length, before.length + url.length);
 }
 
+/** Inserts an image, using the selected text as its alt label when present. */
+export function insertImage(state, path) {
+    const {chars, start, end} = normalize(state);
+    const alt = start === end ? [...'image'] : chars.slice(start, end);
+    const target = [...path];
+    const prefix = [...chars.slice(0, start), '!', '[', ...alt, ']('];
+    const text = [...prefix, ...target, ')', ...chars.slice(end)];
+    return result(text, prefix.length, prefix.length + target.length);
+}
+
 // Applies `edit` to the full lines covered by the selection and selects
 // the edited block.
 function editLines(state, edit) {

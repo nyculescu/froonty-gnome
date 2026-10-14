@@ -3,13 +3,12 @@
 // libadwaita, so nothing from the Shell side): the island's buttons, in its
 // order (formatActions.js), then Wrap lines.
 //
-//   [B][I][S][H][•][1.][☑][</>][🔗][↩]
+//   [B][I][S][H][•][1.][☑][</>][🔗][MD][↩]
 //
-// Toggles (every button but Link) show whether their formatting applies at
-// the cursor or selection: lit in accent (active) = on, and a click removes
-// it; plain = off, and a click adds it. The pane calls update() as the
-// cursor moves, and again after each edit. The buttons never take the
-// focus on a click, so the editor keeps its selection.
+// Formatting toggles show whether their formatting applies at the cursor or
+// selection. MD switches between source and preview without editing the
+// note. The pane calls update() as the cursor moves and after each edit. The
+// buttons never take focus on a click, so the editor keeps its selection.
 
 import Gtk from 'gi://Gtk';
 
@@ -35,7 +34,7 @@ function button(Type, {icon, label, name}) {
 
 export class FormatBar {
     /** @param {Function} onEdit called with an edit function */
-    constructor(onEdit) {
+    constructor(onEdit, onImage = () => {}) {
         this.widget = new Gtk.Box({css_classes: ['froonty-format-bar'], spacing: 2});
         this._toggles = [];
         this._edits = [];
@@ -49,6 +48,17 @@ export class FormatBar {
             this.widget.append(widget);
         }
 
+        const image = button(Gtk.Button, {icon: 'insert-image-symbolic', name: _('Insert image')});
+        image.connect('clicked', onImage);
+        this._edits.push(image);
+        this.widget.append(image);
+
+        this.markdownButton = button(Gtk.ToggleButton, {
+            label: 'MD',
+            name: _('Show Markdown source'),
+        });
+        this.widget.append(this.markdownButton);
+
         // A view option, not an edit: active = long lines wrap. The pane
         // binds it to the notes-wrap setting.
         this.wrapButton = button(Gtk.ToggleButton, {
@@ -56,6 +66,8 @@ export class FormatBar {
             name: _('Wrap lines'),
         });
         this.widget.append(this.wrapButton);
+        this.markdownButton.connect('notify::active', () => this.setMarkdownSource(
+            this.markdownButton.active));
     }
 
     /**
@@ -72,5 +84,12 @@ export class FormatBar {
     setEditable(editable) {
         for (const widget of this._edits)
             widget.sensitive = editable;
+    }
+
+    setMarkdownSource(source) {
+        this.markdownButton.active = source;
+        const name = source ? _('Show rendered Markdown') : _('Show Markdown source');
+        this.markdownButton.tooltip_text = name;
+        this.markdownButton.update_property([Gtk.AccessibleProperty.LABEL], [name]);
     }
 }

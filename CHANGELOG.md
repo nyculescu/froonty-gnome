@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Notes render pipe tables and note-relative images offline; the image button
+  copies a chosen file into the note folder. Common Mermaid flowcharts,
+  state diagrams and sequence diagrams render offline. Task boxes are
+  clickable in both editors, with Tab insertion and undo in the Notes island.
+
 ## 0.10.0-rc0 (2026-10-06)
 
 First release candidate of 0.10.0, for GNOME Shell 50 on Ubuntu 26.04

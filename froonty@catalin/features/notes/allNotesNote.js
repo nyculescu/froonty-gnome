@@ -3,10 +3,10 @@
 // nothing from the Shell side): the open note's header (colour, name,
 // labels, a Labels menu and the fold button), the island's formatting bar
 // and a Markdown editor with undo, drawn rendered as in the island
-// (allNotesStyler.js): the line being edited shows its markers, dimmed.
+// (allNotesStyler.js): inline Markdown stays formatted while editing.
 //
 //   ● Plan                       q4 · work  [Labels ▾] [⤴]
-//   [B][I][S][H][•][1.][☑][</>][🔗][↩]                     formatting bar
+//   [B][I][S][H][•][1.][☑][</>][🔗][MD][↩]               formatting bar
 //   ┌────────────────────────────────────────────────────┐
 //   │ Q4 plan                                            │  matches of the
 //   │ Ship the café menu by **Friday**                   │  search marked
@@ -41,7 +41,9 @@ import {FormatBar} from './allNotesFormatBar.js';
 import {MarkdownStyler} from './allNotesStyler.js';
 import * as Labels from './labels.js';
 import {NoteWriter} from './noteWriter.js';
-import {charOffsets} from './render.js';
+import {chooseImage} from './renderer/image-picker.js';
+import {charOffsets, toggleTask} from './render.js';
+import * as Md from './markdown.js';
 import {fold, sourceRange, terms} from './search.js';
 
 const isError = (e, code) => e?.matches?.(Gio.IOErrorEnum, code) ?? false;
@@ -425,7 +427,7 @@ export class NotePane {
     // The formatting bar, under the header: Wrap lines and the fold button
     // follow the island's settings.
     _buildTools() {
-        this._formatBar = new FormatBar(edit => this._applyEdit(edit));
+        this._formatBar = new FormatBar(edit => this._applyEdit(edit), () => this._chooseImage());
         this._tools = new Gtk.Box({
             margin_start: 8,
             margin_end: 8,
@@ -435,13 +437,18 @@ export class NotePane {
 
         const wrap = this._formatBar.wrapButton;
         this._settings.bind('notes-wrap', wrap, 'active', Gio.SettingsBindFlags.DEFAULT);
-        const applyWrap = () => {
-            this._view.wrap_mode = wrap.active ? Gtk.WrapMode.WORD_CHAR : Gtk.WrapMode.NONE;
-            this._scroll.hscrollbar_policy = wrap.active
-                ? Gtk.PolicyType.NEVER : Gtk.PolicyType.AUTOMATIC;
-        };
+        const applyWrap = () => this._styler.setWrap(wrap.active);
         wrap.connect('notify::active', applyWrap);
         applyWrap();
+
+        const markdownSource = this._formatBar.markdownButton;
+        this._settings.bind('notes-markdown-source', markdownSource, 'active', Gio.SettingsBindFlags.DEFAULT);
+        markdownSource.connect('notify::active', () => {
+            this._formatBar.setMarkdownSource(markdownSource.active);
+            this._styler.setRendered(!markdownSource.active);
+        });
+        this._formatBar.setMarkdownSource(markdownSource.active);
+        this._styler.setRendered(!markdownSource.active);
 
         const up = foldIcon('up');
         const down = foldIcon('down');
@@ -503,6 +510,18 @@ export class NotePane {
             buffer.get_iter_at_offset(result.start));
         this._view.grab_focus();
         this._syncFormatState();
+    }
+
+    async _chooseImage() {
+        if (this.name === null || !this._view.editable)
+            return;
+        try {
+            const name = await chooseImage(this._library.store.folder);
+            if (name && this.name !== null)
+                this._applyEdit(state => Md.insertImage(state, name));
+        } catch (e) {
+            this._onError(e.message);
+        }
     }
 
     // Lights the formatting toggles for the cursor. Skipped while the bar is
@@ -571,6 +590,8 @@ export class NotePane {
 
     _buildEditor() {
         this._buffer = new Gtk.TextBuffer();
+        this._buffer.enable_undo = true;
+        this._buffer.max_undo_levels = 200;
         this._buffer.connect('changed', () => {
             if (!this._syncing && this.name !== null)
                 this._writer?.edited(this._buffer.text);
@@ -584,12 +605,44 @@ export class NotePane {
         this._view = new Gtk.TextView({
             buffer: this._buffer,
             wrap_mode: Gtk.WrapMode.WORD_CHAR,
+            accepts_tab: true,
             left_margin: 12,
             right_margin: 12,
             top_margin: 12,
             bottom_margin: 12,
         });
-        this._styler = new MarkdownStyler(this._view);
+        this._styler = new MarkdownStyler(this._view,
+            () => this._library.store?.folder ?? this._library.folder);
+        const taskClick = new Gtk.GestureClick();
+        taskClick.set_propagation_phase(Gtk.PropagationPhase.CAPTURE);
+        taskClick.connect('released', (gesture, _presses, x, y) => {
+            const [found, iter] = this._view.get_iter_at_location(Math.round(x), Math.round(y));
+            if (!found)
+                return;
+            const replacement = toggleTask(this._buffer.text, iter.get_offset());
+            if (replacement === null || !this._view.editable)
+                return;
+            gesture.set_state(Gtk.EventSequenceState.CLAIMED);
+            const before = [...this._buffer.text];
+            const after = [...replacement];
+            let head = 0;
+            while (head < before.length && before[head] === after[head])
+                head++;
+            let tail = 0;
+            while (tail < before.length - head &&
+                before[before.length - 1 - tail] === after[after.length - 1 - tail])
+                tail++;
+            const cursor = this._buffer.cursor_position;
+            this._buffer.begin_user_action();
+            this._buffer.delete(this._buffer.get_iter_at_offset(head),
+                this._buffer.get_iter_at_offset(before.length - tail));
+            this._buffer.insert(this._buffer.get_iter_at_offset(head),
+                after.slice(head, after.length - tail).join(''), -1);
+            this._buffer.place_cursor(this._buffer.get_iter_at_offset(Math.min(cursor,
+                this._buffer.get_char_count())));
+            this._buffer.end_user_action();
+        });
+        this._view.add_controller(taskClick);
         // Added after the styler's tags, so a search match shows over them.
         this._matchTag = new Gtk.TextTag({
             name: 'froonty-match',
@@ -598,11 +651,6 @@ export class NotePane {
         });
         this._buffer.get_tag_table().add(this._matchTag);
         this._matchMark = this._buffer.create_mark(null, this._buffer.get_start_iter(), true);
-        this._scroll = new Gtk.ScrolledWindow({
-            hexpand: true,
-            vexpand: true,
-            hscrollbar_policy: Gtk.PolicyType.NEVER,
-            child: this._view,
-        });
+        this._scroll = this._styler.widget;
     }
 }

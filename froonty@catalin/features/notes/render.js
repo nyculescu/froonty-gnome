@@ -2,8 +2,8 @@
 // Rendered Markdown for the Notes editor (docs/features/notes.md): which
 // parts of the note's text to show bold, italic, as a heading, and so on,
 // and which Markdown markers to hide. The note stays plain Markdown; only
-// how it is drawn changes. As in Obsidian's live preview, the markers of
-// the line being edited stay visible (dimmed), so they can be edited.
+// how it is drawn changes. Inline Markdown markers stay hidden while
+// editing, so formatted text does not switch back to its source syntax.
 //
 // Pure: offsets are JavaScript string indices (UTF-16 units). The island
 // turns the spans into Pango attributes (byte offsets, styler.js), the All
@@ -32,25 +32,24 @@ const INLINE = [
  * The styled spans of `text`.
  *
  * @param {string} text the note
- * @param {number} activeLine the line (from 0) whose markers stay visible;
- *   -1 to hide every line's markers
+ * @param {number} _activeLine kept for compatibility; inline and heading
+ *   markers are always hidden
  * @returns {{start: number, end: number, style: string}[]} styles:
  *   'h1'…'h6', 'bold', 'italic', 'strike', 'code', 'link', 'quote',
  *   'done' (a checked item), 'fence' (inside a code block), 'marker'
- *   (shown dimmed), 'hidden' (a marker drawn invisible and zero-width)
+ *   (shown dimmed), 'hidden' (a marker drawn transparently at tiny scale)
  */
-export function markdownSpans(text, activeLine = -1) {
+export function markdownSpans(text, _activeLine = -1) {
     const spans = [];
     let offset = 0;
     let inFence = false;
     // Plain lines (no heading, quote, list item or code), for emphasis
-    // that runs across a line break: {offset, line, active, claimed}.
+    // that runs across a line break: {offset, line, claimed}.
     const lines = [];
     text.split('\n').forEach((line, index) => {
-        const active = index === activeLine;
         const marker = (start, end) => {
             if (end > start)
-                spans.push({start: offset + start, end: offset + end, style: active ? 'marker' : 'hidden'});
+                spans.push({start: offset + start, end: offset + end, style: 'hidden'});
         };
         const span = (start, end, style) => {
             if (end > start)
@@ -58,16 +57,15 @@ export function markdownSpans(text, activeLine = -1) {
         };
 
         if (FENCE.test(line)) {
-            // A fence line is a marker of its own; kept visible (dimmed)
-            // so the block's edges stay findable.
-            span(0, line.length, 'marker');
+            // Hide the fence delimiters; the code itself stays visible.
+            span(0, line.length, 'hidden');
             inFence = !inFence;
         } else if (inFence) {
             span(0, line.length, 'fence');
         } else {
             const plain = lineSpans(line, {marker, span});
             if (plain)
-                lines.push({index, offset, line, active, claimed: plain.claimed});
+                lines.push({index, offset, line, claimed: plain.claimed});
         }
         if (lines.at(-1)?.index !== index)
             lines.push(null); // a paragraph ends here
@@ -75,6 +73,41 @@ export function markdownSpans(text, activeLine = -1) {
     });
     crossLineSpans(lines, spans);
     return spans;
+}
+
+/** Toggle a Markdown task box at a text-character offset; null if elsewhere. */
+export function toggleTask(text, offset) {
+    const chars = [...text];
+    let start = Math.min(Math.max(0, offset), chars.length);
+    while (start > 0 && chars[start - 1] !== '\n')
+        start--;
+    let end = start;
+    while (end < chars.length && chars[end] !== '\n')
+        end++;
+    const line = chars.slice(start, end).join('');
+    const match = /^(\s*[-*+]\s+\[)( |x|X)(\])/.exec(line);
+    if (!match)
+        return null;
+    const box = start + [...match[1]].length;
+    if (offset < box - 1 || offset > box + 1)
+        return null;
+    chars[box] = match[2] === ' ' ? 'x' : ' ';
+    return chars.join('');
+}
+
+/** Checkbox source ranges, in UTF-16 offsets like markdownSpans(). */
+export function markdownTasks(text) {
+    const tasks = [];
+    let offset = 0;
+    for (const line of text.split('\n')) {
+        const match = /^(\s*[-*+]\s+)\[([ xX])\]/.exec(line);
+        if (match) {
+            const start = offset + match[1].length;
+            tasks.push({start, end: start + 3, checked: match[2] !== ' '});
+        }
+        offset += line.length + 1;
+    }
+    return tasks;
 }
 
 // Markers a line leaves unpaired, for crossLineSpans(): the same rules as
@@ -132,7 +165,7 @@ function crossLineSpans(lines, spans) {
                     continue;
                 open.used = close.used = true;
                 const mark = (line, at) => spans.push({
-                    start: line.offset + at, end: line.offset + at + n, style: line.active ? 'marker' : 'hidden',
+                    start: line.offset + at, end: line.offset + at + n, style: 'hidden',
                 });
                 mark(open.line, open.at);
                 mark(close.line, close.at);
@@ -164,8 +197,10 @@ function lineSpans(line, {marker, span}) {
     }
     const check = !heading && !quote && CHECK.exec(line);
     if (check) {
-        // The box stays: it reads as a checkbox. Ticked, the item is done.
+        // The editor draws a clickable checkbox over the source characters.
         span(check[1].length, check[0].length, 'marker');
+        // Indentation and the list marker precede the actual `[ ]` token.
+        span(check[1].length + 2, check[1].length + 5, 'taskbox');
         if (check[2] !== ' ')
             span(check[0].length, line.length, 'done');
         rest = check[0].length;
@@ -341,7 +376,7 @@ function dollarRuns(line, offset, index, runs) {
 /**
  * markdownSpans() for a note with formulas: no Markdown inside a formula,
  * and the formulas, each saying whether it is on the edited line (any of
- * its lines). There it shows its LaTeX, its dollars dimmed (marker spans).
+ * its lines). There it shows its LaTeX with hidden dollar delimiters.
  *
  * @param {string} text the note
  * @param {number} activeLine as for markdownSpans()
@@ -363,8 +398,8 @@ export function mathMarkdownSpans(text, activeLine = -1) {
     const spans = markdownSpans(parts.join(''), activeLine);
     for (const {start, end, open, close, active} of formulas) {
         if (active) {
-            spans.push({start, end: start + open, style: 'marker'},
-                {start: end - close, end, style: 'marker'});
+            spans.push({start, end: start + open, style: 'hidden'},
+                {start: end - close, end, style: 'hidden'});
         }
     }
     return {spans, formulas};

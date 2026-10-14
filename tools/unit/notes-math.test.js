@@ -89,15 +89,15 @@ test('no Markdown inside a formula', () => {
     eq(shown('$$\n# not a heading\n$$'), []);
 });
 
-test('the edited line shows the source, its dollars dimmed', () => {
+test('the edited line shows the source, with hidden dollar delimiters', () => {
     const text = 'a $x$\nb $$y$$\n$$\nz\n$$';
     const lines = active => mathMarkdownSpans(text, active).formulas.map(f => f.active);
     eq(lines(-1), [false, false, false], 'no focus: all drawn');
     eq(lines(0), [true, false, false]);
     eq(lines(1), [false, true, false]);
     eq(lines(3), [false, false, true], 'any line of a block');
-    eq(shown(text, 0), ['marker:$', 'marker:$']);
-    eq(shown(text, 4), ['marker:$$', 'marker:$$']);
+    eq(shown(text, 0), ['hidden:$', 'hidden:$']);
+    eq(shown(text, 4), ['hidden:$$', 'hidden:$$']);
 });
 
 test('offsets stay those of the note with other scripts', () => {

@@ -23,9 +23,8 @@
 // the Shell sets before it opens or raises the window; the page sets it
 // when the user navigates, and back to "settings" when the window closes.
 //
-// The open note: the island's (notes-last) when the page first loads, and
-// again whenever the island moves to another note while the page is open,
-// or the page is shown or window raised after it moved.
+// The open note follows a small marker in the notes folder, in either
+// direction. `notes-last` is the fallback for folders without that marker.
 //
 // Create, rename and Trash stay in the island.
 
@@ -73,6 +72,11 @@ const CSS = `
     color: var(--accent-fg-color); }
 .froonty-format-button:checked:hover {
     background-color: color-mix(in srgb, var(--accent-bg-color) 85%, white); }
+checkbutton.froonty-task-check > check {
+    min-width: 14px; min-height: 14px; padding: 0;
+    border: 2px solid #555; border-radius: 4px; background: #fffdf0; }
+checkbutton.froonty-task-check:checked > check {
+    border-color: #b63a10; background: #d54b17; color: white; }
 `;
 let cssAdded = false;
 
@@ -159,10 +163,13 @@ class AllNotesPage {
         this._selected = new Map(); // label key → label (chips that are on)
         this._chipsShown = null;
         this._picked = false;
-        // notes-last when the window last looked, and a note of the island
-        // to open once it is listed.
+        // Shared selected note, and a note to open once it is listed.
         this._islandNote = null;
         this._follow = null;
+        this._pollId = 0;
+        this._selectionSerial = 0;
+        this._selectionPending = false;
+        this._selectionWrite = Promise.resolve();
         this._folded = new Map(); // search.js keeps folded texts here
         addCss();
 
@@ -197,19 +204,21 @@ class AllNotesPage {
 
         const page = this.navigationPage;
         page.connect('showing', () => {
-            this._library.start();
+            const ready = this._library.start();
             // Another folder since it was last shown: the old note goes.
             this._pane.followFolder();
-            this._followIsland();
+            this._startPolling();
+            ready.finally(() => this._followPreferredSelection());
         });
         page.connect('shown', () => {
             if (this._settings.get_string(VIEW_KEY) !== 'all-notes')
                 this._settings.set_string(VIEW_KEY, 'all-notes');
             this._search.grab_focus();
         });
-        page.connect('hiding', () => this._pane.flush());
+        page.connect('hiding', () => this.flush());
         page.connect('hidden', () => {
             this._library.stop();
+            this._stopPolling();
             onHidden();
             if (this._settings.get_string(VIEW_KEY) === 'all-notes')
                 this._settings.set_string(VIEW_KEY, 'settings');
@@ -217,12 +226,14 @@ class AllNotesPage {
     }
 
     flush() {
-        this._pane.flush();
+        return Promise.all([this._pane.flush(), this._selectionWrite]);
     }
 
     close() {
+        this.flush();
         this._pane.stop();
         this._library.stop();
+        this._stopPolling();
         this._settings.disconnect(this._lastId);
     }
 
@@ -232,20 +243,67 @@ class AllNotesPage {
         this._follow = null;
         if (!this._library.running)
             return; // start() sees the new folder when the page is shown
-        this._library.restart();
+        this._library.restart().finally(() => this._followPreferredSelection());
         this._pane.followFolder();
     }
 
     /** The window was raised (e.g. from a note tab's context menu). */
     activated() {
-        this._followIsland();
+        if (this._library.running)
+            this._library.refresh().finally(() => this._followPreferredSelection());
+        else
+            this._followIsland(true);
+    }
+
+    _startPolling() {
+        if (this._pollId)
+            return;
+        this._pollId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 2, () => {
+            if (!this._library.running) {
+                this._pollId = 0;
+                return GLib.SOURCE_REMOVE;
+            }
+            this._library.refresh().finally(() => this._followSharedSelection());
+            return GLib.SOURCE_CONTINUE;
+        });
+    }
+
+    _stopPolling() {
+        if (this._pollId)
+            GLib.source_remove(this._pollId);
+        this._pollId = 0;
+    }
+
+    async _followSharedSelection() {
+        const store = this._library.store;
+        if (!this._library.running || !store || this._selectionPending)
+            return false;
+        const name = await store.readCurrentNote();
+        if (!this._library.running || store !== this._library.store || this._selectionPending || !name ||
+            !this._library.notes.has(name))
+            return false;
+        if (name !== this._islandNote) {
+            this._islandNote = name;
+            this._follow = name;
+        }
+        this._applyFollow();
+        return true;
+    }
+
+    async _followPreferredSelection() {
+        if (this._selectionPending)
+            return;
+        if (!await this._followSharedSelection() && !this._selectionPending)
+            this._followIsland(true);
     }
 
     // The island moved to another note since the window last looked:
     // open that one, as when the page first opened.
-    _followIsland() {
+    _followIsland(force = false) {
+        if (this._selectionPending)
+            return;
         const last = this._settings.get_string(LAST_KEY);
-        if (!this._picked || last === this._islandNote)
+        if (!last || (!force && (!this._picked || last === this._islandNote)))
             return;
         this._islandNote = last;
         this._follow = last;
@@ -264,9 +322,34 @@ class AllNotesPage {
     // Opens a note in the pane and selects its row; if the open note could
     // not be saved, it stays, and so does its row.
     async _open(name) {
+        const serial = ++this._selectionSerial;
+        this._selectionPending = Boolean(name);
         this._selectRow(name);
-        if (await this._pane.show(name) === false)
-            this._selectRow(this._pane.name);
+        try {
+            if (name)
+                await this._publishSelection(name);
+            const shown = await this._pane.show(name);
+            if (shown === false) {
+                this._selectRow(this._pane.name);
+                if (this._pane.name)
+                    await this._publishSelection(this._pane.name);
+            }
+        } finally {
+            if (serial === this._selectionSerial)
+                this._selectionPending = false;
+        }
+    }
+
+    _publishSelection(name) {
+        this._islandNote = name;
+        if (this._settings.get_string(LAST_KEY) !== name)
+            this._settings.set_string(LAST_KEY, name);
+        const store = this._library.store;
+        if (store) {
+            this._selectionWrite = this._selectionWrite.then(() => store.writeCurrentNote(name)).catch(e =>
+                this._toast(_('Could not sync the selected note: %s').format(e.message)));
+        }
+        return this._selectionWrite;
     }
 
     _build() {
@@ -393,6 +476,7 @@ class AllNotesPage {
             if (this._syncingRow || !row?._noteName)
                 return;
             this._follow = null; // the user's choice
+            this._picked = true;
             this._open(row._noteName);
             if (this._split.collapsed)
                 this._split.show_sidebar = false;
@@ -458,10 +542,15 @@ class AllNotesPage {
         if (!this._picked && !library.error) {
             this._picked = true;
             const last = this._settings.get_string(LAST_KEY);
-            this._islandNote = last;
+            // showing() may already have queued the island's current note
+            // while this folder was loading. Keep that selection through the
+            // first list refresh instead of letting an older cached row win.
+            const following = this._follow;
+            this._islandNote = following ?? last;
             this._follow = null;
             const newest = [...library.notes.values()].sort((a, b) => b.modified - a.modified)[0];
-            const pick = library.notes.has(last) ? last : newest?.name ?? null;
+            const pick = following && library.notes.has(following) ? following
+                : library.notes.has(last) ? last : newest?.name ?? null;
             if (pick)
                 this._open(pick);
         }

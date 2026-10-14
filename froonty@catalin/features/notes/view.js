@@ -16,6 +16,7 @@
 
 import Clutter from 'gi://Clutter';
 import Gio from 'gi://Gio';
+import GLib from 'gi://GLib';
 import Pango from 'gi://Pango';
 import St from 'gi://St';
 
@@ -27,6 +28,9 @@ import {COLOR_IDS} from './colors.js';
 import {FormatBar} from './formatBar.js';
 import {LabelMenu} from './labelMenu.js';
 import {MarkdownStyler} from './styler.js';
+import {chooseImage} from './renderer/image-picker.js';
+import * as Md from './markdown.js';
+import {toggleTask} from './render.js';
 import {NoteTabs} from './tabs.js';
 
 // ⤴ / ⤵ as bundled symbolic icons: the Unicode arrows need a fallback font
@@ -39,13 +43,31 @@ const foldIcon = name => new Gio.FileIcon({
 
 export class NotesView {
     constructor(ctx, service) {
+        this._ctx = ctx;
         this._service = service;
         this._settings = ctx.settings;
+        this._undo = [];
+        this._redo = [];
+        this._undoState = null;
+        this._undoNote = null;
+        this._undoTimer = 0;
+        this._undoGroupOpen = false;
+        this._restoringUndo = false;
         this._foldUp = foldIcon('up');
         this._foldDown = foldIcon('down');
 
         this._labelMenu = new LabelMenu(ctx, service, {
-            onAllNotes: () => ctx.openSettingsWindow('all-notes'),
+            onAllNotes: () => {
+                // All notes reads the persisted Markdown in another process.
+                // Commit the island's pending edit before that process opens it.
+                service.flush().finally(() => {
+                    // Make the selected tab explicit at the handoff boundary;
+                    // All notes uses this key to open the matching Markdown file.
+                    if (service.selected)
+                        ctx.settings.set_string('notes-last', service.selected);
+                    ctx.openSettingsWindow('all-notes');
+                });
+            },
             onRename: async name => {
                 await service.select(name);
                 if (this._service && service.selected === name)
@@ -110,7 +132,7 @@ export class NotesView {
         });
         this._toolsButton.connect('clicked', () => this._focusEditor());
         this._tabs.actor.add_child(this._toolsButton);
-        this._formatBar = new FormatBar(edit => this._applyEdit(edit));
+        this._formatBar = new FormatBar(edit => this._applyEdit(edit), () => this._chooseImage());
         this._colorPicker = new ColorPicker({
             onPick: color => service.setColor(color),
             // The swatches take the formatting bar's place while open.
@@ -149,6 +171,11 @@ export class NotesView {
             Gio.SettingsBindFlags.DEFAULT);
         this._wrapId = this._settings.connect('changed::notes-wrap', () => this._applyWrap());
         this._applyWrap();
+        this._settings.bind('notes-markdown-source', this._formatBar.markdownButton, 'checked',
+            Gio.SettingsBindFlags.DEFAULT);
+        this._markdownId = this._settings.connect('changed::notes-markdown-source',
+            () => this._syncMarkdownMode());
+        this._syncMarkdownMode();
         // Fold button ↔ notes-show-tools setting ↔ tools row.
         this._settings.bind('notes-show-tools', this._toolsButton, 'checked',
             Gio.SettingsBindFlags.DEFAULT);
@@ -159,9 +186,12 @@ export class NotesView {
     }
 
     destroy() {
+        this._closeUndoGroup();
         this._settings.disconnect(this._wrapId);
         this._settings.disconnect(this._toolsId);
+        this._settings.disconnect(this._markdownId);
         Gio.Settings.unbind(this._formatBar.wrapButton, 'checked');
+        Gio.Settings.unbind(this._formatBar.markdownButton, 'checked');
         Gio.Settings.unbind(this._toolsButton, 'checked');
         this._service.disconnect(this._changedId);
         this._service = null;
@@ -229,16 +259,43 @@ export class NotesView {
         text.connect('text-changed', () => {
             if (!this._settings.get_boolean('notes-wrap'))
                 this._syncNoWrapWidth();
-            if (!this._syncing)
+            if (!this._syncing && !this._restoringUndo) {
+                this._recordUndo();
                 this._service.setText(text.text);
+            } else if (this._restoringUndo) {
+                this._service.setText(text.text);
+            }
             this._syncFormatState();
         });
         text.connect('cursor-changed', () => this._keepCursorVisible());
         // Immediate, unlike cursor-changed (emitted at the next relayout).
-        text.connect('notify::cursor-position', () => this._syncFormatState());
-        text.connect('notify::selection-bound', () => this._syncFormatState());
+        text.connect('notify::cursor-position', () => {
+            this._syncFormatState();
+            this._refreshUndoSelection();
+        });
+        text.connect('notify::selection-bound', () => this._refreshUndoSelection());
+        text.connect('key-press-event', (_text, event) => this._onEditorKeyPress(event));
+        text.connect('button-press-event', (_text, event) => {
+            if (this._service.readOnly)
+                return Clutter.EVENT_PROPAGATE;
+            const [hasCoords, stageX, stageY] = event.get_coords();
+            if (!hasCoords)
+                return Clutter.EVENT_PROPAGATE;
+            const [inside, x, y] = text.transform_stage_point(stageX, stageY);
+            if (!inside)
+                return Clutter.EVENT_PROPAGATE;
+            const offset = text.coords_to_position(x, y);
+            const replacement = toggleTask(text.text, offset);
+            if (replacement === null)
+                return Clutter.EVENT_PROPAGATE;
+            this._closeUndoGroup();
+            const cursor = text.cursor_position;
+            text.text = replacement;
+            text.set_cursor_position(Math.min(cursor, [...replacement].length));
+            return Clutter.EVENT_STOP;
+        });
         // Bold looks bold, headings large: Markdown drawn rendered.
-        this._styler = new MarkdownStyler(this._entry);
+        this._styler = new MarkdownStyler(this._entry, {folder: () => this._service?.folder ?? null});
 
         // St.Entry is not scrollable itself; a BoxLayout is. A click on the
         // box below the text (or on the entry's padding) focuses the editor
@@ -254,7 +311,11 @@ export class NotesView {
         // The formulas' pictures, drawn over the text (a layer of no size).
         box.add_child(this._styler.math.layer);
         // local:end notes-math
+        box.add_child(this._styler.blocks.layer);
+        box.add_child(this._styler.preview.widget);
         box.connect('button-press-event', () => {
+            if (this._styler.preview.widget.visible)
+                return Clutter.EVENT_PROPAGATE;
             text.grab_key_focus();
             text.set_cursor_position(-1);
             text.set_selection_bound(-1);
@@ -322,13 +383,19 @@ export class NotesView {
         this._error.text = message ?? '';
         this._error.visible = Boolean(message);
         this._entry.clutter_text.editable = !this._service.readOnly;
+        this._styler?.setEditable(!this._service.readOnly);
 
         // Only replace the text when the service loaded something else;
         // never while it matches what the user is typing.
-        if (this._entry.text !== text) {
+        if (this._entry.text !== text || this._undoNote !== selected) {
             this._syncing = true;
             this._entry.text = text;
             this._syncing = false;
+            this._closeUndoGroup();
+            this._undo = [];
+            this._redo = [];
+            this._undoState = this._captureUndoState();
+            this._undoNote = selected;
         }
         this._syncFormatState();
     }
@@ -372,9 +439,125 @@ export class NotesView {
             return;
         const result = edit(this._editorState());
         const text = this._entry.clutter_text;
+        this._closeUndoGroup();
         text.text = result.text;
         text.set_selection(result.start, result.end);
         this._entry.grab_key_focus();
+    }
+
+    async _chooseImage() {
+        if (this._service.selected === null || this._service.readOnly)
+            return;
+        this._ctx.collapse();
+        try {
+            const name = await chooseImage(this._service.folder);
+            if (name && this._service && this._service.selected !== null && !this._service.readOnly)
+                this._applyEdit(state => Md.insertImage(state, name));
+        } catch (e) {
+            console.warn(`Froonty notes: could not insert image: ${e.message}`);
+        } finally {
+            if (this._service)
+                this._ctx.expand();
+        }
+    }
+
+    _captureUndoState() {
+        const text = this._entry.clutter_text;
+        const chars = [...text.text];
+        const offset = position => position < 0 ? chars.length : position;
+        return {text: text.text, cursor: offset(text.cursor_position), bound: offset(text.selection_bound)};
+    }
+
+    _refreshUndoSelection() {
+        if (!this._restoringUndo && this._undoState)
+            this._undoState = this._captureUndoState();
+    }
+
+    _recordUndo() {
+        const current = this._captureUndoState();
+        if (!this._undoState) {
+            this._undoState = current;
+            return;
+        }
+        if (current.text === this._undoState.text)
+            return;
+        if (!this._undoGroupOpen) {
+            this._undo.push(this._undoState);
+            if (this._undo.length > 200)
+                this._undo.shift();
+        }
+        this._undoState = current;
+        this._undoGroupOpen = true;
+        this._redo = [];
+        if (this._undoTimer)
+            GLib.source_remove(this._undoTimer);
+        this._undoTimer = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 750, () => {
+            this._undoTimer = 0;
+            this._undoGroupOpen = false;
+            return GLib.SOURCE_REMOVE;
+        });
+    }
+
+    _closeUndoGroup() {
+        if (this._undoTimer)
+            GLib.source_remove(this._undoTimer);
+        this._undoTimer = 0;
+        this._undoGroupOpen = false;
+    }
+
+    _restoreUndoState(state) {
+        if (!state)
+            return;
+        this._closeUndoGroup();
+        const text = this._entry.clutter_text;
+        this._restoringUndo = true;
+        text.text = state.text;
+        const length = [...state.text].length;
+        text.set_selection(Math.max(0, Math.min(state.bound, length)),
+            Math.max(0, Math.min(state.cursor, length)));
+        this._restoringUndo = false;
+        this._undoState = this._captureUndoState();
+    }
+
+    _undoEdit(redo = false) {
+        this._closeUndoGroup();
+        const source = redo ? this._redo : this._undo;
+        const target = redo ? this._undo : this._redo;
+        if (!source.length)
+            return;
+        target.push(this._captureUndoState());
+        this._restoreUndoState(source.pop());
+    }
+
+    _onEditorKeyPress(event) {
+        if (!this._entry.clutter_text.editable)
+            return Clutter.EVENT_PROPAGATE;
+        const key = event.get_key_symbol();
+        const state = event.get_state();
+        const ctrl = (state & Clutter.ModifierType.CONTROL_MASK) !== 0;
+        const shift = (state & Clutter.ModifierType.SHIFT_MASK) !== 0;
+        if (ctrl && (key === Clutter.KEY_z || key === Clutter.KEY_Z)) {
+            this._undoEdit(shift);
+            return Clutter.EVENT_STOP;
+        }
+        if (ctrl && (key === Clutter.KEY_y)) {
+            this._undoEdit(true);
+            return Clutter.EVENT_STOP;
+        }
+        if (key === Clutter.KEY_Tab || key === Clutter.KEY_ISO_Left_Tab) {
+            const chars = [...this._entry.clutter_text.text];
+            const text = this._entry.clutter_text;
+            const length = chars.length;
+            const cursor = text.cursor_position < 0 ? length : text.cursor_position;
+            const bound = text.selection_bound < 0 ? length : text.selection_bound;
+            const from = Math.min(cursor, bound);
+            const to = Math.max(cursor, bound);
+            chars.splice(from, to - from, '\t');
+            text.text = chars.join('');
+            text.set_selection(from + 1, from + 1);
+            return Clutter.EVENT_STOP;
+        }
+        return Clutter.EVENT_PROPAGATE;
     }
 
     // Lights the formatting toggles for the cursor. Skipped while the row
@@ -389,9 +572,16 @@ export class NotesView {
     _applyWrap() {
         const wrap = this._settings.get_boolean('notes-wrap');
         this._entry.clutter_text.line_wrap = wrap;
+        this._styler?.setWrap(wrap);
         this._scroll.hscrollbar_policy = wrap ? St.PolicyType.NEVER : St.PolicyType.AUTOMATIC;
         this._syncNoWrapWidth();
         this._keepCursorVisible();
+    }
+
+    _syncMarkdownMode() {
+        const source = this._settings.get_boolean('notes-markdown-source');
+        this._formatBar.setMarkdownSource(source);
+        this._styler?.setRendered(!source);
     }
 
     // A scrolled view sizes its content by its minimum width, and

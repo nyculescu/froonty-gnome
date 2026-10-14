@@ -92,6 +92,11 @@
       <summary>Wrap long lines in notes</summary>
       <description>Off: lines stay on one line and the note scrolls horizontally.</description>
     </key>
+    <key name="notes-markdown-source" type="b">
+      <default>false</default>
+      <summary>Show Markdown source in notes</summary>
+      <description>Show Markdown text instead of the rendered preview in both Notes editors.</description>
+    </key>
     <key name="notes-show-tools" type="b">
       <default>true</default>
       <summary>Show the formatting row in notes</summary>

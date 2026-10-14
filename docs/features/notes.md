@@ -67,10 +67,16 @@ Markdown so that I can use the edit buttons"):
   - Links show their label underlined.
   - `> quotes` are italic and muted.
   - Ticked checklist items (`- [x]`) are struck through and muted.
-- **Markers** (`**`, `_`, `~~`, `` ` ``, `# `, `[`, `](url)`) are hidden
-  except on the line holding the cursor. There they show muted, so they
-  can be edited. Without the key focus, all of them are hidden. List
-  bullets, numbers, checkboxes and code fences always show, muted.
+- **Formatting markers** (`**`, `_`, `~~`, `` ` ``, `# `, `[`, `](url)`)
+  stay hidden even on the line holding the cursor, so formatted text does
+  not switch back to Markdown syntax while editing. Quote prefixes, list
+  bullets and numbers remain muted; task markers are replaced by drawn
+  checkboxes in both editors. Fence delimiters are hidden while fenced code
+  stays visible in monospace.
+- **Markdown source toggle.** The `MD` button switches between the rendered
+  preview and literal Markdown, including the source for formulas, tables,
+  images, diagrams and checklists. The choice is shared by both Notes editors
+  and remembered in `notes-markdown-source`.
 - **How:** `render.js` (pure, unit-tested) finds the spans. `styler.js`
   turns them into Pango attributes on the editable `Clutter.Text`, with
   byte offsets. It restyles on each edit, when the cursor changes line,
@@ -84,7 +90,26 @@ Markdown so that I can use the edit buttons"):
 - **Muted colour.** It comes from the editor's CSS
   (`-froonty-markdown-muted`, read from St's theme node), so it follows the
   note's colour: grey on the pastels, lighter on charcoal.
-- **Not yet:** clicking a checkbox to tick it, and images.
+- **Task boxes.** Clicking a `- [ ]` / `- [x]` box toggles the Markdown in
+  both editors. All notes records it as one undoable edit.
+- **Keyboard editing.** Tab inserts a tab character in the Notes editor
+  instead of moving focus. Ctrl+Z undoes and Ctrl+Shift+Z or Ctrl+Y redoes
+  grouped edits; All notes uses the GTK text buffer's undo history.
+- **Pipe tables** render as bordered, aligned tables. The image button opens
+  a file chooser, copies the chosen image into the note folder and inserts
+  its Markdown reference. Images referenced by a local relative path also
+  render; remote URLs are not loaded.
+- Fenced `mermaid` blocks render common `flowchart`/`graph`, `stateDiagram`
+  and `sequenceDiagram` syntax offline. Unlabeled fences are recognized when
+  their first declaration is one of those diagram types. WebKitGTK 4.1 rasterizes diagrams,
+  tables and images in a separate GTK 3 helper; Froonty's local renderer
+  draws diagrams without a downloaded library or network access.
+- As with formulas, the source stays in the note and is shown for editing
+  while the cursor is inside the block. A render error leaves the Markdown
+  source visible.
+- Rich block rendering needs the WebKitGTK 4.1 GObject bindings
+  (`gir1.2-webkit2-4.1`) and GTK 3 bindings. Notes remain usable without
+  them; tables, images and diagrams stay as source text.
 
 ## Formulas (2026-10-05, working-tree builds only)
 
@@ -102,10 +127,10 @@ the Formulas tab); the published Notes tab is unchanged.
   display style; alone on its line or lines, it is centred on a line of
   its own (lines wrapped; unwrapped, it starts at the left), and a block
   over several lines takes the picture's height, not one line each.
-- **On the edited line, the LaTeX shows**, its dollars dimmed like other
-  markers, so it can be edited. A `$$` block over several lines shows
-  whole while the cursor is on any of its lines. Without the key focus
-  every formula is drawn, as every marker is hidden. A click on a picture
+- **On the edited line, the LaTeX shows**, with its dollar delimiters
+  hidden, so it can be edited without showing the surrounding syntax. A
+  `$$` block over several lines shows whole while the cursor is on any of
+  its lines. Without the key focus every formula is drawn. A click on a picture
   puts the cursor there, so it opens for editing.
 - **Until its picture comes**, a formula shows as dimmed source. One
   MathJax refuses shows its source with a squiggly underline; in the
@@ -232,7 +257,8 @@ is deleted, and `check_zip.py` fails on `formulas/notes`, `mathSpans`,
 `mathMarkdownSpans`, `IslandMath`, `WindowMath` or `notes-math` in the
 zip. After stripping, `render.js` and `view.js` are as before; `styler.js`
 gained `spanAttributes()` (what `markdownAttributes()` did, for given
-spans) and `allNotesStyler.js` a `_spans()` method, the same behaviour.
+spans) and `allNotesStyler.js` a `_spans()` method. Inline formatting
+  markers stay hidden on the cursor line in both editors.
 
 ### Tests
 
@@ -244,9 +270,9 @@ spans) and `allNotesStyler.js` a `_spans()` method, the same behaviour.
 - `tools/unit/notes-all-notes.gtk.test.js` (real MathJax; skipped,
   saying so, without it): the window draws two pictures off the edited
   line, the inline one on its room (place, width, line height), the block
-  centred and its line as tall; the edited line shows the LaTeX, dollars
-  dimmed; text, the saved file (typing around formulas) and undo are the
-  plain note; Bold after a formula by the plain offsets; a refused
+  centred and its line as tall; the edited line shows the LaTeX with hidden
+  dollar delimiters; text, the saved file (typing around formulas) and undo
+  are the plain note; Bold after a formula by the plain offsets; a refused
   formula underlined with tooltips on.
 - Headless (`FROONTY_TEST_ONLY=testNotesMath`): pictures off the edited
   line by one helper, the inline one on its reserved box and drawn (ink),
@@ -338,11 +364,10 @@ should disappear".
   - The list re-runs only when the search, the chips, All/Any or the notes
     change; not while typing in the editor, so rows do not move. A note the
     filter hides stays open in the pane.
-  - It opens on the note last used in the island (`notes-last`), else the
-    newest. While open, it follows the island when it switches to a
-    different note, and also follows when the page is shown or the window
-    raised after an island switch. A note picked in the window stays while the
-    island stays on its note.
+  - Both editors share the selected note through a small marker in the notes
+    folder. Selecting a note in either editor selects it in the other. If the
+    marker is absent, All notes falls back to `notes-last`, then the newest
+    note.
   - Another notes folder (Settings → Notes): the page starts over there,
     also when the folder changed while the page was hidden. The open note
     is saved in its own folder first, and closed (it was once still open,
@@ -396,10 +421,9 @@ bar there too."
   editor in the window): `allNotesStyler.js` turns the
   same `render.js` spans into GTK text tags. Headings, bold, italic,
   strikethrough, code, links, quotes and done items are drawn formatted.
-  The line with the cursor shows its markers, dimmed; the others hide
-  theirs, and so does every line while the editor has no focus. A
-  checkbox and a quote's `>` stay, dimmed. The tags recompute on each
-  edit, on a move to another line and on focus changes; they are not
+  Inline formatting markers stay hidden on every line, including the one
+  with the cursor. A checkbox and a quote's `>` stay, dimmed. The tags
+  recompute on each edit, on a move to another line and on focus changes; they are not
   edits, so they never reach the undo history or the autosave.
   - Hidden markers are transparent at a twentieth of the size, not tagged
     `invisible`: GtkTextBuffer:text leaves invisible characters out, and
@@ -603,8 +627,9 @@ Several notes are shown as capsule tabs, and edits save by themselves.
 - **Deleting a note moves it to the Trash** (`Gio.File.trash`), not a hard
   delete.
 - **External changes** (another editor, sync) are picked up through
-  `Gio.FileMonitor` on the folder, which is event-driven with no polling.
-  An open note that is being edited is not reloaded underneath the user.
+  `Gio.FileMonitor` on the folder, with a two-second refresh fallback in
+  sessions where file monitoring is unavailable. An open note that is being
+  edited is not reloaded underneath the user.
 
 ## 3. Structure
 
@@ -615,7 +640,9 @@ features/notes/
 ├── markdown.js   pure: formatting-bar edits on text + selection, and
 │                 which formatting applies there (toggle state)
 ├── render.js     pure: rendered Markdown spans, markers to hide
+├── blocks.js     pure: table, image and diagram source ranges
 ├── styler.js     Pango attributes on the editor from render.js
+├── renderer/     offline block renderer, image chooser and overlays
 ├── labels.js     pure: labels, their file, label filters
 ├── search.js     pure: folding, search, ranking, excerpts, Pango markup
 ├── store.js      Gio async file I/O: list, read, atomic write (etag-

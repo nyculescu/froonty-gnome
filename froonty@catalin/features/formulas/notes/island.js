@@ -116,7 +116,13 @@ export class IslandMath {
      * @param {Cogl.Color} muted
      * @returns {Pango.AttrList}
      */
-    attributes(text, line, muted) {
+    attributes(text, line, muted, enabled = true) {
+        if (!enabled) {
+            this._placed = [];
+            this._centred = false;
+            this._queuePlace();
+            return this._spanAttributes(text, [], muted);
+        }
         const {spans, formulas} = mathMarkdownSpans(text, line);
         const {color, scale, resource} = this._style();
         const width = this._text.get_width();

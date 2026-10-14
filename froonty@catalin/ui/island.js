@@ -307,9 +307,21 @@ export class Island {
             // Releases the grab, e.g. so a browser or Settings opened from
             // a tab can take the focus.
             collapse: () => this.collapse(),
+            // Reopens the island after a feature-owned external chooser.
+            expand: () => this._setExpanded(true),
             // Collapses the island, then opens the settings window on
             // 'settings' or 'all-notes'.
-            openSettingsWindow: view => this._openSettings(view),
+            openSettingsWindow: view => {
+                // The preferences process may not inherit the devkit's
+                // XDG_DATA_HOME. Pin the default notes folder before opening
+                // All notes so both editors use this island's actual store.
+                if (view === 'all-notes' && !this._settings.get_string('notes-folder')) {
+                    const folder = ctx.dataDir.get_child('notes').get_path();
+                    if (folder)
+                        this._settings.set_string('notes-folder', folder);
+                }
+                this._openSettings(view);
+            },
             // A GNOME popup menu below `source` (ui/contextMenu.js); it is
             // destroyed with the island at the latest.
             contextMenu: (source, params) => this._trackMenu(new ContextMenu(source, params)),
