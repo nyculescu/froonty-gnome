@@ -1509,14 +1509,16 @@ async function testFormatShortcuts(view, service) {
     text.grab_key_focus();
     text.set_selection(0, 3);
     const steps = [];
+    // St.Entry's own Ctrl+U (to the line's start) and cut delete too.
+    const shiftKey = keyval => pressKeys(Clutter.KEY_Shift_L, keyval);
     for (const [press, keyval] of [[ctrl, Clutter.KEY_b], [ctrlShift, Clutter.KEY_8], [ctrl, Clutter.KEY_k],
-        [ctrlShift, Clutter.KEY_x]]) {
+        [ctrlShift, Clutter.KEY_x], [ctrl, Clutter.KEY_u], [ctrl, Clutter.KEY_x], [shiftKey, Clutter.KEY_Delete]]) {
         await press(keyval); // eslint-disable-line no-await-in-loop
         steps.push(view._entry.text);
     }
     await sleep(1200);
     const [, bytes] = notesFolder().get_child('latin.md').load_contents(null);
-    check('shortcuts: on a read-only note nothing changes',
+    check('shortcuts: on a read-only note nothing changes, Ctrl+U and cut included',
         service.readOnly && view._entry.text === before && [...bytes].join() === latin1.join(),
         `readOnly=${service.readOnly} ${JSON.stringify(view._entry.text)} bytes=${[...bytes].join()} ${loaded} steps=${JSON.stringify(steps)}`);
     await ctrlShift(Clutter.KEY_m);

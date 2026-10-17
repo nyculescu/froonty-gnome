@@ -684,8 +684,17 @@ export class NotesView {
             this._applyEdit(formatEdit(shortcut));
             return Clutter.EVENT_STOP;
         }
-        if (!this._entry.clutter_text.editable)
-            return Clutter.EVENT_PROPAGATE;
+        const key = event.get_key_symbol();
+        const state = event.get_state();
+        const ctrl = (state & Clutter.ModifierType.CONTROL_MASK) !== 0;
+        const shift = (state & Clutter.ModifierType.SHIFT_MASK) !== 0;
+        if (!this._entry.clutter_text.editable) {
+            // St.Entry's own Ctrl+U and cut (Ctrl+X, Shift+Delete) delete
+            // even read-only text; Ctrl+C still copies.
+            const deletes = (ctrl && [Clutter.KEY_u, Clutter.KEY_U, Clutter.KEY_x, Clutter.KEY_X].includes(key)) ||
+                (shift && key === Clutter.KEY_Delete);
+            return deletes ? Clutter.EVENT_STOP : Clutter.EVENT_PROPAGATE;
+        }
         if (this._onUndoKey(event) === Clutter.EVENT_STOP)
             return Clutter.EVENT_STOP;
         const pasted = this._pasteImage(event);
@@ -693,10 +702,6 @@ export class NotesView {
             pasted.then(reference => reference && this.insertText(reference));
             return Clutter.EVENT_STOP;
         }
-        const key = event.get_key_symbol();
-        const state = event.get_state();
-        const ctrl = (state & Clutter.ModifierType.CONTROL_MASK) !== 0;
-        const shift = (state & Clutter.ModifierType.SHIFT_MASK) !== 0;
         // Shift+Tab and Ctrl+Tab still move the focus.
         if (key === Clutter.KEY_Tab && !ctrl && !shift) {
             this.insertText('\t');
