@@ -32,11 +32,10 @@ import GLib from 'gi://GLib';
 
 import {Emitter} from '../../core/emitter.js';
 import {stopProcess} from '../../core/subprocess.js';
+import {namesIn} from './attentionService.js';
 import {PowerMonitor} from './power.js';
 
-Gio._promisify(Gio.File.prototype, 'enumerate_children_async');
 Gio._promisify(Gio.File.prototype, 'query_info_async');
-Gio._promisify(Gio.FileEnumerator.prototype, 'next_files_async');
 Gio._promisify(Gio.Subprocess.prototype, 'wait_async');
 
 export const SETTING = 'claude-ask-claude-code';
@@ -97,8 +96,9 @@ export async function findClaudeCode() {
     const home = GLib.get_home_dir();
     for (const editor of EDITOR_DIRS) {
         const dir = Gio.File.new_for_path(GLib.build_filenamev([home, editor, 'extensions']));
+        // No such editor here: no names.
         // eslint-disable-next-line no-await-in-loop
-        const name = newestExtension(await childNames(dir));
+        const name = newestExtension(await namesIn(dir).catch(() => []));
         const path = name && GLib.build_filenamev([dir.get_path(), name,
             'resources', 'native-binary', 'claude']);
         // eslint-disable-next-line no-await-in-loop
@@ -115,24 +115,6 @@ export async function findClaudeCode() {
             return path;
     }
     return null;
-}
-
-async function childNames(dir) {
-    const names = [];
-    try {
-        const children = await dir.enumerate_children_async('standard::name',
-            Gio.FileQueryInfoFlags.NONE, GLib.PRIORITY_DEFAULT, null);
-        for (;;) {
-            // eslint-disable-next-line no-await-in-loop
-            const infos = await children.next_files_async(64, GLib.PRIORITY_DEFAULT, null);
-            if (!infos.length)
-                break;
-            names.push(...infos.map(info => info.get_name()));
-        }
-    } catch (e) {
-        // No such editor here.
-    }
-    return names;
 }
 
 async function isExecutable(path) {
@@ -155,7 +137,7 @@ async function isExecutable(path) {
  *
  * @returns {Promise<boolean>} whether it succeeded
  */
-export async function runUsage(binary, cancellable) {
+async function runUsage(binary, cancellable) {
     const launcher = new Gio.SubprocessLauncher({
         flags: Gio.SubprocessFlags.STDOUT_SILENCE | Gio.SubprocessFlags.STDERR_SILENCE,
     });

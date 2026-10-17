@@ -14,7 +14,7 @@ import {physicalDx} from './model.js';
 
 // Clutter gives touchpad scroll deltas in tenths of a pixel of finger
 // travel (Mutter divides libinput's pixels by its discrete step, 10).
-export const PX_PER_DELTA = 10;
+const PX_PER_DELTA = 10;
 const MODIFIERS = Clutter.ModifierType.SHIFT_MASK | Clutter.ModifierType.CONTROL_MASK |
     Clutter.ModifierType.MOD1_MASK | Clutter.ModifierType.SUPER_MASK;
 

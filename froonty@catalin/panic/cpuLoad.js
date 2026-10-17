@@ -25,8 +25,8 @@ function sourceName(source) {
 }
 
 export class CpuLoadButton {
-    constructor(title, {selectTab, metrics}) {
-        this._title = title;
+    // The name comes from the selected source (sourceName), not the title.
+    constructor(_title, {selectTab, metrics}) {
         this._metrics = metrics;
         this.usesMetrics = true;
 
@@ -53,7 +53,6 @@ export class CpuLoadButton {
 
         this.actor = new St.Button({
             style_class: 'froonty-icon-button froonty-panic-button froonty-sysmon-cpu',
-            accessible_name: title,
             can_focus: true,
             track_hover: true,
             child: stack,
@@ -71,8 +70,7 @@ export class CpuLoadButton {
 
     _sync() {
         const source = this._metrics.loadSource;
-        const icon = ICONS[source] ?? ICONS.cpu;
-        this._icon.gicon = icon();
+        this._icon.gicon = ICONS[source]();
         this.actor.accessible_name = sourceName(source);
         const percent = panicLoad(this._metrics.snapshot, source);
         for (let cell = 1; cell <= 5; cell++)

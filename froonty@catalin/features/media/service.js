@@ -37,19 +37,26 @@ import {
     preferred, sortSources, tickDelay, trackIdentity,
 } from './model.js';
 
-export const INCLUDE_OTHERS_KEY = 'media-include-other-players';
-export const PAUSE_OTHERS_KEY = 'media-pause-others';
-export const REMOTE_ART_KEY = 'media-remote-art';
+const INCLUDE_OTHERS_KEY = 'media-include-other-players';
+const PAUSE_OTHERS_KEY = 'media-pause-others';
+const REMOTE_ART_KEY = 'media-remote-art';
 
 const NO_ART = Object.freeze({state: 'none', pixbuf: null, tint: null, owner: null, identity: null});
 
+// How long players that resume() plays again may take to report Playing.
+const RESUME_MS = 1500;
+
 /** Without GNOME Shell (unit tests): no apps. */
-export const NO_APPS = {
+const NO_APPS = {
     lookup: () => null,
     name: () => null,
     categories: () => [],
     activate: () => {},
 };
+
+/** The watcher's players as mergeMirrors entries. */
+const entriesOf = players => [...players.values()].map(player =>
+    ({key: player.name, owner: player.owner, pid: player.pid, track: player.track, player}));
 
 export class MediaService extends Emitter {
     /**
@@ -115,17 +122,14 @@ export class MediaService extends Emitter {
         this._seeking = null;
         this._noticeFor = null;
         this._evalId = 0;
-        // Owners playing at the last evaluation (null before the first),
-        // to tell a player that starts playing.
+        // Owners playing, and all owners, at the last evaluation (null
+        // before the first), to tell a player that starts playing.
         this._playingOwners = null;
+        this._knownOwners = null;
         // The player whose window the user brought up, until another starts.
         this._focusedKey = null;
         // Owners resume() plays again: they do not pause each other.
         this._resuming = new Set();
-    }
-
-    get started() {
-        return this._started;
     }
 
     /** The initial discovery of players settled. */
@@ -161,6 +165,7 @@ export class MediaService extends Emitter {
         this._artGrace = new OneShot(timers, () => this._artGraceExpired());
         this._notice = new OneShot(timers, () => this._noticeFired());
         this._stuck = new OneShot(timers, () => this._checkStuck());
+        this._resumed = new OneShot(timers, () => this._resuming.clear());
         this._tick = new OneShot(timers, () => {
             this.emit('tick');
             this._syncTick();
@@ -196,7 +201,8 @@ export class MediaService extends Emitter {
             this._focus.disconnect(this._focusId);
         this._focusId = 0;
         this._watcher.stop();
-        for (const timer of [this._gap, this._grace, this._artGrace, this._notice, this._stuck, this._tick])
+        for (const timer of [this._gap, this._grace, this._artGrace, this._notice, this._stuck, this._resumed,
+            this._tick])
             timer.stop();
         if (this._evalId)
             this._timers.remove(this._evalId);
@@ -308,10 +314,17 @@ export class MediaService extends Emitter {
     // A playing player's sample is extrapolated: when its state or rate
     // changes, the position so far becomes the new base.
     _rebaseSamples(players, now) {
+        // Owners that left (unique names are never reused) are forgotten.
         const owners = new Set([...players.values()].map(p => p.owner));
-        for (const [owner, sample] of this._samples) {
-            if (!owners.has(owner))
-                this._samples.delete(owner);
+        for (const map of [this._samples, this._unreliable, this._seeks]) {
+            for (const owner of map.keys()) {
+                if (!owners.has(owner))
+                    map.delete(owner);
+            }
+        }
+        for (const id of this._appCache.keys()) {
+            if (!owners.has(id.split('\n')[1]))
+                this._appCache.delete(id);
         }
         for (const player of players.values()) {
             const sample = this._samples.get(player.owner);
@@ -361,9 +374,7 @@ export class MediaService extends Emitter {
             }
         }
 
-        const entries = [...players.values()].map(player =>
-            ({key: player.name, owner: player.owner, pid: player.pid, track: player.track, player}));
-        const merged = mergeMirrors(entries).filter(e => e.track || e.key === chosen?.key);
+        const merged = mergeMirrors(entriesOf(players)).filter(e => e.track || e.key === chosen?.key);
         const described = sortSources(merged).slice(0, MAX_SOURCES).map(e => this._describe(e));
         const labels = displayNames(described);
         const sources = described.map(s => ({...s, displayName: labels.get(s.key)}));
@@ -410,10 +421,8 @@ export class MediaService extends Emitter {
         this._show({
             key,
             owner: player.owner,
-            pid: player.pid,
             name: source.displayName ?? source.name,
             app: source.app,
-            isMusic: source.isMusic,
             track,
             identity: trackIdentity(track),
             held,
@@ -434,12 +443,19 @@ export class MediaService extends Emitter {
     _onStartedPlaying(players) {
         const playing = [...players.values()].filter(p => p.props.playing);
         const before = this._playingOwners;
+        const known = this._knownOwners;
         this._playingOwners = new Set(playing.map(p => p.owner));
+        this._knownOwners = new Set([...players.values()].map(p => p.owner));
         if (!before)
             return;
-        const started = playing.filter(p => !before.has(p.owner) && !this._resuming.has(p.owner));
+        // A player of the initial discovery that came after the first
+        // evaluation (slow to read) was playing at the start.
+        const started = playing.filter(p => !before.has(p.owner) && !this._resuming.has(p.owner) &&
+            !(p.initial && !known.has(p.owner)));
+        // A resumed owner counts once it has been seen playing (or after
+        // RESUME_MS): the others may report Playing later.
         for (const owner of [...this._resuming]) {
-            if (!this._playingOwners.has(owner) || before.has(owner))
+            if (before.has(owner))
                 this._resuming.delete(owner);
         }
         if (started.length === 0)
@@ -548,10 +564,6 @@ export class MediaService extends Emitter {
             this._readToken++;
         }
         this._syncTick();
-    }
-
-    get watching() {
-        return this._watching > 0;
     }
 
     /** Whether the display tick runs (tests, the design budget). */
@@ -865,8 +877,7 @@ export class MediaService extends Emitter {
     async pauseAll() {
         if (!this._started)
             return [];
-        const players = mergeMirrors([...this._watcher.players.values()].map(player =>
-            ({key: player.name, owner: player.owner, pid: player.pid, track: player.track, player})))
+        const players = mergeMirrors(entriesOf(this._watcher.players))
             .map(e => e.player)
             .filter(p => p.props.playing && p.props.canPause);
         const results = await Promise.allSettled(players.map(p => p.call('Pause')));
@@ -886,6 +897,8 @@ export class MediaService extends Emitter {
             this._resuming.add(owner);
             return player.call('Play');
         }));
+        if (this._started)
+            this._resumed.restart(RESUME_MS);
     }
 
     /** Whether a {key, owner} that pauseAll paused is still paused. */
@@ -985,8 +998,10 @@ export class MediaService extends Emitter {
 
     _onRemoteArtChanged() {
         if (!this._settings.get_boolean(REMOTE_ART_KEY)) {
-            // Off: requests in flight stop, and web covers go.
-            this._fetcher.abort();
+            // Off: the cover request in flight stops (not the session:
+            // lyrics share it), and web covers go.
+            this._artCancellable?.cancel();
+            this._artCancellable = null;
             this._artLoader.clearRemote();
         }
         this._artRequest = null;

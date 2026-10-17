@@ -3,7 +3,7 @@
 // (features/registry.js) and contains no feature logic of its own:
 //
 //   ┌────────────────────────────────────────────────────────────┐
-//   │ [p1][p2][p3][p4] (Sat Oct 3 14:05) [p5]…[p8]           [a] │  header
+//   │ [p1][p2][p3][p4] (Sat Oct 3 14:05) [p5]…[p8]               │  header
 //   ├─────┬──────────────────────────────────────────────────────┤
 //   │ tab │               active feature's view                  │  content
 //   │ tab │                                                      │
@@ -14,25 +14,23 @@
 //       and the time that opens GNOME's own calendar and notification menu
 //       (with GNOME's unread dot), exactly over GNOME's clock under the
 //       island; the panic bar (max 8) on its two sides, half each (the
-//       right one more when odd), both sides equally wide; [a] the active
-//       feature's own buttons (view.headerActions), at the right end
+//       right one more when odd), both sides equally wide
 //     side column, below the header: the tab column (one icon per feature;
 //       its name shows in a tooltip on hover), and ⚙️ at its bottom:
 //       Froonty's settings window, the same size as a tab but never the
 //       active one
 //
-// Every tab can be turned off. With none on, the side column (⚙️ and any
-// settings shortcuts) and the header stay, and the content says so, with a
-// button that opens Settings. The tab column itself shows only while more
-// than one tab or a settings shortcut is present.
+// Every tab can be turned off. With none on, the side column (⚙️) and the
+// header stay, and the content says so, with a button that opens Settings.
+// The tab column itself shows only while more than one tab is on.
 //
 // The date pill never leaves GNOME's clock: the island is made wider
 // (minWidth) until both halves around it fit PANIC_GAP clear of the hub's
-// edges and the feature's buttons, and taller (minHeight) when the header
-// and the side column below it need it.
+// edges, and taller (minHeight) when the header and the side column below
+// it need it.
 //
 // Keyboard (Tab): the header row from left to right (panic 1–4, the date
-// pill, panic 5–8, the feature's buttons), the tabs, ⚙️, then the view.
+// pill, panic 5–8), the tabs, ⚙️, then the view.
 //
 // A feature's view (and its service, if any) is created the first time its
 // tab is selected, and destroyed when the feature is disabled or the hub is
@@ -64,13 +62,13 @@ export class Hub extends EventEmitter {
      * @param {object[]} features descriptors, in tab order
      * @param {object} actions
      * @param {Function} actions.openSettings
-     * @param {Function} [actions.clockOffset] → how far right of the
+     * @param {Function} actions.clockOffset → how far right of the
      *   island's middle GNOME's top bar clock is centred (stage px): the
      *   header's date pill sits exactly on it
      * @param {?Function} actions.openCalendar opens GNOME's calendar and
      *   notification menu; null when this Shell has none (no date pill)
      */
-    constructor(ctx, features, {openSettings, openCalendar, clockOffset = () => 0}) {
+    constructor(ctx, features, {openSettings, openCalendar, clockOffset}) {
         super();
         this._clockOffset = clockOffset;
         this._ctx = ctx;
@@ -143,8 +141,8 @@ export class Hub extends EventEmitter {
 
     /**
      * The width the island's content needs (physical pixels) so that the
-     * date pill and the panic buttons beside it fit between the hub's left
-     * edge and the feature's header buttons with PANIC_GAP on each side;
+     * date pill and the panic buttons beside it fit between the hub's edges
+     * with PANIC_GAP on each side;
      * 0 off stage or with neither a date pill nor panic buttons.
      */
     get minWidth() {
@@ -158,15 +156,14 @@ export class Hub extends EventEmitter {
     _measureMinWidth() {
         if (!this.actor.get_stage() || !this._header.centred.some(actor => actor.visible))
             return 0;
-        const natural = actor => (actor.visible ? actor.get_preferred_width(-1)[1] : 0);
         const gap = PANIC_GAP * St.ThemeContext.get_for_stage(global.stage).scale_factor;
         const [before, after] = this._header.halves();
         // The date pill never moves off the clock: the island, centred on
         // the monitor, is made wide enough for both halves around that
-        // point, and the feature's actions after it. The header spans the
-        // hub: the side column is below it, not beside it.
+        // point. The header spans the hub: the side column is below it, not
+        // beside it.
         const lead = gap + before;
-        const trail = after + gap + natural(this._header.actions);
+        const trail = after + gap;
         const rtl = this.actor.get_text_direction() === Clutter.TextDirection.RTL;
         const offset = rtl ? -this._clockOffset() : this._clockOffset();
         return Math.ceil(2 * Math.max(lead - offset, trail + offset));
@@ -219,8 +216,6 @@ export class Hub extends EventEmitter {
         entry.button.checked = true;
         this._ensureView(entry);
         entry.view.actor.show();
-        // Its header buttons, before the size: they may widen the island.
-        this._header.showActions(id);
         this.emit('size-changed');
         this._setEntryActive(entry, this._shown);
         // Only on change: select() also runs on every enable (screen unlock).
@@ -269,16 +264,15 @@ export class Hub extends EventEmitter {
             x_expand: true,
             y_expand: true,
         });
-        // The side column: tabs and settings shortcuts at the top, ⚙️ at the
-        // bottom. It shows with any number of tabs on; the tab column itself
-        // only with more than one tab or a settings shortcut.
+        // The side column: tabs at the top, ⚙️ at the bottom. It shows with
+        // any number of tabs on; the tab column itself only with more than
+        // one tab.
         this._side = new St.BoxLayout({
             style_class: 'froonty-hub-side',
             orientation: Clutter.Orientation.VERTICAL,
         });
         this._tabGrid = new Clutter.GridLayout({orientation: Clutter.Orientation.VERTICAL});
         this._tabColumn = new St.Widget({
-            style_class: 'froonty-tab-column',
             layout_manager: this._tabGrid,
         });
         this._side.add_child(this._tabColumn);
@@ -298,9 +292,8 @@ export class Hub extends EventEmitter {
         });
 
         // The header row: the date pill centred on the island with the
-        // panic buttons on its two sides, and the active feature's buttons
-        // at the right end (hubHeader.js places them). Only the buttons
-        // take input.
+        // panic buttons on its two sides (hubHeader.js places them). Only
+        // the buttons take input.
         this._panicBar = new PanicBar(this._settings, this._tooltip, {
             settings: this._settings,
             ctx: this._ctx,
@@ -318,7 +311,6 @@ export class Hub extends EventEmitter {
         this.calendarButton = this._header.calendarButton;
 
         this._content = new St.Widget({
-            style_class: 'froonty-hub-content',
             layout_manager: new Clutter.BinLayout(),
             x_expand: true,
             y_expand: true,
@@ -329,12 +321,11 @@ export class Hub extends EventEmitter {
         main.add_child(this._header.actor);
         main.add_child(body);
 
-        // The panic buttons, the date pill's text and the feature's buttons
-        // change width with the settings, the clock and the active tab;
-        // once laid out, the island follows if the room they need changed
-        // (as for minHeight).
+        // The panic buttons and the date pill's text change width with the
+        // settings and the clock; once laid out, the island follows if the
+        // room they need changed (as for minHeight).
         this._reportedMinWidth = 0;
-        for (const actor of [...this._header.centred, this._header.actions]) {
+        for (const actor of this._header.centred) {
             actor.connect('notify::allocation', () => {
                 const reported = this._reportedMinWidth;
                 if (actor.mapped && this.minWidth !== reported)
@@ -353,7 +344,7 @@ export class Hub extends EventEmitter {
     // not a page of the hub), its name in a tooltip on its right as theirs.
     _buildSettingsButton(openSettings) {
         const button = new St.Button({
-            style_class: 'froonty-icon-button froonty-tab froonty-hub-settings',
+            style_class: 'froonty-icon-button froonty-tab',
             accessible_name: _('Settings'),
             can_focus: true,
             track_hover: true,
@@ -368,8 +359,7 @@ export class Hub extends EventEmitter {
     // rebuilds the tab column in registry order.
     _syncTabs() {
         const enabled = this._features.filter(f =>
-            f.settingsPage || !f.enabledKey || this._settings.get_boolean(f.enabledKey));
-        const tabs = enabled.filter(f => !f.settingsPage);
+            !f.enabledKey || this._settings.get_boolean(f.enabledKey));
 
         for (const id of [...this._entries.keys()]) {
             if (!enabled.some(f => f.id === id))
@@ -384,21 +374,19 @@ export class Hub extends EventEmitter {
         });
         // A single tab is not a choice; keep the column out of the way
         // (the side column stays, for ⚙️).
-        this._tabColumn.visible = enabled.length > 1 || enabled.some(f => f.settingsPage);
+        this._tabColumn.visible = enabled.length > 1;
         // No tab on: the header stays, and the content says so.
-        this._empty.visible = tabs.length === 0;
+        this._empty.visible = enabled.length === 0;
         // More or fewer tabs may need another island height (minHeight).
         this.emit('size-changed');
 
-        if (!tabs.some(f => f.id === this._activeId)) {
+        if (!this._entries.has(this._activeId)) {
             this._activeId = null;
             // The tab shown last; if it is gone or off (the Clock tab, which
             // is no more), the first one that is on.
             const last = this._settings.get_string(LAST_TAB_KEY);
-            if (tabs.length)
-                this.select(tabs.some(f => f.id === last) ? last : tabs[0].id);
-            else
-                this._header.showActions(null);
+            if (enabled.length)
+                this.select(this._entries.has(last) ? last : enabled[0].id);
         }
     }
 
@@ -445,12 +433,7 @@ export class Hub extends EventEmitter {
             track_hover: true,
             child: new St.Icon(iconParams),
         });
-        button.connect('clicked', () => {
-            if (feature.settingsPage)
-                this._ctx.openSettings(feature.id);
-            else
-                this.select(feature.id);
-        });
+        button.connect('clicked', () => this.select(feature.id));
         this._tooltip.attach(button, () => feature.title, 'right');
 
         const entry = {feature, button, view: null, service: null};
@@ -466,9 +449,6 @@ export class Hub extends EventEmitter {
         entry.service?.start();
         entry.view = entry.feature.createView(this._ctx, entry.service);
         this._content.add_child(entry.view.actor);
-        // Header buttons of its own (view contract: owned and destroyed by
-        // the view; shown only while its tab is active).
-        this._header.addActions(entry.feature.id, entry.view.headerActions ?? []);
         // A view whose size changes by itself (an Emitter) says so.
         if (entry.view instanceof Emitter)
             entry.viewSizeId = entry.view.connect('size-changed', () => this.emit('size-changed'));
@@ -478,9 +458,7 @@ export class Hub extends EventEmitter {
         const entry = this._entries.get(id);
         if (entry.viewSizeId)
             entry.view.disconnect(entry.viewSizeId);
-        // The view destroys its own header buttons; then their box goes.
         entry.view?.destroy();
-        this._header.removeActions(id);
         entry.service?.stop();
         entry.button.destroy();
         this._entries.delete(id);

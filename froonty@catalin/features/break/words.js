@@ -35,7 +35,6 @@ export function words({_, ngettext}) {
     return {
         typeName,
         duration,
-        levelName,
 
         /** The status line under the level meter. */
         status(lv, longRest) {
@@ -151,8 +150,8 @@ export function words({_, ngettext}) {
                     const hours = Math.floor(cue.seconds / 3600);
                     return {
                         text: timed ? _('%dh').format(hours) : '!',
-                        accessibleText: _('Urgent: long rest suggested, %s at the screen without a 15-minute pause')
-                            .format(ngettext('%d hour', '%d hours', hours).format(hours)),
+                        accessibleText: _('Urgent: long rest suggested, %s at the screen without a %s pause')
+                            .format(ngettext('%d hour', '%d hours', hours).format(hours), duration(cue.length)),
                     };
                 }
                 return {

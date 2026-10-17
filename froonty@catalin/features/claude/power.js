@@ -14,7 +14,7 @@ import {Emitter} from '../../core/emitter.js';
 Gio._promisify(Gio.DBusProxy, 'new_for_bus');
 
 // Below this, on battery, counts as low power (user request: "under 20%").
-export const LOW_BATTERY_PERCENT = 20;
+const LOW_BATTERY_PERCENT = 20;
 
 // UPower: Type 2 is a battery; states 2 (discharging), 3 (empty) and 6
 // (pending discharge) mean it runs the laptop. Charging or plugged in, a

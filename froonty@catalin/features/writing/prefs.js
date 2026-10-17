@@ -17,44 +17,39 @@ import Pango from 'gi://Pango';
 
 import {gettext as _} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
+import {sizeGroup, switchRow} from '../../prefs/rows.js';
 import {authCheck, CLAUDE_MODELS, locate, version as claudeVersion,
     workingFolder} from './engines/claudeCode.js';
+import {ENGINES, enabledKey} from './engines/index.js';
 import {VARIANTS} from './engines/languageTool.js';
 import {LANGUAGES} from './actions.js';
 import {HINTS} from './hints.js';
-import {baseUrl, probe, systemOllama, TRANSLATE_MODEL_KEY} from './engines/ollama.js';
-import {newSession} from './http.js';
-import {defaultPaths, override} from './paths.js';
+import {baseUrl, probe, systemctlPath, systemOllama, TRANSLATE_MODEL_KEY} from './engines/ollama.js';
+import {isOnline, newSession} from './http.js';
+import {defaultPaths} from './paths.js';
 import {runProcess} from './process.js';
 import {exists} from './setup/fs.js';
 import {install, prepare, startService, stopService} from './setup/ollamaInstall.js';
 import {MODEL_CHOICES, SIZES_DATE, modelRows, pullModel} from './setup/ollamaModels.js';
 import {everythingRemovalPlan, execute, gatherFacts, NOT_REMOVED,
     ollamaRemovalPlan} from './setup/remove.js';
-import {isModelName, readState} from './setup/state.js';
+import {isModelName, readState, unfinished} from './setup/state.js';
 
 Gio._promisify(Adw.AlertDialog.prototype, 'choose', 'choose_finish');
 
-const ENGINE_KEYS = ['writing-claude-code-enabled', 'writing-languagetool-enabled',
-    'writing-ollama-enabled'];
-const SIZE_KEYS = ['writing-width', 'writing-height'];
+const ENGINE_KEYS = ENGINES.map(e => enabledKey(e.id));
 const PLAN_NAMES = {pro: 'Pro', max: 'Max', team: 'Team', enterprise: 'Enterprise'};
 
 // ------------------------------------------------------------------ helpers
 
-function label(text, {mono = false, dim = false} = {}) {
-    const css = [];
-    if (mono)
-        css.push('monospace');
-    if (dim)
-        css.push('dim-label');
+function label(text, {mono = false} = {}) {
     return new Gtk.Label({
         label: text,
         wrap: true,
         wrap_mode: Pango.WrapMode.WORD_CHAR,
         xalign: 0,
         selectable: true,
-        css_classes: css,
+        css_classes: mono ? ['monospace'] : [],
     });
 }
 
@@ -87,14 +82,14 @@ function button(text, css = []) {
 }
 
 /** A confirmation; resolves to the response id. */
-async function ask(window, {heading, body, details = null, responses, defaultResponse = 'cancel'}) {
+async function ask(window, {heading, body, details = null, responses}) {
     const dialog = new Adw.AlertDialog({heading, body});
     for (const [id, text, appearance] of responses) {
         dialog.add_response(id, text);
         if (appearance)
             dialog.set_response_appearance(id, appearance);
     }
-    dialog.default_response = defaultResponse;
+    dialog.default_response = 'cancel';
     dialog.close_response = 'cancel';
     if (details) {
         const scroll = new Gtk.ScrolledWindow({
@@ -169,9 +164,7 @@ function tabGroup(settings) {
         title: _('Writing tab'),
         description: _('Fix grammar, shorten, make formal, humanize or translate text. Text leaves this computer only when you click one of these actions, and only to the engine named above the text box. Nothing is saved.'),
     });
-    const enabled = new Adw.SwitchRow({title: _('Show the Writing tab')});
-    settings.bind('writing-enabled', enabled, 'active', Gio.SettingsBindFlags.DEFAULT);
-    group.add(enabled);
+    group.add(switchRow(settings, 'writing-enabled', _('Show the Writing tab')));
 
     // The models are told the writer thinks in it (actions.js stepsFor).
     const first = new Adw.ComboRow({
@@ -214,9 +207,7 @@ function claudeGroup(ctx) {
         title: _('Claude Code'),
         description: _('Uses your Claude plan through your own Claude Code. Every run has all of Claude Code’s tools, MCP servers, skills, hooks and settings files turned off, so text that contains instructions cannot make it do anything.'),
     });
-    const enabled = new Adw.SwitchRow({title: _('Offer Claude Code in the Writing tab')});
-    settings.bind('writing-claude-code-enabled', enabled, 'active', Gio.SettingsBindFlags.DEFAULT);
-    group.add(enabled);
+    group.add(switchRow(settings, 'writing-claude-code-enabled', _('Offer Claude Code in the Writing tab')));
 
     const status = new Adw.ActionRow({title: _('Status'), subtitle_selectable: true});
     const check = button(_('Check again'), ['flat']);
@@ -306,9 +297,8 @@ function languageToolGroup(ctx) {
         title: _('LanguageTool'),
         description: _('Grammar and spelling, online. Nothing to install and no account.'),
     });
-    const enabled = new Adw.SwitchRow({title: _('Offer LanguageTool in the Writing tab'),
-        tooltip_text: _(HINTS.languagetool)});
-    settings.bind('writing-languagetool-enabled', enabled, 'active', Gio.SettingsBindFlags.DEFAULT);
+    const enabled = switchRow(settings, 'writing-languagetool-enabled', _('Offer LanguageTool in the Writing tab'));
+    enabled.tooltip_text = _(HINTS.languagetool);
     group.add(enabled);
     const status = new Adw.ActionRow({title: _('Status')});
     group.add(status);
@@ -351,8 +341,7 @@ function languageToolGroup(ctx) {
     group.add(noteRow(_('Remove'), _('Nothing to remove: Froonty installs and keeps nothing for LanguageTool.')));
 
     const refresh = () => {
-        const online = Gio.NetworkMonitor.get_default().connectivity === Gio.NetworkConnectivity.FULL;
-        status.subtitle = online ? _('Ready (online service, no account)')
+        status.subtitle = isOnline() ? _('Ready (online service, no account)')
             : _('Offline: LanguageTool cannot be reached');
     };
     return {group, refresh};
@@ -364,9 +353,7 @@ function ollamaGroup(ctx) {
         title: _('Ollama'),
         description: _('A model running on this computer: the text never leaves it. Ollama listens only on this computer (127.0.0.1).'),
     });
-    const enabled = new Adw.SwitchRow({title: _('Offer Ollama in the Writing tab')});
-    settings.bind('writing-ollama-enabled', enabled, 'active', Gio.SettingsBindFlags.DEFAULT);
-    group.add(enabled);
+    group.add(switchRow(settings, 'writing-ollama-enabled', _('Offer Ollama in the Writing tab')));
 
     const status = new Adw.ActionRow({title: _('Status'), subtitle_selectable: true});
     group.add(status);
@@ -501,7 +488,8 @@ function ollamaGroup(ctx) {
     const refresh = async () => {
         status.subtitle = _('Checking…');
         const state = await readState(paths);
-        const running = url ? await probe({url, cache: new Map([['ollama-probe', session]])}) : {running: false, models: []};
+        const running = url ? await probe({url, cache: new Map([['ollama-probe', session]])})
+            : {running: false, version: null, models: []};
         const system = await systemOllama().catch(() => ({binary: null, unit: null}));
         const own = Boolean(state.ollama?.installedByFroonty);
         facts = {
@@ -509,14 +497,13 @@ function ollamaGroup(ctx) {
             step: state.ollama?.step ?? null,
             release: state.ollama?.release ?? null,
             running: running.running,
-            version: running.version ?? null,
-            models: running.models ?? [],
+            version: running.version,
+            models: running.models,
             systemBin: system.binary,
             systemUnit: system.unit,
             zstd: await exists('/usr/bin/zstd'),
             recordedModels: state.ollama?.models.length ?? 0,
-            unfinished: Boolean(state.ollama && ((own && state.ollama.step !== 'done') ||
-                state.ollama.models.some(m => m.step !== 'done'))),
+            unfinished: unfinished(state),
             leftovers: await exists(paths.stagingDir) || await exists(paths.cacheDir) ||
                 await exists(paths.ollamaPrefix),
         };
@@ -759,46 +746,15 @@ function removeEverythingGroup(ctx, refreshAll) {
     return group;
 }
 
-// Island size while the Writing tab is shown; applies live. As Clipboard's.
-function sizeGroup(settings) {
-    const reset = new Gtk.Button({
-        label: _('Default size'),
-        valign: Gtk.Align.CENTER,
-        css_classes: ['flat'],
-    });
-    const group = new Adw.PreferencesGroup({
-        title: _('Size'),
-        description: _('Of the island while the Writing tab is shown, in logical pixels. Or drag the open island’s bottom-right corner.'),
-        header_suffix: reset,
-    });
-    for (const [key, title] of [['writing-width', _('Width')], ['writing-height', _('Height')]]) {
-        const [, [lower, upper]] = settings.settings_schema.get_key(key)
-            .get_range().recursiveUnpack();
-        const row = Adw.SpinRow.new_with_range(lower, upper, 1);
-        row.title = title;
-        settings.bind(key, row, 'value', Gio.SettingsBindFlags.DEFAULT);
-        group.add(row);
-    }
-    const sync = () => {
-        reset.tooltip_text = SIZE_KEYS.map(key => settings.get_default_value(key).unpack()).join(' × ');
-        reset.sensitive = SIZE_KEYS.some(key => settings.get_user_value(key) !== null);
-    };
-    sync();
-    for (const key of SIZE_KEYS)
-        settings.connect(`changed::${key}`, sync);
-    reset.connect('clicked', () => SIZE_KEYS.forEach(key => settings.reset(key)));
-    return group;
-}
-
 export function writingPage(settings, window) {
     const page = new Adw.PreferencesPage({
         name: 'writing',
         title: _('Writing'),
         icon_name: 'tools-check-spelling-symbolic',
     });
-    let systemctl = '/usr/bin/systemctl';
+    let systemctl;
     try {
-        systemctl = override('FROONTY_SYSTEMCTL') ?? systemctl;
+        systemctl = systemctlPath();
     } catch (e) {
         systemctl = '/bin/false';
     }
@@ -818,7 +774,9 @@ export function writingPage(settings, window) {
         ollama.refresh().catch(e => console.warn(`Froonty: Writing settings: ${e.message}`));
     };
     page.add(removeEverythingGroup(ctx, refreshAll));
-    page.add(sizeGroup(settings));
+    // Island size while the Writing tab is shown; applies live.
+    page.add(sizeGroup(settings, ['writing-width', 'writing-height'],
+        _('Of the island while the Writing tab is shown, in logical pixels. Or drag the open island’s bottom-right corner.')));
     // Statuses are read when the page comes on screen, not before.
     page.connect('map', refreshAll);
     return page;

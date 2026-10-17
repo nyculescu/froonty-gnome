@@ -7,7 +7,9 @@
 // and whether it is protected (rules.js). Only the user's own processes are read:
 // /proc/<pid> belongs to the process's user, so one listing of /proc
 // tells which they are. A command line is read once per process, and
-// what it tells (the name, the command, a protected name) is kept with it.
+// again when its comm changes (a rename, or an exec, which keeps its id
+// and start time); what it tells (the name, the command, a protected
+// name) is kept with it.
 // verify() reads one process again just before a signal, so a process
 // id the kernel has since given to another process is never signalled.
 //
@@ -27,9 +29,6 @@ import {
 import {ancestorsOf, isProtectedName, isValidPid, protectedReason} from './rules.js';
 
 const keyOf = (pid, start) => `${pid}:${start}`;
-// GNOME Shell's ancestors are a handful (systemd --user, then init); a
-// chain this long is not a real one.
-const MAX_DEPTH = 64;
 /** Files read at once, between two pauses (see the file comment). */
 export const BATCH = 32;
 
@@ -48,9 +47,8 @@ export class ProcessSampler {
     /** Forgets the previous sample and the command lines (a new visit). */
     reset() {
         this._previous = {machine: null, ticks: new Map()};
-        // By process key: {args, comm, name, command, named}; name, command
-        // and named (a protected name) are worked out again only when the
-        // process renames itself (comm).
+        // By process key: {args, comm, name, command, named}; read again
+        // when the process's comm changes.
         this._commands = new Map();
     }
 
@@ -82,9 +80,9 @@ export class ProcessSampler {
         for (const stat of live)
             stat.key = keyOf(stat.pid, stat.start);
 
-        // Command lines: once per process, for the name, the filter and
-        // the tooltip.
-        const missing = live.filter(stat => !this._commands.has(stat.key));
+        // Command lines: once per process and comm, for the name, the
+        // filter and the tooltip.
+        const missing = live.filter(stat => this._commands.get(stat.key)?.comm !== stat.comm);
         const cmdlines = await this._readAll(missing.map(stat => `/proc/${stat.pid}/cmdline`),
             parseCmdline, cancellable);
         if (cmdlines === null || cancellable?.is_cancelled())
@@ -125,8 +123,8 @@ export class ProcessSampler {
         return processes;
     }
 
-    // What a process's command line tells, kept with it: worked out once,
-    // and again only when the process renamed itself.
+    // What a process's command line tells, kept with it: worked out once
+    // per read of it.
     _describe(stat) {
         const known = this._commands.get(stat.key);
         if (known.comm !== stat.comm) {
@@ -166,7 +164,7 @@ export class ProcessSampler {
      * now), 'not-yours' or 'protected'.
      */
     async verify(target, cancellable = null) {
-        if (!isValidPid(target?.pid))
+        if (!isValidPid(target.pid))
             return 'invalid';
         const dir = `/proc/${target.pid}`;
         const [statText, status, cmdline] = await Promise.all(
@@ -185,11 +183,11 @@ export class ProcessSampler {
     }
 
     // GNOME Shell's ancestors as they are now, read up the chain of
-    // parents (whoever owns them); MAX_DEPTH guards against a loop.
+    // parents (whoever owns them); a pid seen already ends it.
     async _ancestorsNow(cancellable) {
         const parents = new Map();
         let pid = this._self.pid;
-        for (let depth = 0; depth < MAX_DEPTH && pid > 1 && !parents.has(pid); depth++) {
+        while (pid > 1 && !parents.has(pid)) {
             // eslint-disable-next-line no-await-in-loop
             const stat = parseProcStat(await this._io.read(`/proc/${pid}/stat`, cancellable));
             if (!stat)
@@ -200,12 +198,15 @@ export class ProcessSampler {
         return ancestorsOf(this._self.pid, parents);
     }
 
-    // From GNOME Shell's own stat and status; once per Shell session.
+    // From GNOME Shell's own stat and status; once per Shell session, or
+    // again after a cancelled read (a cancelled sample shows nothing).
     async _readPageSize(cancellable) {
         const [statText, status] = await Promise.all([
             this._io.read('/proc/self/stat', cancellable),
             this._io.read('/proc/self/status', cancellable),
         ]);
+        if (cancellable?.is_cancelled())
+            return;
         this._pageSize = pageSize(parseProcStat(statText)?.rssPages, parseStatusRssKb(status));
     }
 }

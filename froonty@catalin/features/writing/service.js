@@ -23,19 +23,18 @@ import {ANY_LANGUAGE, buildRequest, checkSendable, cleanPartial, languageName, M
     replyProblem, stepsFor} from './actions.js';
 import {describeError} from './errors.js';
 import {ENGINES, enabledKey} from './engines/index.js';
+import {isOnline} from './http.js';
 
-export const ENGINE_KEY = 'writing-engine';
+const ENGINE_KEY = 'writing-engine';
 export const FROM_KEY = 'writing-translate-from';
 export const TO_KEY = 'writing-translate-to';
-export const FIRST_LANGUAGE_KEY = 'writing-first-language';
+const FIRST_LANGUAGE_KEY = 'writing-first-language';
 const AUTH_KEY = 'claude-code-auth';
 // GLib 2.80's NetworkManager backend reports its connectivity check only as
 // property notifications; 'network-changed' comes with route changes.
 const NETWORK_SIGNALS = ['network-changed', 'notify::connectivity', 'notify::network-available'];
 // A streamed reply is redrawn at most this often while it arrives.
 const PARTIAL_EVERY_US = 250 * 1000;
-
-const isOnline = network => network?.connectivity === Gio.NetworkConnectivity.FULL;
 
 // Two versions that came out the same are shown once, under both labels.
 function mergeSame(options) {
@@ -126,7 +125,7 @@ export class WritingService extends Emitter {
     start() {
         const keys = [...this._engines.map(e => enabledKey(e.id)), ENGINE_KEY,
             'writing-claude-code-model', 'writing-languagetool-variants', 'writing-ollama-model',
-            'clipboard-enabled'];
+            'writing-ollama-translate-model', 'clipboard-enabled'];
         for (const key of keys) {
             this._settingsIds.push(this._settings.connect(`changed::${key}`,
                 () => this._settingChanged(key)));
@@ -207,24 +206,23 @@ export class WritingService extends Emitter {
         this.refreshAvailability();
     }
 
-    _isEnabled(engine) {
-        return this._settings.get_boolean(enabledKey(engine.id));
+    _enabled() {
+        return this._engines.filter(e => this._settings.get_boolean(enabledKey(e.id)));
     }
 
     /** The switched-on engines, in order: [{id, title, engine, availability}]. */
     get enabledEngines() {
-        return this._engines.filter(e => this._isEnabled(e)).map(engine => ({
+        return this._enabled().map(engine => ({
             id: engine.id,
             title: engine.title,
             engine,
-            availability: this._availability.get(engine.id) ??
-                {ready: false, reason: 'checking…', checking: true},
+            availability: this.availabilityOf(engine.id),
         }));
     }
 
     /** The engine chosen last if it is on, else the first one on; or null. */
     get engine() {
-        const enabled = this._engines.filter(e => this._isEnabled(e));
+        const enabled = this._enabled();
         const chosen = this._settings.get_string(ENGINE_KEY);
         return enabled.find(e => e.id === chosen) ?? enabled[0] ?? null;
     }
@@ -287,7 +285,7 @@ export class WritingService extends Emitter {
 
     async refreshAvailability() {
         const run = ++this._availabilityRun;
-        const enabled = this._engines.filter(e => this._isEnabled(e));
+        const enabled = this._enabled();
         const results = await Promise.all(enabled.map(async engine => {
             try {
                 return [engine.id, await engine.availability({
@@ -405,8 +403,9 @@ export class WritingService extends Emitter {
                 if (!current())
                     return;
                 // A reply that looks like an answer to the text (or a Shorten
-                // that is not shorter): once more, strictly; still so, it is
-                // shown with a warning.
+                // that is not shorter): once more, strictly. One that still
+                // looks like an answer is shown with a warning; a Shorten
+                // that is still long is shown as it is.
                 let answered = false;
                 const problem = step?.kind === 'text' ? replyProblem(actionId, input, result.text) : null;
                 if (problem) {
@@ -445,7 +444,7 @@ export class WritingService extends Emitter {
             if (runId !== this._runId || this._stopped)
                 return;
             this.error = describeError(e);
-            this.state = this.error.code === 'cancelled' ? 'idle' : 'error';
+            this.state = 'error';
             // A timeout keeps what was streamed until then.
             this._keepPartial(engine.id);
             if (['not-signed-in', 'api-key', 'not-a-plan'].includes(this.error.code))

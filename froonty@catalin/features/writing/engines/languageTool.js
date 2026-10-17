@@ -8,15 +8,13 @@
 //
 // No St or Gtk.
 
-import Gio from 'gi://Gio';
-
-import {LIMITS} from '../actions.js';
+import {LIMITS, utf8Length} from '../actions.js';
 import {WritingError} from '../errors.js';
-import {networkFailure, newSession, parseJson, request} from '../http.js';
+import {isOnline, networkFailure, newSession, parseJson, request} from '../http.js';
 import {override} from '../paths.js';
 
-export const ID = 'languagetool';
-export const PUBLIC_URL = 'https://api.languagetool.org/v2/check';
+const ID = 'languagetool';
+const PUBLIC_URL = 'https://api.languagetool.org/v2/check';
 export const ATTRIBUTION = {
     label: 'Checked by LanguageTool · languagetool.org',
     url: 'https://languagetool.org',
@@ -68,11 +66,6 @@ export class RateLimiter {
                 return {seconds: Math.max(1, Math.ceil((s.time + this._window - now) / 1000)), limit};
         }
         return {seconds: Math.ceil(this._window / 1000), limit};
-    }
-
-    /** 0 when `bytes` may go now; else the seconds to wait. */
-    wait(bytes) {
-        return this.check(bytes).seconds;
     }
 
     /** Why `check` held a text back, for the user. */
@@ -144,21 +137,16 @@ function serviceUrl() {
     return override('FROONTY_LANGUAGETOOL_URL') ?? PUBLIC_URL;
 }
 
-const isOnline = network => (network ?? Gio.NetworkMonitor.get_default()).connectivity ===
-    Gio.NetworkConnectivity.FULL;
-
 /**
  * One check. `cache` holds the engine's Soup session for the service's
  * lifetime (the service aborts it on stop).
  */
-export async function run({action, text, settings, cancellable = null, network = null,
+export async function run({text, settings, cancellable = null, network = null,
     cache = new Map(), deps = {}}) {
     const {limiter = sharedLimiter, url = serviceUrl()} = deps;
-    if (action !== 'grammar')
-        throw new WritingError('failed', 'LanguageTool only fixes grammar and spelling.');
     if (!isOnline(network))
         throw new WritingError('offline', 'No internet connection: LanguageTool cannot be reached.');
-    const bytes = new TextEncoder().encode(text).length;
+    const bytes = utf8Length(text);
     const {seconds, limit} = limiter.check(bytes);
     if (seconds)
         throw new WritingError('rate-limited', `Wait ${seconds} s: ${limiter.describe(limit)}`);

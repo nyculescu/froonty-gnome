@@ -200,15 +200,14 @@ function terms(symbol) {
  * either containing it; or the glyph itself. Each symbol once.
  *
  * @param {string} query
- * @param {object[]} [sections]
- * @returns {object[]} symbols, each with its section's id
+ * @returns {object[]} symbols
  */
-export function searchSymbols(query, sections = SECTIONS) {
+export function searchSymbols(query) {
     const q = query.trim().replace(/^\\/, '').toLowerCase();
     if (!q)
         return [];
     const ranked = [];
-    for (const section of sections) {
+    for (const section of SECTIONS) {
         for (const symbol of section.symbols) {
             const command = (symbol.insert.match(/^\\([A-Za-z]+)/)?.[1] ?? '').toLowerCase();
             const all = terms(symbol);
@@ -223,7 +222,7 @@ export function searchSymbols(query, sections = SECTIONS) {
                 rank = 3;
             else
                 continue;
-            ranked.push({rank, order: ranked.length, symbol: {...symbol, section: section.id}});
+            ranked.push({rank, order: ranked.length, symbol});
         }
     }
     ranked.sort((a, b) => a.rank - b.rank || a.order - b.order);

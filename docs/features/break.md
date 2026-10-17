@@ -5,8 +5,9 @@
 > or weak evidence (see [Evidence](#evidence)). If you have pain, an injury,
 > circulation problems or another condition, ask a clinician.
 
-Status: **first iteration, implemented**, 2026-10-02. Public (in `make
-pack` output). **Off by default.** GNOME Shell 50 only.
+Status: **first iteration, implemented**, 2026-10-02. Working-tree only
+(`make install`): not in `make pack` output yet. **Off by default.** GNOME
+Shell 50 only.
 
 GNOME's own break reminders (Settings → Wellbeing), shown and driven from
 the island: a cue on the collapsed pill when a break is near or due, and a
@@ -136,7 +137,7 @@ Workrave's 10 active exercises: 7 stretches and 3 eye exercises
 
 - A **stretch card** shows when a movement break is soon or due ("Another"
   goes to the next of the 7; the next one also comes after a movement break
-  is taken), or on "Show a stretch".
+  is taken), or on "Show a stretch" (until a break comes near).
 - When an **eye break** is due: "Look at something at least 6 m (20 ft) away
   for 20 s, and blink", with the 3 eye exercises folded away, labelled
   "comfort only" (no good evidence they prevent eye problems).

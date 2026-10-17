@@ -344,7 +344,8 @@ export class NotesStore {
      * Watches the folder (inotify; no polling). `callback(file, otherFile,
      * eventType)` runs on any change, including our own writes; a rename
      * within the folder is one RENAMED event whose otherFile is the new
-     * name.
+     * name. Throws when Gio cannot watch the folder (e.g. the inotify
+     * watch limit is used up); the callers then look every 2 s instead.
      *
      * @returns {Gio.FileMonitor} call cancel() to stop
      */
@@ -381,7 +382,7 @@ export class NotesStore {
  * @returns {{text: string, readOnly: ?string}} readOnly: null,
  *   'not-utf8' or 'nul'
  */
-export function decodeNote(bytes) {
+function decodeNote(bytes) {
     let text;
     let readOnly = null;
     try {

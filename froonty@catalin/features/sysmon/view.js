@@ -38,7 +38,8 @@ function share(part, whole) {
 export class SysmonView {
     constructor(service) {
         this._service = service;
-        this._gpuKey = null;
+        // The listed GPUs' ids; null before the first sample, '' for none.
+        this._gpuKey = undefined;
         this._coreCount = -1;
         this._coreColumns = 0;
 
@@ -62,7 +63,6 @@ export class SysmonView {
             x_expand: true,
         });
         this._scroll = new St.ScrollView({
-            style_class: 'froonty-sysmon-scroll',
             hscrollbar_policy: St.PolicyType.NEVER,
             overlay_scrollbars: true,
             x_expand: true,
@@ -230,7 +230,7 @@ export class SysmonView {
     }
 
     _syncGpus(gpus) {
-        const key = gpus?.map(gpu => gpu.id).join(',') ?? '';
+        const key = gpus ? gpus.map(gpu => gpu.id).join(',') : null;
         if (key !== this._gpuKey) {
             this._gpuList.destroy_all_children();
             this._gpus = (gpus ?? []).map(() => addMeter(this._gpuList, {steadyDetail: true}));

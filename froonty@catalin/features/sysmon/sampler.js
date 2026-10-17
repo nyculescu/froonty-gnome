@@ -53,7 +53,9 @@ export class Sampler {
         ]);
         const nvidiaSmi = gpus.some(gpu => gpu.driver === 'nvidia')
             ? await this._findExecutable(NVIDIA_SMI, cancellable) : null;
-        this._hardware = {cpu, gpus, nvidiaSmi};
+        // Cancelled reads come back empty; the next visit looks again.
+        if (!cancellable?.is_cancelled())
+            this._hardware = {cpu, gpus, nvidiaSmi};
     }
 
     /**
@@ -69,6 +71,8 @@ export class Sampler {
     async sample(sections, {cores = false, now, cancellable = null}) {
         if (!this._hardware)
             await this.discover(cancellable);
+        if (cancellable?.is_cancelled())
+            return null;
         const want = new Set(sections);
         const read = path => this._io.read(path, cancellable);
         const [stat, cpuinfo, meminfo, netdev, mounts] = await Promise.all([
@@ -219,7 +223,9 @@ export class Sampler {
             if (ids)
                 break;
         }
-        this._pciIds = ids;
+        // A cancelled read is no answer; the next visit reads it again.
+        if (!cancellable?.is_cancelled())
+            this._pciIds = ids;
         return ids;
     }
 
@@ -253,7 +259,8 @@ export class Sampler {
         if (withCores) {
             result.cores = cpus.map(cpu => ({
                 cpu,
-                // The physical core (threads of one share it), for Fan settings.
+                // The physical core (threads of one share it), for the
+                // panic thermometer's average.
                 core: hw.coreIds.get(cpu) ?? null,
                 load: loadPercent(previous?.cpus.get(cpu), stat?.cpus.get(cpu)),
                 ghz: clocks.has(cpu) ? clocks.get(cpu) / 1000 : null,
@@ -375,7 +382,9 @@ export class Sampler {
         const unknown = [...counters.keys()].filter(name => !this._physical.has(name));
         const physical = await Promise.all(unknown.map(name =>
             this._io.exists(`${NET_DIR}/${name}/device`, cancellable)));
-        unknown.forEach((name, i) => this._physical.set(name, physical[i]));
+        // A cancelled check answers false: not kept, so it is asked again.
+        if (!cancellable?.is_cancelled())
+            unknown.forEach((name, i) => this._physical.set(name, physical[i]));
 
         let rx = 0;
         let tx = 0;

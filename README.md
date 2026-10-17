@@ -49,10 +49,9 @@ feature has a design note in [docs/features/](docs/features/).
   - At the top, centred on the island where GNOME's clock sits under it: a
     small pill with the date and the time ("Sat Oct 3 14:05", GNOME's
     unread dot after it), which opens GNOME's calendar and notification
-    menu, with the panic buttons on its two sides. The open tab's own
-    buttons (Notes' All notes) sit at the right end.
-  - Keyboard: Tab goes through the tabs, ⚙️, the panic buttons and the
-    date pill from left to right, the tab's own buttons, then the tab.
+    menu, with the panic buttons on its two sides.
+  - Keyboard: Tab goes through the panic buttons and the date pill from
+    left to right, then the tabs, ⚙️, then the open tab.
   - Every tab can be turned off. With none on, the island still opens,
     says so, and offers a button to Settings.
 - **Calendar and notifications:** GNOME's own menu, the one its clock
@@ -238,8 +237,7 @@ feature has a design note in [docs/features/](docs/features/).
 - **Fan settings** (working-tree installs only): Settings → Fan has pad
   controls, including Lock off, Release, Off and Recommended / Apply, plus
   ASUS laptop fan controls. The fan icon beside the Quick Settings slider
-  opens those settings. The existing CPU/GPU temperature sampling and
-  recommendation remain unchanged.
+  opens those settings.
 - **Always reachable.** With "Show island" off, a puzzle-piece icon in the
   top bar (and the shortcut) opens the settings.
 - **Start at login**, or not. With it off, Froonty waits after login behind
@@ -274,12 +272,15 @@ Each tab can be turned off on its own page in Settings.
   shows a top bar icon while the island is hidden. The date pill in its
   top row opens GNOME's own calendar and notification menu.
 - **Notes:** Markdown files in `~/.local/share/froonty/notes`, or a folder
-  you choose in Settings → Notes, plus a hidden `.froonty.json` (order and
-  colours) and `.froonty-labels.json` (labels) there. Deleted notes go to
-  the Trash. Pipe tables, note-relative local images and common flowchart,
-  state and sequence diagrams render offline. The image button copies a
-  chosen file into the note folder. Rendering uses WebKitGTK 4.1 in a helper;
-  without it, the Markdown source remains visible.
+  you choose in Settings → Notes, plus hidden files there:
+  `.froonty.json` (order and colours), `.froonty-labels.json` (labels),
+  `.froonty-render-sizes.json` (the sizes you gave rendered pictures) and
+  `.froonty-current-note` (the open note, shared by the island and All
+  notes). Deleted notes go to the Trash. Pipe tables, note-relative local
+  images and common flowchart, state and sequence diagrams render offline.
+  The image button copies a chosen file into the note folder. Rendering
+  uses WebKitGTK 4.1 in a helper; without it, those blocks show "Could not
+  render" instead.
 - **Mute microphone, mute sound:** mute your default devices through
   GNOME's sound settings, as Quick Settings does.
 - **After you remove Froonty:** your notes stay, and so do the mute
@@ -322,10 +323,11 @@ froonty@catalin/             the extension (this directory is what gets installe
 │   ├── hub.js               expanded content: side column (tabs, ⚙️),
 │   │                        header, content
 │   ├── hubHeader.js         its top row: the date pill centred, the panic
-│   │                        buttons beside it, the active tab's buttons
+│   │                        buttons beside it
+│   ├── resizeGrip.js        the expanded island's resize grip (bottom-right)
+│   ├── hubResize.js         the sizes the grip may give the open tab
 │   ├── contextMenu.js       GNOME popup menus for features (note labels)
 │   ├── panicBar.js          up to 8 panic buttons, in two groups
-│   ├── attentionBar.js      the "Claude needs you" bar under the pill
 │   ├── hoverOpen.js         opens the island after hovering it
 │   └── panelLauncher.js     top bar icon while the island is not shown
 ├── features/                hub tabs, one folder each (registry.js lists them)
@@ -335,7 +337,9 @@ froonty@catalin/             the extension (this directory is what gets installe
 │   │                        labels, the All notes window page, prefs
 │   ├── claude/              Claude plan usage, read from Claude Code's config;
 │   │                        livenerf's Opus 5.5 row, fetched from GitHub;
-│   │                        the attention bar's hook script, set-up and model
+│   │                        the attention bar (attentionBar.js, the "Claude
+│   │                        needs you" bar under the pill), its hook script,
+│   │                        set-up and model
 │   ├── sysmon/              Btop tab (system monitor): /proc and /sys, nvidia-smi
 │   ├── clipboard/           clipboard history: recorder, store, tab; the
 │   │                        Super+V switcher and its pop-up
@@ -345,15 +349,20 @@ froonty@catalin/             the extension (this directory is what gets installe
 │   ├── formulas/            Formulas tab: palettes, templates, guide; renderer/:
 │   │                        MathJax in a helper process and its client;
 │   │                        notes/: formulas drawn in both notes editors
+│   ├── zerotier/            ZeroTier tab: zerotier-cli, service, view, prefs
+│   ├── writing/             Writing tab: engines, set-up, service, view, prefs
 │   ├── brightness/          Software brightness (not a tab): dim/tint layers,
 │   │                        its Quick Settings slider, levels, prefs
+│   ├── fan/                 Fan settings page (not a tab): llano pad, ASUS
+│   │                        fans, recommendation table
+│   ├── padNoiseSlider/      pad speed slider in Quick Settings (not a tab)
 │   └── timezonePlanner/     Vancouver-based timezone comparison window
 ├── panic/                   panic button catalog, factories, buttons (mute,
 │                            Claude session, block camera, pause media,
 │                            sit/stand), prefs
 ├── prefs/rows.js            settings rows the settings tabs share
 ├── core/                    shared by features: emitter.js, tooltip.js,
-│                            privateFile.js
+│                            privateFile.js, subprocess.js, textScroll.js
 ├── services/clock.js        clock ticks from the top bar's GnomeDesktop.WallClock
 ├── third_party/mathjax/     MathJax for the Formulas tab, fetched by
 │                            tools/fetch-mathjax.py (not in git, not packed)

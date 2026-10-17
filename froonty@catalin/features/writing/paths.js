@@ -22,7 +22,8 @@ const underTest = () => Boolean(GLib.getenv('FROONTY_UNIT_ISOLATED') ||
 /**
  * The value of a test override (FROONTY_LANGUAGETOOL_URL,
  * FROONTY_OLLAMA_URL, FROONTY_OLLAMA_RELEASE_API, FROONTY_SYSTEMCTL,
- * FROONTY_CLAUDE_CODE), or null for the built-in default.
+ * FROONTY_OLLAMA_SYSTEM_ROOT, FROONTY_CLAUDE_CODE), or null for the
+ * built-in default.
  *
  * Only the unit and headless tests (FROONTY_UNIT_ISOLATED,
  * FROONTY_HEADLESS_TEST) are ever pointed elsewhere: there a missing one
@@ -30,7 +31,9 @@ const underTest = () => Boolean(GLib.getenv('FROONTY_UNIT_ISOLATED') ||
  * systemd or Claude Code. Anywhere else these variables are ignored, so a
  * stale one in the session's environment can never send text to another
  * host while the tab names LanguageTool or "this computer"
- * (docs/features/writing.md §8).
+ * (docs/features/writing.md §8). The one exception is FROONTY_CLAUDE_CODE:
+ * it is only required here, and findClaudeCode honours it everywhere (it
+ * names which Claude Code runs, not where text goes).
  *
  * @param {string} name
  * @returns {?string}

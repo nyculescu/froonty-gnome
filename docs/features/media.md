@@ -1,7 +1,8 @@
 # Feature: Media
 
-Status: **first iteration, implemented**, 2026-10-02. Public (in `make
-pack` output). **On by default.**
+Status: **first iteration, implemented**, 2026-10-02. Working tree only
+for now (`features/localFeatures.js`; `make pack` leaves it out). **On by
+default.**
 
 What music and video players on this computer report over MPRIS, with
 play, pause, skip and seek: a tab in the island, the song on the collapsed
@@ -72,11 +73,14 @@ upcoming songs, and the song on the pill.
   `cmus` (their bus names are not verified).
 - **The automatic choice**, in order:
   1. a source you chose (with a song), even paused;
-  2. a playing music player;
-  3. a playing browser or video player that started last or is already
-     shown (with "Follow browsers and video players automatically");
-  4. a paused music player;
-  5. with that setting on, the player that played last.
+  2. the player whose window you brought up (with a song), until another
+     starts playing; a browser or video player only with "Follow
+     browsers and video players automatically";
+  3. a playing music player;
+  4. a playing browser or video player that started last or is already
+     shown (with that setting on);
+  5. a paused music player;
+  6. with that setting on, the player that played last.
 
   Ties go to the source already shown, then the one that started playing
   last, then the lowest process id, then the bus name.
@@ -90,6 +94,14 @@ upcoming songs, and the song on the pill.
   chosen source without a song keeps the choice (and its check mark)
   for 5 s while the automatic choice fills in. The choice ends when that
   player exits, or another process takes its name.
+- **Gap hold:** a song that vanishes from a player that is still there
+  (a player moving to the next) stays shown 1.5 s, unless the player
+  reports a song first.
+- **Pause the others:** with "Pause the other players when one starts
+  playing" on (the default), a player that starts playing pauses every
+  other player that plays, except another name of the same process. One
+  found playing at the start, or played again by "Pause all media", does
+  not count as starting.
 - The choice lives in memory, for as long as GNOME Shell runs: a screen
   lock (which runs `disable()`) keeps it; logging out forgets it.
 
@@ -98,7 +110,7 @@ upcoming songs, and the song on the pill.
 - Every control acts on the context it was drawn with: the source, its
   owner (the unique bus name, `:1.42`), the song and a revision number that
   changes with every song or source.
-- **Refused** (nothing sent) during a gap hold (below), after the song or
+- **Refused** (nothing sent) during a gap hold (above), after the song or
   the source changed, or when the owner differs.
 - **Checked again** before sending: Froonty reads the player's Metadata
   (1 s at most) and sends only if it is still the same song.
@@ -106,7 +118,8 @@ upcoming songs, and the song on the pill.
   "whichever player is active": a player that restarts gets a new unique
   name, so an old button can never reach it.
 - 2 s at most per command, no retry. Play/Pause sends `Pause` while
-  playing (if it may pause), `Play` while not, else `PlayPause`.
+  playing (if it may pause), `Play` while not (if it may play); otherwise
+  the button does nothing.
 - **Seeking:** `SetPosition(trackid, position)` when the song has a track
   id, else `Seek(offset)`. One seek in flight per source; a newer target
   replaces a waiting one. After the reply the position is read again,
@@ -262,6 +275,7 @@ Settings → Media:
 | `media-animate-bars` | `true` | Moving bars (GNOME redraws them every frame) |
 | `media-gestures` | `true` | Touchpad swipes change song |
 | `media-include-other-players` | `true` | Follow browsers and video players automatically |
+| `media-pause-others` | `true` | Pause the other players when one starts playing |
 | `media-remote-art` | **`false`** | Cover art from the internet |
 | `media-lyrics` | `true` | The Lyrics button |
 | `media-lyrics-online` | **`false`** | Find lyrics online (lrclib.net) |
@@ -297,6 +311,7 @@ No key stores the chosen player.
 | `features/media/service.js` | `MediaService`: sources, choice, smoothing, position, commands, art, pause all |
 | `features/media/shared.js` | One service per Shell, reference-counted |
 | `features/media/apps.js` | Shell adapter: app by DesktopEntry or process id, activate |
+| `features/media/focus.js` | The focused window, so bringing up a player's window shows it |
 | `features/media/art.js`, `fetch.js` | Cover loading; the opt-in web session |
 | `features/media/lyricsService.js`, `queue.js` | Lyrics sources; TrackList client |
 | `features/media/view.js`, `artFrame.js`, `bars.js`, `volume.js`, `extrasView.js` | The tab |

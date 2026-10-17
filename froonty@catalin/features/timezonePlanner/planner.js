@@ -25,22 +25,24 @@ const vertical = styleClass => new St.BoxLayout({
     x_expand: true,
 });
 
-function actionButton(label, accessibleName = label) {
+function actionButton(label) {
     return new St.Button({
         label,
         style_class: 'button',
         can_focus: true,
-        accessible_name: accessibleName,
+        accessible_name: label,
         y_align: Clutter.ActorAlign.CENTER,
     });
 }
 
 export const TimezonePlanner = GObject.registerClass(
 class TimezonePlanner extends ModalDialog.ModalDialog {
-    _init(settings, openSettings) {
-        super._init({styleClass: 'froonty-timezone-dialog'});
+    // timeFormat() gives the strftime format to write times in.
+    _init(settings, openSettings, timeFormat) {
+        super._init();
         this._settings = settings;
         this._openSettings = openSettings;
+        this._timeFormat = timeFormat;
         this._anchor = GLib.DateTime.new_now_utc().to_unix();
         this._cityTimeLabels = [];
         this._settingSlider = false;
@@ -86,7 +88,7 @@ class TimezonePlanner extends ModalDialog.ModalDialog {
         content.add_child(sliderRange);
         this._slider.connect('notify::value', () => {
             if (!this._settingSlider)
-                this._updateTimes();
+                this.updateTimes();
         });
 
         const controls = row('froonty-timezone-controls');
@@ -101,7 +103,10 @@ class TimezonePlanner extends ModalDialog.ModalDialog {
         controls.add_child(now);
         content.add_child(controls);
 
-        this._cityRows = vertical('froonty-timezone-cities');
+        this._cityRows = new St.BoxLayout({
+            orientation: Clutter.Orientation.VERTICAL,
+            x_expand: true,
+        });
         content.add_child(this._cityRows);
 
         this._message = new St.Label({
@@ -122,9 +127,7 @@ class TimezonePlanner extends ModalDialog.ModalDialog {
         this._settings.connectObject(
             'changed::timezone-planner-cities', () => this._syncCities(),
             'changed::timezone-planner-favorites', () => this._syncCities(), this);
-        this.connect('destroy', () => this._settings.disconnectObject(this));
         this._syncCities();
-        this._updateTimes();
     }
 
     _resetToNow() {
@@ -132,16 +135,18 @@ class TimezonePlanner extends ModalDialog.ModalDialog {
         this._settingSlider = true;
         this._slider.value = 0.5;
         this._settingSlider = false;
-        this._updateTimes();
+        this.updateTimes();
     }
 
-    _updateTimes() {
+    // Also when the time format changes.
+    updateTimes() {
         const timestamp = sliderTimestamp(this._anchor, this._slider.value);
+        const format = this._timeFormat();
         this._vancouverDate.text = formatDateAt(timestamp, VANCOUVER_TIMEZONE);
-        this._vancouverTime.text = formatTimeAt(timestamp, VANCOUVER_TIMEZONE);
+        this._vancouverTime.text = formatTimeAt(timestamp, VANCOUVER_TIMEZONE, format);
         for (const city of this._cityTimeLabels) {
             city.date.text = formatDateAt(timestamp, city.timezone);
-            city.time.text = formatTimeAt(timestamp, city.timezone);
+            city.time.text = formatTimeAt(timestamp, city.timezone, format);
         }
     }
 
@@ -172,7 +177,7 @@ class TimezonePlanner extends ModalDialog.ModalDialog {
             ? ''
             : _('Choose up to two favourite cities in Settings → Time zones.');
         this._message.visible = cities.length === 0;
-        this._updateTimes();
+        this.updateTimes();
     }
 
 });

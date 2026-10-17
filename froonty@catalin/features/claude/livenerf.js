@@ -27,9 +27,8 @@ const NUMBER = String.raw`[+-]?\d+(?:\.\d+)?`;
  *   progress: {date, collected, total, baselineCollected, baselineTotal}
  *   (days; the baseline pair may be null), from "**Progress (2026-09-30):**
  *   7 of 30 days collected (baseline 7 of 10)". result: the last Results
- *   row with a measured Δ, {window, delta, se, deltaText, decision}; delta
- *   and se as written (points), deltaText and decision verbatim. Null when
- *   neither is found.
+ *   row with a measured Δ (points ± SE), {window, deltaText, decision},
+ *   verbatim. Null when neither is found.
  */
 export function benchmarkFromReadme(text) {
     if (typeof text !== 'string')
@@ -86,14 +85,12 @@ function parseResults(text) {
     for (i += 2; i < lines.length && lines[i].trim().startsWith('|'); i++) {
         const row = cells(lines[i]);
         const deltaText = row[col.delta] ?? '';
-        const match = deltaText.replace(MINUS, '-')
-            .match(new RegExp(String.raw`^(${NUMBER})\s*(?:pts?|points?|pp)?\s*±\s*(\d+(?:\.\d+)?)`));
-        if (!match)
+        const measured = new RegExp(String.raw`^${NUMBER}\s*(?:pts?|points?|pp)?\s*±\s*\d+(?:\.\d+)?`)
+            .test(deltaText.replace(MINUS, '-'));
+        if (!measured)
             continue; // "baseline", "-", or a format not known here
         result = {
             window: row[col.window] ?? '',
-            delta: +match[1],
-            se: +match[2],
             deltaText,
             decision: col.decision >= 0 ? row[col.decision] ?? '' : '',
         };
@@ -118,7 +115,7 @@ function cells(line) {
  * @param {string} text the SVG
  * @returns {object|null} {grid: [%], band: [from, to], ticks: [{at, label}],
  *   points: [{at, score, low, high}], latest, baselineMean, collecting:
- *   {day, of}|null, samples, updated}. `at` and the band run from 0 (the
+ *   {day, of}|null, updated}. `at` and the band run from 0 (the
  *   plot's left edge) to 1 (its right edge); scores are percent correct,
  *   low and high the 95% interval. Null without a grid or points.
  */
@@ -162,7 +159,7 @@ export function chartFromSvg(text) {
     const latest = texts.find(e => e.a['font-weight'] === 600 && /^\d+(\.\d+)?%$/.test(e.text));
     const mean = match(/^baseline (\d+(?:\.\d+)?)%$/);
     const collecting = match(/^Collecting the baseline: day (\d+) of (\d+)\.$/);
-    const footer = match(/^(\d+) samples · updated (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) UTC$/);
+    const footer = match(/^\d+ samples · updated (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) UTC$/);
     return {
         grid: labels.map(l => l.value).sort((a, b) => a - b),
         band: band ? [atX(band.a.x), atX(band.a.x + band.a.width)] : null,
@@ -172,8 +169,7 @@ export function chartFromSvg(text) {
         latest: latest ? parseFloat(latest.text) : null,
         baselineMean: mean ? +mean[1] : null,
         collecting: collecting ? {day: +collecting[1], of: +collecting[2]} : null,
-        samples: footer ? +footer[1] : null,
-        updated: footer ? Date.parse(`${footer[2].replace(' ', 'T')}:00Z`) : null,
+        updated: footer ? Date.parse(`${footer[1].replace(' ', 'T')}:00Z`) : null,
     };
 }
 

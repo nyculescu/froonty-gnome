@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // The Formulas tab's templates (docs/features/formulas.md §2): common
-// structures with their slots left empty. ‸ marks the first slot, where
-// the cursor goes (or a selection, and the cursor to the next; edit.js). Pure, for plain gjs tests;
-// labels are translated by the view.
+// structures with their slots left empty, each marked ‸: the cursor goes
+// to the first (a selection fills it; edit.js). Pure, for plain gjs
+// tests; labels are translated by the view.
 
 /** In button order. */
 export const TEMPLATES = [
@@ -22,7 +22,3 @@ export const TEMPLATES = [
     {id: 'binomial', label: 'Binomial', glyph: '(ⁿₖ)', insert: '\\binom{‸}{‸}'},
     {id: 'text', label: 'Text', glyph: 'abc', insert: '\\text{‸}'},
 ];
-
-export function templateById(id) {
-    return TEMPLATES.find(t => t.id === id) ?? null;
-}

@@ -9,7 +9,7 @@
 // on screen while online, and at most once an hour: livenerf updates once
 // a day.
 //
-// Emits 'changed' when the result or the error changes.
+// Emits 'changed' when the result changes.
 
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
@@ -39,10 +39,11 @@ export class LivenerfService extends Emitter {
         super();
         this._fetch = fetch ?? ((path, cancellable) => this._fetchDefault(path, cancellable));
 
-        /** {progress, result, chart} (livenerf.js; each may be null), or null. */
+        /**
+         * {progress, result, chart} (livenerf.js; each may be null), or null
+         * once loaded when both files failed or nothing known is in them.
+         */
         this.benchmark = null;
-        /** 'unreadable' (both files failed, or nothing known in them), or null. */
-        this.error = null;
         /** False until the first fetch has finished. */
         this.loaded = false;
         /** When the last good reading was fetched, ms since the epoch. */
@@ -66,7 +67,8 @@ export class LivenerfService extends Emitter {
     }
 
     /**
-     * Fetches the README unless a good reading is under an hour old.
+     * Fetches the README and the chart unless a good reading is under an
+     * hour old.
      *
      * @returns {Promise} resolves when done (for tests)
      */
@@ -106,11 +108,8 @@ export class LivenerfService extends Emitter {
             ...readme.status === 'fulfilled' ? readme.value : {progress: last.progress, result: last.result},
             chart: chart.status === 'fulfilled' ? chart.value : last.chart,
         };
-        let error = null;
-        if (!benchmark.progress && !benchmark.result && !benchmark.chart) {
+        if (!benchmark.progress && !benchmark.result && !benchmark.chart)
             benchmark = null;
-            error = 'unreadable';
-        }
         // Each new failure once, not on every visit that retries it.
         const warning = failures.map(e => e.message).join('; ');
         if (warning && warning !== this._warned)
@@ -118,12 +117,10 @@ export class LivenerfService extends Emitter {
         this._warned = warning;
         if (!failures.length)
             this.fetchedAt = Date.now();
-        if (this.loaded &&
-            JSON.stringify([benchmark, error]) === JSON.stringify([this.benchmark, this.error]))
+        if (this.loaded && JSON.stringify(benchmark) === JSON.stringify(this.benchmark))
             return;
         this.loaded = true;
         this.benchmark = benchmark;
-        this.error = error;
         this.emit('changed');
     }
 

@@ -2,14 +2,14 @@
 // Fan controls and telemetry in Froonty's settings window (docs/features/fan.md).
 
 import Adw from 'gi://Adw';
-import Gdk from 'gi://Gdk';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import Gtk from 'gi://Gtk';
 
 import {gettext as _} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
-import {curvesState, PROFILES} from './asus.js';
+import {addIconPath} from '../../prefs/rows.js';
+import {PROFILES} from './asus.js';
 import {FAN_ICON_NAME} from './icon.js';
 import {FanService} from './service.js';
 
@@ -24,21 +24,14 @@ const profileName = profile => PROFILE_NAMES[PROFILES[profile]]?.() ?? _('Unknow
 const FAN_NAMES = {cpu: () => _('CPU'), gpu: () => _('GPU'), mid: () => _('Mid')};
 const laptopFanName = id => FAN_NAMES[id]?.() ?? id;
 
-function addIconPath() {
-    const display = Gdk.Display.get_default();
-    const icons = Gio.File.new_for_uri(import.meta.url).get_parent().get_child('icons');
-    if (display)
-        Gtk.IconTheme.get_for_display(display).add_search_path(icons.get_path());
-}
-
 function button(label, action) {
     const widget = new Gtk.Button({label, can_focus: true});
     widget.connect('clicked', action);
     return widget;
 }
 
-function rowWithSuffix(title, widget, subtitle = '') {
-    const row = new Adw.ActionRow({title, subtitle});
+function rowWithSuffix(title, widget) {
+    const row = new Adw.ActionRow({title});
     row.add_suffix(widget);
     return row;
 }
@@ -87,7 +80,7 @@ function recommendationText(service) {
 }
 
 export function fanPage(settings, pageStack, window) {
-    addIconPath();
+    addIconPath(import.meta.url);
     const page = new Adw.PreferencesPage({
         name: 'fan',
         title: _('Fan'),
@@ -96,8 +89,8 @@ export function fanPage(settings, pageStack, window) {
 
     const service = new FanService(settings);
     service.start();
-    const setActive = () => service.setActive(!pageStack || pageStack.visible_child_name === 'fan');
-    const pageChangedId = pageStack?.connect('notify::visible-child-name', setActive) ?? 0;
+    const setActive = () => service.setActive(pageStack.visible_child_name === 'fan');
+    const pageChangedId = pageStack.connect('notify::visible-child-name', setActive);
     setActive();
 
     const pad = new Adw.PreferencesGroup({
@@ -196,20 +189,21 @@ export function fanPage(settings, pageStack, window) {
     const sync = () => {
         status.subtitle = padStatusText(service);
         recommendation.subtitle = recommendationText(service);
-        const cpu = service.temps?.cpu;
-        const gpuTemps = (service.temps?.gpus ?? []).map(gpu => gpu.temp)
-            .filter(temp => temp !== null && temp !== undefined);
-        const hottestGpu = gpuTemps.length ? Math.max(...gpuTemps) : null;
+        const cpu = service.temps?.cpu ?? null;
+        const gpu = service.temps?.gpu ?? null;
         temperatures.subtitle = [
-            cpu === null || cpu === undefined ? '' : _('CPU %d °C').format(Math.round(cpu)),
-            hottestGpu === null ? '' : _('hottest GPU %d °C').format(Math.round(hottestGpu)),
+            cpu === null ? '' : _('CPU %d °C').format(Math.round(cpu)),
+            gpu === null ? '' : _('hottest GPU %d °C').format(Math.round(gpu)),
         ].filter(Boolean).join(' · ') || _('Waiting for temperature readings.');
         stop.set_visible(Boolean(service.controllers.length) && !service.lock);
         stop.set_sensitive(!service.busy);
 
         const locked = Boolean(service.lock);
         lock.label = locked ? _('Unlock') : _('Lock off');
-        for (const control of [speed, off, zero, half, full, release])
+        // Not the slider while busy: a drag queues speeds, and an
+        // insensitive slider would drop the drag.
+        speed.set_sensitive(!locked);
+        for (const control of [off, zero, half, full, release])
             control.set_sensitive(!locked && !service.busy);
         apply.set_sensitive(!locked && !service.busy && Boolean(service.recommendation) &&
             service.recommendation.fan !== service.status?.speed);
@@ -253,13 +247,13 @@ export function fanPage(settings, pageStack, window) {
 
         const hasCurves = laptop.curves.length > 0;
         curvesRow.set_visible(hasCurves);
-        if (hasCurves) {
-            const enabled = curvesState(laptop.curves) !== 'none';
+        // While a change is applied, the switch keeps what the user chose.
+        if (hasCurves && !service.laptopBusy) {
             settingCurves = true;
-            curvesSwitch.set_active(enabled);
+            curvesSwitch.set_active(laptop.curves.some(curve => curve.enabled));
             settingCurves = false;
-            curvesSwitch.set_sensitive(!service.laptopBusy);
         }
+        curvesSwitch.set_sensitive(!service.laptopBusy);
         const notice = laptop.daemon === false
             ? _('asusd is not running; laptop profile and curve controls are unavailable.')
             : laptop.readError ? _('asusd: %s').format(laptop.readError)
@@ -270,14 +264,13 @@ export function fanPage(settings, pageStack, window) {
     let settingCurves = false;
     const changedId = service.connect('changed', sync);
     curvesSwitch.connect('notify::active', () => {
-        if (!settingCurves && curvesSwitch.sensitive && service.laptop.curves.length)
+        if (!settingCurves)
             service.setLaptopCurves(curvesSwitch.get_active());
     });
     sync();
-    window?.connect('close-request', () => {
+    window.connect('close-request', () => {
         service.disconnect(changedId);
-        if (pageChangedId)
-            pageStack.disconnect(pageChangedId);
+        pageStack.disconnect(pageChangedId);
         service.stop();
         return false;
     });

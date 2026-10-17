@@ -16,9 +16,17 @@ Gio._promisify(Gio.InputStream.prototype, 'close_async');
 
 const CHUNK = 64 * 1024;
 const MiB = 1024 * 1024;
+// Caps on a streamed answer: one line, and all of it.
+const MAX_LINE = MiB;
+const MAX_TOTAL = 4 * MiB;
 
-export function newSession(timeoutS = 20) {
+export function newSession(timeoutS) {
     return new Soup.Session({timeout: timeoutS, user_agent: 'Froonty'});
+}
+
+/** Whether `network` (a Gio.NetworkMonitor; the default one when null) is fully online. */
+export function isOnline(network = null) {
+    return (network ?? Gio.NetworkMonitor.get_default()).connectivity === Gio.NetworkConnectivity.FULL;
 }
 
 function newMessage(method, url, {form = null, json = null} = {}) {
@@ -78,14 +86,14 @@ async function readCapped(stream, maxBytes, cancellable) {
  * @param {*} [options.json] sent as a JSON body
  * @param {Gio.Cancellable} [options.cancellable]
  * @param {number} [options.maxBytes]
- * @returns {Promise<{status: number, body: string, bytes: Uint8Array}>}
+ * @returns {Promise<{status: number, body: string}>}
  */
 export async function request(session, method, url, {form = null, json = null,
     cancellable = null, maxBytes = MiB} = {}) {
     const message = newMessage(method, url, {form, json});
     const stream = await session.send_async(message, GLib.PRIORITY_DEFAULT, cancellable);
     const bytes = await readCapped(stream, maxBytes, cancellable);
-    return {status: message.status_code, body: new TextDecoder().decode(bytes), bytes};
+    return {status: message.status_code, body: new TextDecoder().decode(bytes)};
 }
 
 /** A JSON answer, or null when the body is not JSON. */
@@ -104,7 +112,7 @@ export function parseJson(body) {
  * @returns {Promise<number>} the status code
  */
 export async function streamNdjson(session, method, url, {json = null, cancellable = null,
-    onObject, maxLine = MiB, maxTotal = 4 * MiB} = {}) {
+    onObject} = {}) {
     const message = newMessage(method, url, {json});
     const stream = await session.send_async(message, GLib.PRIORITY_DEFAULT, cancellable);
     const status = message.status_code;
@@ -119,7 +127,7 @@ export async function streamNdjson(session, method, url, {json = null, cancellab
             return;
         const object = parseJson(text);
         if (object !== null)
-            onObject(object, status);
+            onObject(object);
     };
     try {
         for (;;) {
@@ -129,7 +137,7 @@ export async function streamNdjson(session, method, url, {json = null, cancellab
             if (!size)
                 break;
             total += size;
-            if (total > maxTotal)
+            if (total > MAX_TOTAL)
                 throw Object.assign(new Error('The answer is too large.'), {tooLarge: true});
             const chunk = bytes.toArray();
             const joined = new Uint8Array(pending.length + chunk.length);
@@ -142,7 +150,7 @@ export async function streamNdjson(session, method, url, {json = null, cancellab
                 start = newline + 1;
             }
             pending = joined.slice(start);
-            if (pending.length > maxLine)
+            if (pending.length > MAX_LINE)
                 throw Object.assign(new Error('The answer is too large.'), {tooLarge: true});
         }
         if (pending.length)

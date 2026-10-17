@@ -40,7 +40,7 @@ import {acquireRecorder, focusedApp, releaseRecorder} from './shared.js';
 import {isTerminal, pasteKeys} from './switching.js';
 import {SwitcherPopup} from './switcherPopup.js';
 
-export const ENABLED_KEY = 'clipboard-switcher-enabled';
+const ENABLED_KEY = 'clipboard-switcher-enabled';
 const TAB_KEY = 'clipboard-enabled';
 // GNOME tells nothing when a text field gets the input method's focus back
 // after a modal grab: it is checked every FOCUS_CHECK_MS, at most

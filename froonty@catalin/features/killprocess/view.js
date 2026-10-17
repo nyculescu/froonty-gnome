@@ -161,7 +161,6 @@ export class KillProcessView {
         this._list.add_child(this._top);
         this._list.add_child(this._bottom);
         this._scroll = new St.ScrollView({
-            style_class: 'froonty-killprocess-scroll',
             hscrollbar_policy: St.PolicyType.NEVER,
             overlay_scrollbars: true,
             track_hover: true,
@@ -560,8 +559,6 @@ export class KillProcessView {
 
 // What became of the latest kill, for the status line.
 function resultText(result) {
-    if (!result)
-        return '';
     const {outcome, name, pid} = result;
     switch (outcome) {
     case 'ended':
@@ -648,7 +645,7 @@ class ProcessRow extends St.BoxLayout {
         });
         const force = new St.Button({
             name: 'force',
-            style_class: 'froonty-killprocess-confirm froonty-killprocess-force',
+            style_class: 'froonty-killprocess-confirm',
             label: texts.force,
             can_focus: true,
             track_hover: true,
@@ -670,7 +667,7 @@ class ProcessRow extends St.BoxLayout {
         });
         const cancel = new St.Button({
             name: 'cancel',
-            style_class: 'froonty-icon-button froonty-killprocess-cancel',
+            style_class: 'froonty-icon-button',
             accessible_name: texts.cancel,
             can_focus: true,
             track_hover: true,

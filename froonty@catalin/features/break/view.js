@@ -91,7 +91,6 @@ export class BreakView {
             x_expand: true,
         });
         this._scroll = new St.ScrollView({
-            style_class: 'froonty-break-scroll',
             hscrollbar_policy: St.PolicyType.NEVER,
             overlay_scrollbars: true,
             x_expand: true,
@@ -183,7 +182,7 @@ export class BreakView {
 
         this.takeButton = button(this._w.takeLabel(), () => {
             this._service.take();
-            this._ctx.collapse?.();
+            this._ctx.collapse();
         });
         this.delayButton = button('', () => this._service.delay());
         this.skipButton = button('', () => this._service.skip());
@@ -247,7 +246,7 @@ export class BreakView {
         this.notNowButton = button(_('Not now'), () => this._service.notNow());
         this._posture.add_child(row(this._switchText, this.notNowButton));
         this.minimumButton = button('', b => this._service.setMinimumToday(b.checked),
-            {styleClass: 'froonty-break-action froonty-break-minimum', toggle: true});
+            {styleClass: 'froonty-break-action', toggle: true});
         this.minimumButton.x_align = Clutter.ActorAlign.START;
         this._posture.add_child(this.minimumButton);
         this._targetText = label('froonty-break-dim', {wrap: true});
@@ -308,7 +307,6 @@ export class BreakView {
             return;
         this._dirty = false;
         const m = this._service.model();
-        const w = this._w;
         // Until the day so far is read from its file, nothing to show.
         for (const section of [this._offer, this._status, this._next, this._exercise, this._posture, this._today])
             section.visible = m.loaded;
@@ -331,7 +329,6 @@ export class BreakView {
         if (this._posture.visible)
             this._syncPosture(m);
         this._syncToday(m);
-        this._notice.text = w.notMedicalAdvice();
     }
 
     _syncOffer(m) {
@@ -422,10 +419,15 @@ export class BreakView {
     _syncExercise(m) {
         const lv = m.level;
         const list = stretches(this._exercises);
+        const eyes = lv.type === 'eyesight' && lv.level >= LEVEL.DUE;
+        const movement = lv.type === 'movement' && lv.level >= LEVEL.SOON;
+        // "Show a stretch" lasts until a break comes near.
+        if (eyes || movement)
+            this._showStretch = false;
         let key;
-        if (lv.type === 'eyesight' && lv.level >= LEVEL.DUE && !this._showStretch)
+        if (eyes)
             key = `eyes:${this._eyesOpen}`;
-        else if ((lv.type === 'movement' && lv.level >= LEVEL.SOON) || this._showStretch)
+        else if (movement || this._showStretch)
             key = list.length ? `stretch:${list[m.exerciseNext % list.length].id}` : 'none';
         else
             key = 'button';
@@ -442,7 +444,7 @@ export class BreakView {
             });
             this._exerciseBox.add_child(this.card);
         } else if (key.startsWith('eyes:')) {
-            const duration = m.types.eyesight?.duration ?? 20;
+            const duration = m.types.eyesight.duration;
             this._exerciseBox.add_child(Object.assign(label('', {wrap: true}), {
                 text: _('Look at something at least 6 m (20 ft) away for %s, and blink.')
                     .format(this._w.duration(duration)),

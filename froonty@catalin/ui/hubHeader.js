@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // The hub's header row (HeaderLayout places its parts):
 //
-//   ……… [panic 1–4] (Sat Oct 3 14:05•) [panic 5–8] ………  [feature actions]
+//   ……… [panic 1–4] (Sat Oct 3 14:05•) [panic 5–8] ………
 //
 //   (date time)  a small pill with the date in the top bar clock's format
 //        (the one under the island), the time as Froonty shows it, and
@@ -14,19 +14,11 @@
 //        side of the date pill: half each, the right one more when odd,
 //        both as wide as the wider one (groupWidth()); without a date
 //        pill they are centred together, as one group
-//   feature actions  buttons a feature's view provides (`headerActions`),
-//        shown only while its tab is the active one, at the row's right
-//        end; e.g. Notes' "All notes"
 //
-// Keyboard order follows the row: panic 1–4, the date pill, panic 5–8,
-// the feature's actions. The hub makes the island wide enough (Hub.minWidth)
-// for both halves around the clock's place, PANIC_GAP clear of the hub's
-// edge and the feature's actions. The row spans the hub, above the side
-// column.
-//
-// The view owns its action buttons and destroys them; the header only
-// places them, gives them the icon-button tooltip, and shows the active
-// feature's.
+// Keyboard order follows the row: panic 1–4, the date pill, panic 5–8.
+// The hub makes the island wide enough (Hub.minWidth) for both halves
+// around the clock's place, PANIC_GAP clear of the hub's edges. The row
+// spans the hub, above the side column.
 
 import Clutter from 'gi://Clutter';
 import GObject from 'gi://GObject';
@@ -35,13 +27,12 @@ import St from 'gi://St';
 import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 
 // Room kept between the centred parts (the date pill and the panic
-// groups) and the row's start (the hub's left edge) or the feature's actions
-// (logical px).
+// groups) and the hub's edges (logical px).
 export const PANIC_GAP = 8;
 
 // Places the header's parts in one pass: the date pill centred on the
-// point centre() gives (the island's middle), the panic groups beside it,
-// the feature's actions at the row's end. Mirrored right to left. Its
+// point centre() gives (the island's middle), the panic groups beside it.
+// Mirrored right to left. Its
 // minimum width is 0: the island makes the room (Hub.minWidth), not the
 // row; while the island animates open, the parts may cross.
 const HeaderLayout = GObject.registerClass(
@@ -87,7 +78,6 @@ class HeaderLayout extends Clutter.LayoutManager {
         // Always on centre() (Hub.minWidth makes the island wide enough).
         // Both panic groups take the wider one's width (groupWidth()); the
         // narrower spreads its buttons (PanicGroupLayout, panicBar.js).
-        const actions = this._header.actions;
         const centre = this._centre();
         const [before] = this._header.halves();
         const groupWidth = this._header.groupWidth();
@@ -96,8 +86,6 @@ class HeaderLayout extends Clutter.LayoutManager {
             const forced = actor === this._header.calendarButton ? undefined : groupWidth;
             x += place(actor, x, forced) + this._header.spacing;
         }
-        if (actions.visible)
-            place(actions, width - actions.get_preferred_width(-1)[1]);
     }
 });
 
@@ -115,7 +103,6 @@ export class HubHeader {
     constructor(tooltip, {clock, openCalendar, panic, centre}) {
         this._tooltip = tooltip;
         this._clock = clock;
-        this._boxes = new Map(); // feature id → box of its actions
         this._unread = false;
         this.calendarButton = null;
         this.unreadBadge = null;
@@ -137,13 +124,6 @@ export class HubHeader {
         this.centred = [panic[0], this.calendarButton, panic[1]].filter(Boolean);
         for (const actor of this.centred)
             this.actor.add_child(actor);
-
-        // Hidden while it holds nothing to show.
-        this.actions = new St.BoxLayout({
-            style_class: 'froonty-hub-feature-actions',
-            visible: false,
-        });
-        this.actor.add_child(this.actions);
     }
 
     /** Stops following the clock (the hub destroys the actors). */
@@ -157,11 +137,6 @@ export class HubHeader {
     }
 
     /**
-     * How far the centred parts reach from the island's middle (stage px,
-     * natural widths): [before it, after it]. The date pill's middle is
-     * the island's; without a pill, the groups' middle is.
-     */
-    /**
      * The width both panic groups take: the wider one's natural width, so
      * the two sides of the date pill match (the narrower one spreads its
      * buttons out).
@@ -171,6 +146,11 @@ export class HubHeader {
             .map(a => a.get_preferred_width(-1)[1]));
     }
 
+    /**
+     * How far the centred parts reach from the island's middle (stage px,
+     * natural widths): [before it, after it]. The date pill's middle is
+     * the island's; without a pill, the groups' middle is.
+     */
     halves() {
         const width = actor => (actor?.visible ? actor.get_preferred_width(-1)[1] : 0);
         const group = this.groupWidth();
@@ -183,51 +163,6 @@ export class HubHeader {
             return [total / 2, total / 2];
         }
         return [(start ? start + spacing : 0) + pill / 2, pill / 2 + (end ? spacing + end : 0)];
-    }
-
-    /**
-     * Places a feature's action buttons (hidden until showActions(id)).
-     *
-     * @param {string} id feature id
-     * @param {St.Widget[]} widgets owned by the feature's view; each needs
-     *   track_hover and an accessible_name (its tooltip)
-     */
-    addActions(id, widgets) {
-        if (!widgets.length || this._boxes.has(id))
-            return;
-        const box = new St.BoxLayout({
-            style_class: 'froonty-hub-feature-actions',
-            visible: false,
-        });
-        for (const widget of widgets) {
-            widget.add_style_class_name('froonty-feature-action');
-            this._tooltip.attach(widget, () => widget.accessible_name, 'below');
-            box.add_child(widget);
-        }
-        this.actions.add_child(box);
-        this._boxes.set(id, box);
-    }
-
-    /**
-     * Shows that feature's actions, hides every other feature's.
-     *
-     * @param {?string} id null: none (no tab is on)
-     */
-    showActions(id) {
-        for (const [key, box] of this._boxes)
-            box.visible = key === id;
-        this.actions.visible = this._boxes.has(id);
-    }
-
-    /** The feature is gone (its view destroyed its buttons already). */
-    removeActions(id) {
-        const box = this._boxes.get(id);
-        if (!box)
-            return;
-        this._boxes.delete(id);
-        if (box.visible)
-            this.actions.visible = false;
-        box.destroy();
     }
 
     /** @param {boolean} unread whether GNOME's clock would show its dot */

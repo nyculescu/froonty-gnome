@@ -21,9 +21,9 @@ import {acquireRenderer, releaseRenderer} from '../renderer/shared.js';
 // Logical px of 1em at scale 1 (renderer/mathjax.js EM_PX).
 export const EM_PX = 16;
 // The pause in typing before new formulas are sent.
-export const REQUEST_DELAY_MS = 250;
+const REQUEST_DELAY_MS = 250;
 // How long a formula stays plain text after the renderer failed.
-export const RETRY_MS = 30000;
+const RETRY_MS = 30000;
 // States kept for formulas no longer in the note (the renderer's cache
 // keeps their pictures too).
 const KEEP = 300;

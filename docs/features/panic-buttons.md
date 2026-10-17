@@ -71,11 +71,12 @@ Added 2026-09-29 (user request), off by default:
 
 | Id | What it shows | A click |
 |---|---|---|
-| `claude-session` | The session's usage (0–100, no "%") in Claude's orange (#d97757), as large as the button allows, over a faint grey Spark; "?" when unknown | Opens the Claude tab |
+| `claude-session` | The session's or the week's usage (0–100, no "%") in Claude's orange (#d97757), as large as the button allows, over a faint grey Spark; "?" when unknown | Opens the Claude tab |
 
-It is an indicator, not an action. Its name, which is also its tooltip,
-spells the value out: "Claude session usage: 13%", or "…: unknown (no
-internet connection)". It follows the Claude tab's rules
+It is an indicator, not an action. Settings → Claude → **Usage to show**
+chooses Session or Weekly (`claude-panic-usage-window`). Its name, which is
+also its tooltip, spells the value out: "Claude session usage: 13%",
+"Claude weekly usage: 40%", or "…: unknown (no internet connection)". It follows the Claude tab's rules
 ([claude.md](claude.md)). It reads Claude Code's cache each time the
 island opens, follows it while the island stays open, and does nothing while
 the island is collapsed. The bar tells its buttons when the hub is shown
@@ -97,7 +98,7 @@ tooltip spell out the current reading and unit.
 ## 4. Block camera for apps that ask GNOME
 
 **Switched off for now (2026-10-02).** The entry is commented out in
-`panic/catalog.js`, so the button is not offered and a saved bar drops it;
+`panic/localCatalog.js`, so the button is not offered and a saved bar drops it;
 the code below is kept. The local-only hardware block (§4.4) lives on the
 branch `worktree-agent-a74e6dd1bcb4ed20e` and is not merged.
 
@@ -198,9 +199,18 @@ panic/catalog.js    pure: ids, icons, titles, descriptions, MAX 8,
                     date pill, the right one more when odd); shared by the Shell and the
                     settings window (unit-tested)
 panic/registry.js   Shell side: id → button factory
+panic/localCatalog.js, panic/localFactories.js
+                    the local builds' entries and factories (tools/pack-public
+                    strips their imports and leaves both out)
 panic/audioMute.js  the two mute buttons (input/output)
-panic/claudeSession.js  Claude session usage (reuses features/claude)
-panic/cpuLoad.js    CPU load (reuses features/sysmon)
+panic/claudeSession.js  Claude session or weekly usage (reuses features/claude)
+panic/cpuLoad.js    System resource load: CPU, GPU or RAM
+panic/temperature.js    the thermometer: a CPU or GPU temperature
+features/sysmon/panicMetrics.js
+                    the shared sampler of those two (reuses features/sysmon)
+panic/pauseMedia.js the "Pause all media" button
+panic/fanLock.js    the "Fan lock" button (docs/features/fan.md)
+panic/sitStand.js   the Break tab's sit/stand tracker
 panic/cameraAccess.js   GNOME's Camera Access switch, Gio only
                     (unit-tested)
 panic/camera.js     the "Block camera" button
@@ -212,7 +222,8 @@ core/tooltip.js     hover bubble, shared by the hub tabs and Notes tabs
 ```
 
 **Adding a panic button:** add an entry in `catalog.js` and a factory in
-`registry.js`. It then appears under "Available" in Settings.
+`registry.js` (for a local-only one, in `localCatalog.js` and
+`localFactories.js`). It then appears under "Available" in Settings.
 
 ## 6. Tests
 

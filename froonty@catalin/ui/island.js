@@ -60,11 +60,11 @@ export class Island {
      * @param {object} actions
      * @param {Function} actions.openSettings (view) opens Froonty's settings
      *   window on 'settings' or 'all-notes'
-     * @param {object} [actions.memory] the extension's in-memory object
+     * @param {object} actions.memory the extension's in-memory object
      *   (survives screen locks), shared with features as ctx.memory
-     * @param {?string} [actions.version] the extension's version-name
+     * @param {string} actions.version the extension's version-name
      */
-    constructor(settings, clock, panelClock, {openSettings, memory = {}, version = null}) {
+    constructor(settings, clock, panelClock, {openSettings, memory, version}) {
         this._settings = settings;
         this._clock = clock;
         this._panelClock = panelClock;
@@ -308,20 +308,10 @@ export class Island {
             // a tab can take the focus.
             collapse: () => this.collapse(),
             // Reopens the island after a feature-owned external chooser.
-            expand: () => this._setExpanded(true),
+            expand: () => this.expand(),
             // Collapses the island, then opens the settings window on
             // 'settings' or 'all-notes'.
-            openSettingsWindow: view => {
-                // The preferences process may not inherit the devkit's
-                // XDG_DATA_HOME. Pin the default notes folder before opening
-                // All notes so both editors use this island's actual store.
-                if (view === 'all-notes' && !this._settings.get_string('notes-folder')) {
-                    const folder = ctx.dataDir.get_child('notes').get_path();
-                    if (folder)
-                        this._settings.set_string('notes-folder', folder);
-                }
-                this._openSettings(view);
-            },
+            openSettingsWindow: view => this._openSettings(view),
             // A GNOME popup menu below `source` (ui/contextMenu.js); it is
             // destroyed with the island at the latest.
             contextMenu: (source, params) => this._trackMenu(new ContextMenu(source, params)),
@@ -432,7 +422,6 @@ export class Island {
 
     _updateContent() {
         this._collapsedView.update(this._clock.snapshot());
-        this._pill.accessible_name = this._collapsedView.accessibleText;
         // Minute texts ("25m") follow the clock too.
         this._updateCue();
     }
@@ -474,8 +463,6 @@ export class Island {
     // while the pill is resizing anyway, and re-synced afterwards (the
     // clock it covers may have changed meanwhile; see _onCoverChanged).
     _updateCue() {
-        if (!this._collapsedView)
-            return;
         const now = Date.now();
         let best = null;
         for (const {source} of this._cueSources.values()) {
@@ -526,8 +513,8 @@ export class Island {
     // The expanded island's smallest size (stage px): tall enough for the
     // header and, below it, every feature tab and ⚙️ in one column; wide
     // enough that the centred date pill and the panic buttons beside it
-    // clear the hub's edge and the feature's header buttons (Hub.minWidth). (Off stage there is
-    // no theme node, and nothing to show yet.)
+    // clear the hub's edges (Hub.minWidth). (Off stage there is no theme
+    // node, and nothing to show yet.)
     _hubNeeds() {
         if (!this._pill.get_stage())
             return {width: 0, height: 0};

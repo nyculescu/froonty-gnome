@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Capsule tabs, one per note, plus "+" to add one.
 //
-//   [as][28.09.26 16.03 ×][Weekly planni…]›  [+]
+//   [as][28.09.26 16.03][Weekly planni…]›  [+]
 //
 //   Each tab is as wide as its name, and shows nothing but its name (no
 //   colour dot, no labels: the row is crowded enough). Names longer than
@@ -12,9 +12,9 @@
 //
 //   click          select
 //   middle-click   move the note to the Trash at once (like a browser tab)
-//   right-click    note actions and labels (labelMenu.js); so do the Menu
-//                  key and Shift+F10 on a focused tab
-//                  Rename and Move to Trash are there too
+//   right-click    note actions (Rename, Move to Trash) and labels
+//                  (labelMenu.js); so do the Menu key and Shift+F10 on a
+//                  focused tab
 
 import Clutter from 'gi://Clutter';
 import GLib from 'gi://GLib';
@@ -104,11 +104,31 @@ export class NoteTabs {
             this._box.add_child(this._makeTab(name, name === selected));
     }
 
-    // Keeps a tab in view. Its allocation is valid when this runs: from
-    // notify::allocation (after layout) or on focus of a laid-out tab.
+    // Keeps a tab in view. Its allocation is valid when this runs: after
+    // layout (_scrollWhenLaidOut) or on focus of a laid-out tab.
     _scrollTo(tab) {
         const box = tab.get_allocation_box();
         this._scroll.hadjustment.clamp_page(box.x1, box.x2);
+    }
+
+    // Once the tab is laid out (again). After that layout, not during it:
+    // the row updates its scroll range only after placing its tabs, so a
+    // tab past the old range (a new one, or one grown wider) could not be
+    // reached yet.
+    _scrollWhenLaidOut(tab) {
+        let idleId = 0;
+        const allocationId = tab.connect('notify::allocation', () => {
+            tab.disconnect(allocationId);
+            idleId = GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+                idleId = 0;
+                this._scrollTo(tab);
+                return GLib.SOURCE_REMOVE;
+            });
+        });
+        tab.connect('destroy', () => {
+            if (idleId)
+                GLib.source_remove(idleId);
+        });
     }
 
     _onScroll(event) {
@@ -181,14 +201,10 @@ export class NoteTabs {
         tab.add_action(rightClick);
         tab.connect('popup-menu', labels);
         tab.connect('key-focus-in', () => this._scrollTo(tab));
-        // Once, when first laid out: later allocations (hover shows the
-        // close button) must not undo the user's scrolling.
-        if (selected) {
-            const allocationId = tab.connect('notify::allocation', () => {
-                tab.disconnect(allocationId);
-                this._scrollTo(tab);
-            });
-        }
+        // Once, when first laid out: later allocations must not undo the
+        // user's scrolling.
+        if (selected)
+            this._scrollWhenLaidOut(tab);
 
         return tab;
     }
@@ -217,22 +233,8 @@ export class NoteTabs {
         oldContent.destroy();
         // The entry shows the full name; the bubble would cover it.
         this._tooltip.hide();
-        // The tab changes width: keep it in view once laid out again. After
-        // that layout, not during it: the row updates its scroll range only
-        // after placing its tabs, so a wider tab could not be reached yet.
-        let idleId = 0;
-        const allocationId = tab.connect('notify::allocation', () => {
-            tab.disconnect(allocationId);
-            idleId = GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
-                idleId = 0;
-                this._scrollTo(tab);
-                return GLib.SOURCE_REMOVE;
-            });
-        });
-        tab.connect('destroy', () => {
-            if (idleId)
-                GLib.source_remove(idleId);
-        });
+        // The tab changes width: keep it in view.
+        this._scrollWhenLaidOut(tab);
         entry.grab_key_focus();
         entry.clutter_text.set_selection(0, -1);
 

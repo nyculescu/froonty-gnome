@@ -5,7 +5,9 @@
 // settings process (resource:///…) are expected to fail to link here;
 // only a SyntaxError counts. FROONTY_PARSE_ROOT names another copy (the
 // public package, unzipped, in tools/pack-public/test_pack_public.py).
-// third_party/ (fetched code) is left out.
+// third_party/ (fetched code) is left out. The helper programs (helper.js,
+// *-helper.js: spawned with `gjs -m`, and one opens a file chooser as soon
+// as it runs) are only parsed (Reflect.parse), never run.
 
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
@@ -32,13 +34,20 @@ function modules(dir, out = []) {
     return out;
 }
 
+const isHelper = file => /(^|-)helper\.js$/.test(file.get_basename());
+
 test('every module of the extension parses', async () => {
     const files = modules(Gio.File.new_for_path(ROOT));
     const errors = [];
     for (const file of files) {
         try {
-            // eslint-disable-next-line no-await-in-loop
-            await import(file.get_uri());
+            if (isHelper(file)) {
+                const [, bytes] = file.load_contents(null);
+                Reflect.parse(new TextDecoder().decode(bytes), {target: 'module'});
+            } else {
+                // eslint-disable-next-line no-await-in-loop
+                await import(file.get_uri());
+            }
         } catch (e) {
             if (e instanceof SyntaxError)
                 errors.push(`${file.get_path()}:${e.lineNumber}: ${e.message}`);

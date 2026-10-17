@@ -11,7 +11,8 @@
 
 const HEADING = /^(#{1,6}) +/;
 const QUOTE = /^> ?/;
-const CHECK = /^(\s*)- \[([ xX])\] /;
+// A task: any list marker (-, * or +), as preview.js and toggleTask() read it.
+const CHECK = /^(\s*)([-*+][ \t]+)\[([ xX])\] /;
 const BULLET = /^(\s*)[-*+] /;
 const NUMBERED = /^(\s*)\d+[.)] /;
 const FENCE = /^\s*```/;
@@ -32,14 +33,12 @@ const INLINE = [
  * The styled spans of `text`.
  *
  * @param {string} text the note
- * @param {number} _activeLine kept for compatibility; inline and heading
- *   markers are always hidden
  * @returns {{start: number, end: number, style: string}[]} styles:
  *   'h1'…'h6', 'bold', 'italic', 'strike', 'code', 'link', 'quote',
  *   'done' (a checked item), 'fence' (inside a code block), 'marker'
  *   (shown dimmed), 'hidden' (a marker drawn transparently at tiny scale)
  */
-export function markdownSpans(text, _activeLine = -1) {
+export function markdownSpans(text) {
     const spans = [];
     let offset = 0;
     let inFence = false;
@@ -95,15 +94,23 @@ export function toggleTask(text, offset) {
     return chars.join('');
 }
 
-/** Checkbox source ranges, in UTF-16 offsets like markdownSpans(). */
+/**
+ * The `[ ]` of each task markdownSpans() draws as one (not in code), in
+ * UTF-16 offsets like markdownSpans().
+ */
 export function markdownTasks(text) {
     const tasks = [];
     let offset = 0;
+    let inFence = false;
     for (const line of text.split('\n')) {
-        const match = /^(\s*[-*+]\s+)\[([ xX])\]/.exec(line);
-        if (match) {
-            const start = offset + match[1].length;
-            tasks.push({start, end: start + 3, checked: match[2] !== ' '});
+        if (FENCE.test(line)) {
+            inFence = !inFence;
+        } else if (!inFence) {
+            const check = CHECK.exec(line);
+            if (check) {
+                const start = offset + check[1].length + check[2].length;
+                tasks.push({start, end: start + 3, checked: check[3] !== ' '});
+            }
         }
         offset += line.length + 1;
     }
@@ -197,11 +204,12 @@ function lineSpans(line, {marker, span}) {
     }
     const check = !heading && !quote && CHECK.exec(line);
     if (check) {
-        // The editor draws a clickable checkbox over the source characters.
-        span(check[1].length, check[0].length, 'marker');
-        // Indentation and the list marker precede the actual `[ ]` token.
-        span(check[1].length + 2, check[1].length + 5, 'taskbox');
-        if (check[2] !== ' ')
+        // The editor draws a clickable checkbox over the `[ ]`; the list
+        // marker before it is hidden.
+        const box = check[1].length + check[2].length;
+        span(check[1].length, box, 'hidden');
+        span(box, box + 3, 'taskbox');
+        if (check[3] !== ' ')
             span(check[0].length, line.length, 'done');
         rest = check[0].length;
         plain = false;
@@ -379,7 +387,7 @@ function dollarRuns(line, offset, index, runs) {
  * its lines). There it shows its LaTeX with hidden dollar delimiters.
  *
  * @param {string} text the note
- * @param {number} activeLine as for markdownSpans()
+ * @param {number} activeLine the edited line (from 0), -1 for none
  * @returns {{spans: object[], formulas: object[]}} formulas: mathSpans()'s,
  *   each with `active`
  */
@@ -395,7 +403,7 @@ export function mathMarkdownSpans(text, activeLine = -1) {
         at = end;
     }
     parts.push(text.slice(at));
-    const spans = markdownSpans(parts.join(''), activeLine);
+    const spans = markdownSpans(parts.join(''));
     for (const {start, end, open, close, active} of formulas) {
         if (active) {
             spans.push({start, end: start + open, style: 'hidden'},

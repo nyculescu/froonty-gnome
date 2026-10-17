@@ -54,7 +54,7 @@ const PID_MAX = 4194304;
  * negative numbers mean process groups, -1 every process; 1 is init.
  */
 export function isValidPid(pid) {
-    return typeof pid === 'number' && Number.isSafeInteger(pid) && pid > 1 && pid <= PID_MAX;
+    return Number.isSafeInteger(pid) && pid > 1 && pid <= PID_MAX;
 }
 
 /** Whether a process is one of PROTECTED_NAMES, by comm or by argv[0]. */
@@ -125,7 +125,7 @@ export function rankProcesses(processes, {sort = 'cpu', filter = ''} = {}) {
         cpu: [byCpu, byMemory],
         memory: [byMemory, byCpu],
         threads: [byThreads, byCpu, byMemory],
-    }[sort] ?? [byCpu, byMemory];
+    }[sort];
     return matching.sort((a, b) => {
         for (const compare of order) {
             const result = compare(a, b);

@@ -26,7 +26,7 @@ const PAUSE_SCALE = 0.94;
 const PAUSE_MS = 300;
 
 /** The island's background behind the expanded tab: always black. */
-export const BLACK = () => ({red: 0, green: 0, blue: 0, alpha: 255});
+const BLACK = () => ({red: 0, green: 0, blue: 0, alpha: 255});
 
 export const ArtFrame = GObject.registerClass(
 class ArtFrame extends St.Widget {
@@ -157,16 +157,15 @@ class ArtFrame extends St.Widget {
      * Shrinks slightly while paused.
      *
      * @param {boolean} paused
-     * @param {boolean} [animate]
      */
-    setPaused(paused, animate = true) {
+    setPaused(paused) {
         if (paused === this._paused)
             return;
         this._paused = paused;
         const scale = paused ? PAUSE_SCALE : 1;
         this.remove_transition('scale-x');
         this.remove_transition('scale-y');
-        if (animate && St.Settings.get().enable_animations) {
+        if (St.Settings.get().enable_animations) {
             this.ease({
                 scale_x: scale,
                 scale_y: scale,

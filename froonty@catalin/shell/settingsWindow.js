@@ -52,6 +52,8 @@ export class SettingsWindow {
         this._settings = settings;
         this._waitTimeoutId = 0;
         this._retryId = 0;
+        this._requesting = false;
+        this._destroyed = false;
         // The windows watched for 'shown' while waiting: _stopWaiting() lets
         // go of exactly these, also one unmanaged before it was ever shown.
         this._watched = new Set();
@@ -69,14 +71,22 @@ export class SettingsWindow {
         }
 
         this._activateWhenShown();
+        // One request at a time: the window it brings is the one awaited.
+        if (this._requesting)
+            return;
+        this._requesting = true;
         this._request().catch(e => {
             this._stopWaiting();
             this._resetViewWithoutWindow();
             logError(e, 'Froonty: could not open the settings window');
+        }).finally(() => {
+            this._requesting = false;
         });
     }
 
     destroy() {
+        // A call still pending ends without a retry.
+        this._destroyed = true;
         this._stopWaiting();
         // A pending retry's promise is left unresolved: nothing more runs.
         if (this._retryId)
@@ -105,6 +115,8 @@ export class SettingsWindow {
                     null, Gio.DBusCallFlags.NONE, -1, null);
                 return;
             } catch (e) {
+                if (this._destroyed)
+                    return;
                 // A second click before the first window has appeared; the
                 // pending watch will still activate that window.
                 if (e.message.includes('Already showing a prefs dialog'))

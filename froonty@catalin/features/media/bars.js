@@ -16,8 +16,8 @@ import Graphene from 'gi://Graphene';
 import St from 'gi://St';
 
 const envelope = (i, n) => 0.55 + 0.45 * Math.sin(Math.PI * (i + 0.5) / n);
-export const lowScale = (i, n) => 0.12 + 0.25 * envelope(i, n);
-export const highScale = (i, n) => 0.12 + 0.88 * envelope(i, n);
+const lowScale = (i, n) => 0.12 + 0.25 * envelope(i, n);
+const highScale = (i, n) => 0.12 + 0.88 * envelope(i, n);
 
 export const MediaBars = GObject.registerClass(
 class MediaBars extends St.BoxLayout {
@@ -30,7 +30,6 @@ class MediaBars extends St.BoxLayout {
      */
     _init({count = 3, barWidth = 2.5, height = 12, gap = 2} = {}) {
         super._init({
-            style_class: 'froonty-media-bars',
             style: `spacing: ${gap}px;`,
             accessible_role: Atk.Role.REDUNDANT_OBJECT,
             y_align: Clutter.ActorAlign.CENTER,
@@ -45,7 +44,6 @@ class MediaBars extends St.BoxLayout {
         this._bars = [];
         for (let i = 0; i < count; i++) {
             const bar = new St.Widget({
-                style_class: 'froonty-media-bar',
                 width: barWidth,
                 height,
                 pivot_point: new Graphene.Point({x: 0.5, y: 1}),

@@ -7,6 +7,8 @@
 // jar, no cache (Soup adds neither by itself), a User-Agent that names
 // Froonty, a 10 s timeout, and bodies read in chunks up to a cap, so a
 // large or endless answer is cut off instead of filling memory.
+//
+// Also the two local file reads that art.js and lyricsService.js share.
 
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
@@ -46,13 +48,40 @@ function readChunk(stream, cancellable) {
 }
 
 /** Closes a stream asynchronously, ignoring errors. */
-export function closeQuietly(stream) {
+function closeQuietly(stream) {
     stream.close_async(GLib.PRIORITY_DEFAULT, null, (_stream, result) => {
         try {
             stream.close_finish(result);
         } catch {
             // Already closed or aborted: nothing to release.
         }
+    });
+}
+
+/** Gio.File.query_info_async for the size and type, as a promise. */
+export function queryInfo(file, cancellable) {
+    return new Promise((resolve, reject) => {
+        file.query_info_async('standard::size,standard::type', Gio.FileQueryInfoFlags.NONE,
+            GLib.PRIORITY_DEFAULT, cancellable, (_file, result) => {
+                try {
+                    resolve(file.query_info_finish(result));
+                } catch (e) {
+                    reject(e);
+                }
+            });
+    });
+}
+
+/** Gio.File.load_contents_async as a promise of the contents (Uint8Array). */
+export function loadBytes(file, cancellable) {
+    return new Promise((resolve, reject) => {
+        file.load_contents_async(cancellable, (_file, result) => {
+            try {
+                resolve(file.load_contents_finish(result)[1]);
+            } catch (e) {
+                reject(e);
+            }
+        });
     });
 }
 
@@ -123,13 +152,9 @@ export class Fetcher {
         }
     }
 
-    /** Aborts every request in flight; the session is kept for later ones. */
-    abort() {
-        this.session?.abort();
-    }
-
+    /** Aborts every request in flight and drops the session. */
     destroy() {
-        this.abort();
+        this.session?.abort();
         this.session = null;
     }
 }

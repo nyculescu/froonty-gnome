@@ -66,7 +66,7 @@ const TRANSLATION_KEY = 'translation';
 const resultOnly = key => format(RESULT_ONLY, key, key === TRANSLATION_KEY ? 'in the other language' : 'in new words');
 
 /** The JSON schema of a text step's reply (Ollama's structured outputs). */
-export function resultSchema(key) {
+function resultSchema(key) {
     return {type: 'object', properties: {[key]: {type: 'string'}}, required: [key]};
 }
 
@@ -143,7 +143,7 @@ const STRICT = {
     long: 'Your previous reply was not shorter than the text. This time cut it to about half as many words: drop every word that is not needed, and add none.',
 };
 
-export function actionById(id) {
+function actionById(id) {
     return ACTIONS.find(a => a.id === id) ?? null;
 }
 
@@ -161,8 +161,8 @@ function writer(firstLanguage) {
  * The requests one click of `actionId` makes, in order. Fix grammar makes
  * two (B2, then C1), Translate a translation and then its idioms, the
  * others one. A step is {id, label, kind: 'text'|'idioms', key (a text
- * step's reply field), system, temperature, schema}: `system` holds no nonce and no text, so Claude
- * Code's argv never carries the text.
+ * step's reply field), system, temperature, schema}: `system` holds none of the text, so Claude Code's
+ * argv never carries it.
  *
  * @param {string} actionId
  * @param {object} [options]
@@ -200,7 +200,7 @@ export function stepsFor(actionId, {firstLanguage = 'ro', from = 'ro', to = 'en'
         const target = languageName(to) ?? 'English';
         const source = languageName(from);
         const translation = text('translation', '', format(TRANSLATE,
-            source && from !== ANY_LANGUAGE ? ` from ${source}` : '', target, target, target, target),
+            source ? ` from ${source}` : '', target, target, target, target),
         null, TRANSLATION_KEY);
         return [translation, {
             id: 'idioms',
@@ -410,15 +410,7 @@ function usesEquivalent(example, equivalent) {
  * no idioms.
  */
 export function parseIdioms(raw) {
-    const text = dropThinking(String(raw ?? ''));
-    const from = text.indexOf('{');
-    const to = text.lastIndexOf('}');
-    let data = null;
-    try {
-        data = from >= 0 && to > from ? JSON.parse(text.slice(from, to + 1)) : null;
-    } catch (e) {
-        data = null;
-    }
+    const data = replyJson(raw);
     const list = Array.isArray(data?.idioms) ? data.idioms : [];
     const fields = ['phrase', 'meaning', 'equivalent', 'example'];
     return list

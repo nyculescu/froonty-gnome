@@ -11,12 +11,10 @@ import GLib from 'gi://GLib';
 
 import {SYSTEM_IO} from '../sysmon/io.js';
 
-// sysmon/io.js promisifies these too; doing it again is harmless.
-Gio._promisify(Gio.File.prototype, 'enumerate_children_async');
-Gio._promisify(Gio.FileEnumerator.prototype, 'next_files_async');
-Gio._promisify(Gio.FileEnumerator.prototype, 'close_async');
-
-/** A folder's entries with their owner's user id, or [] when it cannot be listed. */
+/**
+ * A folder's entries with their owner's user id, or [] when it cannot be
+ * listed. The enumerator calls are promisified by sysmon/io.js.
+ */
 async function owners(path, cancellable = null) {
     try {
         const enumerator = await Gio.File.new_for_path(path).enumerate_children_async(

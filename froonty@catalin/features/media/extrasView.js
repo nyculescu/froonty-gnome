@@ -58,8 +58,6 @@ class Message {
         this.actor.add_child(this.spinner);
         this.text = label('', 'froonty-media-message-text', true);
         this.actor.add_child(this.text);
-        this.note = label('', 'froonty-media-message-note', true);
-        this.actor.add_child(this.note);
     }
 
     destroy() {
@@ -68,10 +66,8 @@ class Message {
         this.actor = null;
     }
 
-    show(text, note = '', {loading = false} = {}) {
+    show(text, {loading = false} = {}) {
         this.text.text = text;
-        this.note.text = note;
-        this.note.visible = Boolean(note);
         if (loading)
             this.spinner.play();
         else
@@ -108,7 +104,6 @@ export class LyricsPanel {
             x_expand: true,
         });
         this._scroll = new St.ScrollView({
-            style_class: 'froonty-media-lyrics-scroll',
             hscrollbar_policy: St.PolicyType.NEVER,
             overlay_scrollbars: true,
             x_expand: true,
@@ -210,7 +205,7 @@ export class LyricsPanel {
             this._message.show(_('Sends the song’s title, artist, album and length to lrclib.net.'));
             break;
         case 'loading':
-            this._message.show(_('Loading lyrics…'), '', {loading: true});
+            this._message.show(_('Loading lyrics…'), {loading: true});
             break;
         case 'unavailable':
             this._message.show(_('No matching lyrics for this recording.'));
@@ -257,7 +252,6 @@ export class LyricsPanel {
             this._hint.visible = false;
             return;
         }
-        this.reset.label = offsetLabel(this._lyrics.offset);
         if (!timing.hasPosition) {
             this._hint.text = _('The player does not share its position.');
             this._hint.visible = true;
@@ -278,8 +272,9 @@ export class LyricsPanel {
         return this._active >= 0 ? this._active : null;
     }
 
+    // -3: plain (no position); -1: timed, before the first line.
     _highlight(index, plain) {
-        const value = plain ? -1 : index ?? -1;
+        const value = plain ? -3 : index ?? -1;
         if (value === this._active)
             return;
         this._active = value;
@@ -349,7 +344,6 @@ export class QueuePanel {
             x_expand: true,
         });
         this._scroll = new St.ScrollView({
-            style_class: 'froonty-media-queue-scroll',
             hscrollbar_policy: St.PolicyType.NEVER,
             overlay_scrollbars: true,
             x_expand: true,
@@ -405,7 +399,7 @@ export class QueuePanel {
         this._openButton.visible = state === 'unsupported' && Boolean(this._media.playback?.canOpen);
         switch (state) {
         case 'loading':
-            this._message.show(_('Loading…'), '', {loading: true});
+            this._message.show(_('Loading…'), {loading: true});
             break;
         case 'empty':
             this._message.show(_('No upcoming songs'));
@@ -451,7 +445,7 @@ export class QueuePanel {
             box.add_child(text);
             if (canControl) {
                 const play = new St.Button({
-                    style_class: 'froonty-icon-button froonty-media-queue-play',
+                    style_class: 'froonty-icon-button',
                     accessible_name: _('Play now: %s').format(row.title),
                     can_focus: true,
                     track_hover: true,

@@ -174,10 +174,8 @@ export class ClaudeView {
         const actor = row(windowTitle(window), known ? amountText(window) : _('Unknown'), bar,
             detail);
         // Dimmed (St's CSS has no opacity), a hint rather than a value.
-        if (stale) {
-            actor.add_style_class_name('froonty-claude-row-stale');
+        if (stale)
             actor.opacity = STALE_OPACITY;
-        }
         return actor;
     }
 
@@ -274,7 +272,7 @@ function row(name, value, bar, detail, wrap = false) {
         style_class: 'froonty-claude-row',
         orientation: Clutter.Orientation.VERTICAL,
     });
-    const heading = new St.BoxLayout({style_class: 'froonty-claude-row-heading'});
+    const heading = new St.BoxLayout();
     heading.add_child(new St.Label({style_class: 'froonty-claude-name', text: name, x_expand: true}));
     heading.add_child(new St.Label({style_class: 'froonty-claude-percent', text: value}));
     actor.add_child(heading);

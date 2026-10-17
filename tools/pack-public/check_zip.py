@@ -18,7 +18,8 @@ import zipfile
 LOCAL_DIRS = (
     "features/writing/", "features/zerotier/", "features/media/", "features/claude/",
     "features/sysmon/", "features/clipboard/", "features/killprocess/", "features/break/",
-    "features/formulas/", "features/brightness/", "features/padNoiseSlider/",
+    "features/formulas/", "features/brightness/", "features/padNoiseSlider/", "features/fan/",
+    "features/timezonePlanner/",
     # The Formulas tab's MathJax (tools/fetch-mathjax.py).
     "third_party/",
 )
@@ -105,6 +106,13 @@ BANNED = (
     b"features/padNoiseSlider",
     b"cooling-slider-enabled",
     b"PadNoiseSliderPart",
+    # The Fan settings page: its keys, the pad tool and the owner's paths.
+    b"fan-llano-path",
+    b"llano",
+    b"/srv/",
+    # The Timezone planner.
+    b"timezone-planner",
+    b"TimezonePlanner",
     b"brightness",
     b"Brightness",
     b"mathjax",

@@ -10,7 +10,7 @@
 /**
  * The LUT from fan_lut.json's text, or null when it is not one.
  *
- * @returns {?{devices: Object<string, {rows: number[][]}>, source: string, built: string}}
+ * @returns {?{devices: Object<string, {rows: number[][]}>, built: string}}
  */
 export function parseLut(text) {
     let lut;
@@ -29,15 +29,13 @@ export function parseLut(text) {
     }
     if (!Object.keys(devices).length)
         return null;
-    return {devices, source: lut.source ?? '', built: lut.built ?? ''};
+    return {devices, built: lut.built ?? ''};
 }
 
 /** One device's speed (0-100) at `temp`, from its rows. */
 export function deviceFan(rows, temp) {
     if (temp <= rows[0][0])
         return rows[0][1];
-    if (temp >= rows[rows.length - 1][0])
-        return rows[rows.length - 1][1];
     for (let i = 1; i < rows.length; i++) {
         const [[t0, f0], [t1, f1]] = [rows[i - 1], rows[i]];
         if (temp <= t1)

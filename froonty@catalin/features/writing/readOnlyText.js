@@ -20,7 +20,7 @@ import {keepCursorVisible} from '../../core/textScroll.js';
 const isWord = ch => /[\p{L}\p{N}_]/u.test(ch);
 
 /** The start of the word before `pos` (Ctrl+Left). */
-export function wordStart(chars, pos) {
+function wordStart(chars, pos) {
     let i = pos;
     while (i > 0 && !isWord(chars[i - 1]))
         i--;
@@ -30,7 +30,7 @@ export function wordStart(chars, pos) {
 }
 
 /** The end of the word after `pos` (Ctrl+Right). */
-export function wordEnd(chars, pos) {
+function wordEnd(chars, pos) {
     let i = pos;
     while (i < chars.length && !isWord(chars[i]))
         i++;
@@ -40,7 +40,7 @@ export function wordEnd(chars, pos) {
 }
 
 /** Ctrl+Up: this paragraph's start, or the one before's when already there. */
-export function paragraphStart(chars, pos) {
+function paragraphStart(chars, pos) {
     let i = pos;
     while (i > 0 && chars[i - 1] === '\n')
         i--;
@@ -50,7 +50,7 @@ export function paragraphStart(chars, pos) {
 }
 
 /** Ctrl+Down: this paragraph's end, or the next one's when already there. */
-export function paragraphEnd(chars, pos) {
+function paragraphEnd(chars, pos) {
     let i = pos;
     while (i < chars.length && chars[i] === '\n')
         i++;
@@ -83,8 +83,11 @@ export function makeNavigable(entry, scroll) {
     const text = entry.clutter_text;
     // The caret shows where Shift+arrows start from.
     text.cursor_visible = true;
-    // The x a run of Up/Down keeps to, as in any text editor.
+    // The x a run of Up/Down keeps to, as in any text editor, and where
+    // the last key put the caret: a caret moved since (a click, new text)
+    // starts a new run.
     let goalX = null;
+    let lastTarget = null;
 
     const follow = () => {
         if (text.has_key_focus())
@@ -137,7 +140,7 @@ export function makeNavigable(entry, scroll) {
         if (!ok)
             return Clutter.EVENT_PROPAGATE;
         const vertical = ['up', 'down', 'pageUp', 'pageDown'].includes(name) && !ctrl;
-        if (!vertical || goalX === null)
+        if (!vertical || goalX === null || cursor !== lastTarget)
             goalX = x;
         const page = Math.max(lineHeight, scroll.vadjustment.page_size - lineHeight);
         const selecting = cursor !== bound;
@@ -181,6 +184,7 @@ export function makeNavigable(entry, scroll) {
         // at the selection's start).
         text.cursor_position = target;
         text.selection_bound = shift ? bound : target;
+        lastTarget = target;
         keepCursorVisible(entry, scroll);
         // At the very start, what sits above the text (a version's
         // label and Copy) comes into view too.

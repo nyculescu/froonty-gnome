@@ -39,22 +39,19 @@ import {MediaBars} from './bars.js';
 import {LyricsPanel, QueuePanel} from './extrasView.js';
 import {feedSwipe, nudge} from './gesture.js';
 import {
-    OneShot, SEEK_HOLD_MS, SwipeTracker, formatRemaining, formatTime, glibTimers, playPauseCommand,
-    subst, tintCss,
+    OneShot, SEEK_HOLD_MS, SwipeTracker, clamp, formatRemaining, formatTime, glibTimers,
+    playPauseCommand, subst, tintCss,
 } from './model.js';
 import {OutputVolume} from './volume.js';
 
 const ROW_SPACING = 8;
-const CONTROLS_ROW = 32;
 const EXTRAS_H = 216;
 const MIN_PLAYER = 88;
 const ART_MIN = 56;
 const ART_MAX = 200;
 const ROOMY = 140;
 /** Logical px the island grows by while lyrics or the queue are open. */
-export const EXTRA_HEIGHT = EXTRAS_H + ROW_SPACING;
-
-const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
+const EXTRA_HEIGHT = EXTRAS_H + ROW_SPACING;
 
 function iconButton(icon, name, styleClass = '') {
     return new St.Button({
@@ -161,7 +158,6 @@ export class MediaView extends Emitter {
         this._stack.add_child(this._main);
         this._main.add_child(this._buildPlayerRow());
         this._extrasHost = new St.Widget({
-            style_class: 'froonty-media-extras',
             layout_manager: new Clutter.BinLayout(),
             x_expand: true,
             visible: false,
@@ -191,7 +187,6 @@ export class MediaView extends Emitter {
 
     _buildPlayerRow() {
         this._playerRow = new St.BoxLayout({
-            style_class: 'froonty-media-player',
             x_expand: true,
             // Reactive for touchpad swipes (scroll events) over the row.
             reactive: true,
@@ -227,8 +222,7 @@ export class MediaView extends Emitter {
         titleRow.add_child(this._title);
         this._chip = this._sourceChip();
         titleRow.add_child(this._chip);
-        this._bars = new MediaBars({count: 3, barWidth: 2.5, height: 12, gap: 2});
-        this._bars.add_style_class_name('froonty-media-title-bars');
+        this._bars = new MediaBars();
         titleRow.add_child(this._bars);
         this._details.add_child(titleRow);
 
@@ -249,12 +243,12 @@ export class MediaView extends Emitter {
         this.slider.connect('key-focus-in', () => this._describePosition());
         this._timeline.add_child(this.slider);
         this._meter = new BarLevel({
-            style_class: 'barlevel froonty-media-slider froonty-media-meter',
+            style_class: 'barlevel froonty-media-slider',
             reactive: false,
             x_expand: true,
         });
         this._timeline.add_child(this._meter);
-        const times = new St.BoxLayout({style_class: 'froonty-media-times', x_expand: true});
+        const times = new St.BoxLayout({x_expand: true});
         this._elapsed = new St.Label({style_class: 'froonty-media-time', x_expand: true});
         this._remaining = new St.Label({style_class: 'froonty-media-time'});
         times.add_child(this._elapsed);
@@ -309,7 +303,7 @@ export class MediaView extends Emitter {
             track_hover: true,
             y_align: Clutter.ActorAlign.CENTER,
         });
-        const label = new St.Label({style_class: 'froonty-media-chip-label', y_align: Clutter.ActorAlign.CENTER});
+        const label = new St.Label({y_align: Clutter.ActorAlign.CENTER});
         label.clutter_text.ellipsize = Pango.EllipsizeMode.END;
         chip.child = label;
         chip.connect('clicked', () => this._openPicker());
@@ -437,6 +431,8 @@ export class MediaView extends Emitter {
                     this._panels[kind] = null;
                 }
                 this._panelsFor = s;
+                // The source list's rows call the old service.
+                this._pickerSignature = null;
             }
             this._serviceIds = [
                 s.connect('changed', () => this._sync()),
@@ -530,7 +526,6 @@ export class MediaView extends Emitter {
                 this._artist.remove_style_class_name('froonty-media-failed');
             }
             this._bars.setPlaying(playback.playing);
-            this._bars.setEnabled(this._settings.get_boolean('media-animate-bars'));
             this._art.setPaused(!playback.playing);
 
             const command = playPauseCommand(caps);
@@ -552,13 +547,12 @@ export class MediaView extends Emitter {
             this.slider.visible = this._timelineMode === 'slider';
             this._meter.visible = this._timelineMode === 'meter';
             this._wantTimeline = this._timelineMode !== 'none';
-            this.artButton.reactive = playback.canOpen;
             this.artButton.accessible_name = playback.canOpen
                 ? subst(_('Open %s'), playback.name) : playback.name;
             this._syncArt();
             this._updateTime();
             this._applyLevel(this._level ?? 0);
-            if (this._wantFocus && this.playButton.visible && this._transport.visible)
+            if (this._wantFocus && this._transport.visible)
                 this._takeFocus();
         } else {
             this._bars.setPlaying(false);
@@ -595,6 +589,9 @@ export class MediaView extends Emitter {
         if (!playback)
             return;
         const art = s.art;
+        // Reactive also for the tooltip on a blocked web cover (a click
+        // then does nothing).
+        this.artButton.reactive = playback.canOpen || art.state === 'blocked';
         const appIcon = playback.app?.get_icon?.() ?? null;
         this._art.setImage(art.state === 'ready' ? art.pixbuf : null, appIcon);
         this._art.setTint(art.state === 'ready' ? art.tint : null);
@@ -924,7 +921,6 @@ export class MediaView extends Emitter {
                 break;
         }
         this._applyLevel(level);
-        this._lastLayout = {stackHeight, height, side, width, level, calls: (this._lastLayout?.calls ?? 0) + 1};
     }
 
     // 0 roomy; 1 compact; 2 compact without the artist; 3 also without

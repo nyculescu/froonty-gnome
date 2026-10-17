@@ -96,15 +96,10 @@ either**: no calendar and no notification store of Froonty's own
     notifications".
   - It follows the clock service (the top bar's own WallClock ticks): no
     timer of its own, and its handler goes with the hub.
-  - It is wider than 📅 was. At first the centred panic bar kept clear
-    of it by widening the island (at least about 430 px with the two
-    default panic buttons, about 498 px on the Notes tab), which made
-    the narrow end of each tab's width setting do nothing. Now the panic
-    bar moves left instead, just enough to keep 8 px clear of the
-    header's buttons (`PanicLayout` in `ui/hub.js`), and the island
-    grows only when the bar does not fit between the tab column and
-    those buttons at all (`Hub.minWidth`; [notes.md](notes.md)). Every
-    tab opens at its own width at the defaults.
+  - It is wider than 📅 was. The island grows until both halves around
+    it fit 8 px clear of the hub's edges and the header's buttons
+    (`Hub.minWidth` in `ui/hub.js`, `PANIC_GAP` in `ui/hubHeader.js`;
+    [notes.md](notes.md)).
   - A press (click, touch, Enter, Space) takes the menu's path below.
     Escape and a click outside close the menu as GNOME's own do.
 - **Super+V is GNOME's own.** Froonty adds no shortcut: GNOME's
@@ -196,8 +191,8 @@ Headless (`testDatePill` and `testCalendarMenu` in
   alone, which are then centred as one group); one
   handler on the clock service while it exists, none after; with the
   island turned off, no handler left on the clock service at all.
-- The date pill between the panic groups, centred on the island or moved
-  just clear, its tooltip.
+- The date pill over GNOME's clock, centred on the island on a wide tab,
+  the panic buttons split equally on its two sides; its tooltip.
 - A click opens GNOME's menu: raised above the island as it opens, the
   island collapsed (back to the pill's size, its hub hidden) and its grab
   released (one modal grab left, the menu's), the focus in the menu, the

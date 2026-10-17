@@ -9,26 +9,42 @@ import Gtk from 'gi://Gtk';
 
 import {gettext as _} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
+import {addIconPath as addIconFolder, choiceRow} from '../../prefs/rows.js';
 import {attentionHooksState, installAttentionHooks, removeAttentionHooks} from './attentionSetup.js';
 import {
     claudeSettingsFile, installStatusLine, readClaudeSettings, removeStatusLine, statusLineState,
 } from './statusLineSetup.js';
+import {SPARK_ICON_NAME} from './icon.js';
 
-// Makes the bundled Spark an icon name. The folder is laid out as an icon
-// theme (icons/hicolor/scalable/actions/): GTK 4.14 recolours a -symbolic
-// icon found that way, but not a loose file on the search path.
-export function addIconPath() {
-    const display = Gdk.Display.get_default();
-    const icons = Gio.File.new_for_uri(import.meta.url).get_parent().get_child('icons');
-    if (display)
-        Gtk.IconTheme.get_for_display(display).add_search_path(icons.get_path());
+/** Makes the bundled Spark an icon name. */
+export const addIconPath = () => addIconFolder(import.meta.url);
+
+// Both Remove buttons: Claude Code's own settings, so red, but lighter than
+// destructive-action. The text is libadwaita's red for text on the window
+// background, the fill a tint of it, in both light and dark styles.
+const CSS = `
+button.froonty-remove { color: var(--destructive-color); background-color: alpha(currentColor, 0.12); }
+button.froonty-remove:hover { background-color: alpha(currentColor, 0.18); }
+button.froonty-remove:active { background-color: alpha(currentColor, 0.28); }
+`;
+let cssAdded = false;
+
+function addCss() {
+    if (cssAdded)
+        return;
+    cssAdded = true;
+    const provider = new Gtk.CssProvider();
+    provider.load_from_string(CSS);
+    Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), provider,
+        Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION);
 }
 
 export function claudePage(settings) {
+    addCss();
     const page = new Adw.PreferencesPage({
         name: 'claude',
         title: _('Claude'),
-        icon_name: 'froonty-claude-symbolic',
+        icon_name: SPARK_ICON_NAME,
     });
 
     const group = new Adw.PreferencesGroup({
@@ -43,25 +59,8 @@ export function claudePage(settings) {
         title: _('Panic button'),
         description: _('Choose which Claude usage window appears in the Claude panic button.'),
     });
-    const panicUsage = new Adw.ComboRow({
-        title: _('Usage to show'),
-        model: Gtk.StringList.new([_('Current session'), _('Weekly session')]),
-    });
-    const panicUsageWindows = ['session', 'weekly'];
-    let syncingPanicUsage = false;
-    const syncPanicUsage = () => {
-        syncingPanicUsage = true;
-        panicUsage.selected = Math.max(
-            panicUsageWindows.indexOf(settings.get_string('claude-panic-usage-window')), 0);
-        syncingPanicUsage = false;
-    };
-    syncPanicUsage();
-    panicUsage.connect('notify::selected', () => {
-        if (!syncingPanicUsage)
-            settings.set_string('claude-panic-usage-window', panicUsageWindows[panicUsage.selected]);
-    });
-    settings.connect('changed::claude-panic-usage-window', syncPanicUsage);
-    panicUsageGroup.add(panicUsage);
+    panicUsageGroup.add(choiceRow(settings, 'claude-panic-usage-window', _('Usage to show'),
+        ['session', 'weekly'], [_('Session'), _('Weekly')]));
 
     page.add(group);
     page.add(panicUsageGroup);
@@ -118,16 +117,20 @@ function freshnessGroup(settings) {
     const row = new Adw.ActionRow({title: _('Claude Code status line')});
     const button = new Gtk.Button({valign: Gtk.Align.CENTER});
     row.add_suffix(button);
+    // A failed click's message, shown while the state it was made in lasts.
     let error = null;
     const sync = () => {
         const read = readClaudeSettings();
         const state = read.error ? 'error' : statusLineState(read.settings);
         const path = claudeSettingsFile().get_path();
+        if (error?.state !== state)
+            error = null;
         button.visible = state === 'none' || state === 'ours';
         button.label = state === 'ours' ? _('Remove') : _('Set up');
-        button.remove_css_class(state === 'ours' ? 'suggested-action' : 'destructive-action');
-        if (state === 'none')
-            button.add_css_class('suggested-action');
+        for (const css of ['suggested-action', 'froonty-remove'])
+            button.remove_css_class(css);
+        if (state === 'none' || state === 'ours')
+            button.add_css_class(state === 'ours' ? 'froonty-remove' : 'suggested-action');
         row.subtitle = {
             none: _('Not set up. Set up adds Froonty’s status line to %s; it then updates Session and Weekly with no extra requests, also in low power.').format(path),
             ours: _('Set up: Session and Weekly update after each Claude Code reply.'),
@@ -135,11 +138,13 @@ function freshnessGroup(settings) {
             error: _('%s could not be read: %s').format(path, read.error),
         }[state];
         if (error)
-            row.subtitle = _('Could not change %s: %s').format(path, error);
+            row.subtitle = _('Could not change %s: %s').format(path, error.message);
     };
     button.connect('clicked', () => {
         const read = readClaudeSettings();
-        error = statusLineState(read.settings) === 'ours' ? removeStatusLine() : installStatusLine();
+        const state = statusLineState(read.settings);
+        const message = state === 'ours' ? removeStatusLine() : installStatusLine();
+        error = message ? {state, message} : null;
         sync();
     });
     sync();
@@ -165,6 +170,7 @@ function attentionGroup(settings) {
     const row = new Adw.ActionRow({title: _('Claude Code hooks')});
     const button = new Gtk.Button({valign: Gtk.Align.CENTER});
     row.add_suffix(button);
+    // A failed click's message, shown while the state it was made in lasts.
     let error = null;
     let state = 'error';
     const sync = () => {
@@ -172,12 +178,14 @@ function attentionGroup(settings) {
         const hooks = read.error ? null : attentionHooksState(read.settings);
         state = hooks?.state ?? 'error';
         const path = claudeSettingsFile().get_path();
+        if (error?.state !== state)
+            error = null;
         button.visible = state !== 'error';
         button.label = {none: _('Set up'), ours: _('Remove'), outdated: _('Update')}[state] ?? '';
-        for (const css of ['suggested-action', 'destructive-action'])
+        for (const css of ['suggested-action', 'froonty-remove'])
             button.remove_css_class(css);
         if (state !== 'error')
-            button.add_css_class(state === 'ours' ? 'destructive-action' : 'suggested-action');
+            button.add_css_class(state === 'ours' ? 'froonty-remove' : 'suggested-action');
         let subtitle = {
             none: _('Not set up. Set up adds Froonty’s hooks to %s, next to any of your own: Claude Code (terminal, VS Code, the Claude app’s Code tab) then tells Froonty when a session needs you. Needs Claude Code 2.1.233 or later.').format(path),
             ours: _('Set up. Claude Code runs Froonty’s script when a session needs you or finishes, and a one-line command after each prompt and step to clear it.'),
@@ -189,12 +197,13 @@ function attentionGroup(settings) {
         if (state !== 'none' && state !== 'error' && !settings.get_boolean('claude-attention-enabled'))
             subtitle += _(' The bar is off, so the hooks record nothing.');
         if (error)
-            subtitle = _('Could not change %s: %s').format(path, error);
+            subtitle = _('Could not change %s: %s').format(path, error.message);
         row.subtitle = subtitle;
     };
     button.connect('clicked', () => {
         // What the row showed is what the click does.
-        error = state === 'ours' ? removeAttentionHooks() : installAttentionHooks();
+        const message = state === 'ours' ? removeAttentionHooks() : installAttentionHooks();
+        error = message ? {state, message} : null;
         sync();
     });
     settings.connect('changed::claude-attention-enabled', sync);

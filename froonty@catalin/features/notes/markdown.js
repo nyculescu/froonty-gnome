@@ -79,22 +79,22 @@ export function isNumbered(state) {
 
 /** Insert "[label](https://)" around the selection and select the URL. */
 export function insertLink(state) {
-    const {chars, start, end} = normalize(state);
-    const label = start === end ? [...'link'] : chars.slice(start, end);
-    const url = [...'https://'];
-    const before = [...chars.slice(0, start), '[', ...label, ...']('];
-    const text = [...before, ...url, ')', ...chars.slice(end)];
-    return result(text, before.length, before.length + url.length);
+    return insertTarget(state, '', 'link', 'https://');
 }
 
-/** Inserts an image, using the selected text as its alt label when present. */
+/** Insert "![alt](path)", the selection as the alt text, and select the path. */
 export function insertImage(state, path) {
+    return insertTarget(state, '!', 'image', path);
+}
+
+// "<bang>[label](target)" in place of the selection; the selected text is
+// the label (else `fallback`), and the target is selected.
+function insertTarget(state, bang, fallback, target) {
     const {chars, start, end} = normalize(state);
-    const alt = start === end ? [...'image'] : chars.slice(start, end);
-    const target = [...path];
-    const prefix = [...chars.slice(0, start), '!', '[', ...alt, ']('];
-    const text = [...prefix, ...target, ')', ...chars.slice(end)];
-    return result(text, prefix.length, prefix.length + target.length);
+    const label = start === end ? [...fallback] : chars.slice(start, end);
+    const before = [...chars.slice(0, start), ...bang, '[', ...label, ...']('];
+    const text = [...before, ...target, ')', ...chars.slice(end)];
+    return result(text, before.length, before.length + [...target].length);
 }
 
 // Applies `edit` to the full lines covered by the selection and selects

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Fan settings (docs/features/fan.md): the cooling pad's state and the CPU
-// and GPU temperatures, read while the settings window is open. The same
+// and GPU temperatures, read while Settings → Fan is on screen. The same
 // Sampler as Btop is used, so a sleeping NVIDIA GPU is not woken up.
 //
 // Pad commands run one at a time (pad.js spawns llano.py). A new speed
@@ -26,25 +26,16 @@ import {AsusFans} from './asus.js';
 import {parseLut, recommend} from './lut.js';
 import * as Pad from './pad.js';
 
-export const INTERVAL_KEY = 'fan-interval';
-export const SCRIPT_KEY = 'fan-llano-path';
-export const LUT_KEY = 'fan-lut-path';
-export const HISTORY_S = 300;
+const INTERVAL_KEY = 'fan-interval';
+const SCRIPT_KEY = 'fan-llano-path';
+const LUT_KEY = 'fan-lut-path';
 
 export class FanService extends Emitter {
-    /**
-     * @param {Gio.Settings} settings
-     * @param {object} [deps] for tests: `pad` (pad.js's functions), `io`
-     *   (sysmon/io.js), `now` (seconds), `laptop` (an AsusFans)
-     */
-    constructor(settings, {pad = Pad, io = SYSTEM_IO, now = () => GLib.get_monotonic_time() / 1e6,
-        laptop = null} = {}) {
+    /** @param {Gio.Settings} settings */
+    constructor(settings) {
         super();
         this._settings = settings;
-        this._pad = pad;
-        this._io = io;
-        this._sampler = new Sampler(io);
-        this._now = now;
+        this._sampler = new Sampler(SYSTEM_IO);
         this._active = false;
         this._timerId = 0;
         this._cancellable = null;
@@ -63,23 +54,17 @@ export class FanService extends Emitter {
         this.controllers = [];
         /** The panic lock's record (pad.js parseLock), or null when unlocked. */
         this.lock = null;
-        /** Who drove the pad last (pad.js parseLastControl), or null. */
-        this.lastControl = null;
         /** The speed's rpm, dB at the ears and band (pad.js parseNoise), or null. */
         this.noise = null;
-        /** Latest temperatures: {cpu, gpus: [{id, name, temp, asleep}], cores: [{core, temp, threads}]}. */
+        /** Latest temperatures in °C: {cpu, gpu} (the hottest GPU), each null when unknown. */
         this.temps = null;
-        /** [{t, cpu, gpus: {id: temp}, fan}], oldest first, t in seconds. */
-        this.history = [];
-        /** GPU id -> name, for the chart's legend, as they appeared. */
-        this.gpuNames = new Map();
         /** fan_lut.json (lut.js parseLut), or null; lutError 'missing' or 'invalid' then. */
         this.lut = null;
         this.lutError = null;
         /** {fan, device, temp} from the LUT and the latest temperatures, or null. */
         this.recommendation = null;
         /** The laptop's fans, platform profile and curves (asus.js). */
-        this.laptop = laptop ?? new AsusFans(io);
+        this.laptop = new AsusFans(SYSTEM_IO);
         /** Whether a laptop profile or curve change is under way. */
         this.laptopBusy = false;
         this._readSettings();
@@ -157,7 +142,7 @@ export class FanService extends Emitter {
     /**
      * Hands speed control back to the pad's roller. The pad keeps its speed,
      * and its status still says software until the roller is next turned
-     * (llano-v12-linux README), so the tab says "released" until then.
+     * (llano-v12-linux README), so the Fan page says "released" until then.
      */
     release() {
         this._queue({args: ['release'], released: true});
@@ -193,9 +178,9 @@ export class FanService extends Emitter {
     }
 
     async stopController(unit) {
-        await this._pad.stopUnit(unit);
+        await Pad.stopUnit(unit);
         this._released = true;
-        this.controllers = await this._pad.controllers();
+        this.controllers = await Pad.controllers();
         this._queue({args: ['status']});
     }
 
@@ -230,19 +215,13 @@ export class FanService extends Emitter {
         this._timerId = 0;
     }
 
-    async _readState() {
-        const dir = this._pad.stateDir();
-        const [lock, log] = await Promise.all([
-            this._io.read(`${dir}/lock`, this._cancellable),
-            this._io.read(`${dir}/control.log`, this._cancellable),
-        ]);
-        this.lock = this._pad.parseLock(lock);
-        this.lastControl = this._pad.parseLastControl(log);
+    async _readLock() {
+        this.lock = Pad.parseLock(await SYSTEM_IO.read(`${Pad.stateDir()}/lock`, this._cancellable));
     }
 
     _tick() {
         this._queue({args: ['status']}, {poll: true});
-        this._pad.controllers(this._cancellable).then(units => {
+        Pad.controllers(this._cancellable).then(units => {
             this.controllers = units;
         }).catch(() => {});
         this._sample();
@@ -263,7 +242,7 @@ export class FanService extends Emitter {
         this._pending = null;
         this._busy = true;
         try {
-            const {status, noise, error, message} = await this._pad.llano(this._script, command.args);
+            const {status, noise, error, message} = await Pad.llano(this._script, command.args);
             // A write refused by the lock leaves the pad as it was.
             this.status = status ?? (error === 'locked' ? this.status : null);
             this.noise = status ? noise : error === 'locked' ? this.noise : null;
@@ -275,7 +254,7 @@ export class FanService extends Emitter {
             if (status?.control === 'pad')
                 this._released = false;
             // Before the command counts as done, so no poll slips in between.
-            await this._readState();
+            await this._readLock();
         } catch (e) {
             this.status = null;
             this.error = 'failed';
@@ -288,8 +267,10 @@ export class FanService extends Emitter {
     }
 
     async _loadLut() {
-        const text = await this._io.read(this._lutPath, this._cancellable);
-        if (this._cancellable?.is_cancelled())
+        // setActive(false) drops this._cancellable, so keep this read's own.
+        const cancellable = this._cancellable;
+        const text = await SYSTEM_IO.read(this._lutPath, cancellable);
+        if (cancellable.is_cancelled())
             return;
         this.lut = text === null ? null : parseLut(text);
         this.lutError = text === null ? 'missing' : this.lut ? null : 'invalid';
@@ -297,13 +278,8 @@ export class FanService extends Emitter {
         this.emit('changed');
     }
 
-    // The NVIDIA (or hottest) GPU stands for 'gpu', as in the sweep.
     _recommend() {
-        const gpuTemps = (this.temps?.gpus ?? []).map(gpu => gpu.temp).filter(t => t !== null && t !== undefined);
-        const rec = this.lut && this.temps
-            ? recommend(this.lut, {cpu: this.temps.cpu, gpu: gpuTemps.length ? Math.max(...gpuTemps) : null})
-            : null;
-        this.recommendation = rec;
+        this.recommendation = this.lut && this.temps ? recommend(this.lut, this.temps) : null;
     }
 
     async _sample() {
@@ -312,16 +288,15 @@ export class FanService extends Emitter {
             return;
         this._sampling = true;
         const cancellable = this._cancellable;
-        const now = this._now();
         try {
             const [snapshot] = await Promise.all([
-                this._sampler.sample(['cpu', 'gpu'], {cores: true, now, cancellable}),
+                this._sampler.sample(['cpu', 'gpu'], {now: GLib.get_monotonic_time() / 1e6, cancellable}),
                 this.laptop.refresh(cancellable).catch(e =>
                     console.warn(`Froonty: Fan settings laptop read failed: ${e.message}`)),
             ]);
             if (!snapshot || cancellable?.is_cancelled())
                 return;
-            this._record(snapshot, now);
+            this._record(snapshot);
             this.emit('changed');
         } catch (e) {
             console.warn(`Froonty: Fan settings sample failed: ${e.message}`);
@@ -330,42 +305,10 @@ export class FanService extends Emitter {
         }
     }
 
-    _record(snapshot, now) {
-        const gpus = (snapshot.gpus ?? []).map(gpu => ({
-            id: gpu.id, name: gpu.name, temp: gpu.temp, asleep: gpu.asleep,
-        }));
-        for (const gpu of gpus)
-            this.gpuNames.set(gpu.id, gpu.name);
-        this.temps = {cpu: snapshot.cpu?.temp ?? null, gpus, cores: physicalCores(snapshot.cpu?.cores)};
+    // The NVIDIA (or hottest) GPU stands for 'gpu', as in the sweep.
+    _record(snapshot) {
+        const gpuTemps = (snapshot.gpus ?? []).map(gpu => gpu.temp).filter(t => t !== null && t !== undefined);
+        this.temps = {cpu: snapshot.cpu?.temp ?? null, gpu: gpuTemps.length ? Math.max(...gpuTemps) : null};
         this._recommend();
-        this.history.push({
-            t: now,
-            cpu: this.temps.cpu,
-            gpus: Object.fromEntries(gpus.map(gpu => [gpu.id, gpu.temp])),
-            fan: this.status?.speed ?? null,
-        });
-        while (this.history.length && this.history[0].t < now - HISTORY_S)
-            this.history.shift();
     }
-
-    /** The sampling interval in seconds (the chart breaks its lines over longer gaps). */
-    get interval() {
-        return this._interval;
-    }
-}
-
-/**
- * One entry per physical core, in core id order: its temperature and how
- * many threads it runs (2 on a P-core, 1 on an E-core of a hybrid Intel).
- */
-export function physicalCores(threads) {
-    const cores = new Map();
-    for (const thread of threads ?? []) {
-        if (thread.core === null || thread.core === undefined)
-            continue;
-        const core = cores.get(thread.core) ?? {core: thread.core, temp: thread.temp, threads: 0};
-        core.threads++;
-        cores.set(thread.core, core);
-    }
-    return [...cores.values()].sort((a, b) => a.core - b.core);
 }

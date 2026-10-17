@@ -4,7 +4,8 @@
 
 const TABLE_RULE = /^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$/;
 const FENCE = /^\s*(`{3,}|~{3,})\s*([^\s]*)\s*$/;
-const IMAGE = /!\[([^\]\n]*)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)/g;
+const IMAGE = /!\[([^\]\n]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
+const CODE = /`[^`\n]+`/g;
 
 /** Finds tables, local Markdown images and Mermaid fenced blocks. */
 export function markdownBlocks(text) {
@@ -27,7 +28,7 @@ export function markdownBlocks(text) {
         for (let n = i; n <= Math.min(end, lines.length - 1); n++)
             fenced.add(n);
         const body = end < lines.length ? lines.slice(i + 1, end).join('\n') : '';
-        const diagram = /^(?:flowchart|graph|stateDiagram(?:-v2)?|sequenceDiagram)\b/im.test(body.trim());
+        const diagram = /^(?:flowchart|graph|stateDiagram(?:-v2)?|sequenceDiagram)\b/i.test(body.trim());
         if ((fence[2].toLowerCase() === 'mermaid' || (!fence[2] && diagram)) && end < lines.length) {
             const close = lines[end];
             blocks.push({kind: 'mermaid', start: starts[i], end: starts[end] + close.length,
@@ -49,14 +50,18 @@ export function markdownBlocks(text) {
 
     IMAGE.lastIndex = 0;
     for (let match; (match = IMAGE.exec(text)); ) {
-        const line = text.slice(text.lastIndexOf('\n', match.index - 1) + 1,
-            (() => { const n = text.indexOf('\n', match.index); return n < 0 ? text.length : n; })());
+        const lineStart = text.lastIndexOf('\n', match.index - 1) + 1;
+        const lineEnd = text.indexOf('\n', match.index);
+        const line = text.slice(lineStart, lineEnd < 0 ? text.length : lineEnd);
+        const at = match.index - lineStart;
         const lineNumber = text.slice(0, match.index).split('\n').length - 1;
-        if (fenced.has(lineNumber) || line.slice(0, match.index - (text.lastIndexOf('\n', match.index - 1) + 1)).trimStart().startsWith('>')
+        // Not in code (a fence or a `span`), a quote or a table.
+        if (fenced.has(lineNumber) || line.slice(0, at).trimStart().startsWith('>')
+            || [...line.matchAll(CODE)].some(code => at > code.index && at < code.index + code[0].length)
             || blocks.some(block => block.kind === 'table' && match.index >= block.start && match.index < block.end))
             continue;
         blocks.push({kind: 'image', start: match.index, end: match.index + match[0].length,
-            source: match[2], alt: match[1], title: match[3] ?? ''});
+            source: match[2], alt: match[1]});
     }
     return blocks.sort((a, b) => a.start - b.start);
 }
@@ -67,7 +72,7 @@ export function markdownBlocks(text) {
  * without retaining the source code's extra lines. The note itself is never
  * changed. `mapOffset()` maps preserved UTF-16 source offsets into the copy.
  */
-export function markdownPreview(text, blocks = markdownBlocks(text)) {
+export function markdownPreview(text, blocks) {
     const parts = [];
     const preserved = [];
     const renderedBlocks = [];

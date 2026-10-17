@@ -14,12 +14,12 @@ import GLib from 'gi://GLib';
 
 import {deleteQuietly, makePrivateDirectory, readText, writePrivate} from '../../core/privateFile.js';
 
-export const FORMAT = 1;
+const FORMAT = 1;
 const STATE = 'state.json';
 const HISTORY = 'history.json';
 
 /** The default folder: $XDG_DATA_HOME/froonty/break. */
-export function defaultFolder() {
+function defaultFolder() {
     return Gio.File.new_for_path(GLib.build_filenamev(
         [GLib.get_user_data_dir(), 'froonty', 'break']));
 }

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Shell-side factories for localCatalog.js's panic buttons.
-// tools/pack-public replaces this file with an empty map.
+// tools/pack-public strips its import and leaves this file out.
 
 import {ClaudeSessionButton} from './claudeSession.js';
 import {CpuLoadButton} from './cpuLoad.js';

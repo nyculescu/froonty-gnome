@@ -5,7 +5,7 @@
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 
-import {test, eq, ok, done} from './test.js';
+import {test, eq, ok, done, makeSettings as froontySettings, sleep, waitFor} from './test.js';
 import {NotesStore} from '../../froonty@catalin/features/notes/store.js';
 import {NotesLibrary} from '../../froonty@catalin/features/notes/library.js';
 
@@ -14,26 +14,11 @@ if (!GLib.getenv('FROONTY_UNIT_ISOLATED')) {
     imports.system.exit(2);
 }
 
-const EXTENSION_DIR = GLib.build_filenamev([
-    GLib.path_get_dirname(GLib.path_get_dirname(GLib.path_get_dirname(
-        GLib.filename_from_uri(import.meta.url)[0]))),
-    'froonty@catalin']);
-
-const sleep = ms => new Promise(resolve => GLib.timeout_add(GLib.PRIORITY_DEFAULT, ms,
-    () => {
-        resolve();
-        return GLib.SOURCE_REMOVE;
-    }));
 // Folder events (inotify, then GIO's rate limit for changes).
 const SETTLE = 1500;
 
 function makeSettings(folder) {
-    const source = Gio.SettingsSchemaSource.new_from_directory(
-        GLib.build_filenamev([EXTENSION_DIR, 'schemas']), null, false);
-    const settings = new Gio.Settings({
-        settings_schema: source.lookup('org.gnome.shell.extensions.froonty', false),
-        backend: Gio.memory_settings_backend_new(),
-    });
+    const settings = froontySettings();
     settings.set_string('notes-folder', folder.get_path());
     return settings;
 }
@@ -52,8 +37,10 @@ async function startLibrary(dir, createStore) {
     library.connect('changed', (_l, change) => events.push(['changed', change]));
     library.connect('renamed', (_l, from, to) => events.push(['renamed', from, to]));
     library.connect('removed', (_l, name) => events.push(['removed', name]));
+    let refreshes = 0;
+    library.connect('refreshed', () => refreshes++);
     await library.start();
-    return {library, events};
+    return {library, events, refreshes: () => refreshes};
 }
 
 function folder() {
@@ -233,6 +220,76 @@ test('library: the same folder keeps its store and notes; another folder starts 
     await starting;
     eq([...library.notes.keys()].sort(), ['Other', 'Plan']);
     eq(library.notes.get('Plan').text, 'two');
+    library.stop();
+});
+
+test('library: with a folder monitor no timer runs; a marker change is a refresh', async () => {
+    const dir = folder();
+    write(dir, 'a.md', 'one');
+    const {library, events, refreshes} = await startLibrary(dir);
+    ok(!library.polling, 'no 2 s refresh while the monitor works');
+    const before = refreshes();
+    events.length = 0;
+    // The island picks a note (store.writeCurrentNote): nothing to report,
+    // but the page hears of it and reads the marker.
+    write(dir, '.froonty-current-note', 'a');
+    ok(await waitFor(() => refreshes() > before, 3000), 'refreshed');
+    eq(events, []);
+    library.stop();
+});
+
+// The per-user inotify limit used up: Gio cannot make a folder monitor.
+const unwatchable = how => f => {
+    const store = new NotesStore(f);
+    store.monitor = () => {
+        if (how === 'throws')
+            throw new Error('Unable to find default local file monitor type');
+        return null;
+    };
+    return store;
+};
+
+test('library: without a folder monitor it looks every 2 s and follows changes', async () => {
+    const dir = folder();
+    write(dir, 'a.md', 'one');
+    write(dir, 'b.md', 'two');
+    const {library, events, refreshes} = await startLibrary(dir, unwatchable('throws'));
+    ok(library.polling, 'the fallback refresh runs');
+    eq(library.error, null, 'the folder is read all the same');
+    events.length = 0;
+
+    write(dir, 'a.md', 'one, edited');
+    write(dir, 'new.md', 'fresh');
+    dir.get_child('b.md').delete(null);
+    write(dir, '.froonty-labels.json', JSON.stringify({version: 1, labels: {a: ['work']}}));
+    write(dir, '.froonty.json', JSON.stringify({version: 1, order: ['a'], colors: {a: 'green'}}));
+    const seen = () => [[...library.notes.keys()].sort(), library.notes.get('a').text,
+        library.labelsOf('a'), library.colorOf('a')];
+    ok(await waitFor(() => JSON.stringify(seen()) ===
+        JSON.stringify([['a', 'new'], 'one, edited', ['work'], 'green']), 5000),
+    JSON.stringify(seen()));
+    ok(events.some(([kind, name]) => kind === 'removed' && name === 'b'), JSON.stringify(events));
+
+    const before = refreshes();
+    write(dir, '.froonty-current-note', 'a');
+    ok(await waitFor(() => refreshes() > before, 3000), 'the marker is looked at too');
+    library.stop();
+    ok(!library.polling, 'stopped with the page');
+});
+
+test('library: a monitor that is null polls too; start() tries the monitor again', async () => {
+    const dir = folder();
+    write(dir, 'a.md', 'one');
+    let broken = true;
+    const {library} = await startLibrary(dir, f => (broken ? unwatchable('null')(f) : new NotesStore(f)));
+    ok(library.polling);
+    write(dir, 'new.md', 'fresh');
+    ok(await waitFor(() => library.notes.has('new'), 5000), JSON.stringify([...library.notes.keys()]));
+    library.stop();
+    ok(!library.polling);
+    broken = false;
+    await library.restart();
+    ok(!library.polling, 'watched once a monitor can be made');
     library.stop();
 });
 

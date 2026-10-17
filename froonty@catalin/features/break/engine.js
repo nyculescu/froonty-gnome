@@ -37,7 +37,7 @@ const DELAY_TOLERANCE = 1;
 const longest = types => types.reduce((a, b) => (b.duration > a.duration ? b : a));
 
 /** Each selected type's due time and how far past it `now` is. */
-export function perType(m) {
+function perType(m) {
     if (m.state === STATE.DISABLED)
         return [];
     if (m.lastEnd) {
@@ -281,7 +281,7 @@ export function cueModel(m, level = levelOf(m)) {
         if (level.reason === 'long-rest')
             seconds = m.screenSinceLongRest;
         cue = {rank: RANK[level.level], kind: 'break', level: level.level, reason: level.reason,
-            type: level.type, seconds, posture: null};
+            type: level.type, seconds, length: m.prefs.longRestLength, posture: null};
     }
     const posture = postureCue(m.posture);
     if (posture && (!cue || RANK.posture > cue.rank)) {

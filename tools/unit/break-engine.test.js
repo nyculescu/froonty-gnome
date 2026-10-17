@@ -189,8 +189,8 @@ test('words: cue texts and accessible names', () => {
         {text: '+3m', accessibleText: 'Movement break overdue by 3 minutes'});
     eq(cue({kind: 'break', level: 3, reason: 'skips', type: 'eyesight', seconds: 5}).accessibleText,
         'Eye break due, after skips or delays in a row');
-    eq(cue({kind: 'break', level: 4, reason: 'long-rest', seconds: 7300}),
-        {text: '2h', accessibleText: 'Urgent: long rest suggested, 2 hours at the screen without a 15-minute pause'});
+    eq(cue({kind: 'break', level: 4, reason: 'long-rest', seconds: 7300, length: 900}),
+        {text: '2h', accessibleText: 'Urgent: long rest suggested, 2 hours at the screen without a 15 min pause'});
     eq(w.cue({kind: 'break', level: 4, reason: 'interval', type: 'eyesight', seconds: 1860}, 'icon').text, '!');
     eq(w.cue({kind: 'posture', posture: 'stand'}, 'icon').accessibleText, 'Time to stand up');
     eq(w.meterName(3), 'Urgency: overdue, 3 of 4');

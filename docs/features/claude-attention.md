@@ -1,6 +1,6 @@
 # Feature: When Claude needs you (the attention bar)
 
-Status: **implemented**, 2026-10-02 (Unreleased), on top of the
+Status: **implemented**, 2026-10-02, on top of the
 Notifications tab's store (section 9), which it keeps now that the tab is
 removed.
 
@@ -210,7 +210,8 @@ pipeline is the user's.
 **States** (the row's button):
 
 - **Set up** (none of Froonty's).
-- **Remove** (exactly the set above, for this copy).
+- **Remove** (exactly the set above, for this copy). Light red, as the
+  status line row's Remove (docs/features/claude.md).
 - **Update** (some of Froonty's, but not exactly that set: another copy of
   Froonty, an older layout, partly removed). Update replaces them.
 
@@ -257,8 +258,12 @@ features/claude/
 │                        by attentionSetup.js for its own path, it does
 │                        nothing (it runs only as gjs's program)
 ├── attentionSetup.js    adds/removes Froonty's hooks in settings.json
-└── attentionService.js  the model (Shell-free): state files and GNOME
-                         notifications → entries
+├── attentionService.js  the model (Shell-free): state files and GNOME
+│                        notifications → entries
+└── attentionHost.js     the island's pillBar (index.js): starts and stops
+                         the service, desktop and bar with
+                         claude-attention-enabled, shows or hides the bar,
+                         removes the folder
 shell/
 ├── claudeAttention.js   ClaudeDesktop: app and window of a session, focus,
 │                        raising, banners/overview, which notification
@@ -299,12 +304,12 @@ features/claude/attentionBar.js  the St bar
 - Someone deleting the folder: the monitor goes (GLib would look for the
   missing path every 4 s) and the folder and monitor are made again, once
   per start.
-- `stop()` keeps the files. The island removes the folder when it goes,
-  unless the screen is locking (GNOME Shell disables extensions at a lock
-  with `Main.sessionMode.isLocked` already set; `shell/claudeAttention.js`
-  `screenLocked()`): what waits survives a screen lock, but turning
-  Froonty, the island or the bar off leaves nothing for Claude Code's hooks
-  to write into.
+- `stop()` keeps the files. `AttentionHost` (made by the island) removes
+  the folder when it goes, unless the screen is locking (GNOME Shell
+  disables extensions at a lock with `Main.sessionMode.isLocked` already
+  set; `shell/claudeAttention.js` `screenLocked()`): what waits survives a
+  screen lock, but turning Froonty, the island or the bar off leaves
+  nothing for Claude Code's hooks to write into.
 
 **Finding the window** (`ClaudeDesktop.resolve`, the choice in
 `attention.js` `pickWindow()`): the app is the first of the recorded
@@ -363,7 +368,7 @@ bar     St.BoxLayout .froonty-attention (Ctrl+Alt+Tab group root)
   `showing` / `hidden` (3); `org.gnome.desktop.notifications`
   `changed::show-banners` (1); three of Froonty's settings; the tray's
   `source-added` / `source-removed` (2) while the Claude app or browsers
-  are followed, plus 4 per followed source and 3 per followed
+  are followed, plus 3 per followed source and 1 per followed
   notification (other sources: none); `global.display`
   `notify::focus-window` (1), only while a shown entry has a known app.
 - **Ctrl+Alt+Tab:** one more group, listed only while the bar is mapped.
@@ -383,20 +388,22 @@ the Notifications tab had (`shell/messageTray.js` `gnomeNotifications()`,
 `shell/notificationStore.js`), so the message tray's private objects stay
 in one place. The tab was removed (the date pill opens GNOME's own list);
 the bar is now the only user of both modules, which the public package
-leaves out. The bar makes a store of its own, with two additive changes
-to the tab's code:
+leaves out, and the store keeps only what the bar uses:
 
 - `createStore(options)` passes `{filter}` on to the store, and the store
   skips a source the filter turns down in `_addSource()`: such a source
   (any app but the Claude app, or a web browser) gets no handler at all.
-- `describe()` gives `appId`, the source's app's id
-  (`FdoNotificationDaemonSource` has one; other sources give null).
+- It reads a source's `title` and `app`, and a notification's `title`,
+  `body`, `use-body-markup`, `datetime` and `urgency`; `describe()` gives
+  `appName`, `appId` (the source's app's id: `FdoNotificationDaemonSource`
+  has one, other sources give null), `title`, `body`, `useMarkup` and
+  `time`.
 
-The bar uses what the tab's store already offers: `notifications`,
-`describe()`, `plainText()` (GNOME's own markup rules), `activate()`
-(GNOME's activate) and `dismiss()` (`destroy(DISMISSED)`), and follows
-`'changed'` and `'notification-changed'` (a notification replaced in place
-is classified again). Changing "Sessions in the Claude app" or "Browser
+The bar uses `notifications`, `describe()`, `plainText()` (the adapter's:
+GNOME's own markup rules), `activate()` (GNOME's activate) and `dismiss()`
+(`destroy(DISMISSED)`), and follows `'changed'` and
+`'notification-changed'` (a notification replaced in place is classified
+again). Changing "Sessions in the Claude app" or "Browser
 notifications from claude.ai" makes a new store with the new filter; with
 both off there is none.
 
@@ -405,7 +412,7 @@ shape was written; it was dropped when this was rebased onto the tab.)
 
 ## 10. Tests
 
-- `tools/unit/claude-attention.test.js` (43): the event mapping, the state
+- `tools/unit/claude-attention.test.js` (50): the event mapping, the state
   file's checks, `/proc` stat, project names, the order, the Claude app's
   wording; the hook script run as Claude Code runs it (no folder, a
   permission prompt recorded with none of Claude's text and mode `0600`, no
@@ -419,7 +426,7 @@ shape was written; it was dropped when this was rebased onto the tab.)
   replacement, deletion, two reads for a burst, a Claude Code gone, already
   looking at it, focus, the switches, click and ×, stop and removal, the
   folder deleted, GNOME notifications, the 64-entry cap).
-  `tools/unit/notifications.test.js` covers the store's `filter` (no
+  `tools/unit/notification-store.test.js` covers the store's `filter` (no
   handler on any other source, also one added later) and `appId`.
   Every hook or `sh` run gets a private `XDG_RUNTIME_DIR` and none of
   Claude Code's variables; `CLAUDE_CONFIG_DIR` is private.

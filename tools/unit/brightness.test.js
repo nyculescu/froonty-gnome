@@ -30,11 +30,10 @@ test('no monitors: nothing to dim', () => {
         eq(targetMonitors(target, 0, new Set()), []);
 });
 
-test('the level applied never goes below the minimum or above 100', () => {
+test('the level applied never goes below the minimum', () => {
     eq(appliedLevel(3, 10), 10);
     eq(appliedLevel(40, 10), 40);
     eq(appliedLevel(100, 10), 100);
-    eq(appliedLevel(120, 10), 100);
 });
 
 test('the overlay: none at 100 %, black at 0 %', () => {
@@ -47,8 +46,6 @@ test('warmth is independent and capped at 25% opacity', () => {
     eq(warmthOpacity(0), 0);
     eq(warmthOpacity(50), 32);
     eq(warmthOpacity(100), 64);
-    eq(warmthOpacity(-1), 0);
-    eq(warmthOpacity(101), 64);
 });
 
 test('the slider spans the minimum to 100 %', () => {

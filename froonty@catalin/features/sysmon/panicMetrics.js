@@ -8,11 +8,10 @@ import GLib from 'gi://GLib';
 import {Emitter} from '../../core/emitter.js';
 import {SYSTEM_IO} from './io.js';
 import {Sampler} from './sampler.js';
+import {FOLLOW_UP_MS, INTERVAL_KEY} from './service.js';
 
 export const PANIC_LOAD_KEY = 'sysmon-panic-load-source';
 export const PANIC_TEMP_KEY = 'sysmon-panic-temp-source';
-const INTERVAL_KEY = 'sysmon-interval';
-const FOLLOW_UP_MS = 500;
 const LOAD_SOURCES = ['cpu', 'gpu', 'memory'];
 const TEMP_SOURCES = ['average-cpu', 'max-cpu', 'gpu', 'load-source'];
 
@@ -32,9 +31,18 @@ export function panicLoad(snapshot, source) {
     return null;
 }
 
+// One reading per physical core: the threads of a core share its sensor,
+// and a P-core's two would otherwise count twice against an E-core's one.
 function cpuTemperature(snapshot, mode) {
-    const coreTemps = (snapshot?.cpu?.cores ?? [])
-        .map(core => core.temp).filter(validNumber);
+    const seen = new Set();
+    const coreTemps = [];
+    for (const {core, temp} of snapshot?.cpu?.cores ?? []) {
+        if (typeof core === 'number' && seen.has(core))
+            continue;
+        seen.add(core);
+        if (validNumber(temp))
+            coreTemps.push(temp);
+    }
     if (coreTemps.length) {
         return mode === 'max-cpu'
             ? Math.max(...coreTemps)
@@ -86,8 +94,6 @@ export class PanicMetricsService extends Emitter {
         this._active = false;
         this._timeoutId = 0;
         this._cancellable = null;
-        this._generation = 0;
-        this._samplingGeneration = null;
         this._settingsIds = [];
         this._warned = false;
         this.snapshot = null;
@@ -131,36 +137,31 @@ export class PanicMetricsService extends Emitter {
     }
 
     _restart() {
-        this._generation++;
         if (this._timeoutId)
             GLib.source_remove(this._timeoutId);
         this._timeoutId = 0;
         this._cancellable?.cancel();
         this._cancellable = null;
-        this._samplingGeneration = null;
         this.snapshot = null;
-        this._sampler = new Sampler(this._io);
+        this._sampler.reset();
         this.emit('changed');
         if (!this._active)
             return;
         this._cancellable = new Gio.Cancellable();
-        this._tick(this._generation, true);
+        this._tick(true);
     }
 
-    async _tick(generation, first) {
-        if (!this._active || generation !== this._generation ||
-            this._samplingGeneration === generation)
-            return;
-        this._samplingGeneration = generation;
+    // _restart cancels the tick under way and removes the next one.
+    async _tick(first) {
         const cancellable = this._cancellable;
-        const sampler = this._sampler;
         try {
-            const snapshot = await sampler.sample([...this.sections], {
-                cores: this.sections.has('cpu'),
+            const snapshot = await this._sampler.sample([...this.sections], {
+                // Per-core temperatures only for a CPU temperature shown.
+                cores: temperatureSource(this.temperatureSource, this.loadSource) !== 'gpu',
                 now: this._now(),
                 cancellable,
             });
-            if (!cancellable.is_cancelled() && generation === this._generation && snapshot) {
+            if (!cancellable.is_cancelled() && snapshot) {
                 this.snapshot = snapshot;
                 this.emit('changed');
             }
@@ -170,13 +171,11 @@ export class PanicMetricsService extends Emitter {
                 this._warned = true;
             }
         } finally {
-            if (this._samplingGeneration === generation)
-                this._samplingGeneration = null;
-            if (this._active && generation === this._generation && !cancellable.is_cancelled()) {
+            if (!cancellable.is_cancelled()) {
                 const delay = first ? FOLLOW_UP_MS : this.interval * 1000;
                 this._timeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, delay, () => {
                     this._timeoutId = 0;
-                    this._tick(generation, false);
+                    this._tick(false);
                     return GLib.SOURCE_REMOVE;
                 });
             }

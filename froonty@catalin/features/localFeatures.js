@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Features of the working tree that are not in the public build yet:
-// tools/pack-public replaces this file with an empty list, and their
-// settings pages come from localPrefs.js. Each moves to registry.js once it
-// is submitted to extensions.gnome.org (ZeroTier, Writing, Formulas and
-// Fan stay local). LOCAL_PARTS (Software brightness, pad noise slider)
-// are not tabs.
+// tools/pack-public strips the imports of this file and leaves it out, and
+// their settings pages come from localPrefs.js. Each moves to registry.js
+// once it is submitted to extensions.gnome.org (ZeroTier, Writing, Formulas
+// and Fan stay local). LOCAL_PARTS (Software brightness, pad noise slider,
+// time zone planner) are not tabs.
 
 // `break` is a reserved word.
 import breakFeature from './break/index.js';
@@ -33,7 +33,7 @@ export const LOCAL_FEATURES = [
 ];
 
 // Not hub tabs: parts that live while Froonty runs (extension.js), each
-// made from the settings.
+// made from the settings and a function that opens a settings page.
 export const LOCAL_PARTS = [
     (settings, openSettings) => new SoftwareBrightness(settings, openSettings),
     (settings, openSettings) => new PadNoiseSliderPart(settings, openSettings),

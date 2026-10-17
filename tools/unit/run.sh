@@ -13,7 +13,7 @@
 # GTK tests (*.gtk.test.js: pages of the settings window) get a display of
 # their own: a private Broadway server (GTK's HTML5 backend, from GTK's
 # libgtk-4-bin; nothing shows on screen), its socket in a private runtime
-# folder, so parallel runs never meet.
+# folder, so parallel runs never meet. No test sees the session's display.
 #
 # Parallel: the test files run JOBS at a time (default: half the logical
 # CPUs), each in a root of its own (its own TMPDIR, XDG folders and, for GTK
@@ -40,6 +40,8 @@ GTK_SHARDS=${GTK_SHARDS:-4}
 trap 'kill $(jobs -p) 2>/dev/null; wait 2>/dev/null; rm -rf "$ROOT"' EXIT
 export GSETTINGS_BACKEND=memory
 export FROONTY_UNIT_ISOLATED=1
+# Dates and numbers read the same whatever the user's locale.
+export LC_ALL=C.UTF-8
 
 # A private root: TMPDIR, the XDG folders and Claude Code's config folder
 # (so a default claudeSettingsFile() can never reach the real ~/.claude).
@@ -78,6 +80,7 @@ run_one() {
     (
         export TMPDIR=$r/tmp XDG_DATA_HOME=$r/data XDG_CONFIG_HOME=$r/config XDG_CACHE_HOME=$r/cache \
             XDG_RUNTIME_DIR=$r/runtime CLAUDE_CONFIG_DIR=$r/claude
+        unset DISPLAY WAYLAND_DISPLAY
         export FROONTY_TEST_SHARD=$part
         if [[ "$part" == 0/1 ]]; then
             echo "== $(basename "$t")"
@@ -95,7 +98,11 @@ run_one() {
         else
             "$GJS" -m "$t"
         fi
-    ) >"$r/out" 2>&1 </dev/null || rc=1
+    ) >"$r/out" 2>&1 </dev/null || rc=$?
+    # A file that failed to load or threw prints no FAIL line of its own.
+    if (( rc != 0 )) && ! grep -q '^FAIL' "$r/out"; then
+        echo "FAIL $(basename "$t"): exited with status $rc" >>"$r/out"
+    fi
     echo $rc >"$r/rc"
 }
 
@@ -120,13 +127,7 @@ for i in "${!TESTS[@]}"; do
     while [[ ! -e "$ROOT/$i/rc" ]]; do
         sleep 0.05
     done
-    if [[ "${TESTS[$i]}" == *.py ]]; then
-        # Same heading as before; the file's own "==" line names the path.
-        echo "== test_pack_public.py"
-        tail -n +2 "$ROOT/$i/out"
-    else
-        cat "$ROOT/$i/out"
-    fi
+    cat "$ROOT/$i/out"
     [[ "$(cat "$ROOT/$i/rc")" == 0 ]] || status=1
 done
 wait

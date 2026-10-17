@@ -32,10 +32,10 @@ import {
     MAX_IMAGE_BYTES, MAX_TEXT_LENGTH, parseFiles, trim,
 } from './entries.js';
 
-export const LIMIT_KEY = 'clipboard-history-size';
-export const IGNORED_KEY = 'clipboard-ignored-apps';
-export const PASSWORD_MINUTES_KEY = 'clipboard-password-minutes';
-export const DETECT_KEY = 'clipboard-detect-passwords';
+const LIMIT_KEY = 'clipboard-history-size';
+const IGNORED_KEY = 'clipboard-ignored-apps';
+const PASSWORD_MINUTES_KEY = 'clipboard-password-minutes';
+const DETECT_KEY = 'clipboard-detect-passwords';
 
 // A one-shot timer: the hidden password's expiry (DESIGN.md §8).
 const GLIB_TIMER = {
@@ -78,7 +78,8 @@ export class ClipboardRecorder extends Emitter {
         this._timer = timer;
         this._expiryId = 0;
         this._seq = 0;
-        // Set by copy(): null, true (a history entry) or {password: hash}.
+        // Set when Froonty itself copies (copy(), copyAsPlainText()): null,
+        // true or {password: hash}.
         this._ownCopy = null;
         this._destroyed = false;
         /** The history, newest first (saved). */
@@ -112,12 +113,18 @@ export class ClipboardRecorder extends Emitter {
         this._limitId = this._settings.connect(`changed::${LIMIT_KEY}`, () => this._trim());
         this._minutesId = this._settings.connect(`changed::${PASSWORD_MINUTES_KEY}`,
             () => this._rescheduleExpiry());
-        this._loading = this._store.load().then(entries => {
+        this._loading = this._store.load().then(async loaded => {
             if (this._destroyed)
                 return;
-            this.entries = trim(entries, this._limit()).entries;
+            // The limit may have been lowered while no recorder was running.
+            const {entries, dropped} = trim(loaded, this._limit());
+            this.entries = entries;
             this.loaded = true;
             this.emit('changed');
+            if (dropped.length) {
+                await this._store.save(entries);
+                await this._store.removeImagesOf(dropped);
+            }
         });
         return this._loading;
     }
@@ -146,8 +153,19 @@ export class ClipboardRecorder extends Emitter {
         const entry = this.entries.find(e => e.id === id);
         if (!entry)
             return false;
+        let bytes;
+        if (entry.kind === 'image') {
+            try {
+                bytes = await this._store.readImage(entry.file);
+            } catch (e) {
+                // Its file is gone (e.g. deleted by hand): drop the entry.
+                await this.remove(id);
+                return false;
+            }
+        }
         // The window that had the focus may be a password manager; a
-        // pick in Froonty is not a copy from it.
+        // pick in Froonty is not a copy from it. Set only now, so a copy
+        // from another app during the image read is not taken for ours.
         this._ownCopy = true;
         if (entry.kind === 'text') {
             this._clipboard.setText(entry.text);
@@ -155,15 +173,6 @@ export class ClipboardRecorder extends Emitter {
             this._clipboard.setContent(COPIED_FILES,
                 new GLib.Bytes(new TextEncoder().encode(copiedFilesText(entry))));
         } else {
-            let bytes;
-            try {
-                bytes = await this._store.readImage(entry.file);
-            } catch (e) {
-                // Its file is gone (e.g. deleted by hand): drop the entry.
-                this._ownCopy = null;
-                await this.remove(id);
-                return false;
-            }
             this._clipboard.setContent(entry.mime, bytes);
         }
         return true;
@@ -192,8 +201,10 @@ export class ClipboardRecorder extends Emitter {
         if (!entry)
             return;
         this.entries = this.entries.filter(e => e.id !== id);
-        if (this.currentId === id)
+        if (this.currentId === id) {
             this.currentId = null;
+            this.currentFormatted = false;
+        }
         this.emit('changed');
         await this._store.save(this.entries);
         await this._store.removeImagesOf([entry]);
@@ -204,6 +215,7 @@ export class ClipboardRecorder extends Emitter {
         this._dropPassword();
         this.entries = [];
         this.currentId = null;
+        this.currentFormatted = false;
         this.emit('changed');
         await this._store.clear();
     }
@@ -217,8 +229,10 @@ export class ClipboardRecorder extends Emitter {
         if (!dropped.length)
             return;
         this.entries = entries;
-        if (dropped.some(e => e.id === this.currentId))
+        if (dropped.some(e => e.id === this.currentId)) {
             this.currentId = null;
+            this.currentFormatted = false;
+        }
         this.emit('changed');
         await this._store.save(entries);
         await this._store.removeImagesOf(dropped);
@@ -292,7 +306,7 @@ export class ClipboardRecorder extends Emitter {
                 this.emit('changed');
                 return;
             }
-            await this._keep(entry.entry, entry.bytes, entry.formatted);
+            await this._keep(entry.entry, entry.bytes, seq, entry.formatted);
         } catch (e) {
             // A copy that cannot be read (its app quit meanwhile) is not kept.
             if (!this._destroyed && seq === this._seq) {
@@ -347,7 +361,7 @@ export class ClipboardRecorder extends Emitter {
             if (decision.action === 'password')
                 return {...password, reason: decision.reason};
             if (own?.password === password.hash)
-                return {...password, reason: this.password?.reason ?? 'looks'};
+                return {...password, reason: 'looks'};
             // A pick from the history stays history, whatever it looks like.
             if (own !== true && this._settings.get_boolean(DETECT_KEY) && looksLikePassword(text))
                 return {...password, reason: 'looks'};
@@ -388,13 +402,18 @@ export class ClipboardRecorder extends Emitter {
         };
     }
 
-    async _keep(entry, bytes, formatted = false) {
+    async _keep(entry, bytes, seq, formatted = false) {
         const known = this.entries.some(e => e.hash === entry.hash);
         // A new image is on disk before the history names it.
         if (entry.kind === 'image' && !known)
             await this._store.writeImage(entry.file, bytes);
-        if (this._destroyed)
+        // A newer copy came meanwhile, or the screen locked: nothing will
+        // name the file just written.
+        if (this._destroyed || seq !== this._seq) {
+            if (entry.kind === 'image' && !known)
+                await this._store.removeImagesOf([entry]);
             return;
+        }
         const {entries, top, dropped} = addEntry(this.entries, entry, this._limit());
         this.entries = entries;
         this.currentId = top.id;

@@ -24,8 +24,8 @@ pick an entry from a pop-up and insert it ([Switcher](#switcher)).
   back on the clipboard. The switcher (Super+V, it pastes) is part of the
   working-tree-only tab; it must be rethought (no default shortcut) before
   the tab is submitted.
-- **Shexli.** The single `St.Clipboard.get_default()` call
-  (`features/clipboard/shared.js`) is flagged EGO-A-005 "manual review",
+- **Shexli.** `St.Clipboard.get_default()` (for the tab, only in
+  `features/clipboard/shared.js`) is flagged EGO-A-005 "manual review",
   as for every clipboard extension. That is the access the description
   declares.
 
@@ -60,8 +60,8 @@ A copy counts as a password when any of these is true:
 
 **How it is shown:** `••••••••` (the same 8 dots whatever its length), a
 key icon, and "hidden until 16:42". A click copies it again, and it stays
-hidden. Hovering explains when it goes; the password itself is never
-shown.
+hidden. A right-click explains when it goes; the password itself is
+never shown.
 
 **When it goes,** whichever comes first:
 - `clipboard-password-minutes` pass (1–60, default 5; one one-shot
@@ -108,8 +108,8 @@ from the tab.
 - **Several readers.** One recorder per Shell (`shared.js`). The extension
   holds it while the tab is enabled, so copies are recorded with the
   island collapsed; the tab holds it too while it exists.
-- **Overlapping copies.** If a newer copy arrives while one is being read,
-  the older one is dropped.
+- **Overlapping copies.** If a newer copy arrives while one is being read
+  (or its image written), the older one is dropped.
 - **St's bytes.** `St.Clipboard` frees the bytes it hands to a callback
   when the callback returns, so they are copied inside it. Keeping them
   crashed the Shell in testing.
@@ -319,12 +319,14 @@ with the decisions in `switching.js`:
 - **Header:** a status line and "Clear clipboard history".
 - **Rows,** newest first, with a type icon (text, image, files, or cut
   files), a small preview, the time it was copied, and a trash button:
-  - Text: up to 3 lines of 60 characters.
+  - Text: up to 4 lines of 50 characters.
   - Image: a thumbnail 56 px tall, in proportion and at most 240 px wide,
     loaded in the background by GNOME's texture cache.
   - Files: "Copied 2 items" or "Cut 2 items", then the first names.
-- **Wider preview on hover:** up to 12 lines of 80 characters, every file's
-  full path (up to 10), or the image's format and size.
+- **Wider preview on right-click** (or the Menu key), gone when the
+  pointer moves, the list scrolls or a key is pressed: up to 12 lines of
+  60 characters, every file's full path (up to 10), or the image's format
+  and size.
 - **The current entry:** the one on the clipboard is outlined and reads "On
   the clipboard, ready to paste".
 - **Rebuilds:** rows are rebuilt only while the tab is on screen.

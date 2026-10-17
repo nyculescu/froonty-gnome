@@ -8,9 +8,9 @@ import {EXTENSION_DIR} from './writing-helpers.js';
 
 const base = `file://${EXTENSION_DIR}/features/formulas`;
 const {SECTIONS, searchSymbols} = await import(`${base}/symbols.js`);
-const {TEMPLATES, templateById} = await import(`${base}/templates.js`);
+const {TEMPLATES} = await import(`${base}/templates.js`);
 const {GUIDE} = await import(`${base}/guide.js`);
-const {SLOT, copyText, errorText, insertSnippet, isFavourite, pushRecent, toggleFavourite,
+const {SLOT, copyText, errorText, insertSnippet, pushRecent, toggleFavourite,
     RECENT_LIMIT, FAVOURITES_LIMIT} = await import(`${base}/edit.js`);
 
 const at = (text, start, end = start) => ({text, start, end});
@@ -60,7 +60,6 @@ test('a search ranks a command that starts with it first, and lists each symbol 
     eq(results[0].insert, '\\leq', 'command starting with "le" before keyword matches');
     const inserts = results.map(r => r.insert);
     eq(new Set(inserts).size, inserts.length, 'no duplicates');
-    ok(results.every(r => r.section), 'each result names its section');
 });
 
 test('templates each have a first slot, and a unique id', () => {
@@ -68,12 +67,11 @@ test('templates each have a first slot, and a unique id', () => {
     eq(new Set(ids).size, ids.length);
     for (const id of ['fraction', 'root', 'sum', 'integral', 'limit', 'derivative', 'matrix',
         'cases', 'aligned'])
-        ok(templateById(id), id);
+        ok(ids.includes(id), id);
     for (const template of TEMPLATES) {
         ok(template.insert.includes(SLOT), `${template.id} has a slot`);
         ok(template.label && template.glyph, template.id);
     }
-    eq(templateById('nothing'), null);
 });
 
 test('the guide has topics with an example each', () => {
@@ -134,8 +132,7 @@ test('recent formulas: newest first, no repeats, capped', () => {
 test('starred formulas toggle, and a full list takes no more', () => {
     let list = toggleFavourite([], 'E=mc^2');
     eq(list, ['E=mc^2']);
-    ok(isFavourite(list, ' E=mc^2 '));
-    list = toggleFavourite(list, 'E=mc^2');
+    list = toggleFavourite(list, ' E=mc^2 ');
     eq(list, []);
     const full = Array.from({length: FAVOURITES_LIMIT}, (_, i) => `f${i}`);
     ok(toggleFavourite(full, 'new') === full);

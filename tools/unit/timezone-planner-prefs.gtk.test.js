@@ -8,7 +8,7 @@ import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import Gtk from 'gi://Gtk?version=4.0';
 
-import {done, eq, ok, test} from './test.js';
+import {done, eq, EXTENSION_DIR, makeSettings, ok, test} from './test.js';
 
 if (!GLib.getenv('FROONTY_UNIT_ISOLATED')) {
     printerr('Run this through tools/unit/run.sh (isolated TMPDIR/XDG_DATA_HOME, a private display).');
@@ -16,11 +16,6 @@ if (!GLib.getenv('FROONTY_UNIT_ISOLATED')) {
 }
 
 const PREFS_IMPORT = 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
-const EXTENSION_DIR = GLib.build_filenamev([
-    GLib.path_get_dirname(GLib.path_get_dirname(GLib.path_get_dirname(
-        GLib.filename_from_uri(import.meta.url)[0]))),
-    'froonty@catalin']);
-
 Adw.init();
 imports.package.initFormat();
 if (!Gdk.Display.get_default()) {
@@ -28,34 +23,27 @@ if (!Gdk.Display.get_default()) {
     imports.system.exit(1);
 }
 
+// The page and the shared rows it uses, laid out as in the extension.
 function copyModules() {
     const root = Gio.File.new_for_path(GLib.dir_make_tmp('froonty-timezones-XXXXXX'));
     const stub = root.get_child('gettext-stub.js');
     stub.replace_contents('export const gettext = s => s;\n', null, false, 0, null);
-    const source = Gio.File.new_for_path(GLib.build_filenamev([
-        EXTENSION_DIR, 'features', 'timezonePlanner',
-    ]));
-    const target = root.get_child('timezonePlanner');
-    target.make_directory_with_parents(null);
-    for (const name of ['clock.js', 'prefs.js']) {
-        const [, bytes] = source.get_child(name).load_contents(null);
+    for (const path of ['features/timezonePlanner/clock.js',
+        'features/timezonePlanner/prefs.js', 'prefs/rows.js']) {
+        const source = Gio.File.new_for_path(GLib.build_filenamev([EXTENSION_DIR, path]));
+        const target = root.resolve_relative_path(path);
+        if (!target.get_parent().query_exists(null))
+            target.get_parent().make_directory_with_parents(null);
+        const [, bytes] = source.load_contents(null);
         const text = new TextDecoder().decode(bytes)
             .replaceAll(`'${PREFS_IMPORT}'`, `'${stub.get_uri()}'`);
-        target.get_child(name).replace_contents(text, null, false, 0, null);
+        target.replace_contents(text, null, false, 0, null);
     }
-    return target;
+    return root;
 }
 
-const {timezonesPage} = await import(copyModules().get_child('prefs.js').get_uri());
-
-function makeSettings() {
-    const source = Gio.SettingsSchemaSource.new_from_directory(
-        GLib.build_filenamev([EXTENSION_DIR, 'schemas']), null, false);
-    return new Gio.Settings({
-        settings_schema: source.lookup('org.gnome.shell.extensions.froonty', false),
-        backend: Gio.memory_settings_backend_new(),
-    });
-}
+const {timezonesPage} = await import(
+    copyModules().resolve_relative_path('features/timezonePlanner/prefs.js').get_uri());
 
 function* descendants(widget) {
     for (let child = widget.get_first_child(); child; child = child.get_next_sibling()) {
@@ -123,6 +111,23 @@ test('removing a city also removes it from the favourites', () => {
         'Dublin|Europe/Dublin', 'Timisoara|Europe/Bucharest',
     ]);
     eq(settings.get_strv('timezone-planner-favorites'), ['Europe/Bucharest']);
+});
+
+test('the time format follows the clock by default and can be 24- or 12-hour', () => {
+    const settings = makeSettings();
+    const page = timezonesPage(settings);
+    const row = [...descendants(page)].find(widget =>
+        widget instanceof Adw.ComboRow && widget.title === 'Time format');
+    ok(row, 'the page has a Time format row');
+    eq(settings.get_string('timezone-planner-time-format'), 'clock');
+    eq(row.selected, 0);
+    eq([0, 1, 2].map(i => row.model.get_string(i)),
+        ['Same as the clock', '24-hour', '12-hour']);
+
+    row.selected = 2;
+    eq(settings.get_string('timezone-planner-time-format'), '12h');
+    settings.set_string('timezone-planner-time-format', '24h');
+    eq(row.selected, 1);
 });
 
 await done();

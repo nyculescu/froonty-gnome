@@ -12,25 +12,10 @@ import {MediaService} from '../../froonty@catalin/features/media/service.js';
 import {QueueClient} from '../../froonty@catalin/features/media/queue.js';
 import {glibTimers} from '../../froonty@catalin/features/media/model.js';
 import {FakePlayer, privateBus} from './fakeMpris.js';
-import {done, eq, ok, test} from './test.js';
+import {done, eq, ok, sleep, test, waitFor} from './test.js';
 
 const NAME = 'org.mpris.MediaPlayer2.froontytest';
 const bus = await privateBus();
-
-const sleep = ms => new Promise(resolve => GLib.timeout_add(GLib.PRIORITY_DEFAULT, ms, () => {
-    resolve();
-    return GLib.SOURCE_REMOVE;
-}));
-
-async function waitFor(predicate, ms = 3000) {
-    for (let waited = 0; waited < ms; waited += 20) {
-        if (predicate())
-            return true;
-        // eslint-disable-next-line no-await-in-loop
-        await sleep(20);
-    }
-    return predicate();
-}
 
 async function fake(options = {}, state = {}) {
     const connection = await bus.connect();

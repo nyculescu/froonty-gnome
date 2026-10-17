@@ -1,25 +1,26 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // The All notes window's formatting bar (settings window; GTK 4 +
 // libadwaita, so nothing from the Shell side): the island's buttons, in its
-// order (formatActions.js), then Wrap lines.
+// order (formatActions.js), then Insert image, MD and Wrap lines.
 //
-//   [B][I][S][H][•][1.][☑][</>][🔗][MD][↩]
+//   [B][I][S][H][•][1.][☑][</>][🔗][🖼][MD][↩]
 //
 // Formatting toggles show whether their formatting applies at the cursor or
 // selection. MD switches between source and preview without editing the
 // note. The pane calls update() as the cursor moves and after each edit. The
 // buttons never take focus on a click, so the editor keeps its selection.
+// Tooltips name the buttons' shortcuts (the pane has the keys).
 
 import Gtk from 'gi://Gtk';
 
 import {gettext as _} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
-import {formatActions} from './formatActions.js';
+import {formatActions, markdownTooltip} from './formatActions.js';
 
-function button(Type, {icon, label, name}) {
+function button(Type, {icon, label, name, tooltip = name}) {
     const widget = new Type({
         css_classes: ['flat', 'froonty-format-button'],
-        tooltip_text: name,
+        tooltip_text: tooltip,
         focus_on_click: false,
     });
     if (icon) {
@@ -56,6 +57,7 @@ export class FormatBar {
         this.markdownButton = button(Gtk.ToggleButton, {
             label: 'MD',
             name: _('Show Markdown source'),
+            tooltip: markdownTooltip(_, false),
         });
         this.widget.append(this.markdownButton);
 
@@ -80,7 +82,7 @@ export class FormatBar {
             widget.active = active(state);
     }
 
-    /** Whether the formatting buttons can edit (not Wrap, a view option). */
+    /** Whether the buttons that edit can (not MD or Wrap, view options). */
     setEditable(editable) {
         for (const widget of this._edits)
             widget.sensitive = editable;
@@ -89,7 +91,7 @@ export class FormatBar {
     setMarkdownSource(source) {
         this.markdownButton.active = source;
         const name = source ? _('Show rendered Markdown') : _('Show Markdown source');
-        this.markdownButton.tooltip_text = name;
+        this.markdownButton.tooltip_text = markdownTooltip(_, source);
         this.markdownButton.update_property([Gtk.AccessibleProperty.LABEL], [name]);
     }
 }

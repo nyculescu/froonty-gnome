@@ -11,9 +11,8 @@ formulas, and a short guide. A formula is copied as `$…$`, `$$…$$` or as it
 is, or put into the open note at its cursor. Formulas are drawn on this
 computer by MathJax, running in a helper process; nothing goes online.
 
-Math in Notes (the island and the All notes window) is a later step. The
-renderer is built for it: its client is toolkit-free (§4.3), so the Shell
-and the settings window can both use it.
+Formulas in notes share this renderer (§4.3; docs/features/notes.md,
+"Formulas").
 
 ## 1. The tab
 
@@ -31,7 +30,8 @@ Copied as $…$.                                      status line
 
 - **Editor**: monospace, a few lines high, wrapping; it takes the key
   focus when the tab shows. The draft survives the island being rebuilt
-  (`ctx.memory`), not a disable (screen lock).
+  and a screen lock (`ctx.memory`, kept while a feature has
+  `keepsMemory`, as Media does).
 - **Preview**: drawn PREVIEW_DELAY_MS (250 ms) after typing pauses, in the
   island's text colour, at 1.25 × the renderer's 16 px em (times the
   screen's scale). **Display** (`formulas-display`, on by default) previews
@@ -195,10 +195,11 @@ One request per line on stdin, one reply per line on stdout, in request
 order. `baseline` is the px from the image's top down to the text
 baseline (more than the height for a formula above the baseline, such as
 °). `kind`: `tex` (MathJax's message), `unavailable` (MathJax missing or
-broken), `request` (not a valid request). MathJax loads on the first
-request; the helper ends when stdin closes. `FROONTY_MATHJAX_DIR` names
-another tree (tests). Imported as a module it does nothing (it runs only
-when it is the program), so the unit tests' parse check can import it.
+broken). MathJax loads on the first request; the helper ends when stdin
+closes, and on a line that is not a request (only the client writes to
+it). `FROONTY_MATHJAX_DIR` names another tree (tests). Imported as a
+module it does nothing (it runs only when it is the program), so the unit
+tests' parse check can import it.
 
 ### 4.3 Client (`renderer/client.js`)
 
@@ -209,9 +210,10 @@ Shell runs at most one helper and the settings window one of its own; it
 is made by the first holder and destroyed when the last lets go.
 
 - Started lazily on the first request; stopped after IDLE_MS (60 s)
-  without one, and on `destroy()` (the service's `stop()`, which the hub
-  calls when the tab is turned off and on every disable): stdin closed,
-  SIGTERM, SIGKILL 2 s later if needed (`core/subprocess.js`).
+  without one, and on `destroy()`, when its last holder lets go (the
+  tab's service on `stop()`, the notes' formula images; all on disable):
+  stdin closed, SIGTERM, SIGKILL 2 s later if needed
+  (`core/subprocess.js`).
 - LRU cache of CACHE_SIZE (200) results by (tex, display, color, scale);
   a TeX error is cached too (the same formula fails the same way). Equal
   requests in flight share one answer.
@@ -254,7 +256,7 @@ replaces the installed copy.
 | `renderer/client.js` | The toolkit-free client |
 | `renderer/shared.js` | One client per process, held by the tab and the notes |
 | `notes/images.js` | Formulas in notes: the pictures' states, sent after a pause in typing (GLib only) |
-| `notes/island.js` | Formulas in the island's Notes editor (Pango shapes, a layer of pictures) |
+| `notes/island.js` | Formulas in the island's Notes editor, Markdown source view (Pango shapes, a layer of pictures) |
 | `notes/window.js` | Formulas in the All notes window's editor (tags, overlays) |
 | `tools/fetch-mathjax.py` | The fetch (§3.1) |
 

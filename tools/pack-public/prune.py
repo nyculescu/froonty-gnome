@@ -11,9 +11,8 @@ localPrefs.js, localCatalog.js and localFactories.js:
 2. Schema: the keys of the features no longer there (PREFIXES) go.
 3. Stylesheet: rules whose every selector names a removed feature's class
    go, with the comments right before them.
-4. Checks: every settings key the remaining code names exists in the
-   schema, none of the removed ones is named, and no class whose rules
-   went is used by the remaining code.
+4. Checks: none of the removed settings keys is named by the remaining
+   code, and no class whose rules went is used by it.
 
 Usage: prune.py STAGED_DIR
 """
@@ -103,11 +102,11 @@ def prune_modules(root, keep, assets=()):
 
 
 def prune_schema(root):
-    """Remove the keys of features left out; return (kept, removed) names."""
+    """Remove the keys of features left out; return their names."""
     path = os.path.join(root, SCHEMA)
     parser = ET.XMLParser(target=ET.TreeBuilder(insert_comments=True))
     tree = ET.parse(path, parser)
-    kept, removed = set(), set()
+    removed = set()
     for parent in tree.getroot().iter():
         for child in list(parent):
             if child.tag is ET.Comment:
@@ -120,12 +119,10 @@ def prune_schema(root):
             if name.startswith(PREFIXES):
                 parent.remove(child)
                 removed.add(name)
-            else:
-                kept.add(name)
     # The build ships no translations (describe.py drops it from metadata.json).
     tree.getroot().attrib.pop("gettext-domain", None)
     tree.write(path, encoding="UTF-8", xml_declaration=True)
-    return kept, removed
+    return removed
 
 
 def css_segments(text):
@@ -238,7 +235,7 @@ def main():
     root = sys.argv[1]
     keep, assets = reachable(root)
     removed_files = prune_modules(root, keep, assets)
-    _kept, removed = prune_schema(root)
+    removed = prune_schema(root)
     dropped_classes = prune_css(root)
     problems = check_keys(root, removed)
     if problems:

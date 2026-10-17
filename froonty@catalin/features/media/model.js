@@ -14,19 +14,19 @@
 
 import GLib from 'gi://GLib';
 
-export const PREFIX = 'org.mpris.MediaPlayer2.';
+const PREFIX = 'org.mpris.MediaPlayer2.';
 /** Bus names never listed: playerctld mirrors other players. */
-export const IGNORED = ['org.mpris.MediaPlayer2.playerctld'];
+const IGNORED = ['org.mpris.MediaPlayer2.playerctld'];
 export const NO_TRACK = '/org/mpris/MediaPlayer2/TrackList/NoTrack';
 export const WEEK_S = 7 * 24 * 3600;
 export const WEEK_US = WEEK_S * 1e6;
-export const MAX_TEXT = 300;
-export const MAX_NAME_BYTES = 256;
-export const MAX_URL = 4096;
-export const MAX_AS_TEXT = 128 * 1024;
+const MAX_TEXT = 300;
+const MAX_NAME_BYTES = 256;
+const MAX_URL = 4096;
+const MAX_AS_TEXT = 128 * 1024;
 export const MAX_SOURCES = 16;
 /** Players whose bus name tells they are music players (no desktop file). */
-export const DAEMON_PLAYERS = ['mpd', 'spotifyd', 'ncspot', 'cmus'];
+const DAEMON_PLAYERS = ['mpd', 'spotifyd', 'ncspot', 'cmus'];
 
 // Timings (ms) of the smoothing rules, §8 of the spec.
 export const GAP_MS = 1500;
@@ -36,11 +36,10 @@ export const NOTICE_MS = 500;
 export const PEEK_MS = 3000;
 export const STUCK_CHECK_MS = 3000;
 export const SEEK_HOLD_MS = 1000;
-export const SEEK_HOLD_US = 2e6;
 
 const utf8 = new TextEncoder();
-const byteLength = text => utf8.encode(text).length;
-const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
+export const byteLength = text => utf8.encode(text).length;
+export const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
 
 /** Replaces each %s in order (String.prototype.format exists only in the Shell). */
 export function subst(template, ...values) {
@@ -107,7 +106,7 @@ function numberOf(variant, types) {
  * @param {?GLib.Variant} variant
  * @returns {Map<string, GLib.Variant>}
  */
-export function dictEntries(variant) {
+function dictEntries(variant) {
     const map = new Map();
     if (typeOf(variant) !== 'a{sv}')
         return map;
@@ -215,7 +214,6 @@ export function decodePlayer(get) {
     const flag = name => canControl && (boolOf(get(name)) ?? false);
     // Unknown (null) when missing: such a button stays shown.
     const maybe = name => canControl ? boolOf(get(name)) : false;
-    const volume = typeOf(get('Volume')) === 'd' ? get('Volume').get_double() : null;
     return {
         status,
         playing: status === 'Playing',
@@ -226,7 +224,6 @@ export function decodePlayer(get) {
         canSeek: flag('CanSeek'),
         canGoNext: maybe('CanGoNext'),
         canGoPrevious: maybe('CanGoPrevious'),
-        volume: Number.isFinite(volume) ? volume : null,
     };
 }
 
@@ -407,7 +404,7 @@ export function isIgnored(name) {
 }
 
 /** "org.mpris.MediaPlayer2.vlc.instance123" → "vlc" */
-export function busSuffix(name) {
+function busSuffix(name) {
     return name.startsWith(PREFIX) ? name.slice(PREFIX.length).replace(/\.instance.*$/, '') : name;
 }
 

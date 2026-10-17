@@ -5,11 +5,12 @@
 // 6.x: xyz.ljones.Asusd on the system bus). asusd lets the users, sudo,
 // adm and wheel groups call it without a password (its data/asusd.conf).
 //
-// Kept cheap, as the tab polls every few seconds: a tick reads the fans'
-// rpm files and platform_profile, nothing else, and asusd is not woken.
-// What does not change while the tab is on screen (the hwmon device, the
-// fan names, the profile choices, whether asusd is there) is read once per
-// visit, the curves when the profile changes or after a change from here.
+// Kept cheap, as Settings → Fan polls every few seconds while it is on
+// screen: a tick reads the fans' rpm files and platform_profile, nothing
+// else, and asusd is not woken. What does not change meanwhile (the hwmon
+// device, the fan names, the profile choices, whether asusd is there) is
+// read once per visit, the curves when the profile changes or after a
+// change from here.
 // A curve edited elsewhere (asusctl fan-curve) shows on the next visit.
 //
 // platform_profile, not asusd's change signal, says which profile is on:
@@ -43,7 +44,7 @@ const BY_NAME = Object.fromEntries(Object.entries(PROFILES).map(([n, name]) => [
 // Quietest first, as the buttons are laid out.
 const ORDER = ['low-power', 'quiet', 'balanced', 'performance', 'custom'];
 
-export const PATHS = {
+const PATHS = {
     hwmon: '/sys/class/hwmon',
     profile: '/sys/firmware/acpi/platform_profile',
     choices: '/sys/firmware/acpi/platform_profile_choices',
@@ -81,12 +82,6 @@ export function parseCurves(curves) {
         points: temp.map((t, i) => [t, Math.round(pwm[i] / 255 * 100)]),
         enabled,
     }));
-}
-
-/** 'all', 'some' or 'none' of the curves are on (an empty list is 'none'). */
-export function curvesState(curves) {
-    const on = curves.filter(curve => curve.enabled).length;
-    return on === 0 ? 'none' : on === curves.length ? 'all' : 'some';
 }
 
 /** "ROG Strix G634JZ" from DMI's "ROG Strix G634JZ_G634JZ". */
@@ -132,13 +127,12 @@ export class AsusFans {
     constructor(io, {bus = null} = {}) {
         this._io = io;
         this._bus = bus;
-        /** Where the hwmon devices, the profile and its choices and the model are (PATHS). */
-        this.paths = {...PATHS};
         this._visited = false;
         this._hwmon = null;
         // The profile this.curves belong to; null to read them again.
         this._curvesFor = null;
-        this._refreshing = false;
+        // The refresh under way, or null.
+        this._refreshing = null;
 
         /** The laptop's model name, or null. */
         this.model = null;
@@ -168,18 +162,21 @@ export class AsusFans {
         this._visited = false;
     }
 
-    /** Reads the fans' rpm and the profile (and on a new visit, the rest). */
-    async refresh(cancellable = null) {
-        if (this._refreshing)
-            return;
-        this._refreshing = true;
-        try {
-            if (!this._visited)
-                this._visited = await this._startVisit(cancellable);
-            await Promise.all([this._readFans(cancellable), this._readProfile(cancellable)]);
-        } finally {
-            this._refreshing = false;
-        }
+    /**
+     * Reads the fans' rpm and the profile (and on a new visit, the rest).
+     * While one runs, a second call waits for it instead of starting another.
+     */
+    refresh(cancellable = null) {
+        this._refreshing ??= this._refresh(cancellable).finally(() => {
+            this._refreshing = null;
+        });
+        return this._refreshing;
+    }
+
+    async _refresh(cancellable) {
+        if (!this._visited)
+            this._visited = await this._startVisit(cancellable);
+        await Promise.all([this._readFans(cancellable), this._readProfile(cancellable)]);
     }
 
     /** Switches the platform profile (asusd also applies its curves). */
@@ -204,6 +201,8 @@ export class AsusFans {
         } catch (e) {
             this.error = errorText(e);
         }
+        // A tick's refresh under way may have read the curves from before.
+        await this._refreshing?.catch(() => {});
         this._curvesFor = null;
         await this.refresh();
     }
@@ -229,8 +228,8 @@ export class AsusFans {
     async _startVisit(cancellable) {
         const [, model, choicesText] = await Promise.all([
             this._findFans(cancellable),
-            this.model === null ? this._io.read(this.paths.model, cancellable) : null,
-            this._io.read(this.paths.choices, cancellable),
+            this.model === null ? this._io.read(PATHS.model, cancellable) : null,
+            this._io.read(PATHS.choices, cancellable),
         ]);
         if (model !== null)
             this.model = modelName(model);
@@ -263,7 +262,7 @@ export class AsusFans {
         if (!this.daemon)
             return;
         try {
-            const text = await this._io.read(this.paths.profile, cancellable);
+            const text = await this._io.read(PATHS.profile, cancellable);
             this.profile = text === null
                 ? await this._property('PlatformProfile', cancellable) : profileNumber(text);
             if (this.profile === null || this.profile === this._curvesFor)
@@ -288,7 +287,7 @@ export class AsusFans {
 
     // The `asus` hwmon folder (asus-nb-wmi's fans) and its fans' names.
     async _findFans(cancellable) {
-        const root = this.paths.hwmon;
+        const root = PATHS.hwmon;
         const dirs = await this._io.list(root, cancellable);
         const names = await Promise.all(dirs.map(dir => this._io.read(`${root}/${dir}/name`, cancellable)));
         const i = names.findIndex(name => name?.trim() === 'asus');

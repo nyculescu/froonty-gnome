@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Claude's Spark, bundled, for the Shell side (the tab and the panic
-// button). Laid out as an icon theme for the settings window (prefs.js).
+// Claude's Spark, bundled, for the Shell side (the tab, the panic button
+// and the attention bar). Laid out as an icon theme for the settings window
+// (prefs.js).
 
 import Gio from 'gi://Gio';
 

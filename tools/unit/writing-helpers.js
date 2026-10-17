@@ -6,32 +6,9 @@
 
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
-import GObject from 'gi://GObject';
 import Soup from 'gi://Soup?version=3.0';
 
-export const EXTENSION_DIR = GLib.build_filenamev([
-    GLib.path_get_dirname(GLib.path_get_dirname(GLib.path_get_dirname(
-        Gio.File.new_for_uri(import.meta.url).get_path()))),
-    'froonty@catalin']);
-
-export const sleep = ms => new Promise(resolve => GLib.timeout_add(GLib.PRIORITY_DEFAULT, ms,
-    () => {
-        resolve();
-        return GLib.SOURCE_REMOVE;
-    }));
-
-/** Froonty's real schema, with an in-memory backend: nothing touches dconf. */
-export function makeSettings() {
-    const source = Gio.SettingsSchemaSource.new_from_directory(
-        GLib.build_filenamev([EXTENSION_DIR, 'schemas']), null, false);
-    const settings = new Gio.Settings({
-        settings_schema: source.lookup('org.gnome.shell.extensions.froonty', false),
-        backend: Gio.memory_settings_backend_new(),
-    });
-    if (GObject.type_name(settings.backend.constructor.$gtype) !== 'GMemorySettingsBackend')
-        throw new Error('test settings must be in memory');
-    return settings;
-}
+export {EXTENSION_DIR, makeSettings, sleep} from './test.js';
 
 export function tempDir(prefix = 'froonty-writing-XXXXXX') {
     return GLib.dir_make_tmp(prefix);

@@ -12,11 +12,9 @@
 
 import GLib from 'gi://GLib';
 
-import {HOOK_EVENTS} from './attention.js';
+import {HOOK_EVENTS, isPlainObject} from './attention.js';
 import {hookScriptPath} from './attentionHook.js';
 import {claudeSettingsFile, readClaudeSettings, saveClaudeSettings} from './statusLineSetup.js';
-
-export {hookScriptPath};
 
 const SCRIPT_SUFFIX = '/froonty@catalin/features/claude/attentionHook.js';
 
@@ -30,14 +28,14 @@ export const CLEAR_COMMAND = 'case "$CLAUDE_CODE_SESSION_ID" in ""|*[!0-9A-Za-z-
     '$CLAUDE_CODE_SESSION_ID.json" ;; esac';
 
 /** Exact names only (letters, digits and `_|`): a list, not a pattern. */
-export const NOTIFICATION_MATCHER = [
+const NOTIFICATION_MATCHER = [
     'permission_prompt', 'worker_permission_prompt', 'elicitation_dialog',
     'elicitation_url_dialog', 'elicitation_complete', 'elicitation_response',
     'agent_needs_input', 'idle_prompt', 'quota_auto_resume_stale',
 ].join('|');
 
 /** Claude Code's events, in the order new keys are added. */
-export const HOOK_KEYS = ['Notification', 'Stop', 'StopFailure', 'UserPromptSubmit', 'PostToolBatch', 'SessionEnd'];
+const HOOK_KEYS = ['Notification', 'Stop', 'StopFailure', 'UserPromptSubmit', 'PostToolBatch', 'SessionEnd'];
 
 /**
  * gjs, by an absolute path. /usr/bin first: other toolchains may shadow
@@ -58,7 +56,7 @@ const gjsHandler = (gjs, script, event) =>
  *
  * @returns {Object<string, {matcher?: string, hooks: object[]}>}
  */
-export function attentionGroups(gjs = gjsPath(), script = hookScriptPath()) {
+function attentionGroups(gjs = gjsPath(), script = hookScriptPath()) {
     return {
         Notification: {matcher: NOTIFICATION_MATCHER, hooks: [gjsHandler(gjs, script, 'notification')]},
         Stop: {hooks: [gjsHandler(gjs, script, 'stop')]},
@@ -89,8 +87,6 @@ export function isOursHandler(h) {
         typeof h.args[1] === 'string' && h.args[1].endsWith(SCRIPT_SUFFIX) &&
         HOOK_EVENTS.includes(h.args[2]);
 }
-
-const isPlainObject = value => typeof value === 'object' && value !== null && !Array.isArray(value);
 
 // JSON with sorted keys: equal for deep-equal values.
 function canonical(value) {

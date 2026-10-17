@@ -15,9 +15,7 @@ import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
 
 import {test, eq, ok, done} from './test.js';
-import {
-    MAX_ACTIONS, NotificationStore, compareEntries,
-} from '../../froonty@catalin/shell/notificationStore.js';
+import {NotificationStore, compareEntries} from '../../froonty@catalin/shell/notificationStore.js';
 
 // GNOME Shell 50.1's values (messageTray.js); the store gets them passed.
 const CRITICAL = 3;
@@ -311,8 +309,7 @@ function makeSource(tray, title = 'Mail') {
     return source;
 }
 
-const makeStore = (tray, {waitingForBanner} = {}) =>
-    new NotificationStore(tray, {critical: CRITICAL, dismissed: DISMISSED, waitingForBanner});
+const makeStore = tray => new NotificationStore(tray, {critical: CRITICAL, dismissed: DISMISSED});
 
 // Handler count, as checks.js countHandlers does.
 function handlers(instance, signal) {
@@ -368,7 +365,6 @@ test('store: nothing is connected before watch()', () => {
         handlers(source, 'notify'), handlers(n, 'notify'), handlers(n, 'action-added')],
     [0, 0, 0, 0, 0, 0, 0]);
     eq(store.notifications, []);
-    ok(!store.watching);
 });
 
 test('store: watch() lists every source\'s notifications, sorted, with one "changed"', () => {
@@ -383,7 +379,6 @@ test('store: watch() lists every source\'s notifications, sorted, with one "chan
     store.watch();
     eq(titles(store), ['critical 30 min', 'build 2 min', 'mail 10 min']);
     eq(changed.length, 1);
-    eq(store.unseenCount, 2);
     store.watch();
     eq(changed.length, 1, 'a second watch() is a no-op');
     eq([handlers(tray, 'source-added'), handlers(mail, 'notification-added')], [1, 1]);
@@ -409,7 +404,7 @@ test('store: an add or remove while watching changes the list', () => {
     store.unwatch();
 });
 
-test('store: a datetime or urgency change re-sorts (and notifies the row); other changes only notify the row', () => {
+test('store: a datetime or urgency change re-sorts; a text change notifies the row; others nothing', () => {
     const tray = new FakeTray();
     const mail = makeSource(tray);
     const a = notify(mail, {title: 'a', seconds: 600});
@@ -424,23 +419,23 @@ test('store: a datetime or urgency change re-sorts (and notifies the row); other
     b.urgency = CRITICAL;
     eq(titles(store), ['b', 'a'], 'critical goes on top');
     eq(changed.length, 2);
-    eq(rowChanged.map(([n]) => n.title), ['a', 'b'], 'its age or outline changes too');
+    eq(rowChanged.length, 0, 'the list redraws its rows');
 
     a.title = 'a2';
     a.body = 'new body';
     a.useBodyMarkup = true;
+    // Not shown: ignored.
     a.gicon = new Gio.ThemedIcon({name: 'dialog-information-symbolic'});
     a.addAction('Open', () => {});
     a.acknowledged = true;
-    a.resident = true; // not shown: ignored
+    a.resident = true;
     eq(changed.length, 2, 'no re-sort');
-    eq(rowChanged.length, 8);
-    ok(rowChanged.slice(2).every(([n]) => n === a));
-    eq(store.unseenCount, 1);
+    eq(rowChanged.length, 3);
+    ok(rowChanged.every(([n]) => n === a));
     store.unwatch();
 });
 
-test('store: a source title or icon change notifies its rows', () => {
+test('store: a source title change notifies its rows; its icon is not shown', () => {
     const tray = new FakeTray();
     const mail = makeSource(tray);
     const other = makeSource(tray, 'Other');
@@ -452,7 +447,7 @@ test('store: a source title or icon change notifies its rows', () => {
     const rowChanged = counting(store, 'notification-changed');
     mail.title = 'Mail (2)';
     mail.icon = new Gio.ThemedIcon({name: 'mail-read-symbolic'});
-    eq(rowChanged.length, 4);
+    eq(rowChanged.length, 2);
     ok(rowChanged.every(([n]) => n === a || n === b));
     eq(store.describe(a).appName, 'Mail (2)');
     store.unwatch();
@@ -482,7 +477,7 @@ test('store: unwatch() leaves zero handlers on the tray, the sources and the not
     const n = notify(mail, {actions: ['Reply']});
     const store = makeStore(tray);
     store.watch();
-    ok(handlers(n, 'notify') === 1 && handlers(mail, 'notify') === 2);
+    ok(handlers(n, 'notify') === 1 && handlers(mail, 'notify') === 1);
     store.unwatch();
     eq([handlers(tray, 'source-added'), handlers(tray, 'source-removed'),
         handlers(mail, 'notification-added'), handlers(mail, 'notification-removed'),
@@ -490,7 +485,6 @@ test('store: unwatch() leaves zero handlers on the tray, the sources and the not
         handlers(n, 'action-added'), handlers(n, 'action-removed')],
     [0, 0, 0, 0, 0, 0, 0, 0]);
     eq(store.notifications, []);
-    eq(store.unseenCount, 0);
     store.unwatch();
 });
 
@@ -525,36 +519,27 @@ test('store: a notification destroyed while not watching is never touched again'
     store.unwatch();
 });
 
-test('store: describe() gives plain fields; no app name gives null; at most 3 actions', () => {
+test('store: describe() gives plain fields; no app name gives null', () => {
     const tray = new FakeTray();
     const mail = makeSource(tray);
     const time = ago(120);
-    const n = notify(mail, {title: 'Hello', body: '<b>Hi</b>', time,
-        actions: ['One', 'Two', 'Three', 'Four']});
+    const n = notify(mail, {title: 'Hello', body: '<b>Hi</b>', time, actions: ['One']});
     n.useBodyMarkup = true;
-    n.gicon = new Gio.ThemedIcon({name: 'avatar-default-symbolic'});
     const nameless = makeSource(tray, '');
     const quiet = notify(nameless, {acknowledged: true});
     const store = makeStore(tray);
     store.watch();
     const desc = store.describe(n);
-    ok(desc.appIcon === mail.icon && desc.icon === n.gicon && desc.time.equal(time));
-    eq({...desc, appIcon: 'checked', icon: 'checked', time: 'checked'}, {
+    ok(desc.time.equal(time));
+    eq({...desc, time: 'checked'}, {
         appName: 'Mail',
         appId: null,
-        appIcon: 'checked',
         title: 'Hello',
         body: '<b>Hi</b>',
         useMarkup: true,
-        icon: 'checked',
         time: 'checked',
-        urgent: false,
-        unseen: true,
-        actions: ['One', 'Two', 'Three'],
     });
-    eq(MAX_ACTIONS, 3);
-    const other = store.describe(quiet);
-    eq([other.appName, other.unseen, other.actions], [null, false, []]);
+    eq(store.describe(quiet).appName, null);
     store.unwatch();
 });
 
@@ -563,7 +548,7 @@ test('store: describe() gives plain fields; no app name gives null; at most 3 ac
 // sources, and tells them apart by the source's app.
 const CLAUDE_APP = 'com.anthropic.Claude.desktop';
 const withApp = (source, id) => Object.assign(source, {app: {get_id: () => id}});
-const SOURCE_SIGNALS = ['notification-added', 'notification-removed', 'notify::title', 'notify::icon'];
+const SOURCE_SIGNALS = ['notification-added', 'notification-removed', 'notify::title'];
 
 test('store: a filter leaves every other source without a single handler', () => {
     const tray = new FakeTray();
@@ -576,15 +561,15 @@ test('store: a filter leaves every other source without a single handler', () =>
     const hello = notify(mail, {title: 'Hello'});
     eq(titles(store), ['Froonty']);
     ok(!store.has(hello) && !store.dismiss(hello) && !store.activate(hello), 'not listed, never touched');
-    eq(SOURCE_SIGNALS.map(signal => handlers(mail, signal)), [0, 0, 0, 0]);
+    eq(SOURCE_SIGNALS.map(signal => handlers(mail, signal)), [0, 0, 0]);
     eq(handlers(hello, 'notify'), 0);
-    eq(SOURCE_SIGNALS.map(signal => handlers(claude, signal)), [1, 1, 1, 1]);
+    eq(SOURCE_SIGNALS.map(signal => handlers(claude, signal)), [1, 1, 1]);
     const files = makeSource(tray, 'Files');
-    eq(SOURCE_SIGNALS.map(signal => handlers(files, signal)), [0, 0, 0, 0], 'added later: none either');
+    eq(SOURCE_SIGNALS.map(signal => handlers(files, signal)), [0, 0, 0], 'added later: none either');
     ok(store.dismiss(ask));
     eq(titles(store), []);
     store.unwatch();
-    eq(SOURCE_SIGNALS.map(signal => handlers(mail, signal)), [0, 0, 0, 0]);
+    eq(SOURCE_SIGNALS.map(signal => handlers(mail, signal)), [0, 0, 0]);
 });
 
 test('store: describe() gives the source\'s app id, or null without an app', () => {
@@ -599,48 +584,20 @@ test('store: describe() gives the source\'s app id, or null without an app', () 
     store.unwatch();
 });
 
-test('store: acknowledgeAll() marks only listed unseen notifications and returns the count', () => {
+test('store: activate() calls GNOME\'s activate() once; ignored when not listed', () => {
     const tray = new FakeTray();
     const mail = makeSource(tray);
-    const a = notify(mail);
-    const b = notify(mail);
-    const seen = notify(mail, {acknowledged: true});
-    const off = makeSource(tray, 'Off');
-    const hidden = notify(off);
-    const store = makeStore(tray);
-    store.watch();
-    tray.removeByPolicy(off);
-    eq(store.unseenCount, 2);
-    eq(store.acknowledgeAll(), 2);
-    ok(a.acknowledged && b.acknowledged && seen.acknowledged);
-    ok(!hidden.acknowledged, 'not listed: not touched');
-    eq(store.unseenCount, 0);
-    eq(store.acknowledgeAll(), 0);
-    eq(mail.notifications.length, 3, 'nothing removed');
-    store.unwatch();
-    eq(store.acknowledgeAll(), 0, 'nothing while not watching');
-});
-
-test('store: activate and activateAction call GNOME\'s methods once; ignored when not listed or out of range', () => {
-    const tray = new FakeTray();
-    const mail = makeSource(tray);
-    const n = notify(mail, {actions: ['Open', 'Reply']});
-    const resident = notify(mail, {resident: true, actions: ['Snooze']});
+    const n = notify(mail);
+    const resident = notify(mail, {resident: true});
     const store = makeStore(tray);
     store.watch();
     const activated = counting(resident, 'activated');
     ok(store.activate(resident));
     eq(activated.length, 1);
     ok(store.has(resident), 'resident: kept');
-    eq([store.activateAction(n, 3), store.activateAction(n, -1), store.activateAction(n, 2),
-        store.activateAction(n, 1.5)], [false, false, false, false]);
-    ok(store.activateAction(n, 1));
-    eq(n.ran, ['Reply']);
-    ok(!store.has(n), 'GNOME removes a non-resident one after its action');
-    eq(store.activateAction(n, 0), false, 'gone: ignored');
-    eq(store.activate(n), false);
-    ok(store.activateAction(resident, 0));
-    ok(store.has(resident));
+    ok(store.activate(n));
+    ok(!store.has(n), 'GNOME removes a non-resident one');
+    eq(store.activate(n), false, 'gone: ignored');
     store.unwatch();
     eq(store.activate(resident), false, 'not watching: ignored');
     eq(activated.length, 1);
@@ -661,124 +618,6 @@ test('store: dismiss() destroys with the dismissed reason; again, or unlisted, i
     eq(store.dismiss(n), false);
     eq(titles(store).length, 1);
     ok(store.has(other));
-    store.unwatch();
-});
-
-test('store: clear(snapshot) dismisses only the snapshot\'s live ones, one "changed", across a vanishing source', () => {
-    const tray = new FakeTray();
-    const mail = makeSource(tray);
-    const build = makeSource(tray, 'Build');
-    const a = notify(mail, {title: 'a'});
-    const b = notify(build, {title: 'b'});
-    const c = notify(build, {title: 'c'});
-    const store = makeStore(tray);
-    store.watch();
-    const snapshot = store.snapshot();
-    eq(snapshot.size, 3);
-    const reasons = [];
-    for (const n of snapshot.keys())
-        n.connect('destroy', (_n, reason) => reasons.push(reason));
-    // Between the two clicks: one goes by itself, one arrives.
-    c.destroy(SOURCE_CLOSED);
-    const newer = notify(mail, {title: 'newer'});
-    const changed = counting(store, 'changed');
-    eq(store.clear(snapshot), 2);
-    eq(reasons, [SOURCE_CLOSED, DISMISSED, DISMISSED]);
-    ok(a.destroyed && b.destroyed);
-    eq(titles(store), ['newer']);
-    ok(store.has(newer) && !newer.destroyed);
-    eq(changed.length, 1);
-    eq(tray.getSources(), [mail], 'Build emptied and destroyed itself on the way');
-    eq(store.countUnchanged(snapshot), 0);
-    eq(store.clear(snapshot), 0, 'again: nothing');
-    store.unwatch();
-});
-
-test('store: an update in place after the snapshot keeps it out of clear(); being marked seen does not', () => {
-    const tray = new FakeTray();
-    const chat = makeSource(tray, 'Chat');
-    const mail = makeSource(tray, 'Mail');
-    const updated = notify(chat, {title: '1 new message', acknowledged: true});
-    const seen = notify(mail, {title: 'unseen at the first click'});
-    const other = notify(mail, {title: 'other', acknowledged: true});
-    const urgent = notify(mail, {title: 'urgency', acknowledged: true});
-    const retitled = notify(mail, {title: 'title only', acknowledged: true});
-    const acted = notify(mail, {title: 'actions', acknowledged: true});
-    const store = makeStore(tray);
-    store.watch();
-    const snapshot = store.snapshot();
-    eq(store.countUnchanged(snapshot), 6);
-
-    // As GNOME's FDO daemon does for replaces_id: the same object, new
-    // text, unseen again; GNOME then re-stamps its time.
-    updated.title = '2 new messages';
-    updated.acknowledged = false;
-    updated.datetime = ago(0);
-    seen.acknowledged = true;
-    urgent.urgency = CRITICAL;
-    retitled.title = 'title only, changed';
-    acted.addAction('Reply', () => {});
-    eq(store.countUnchanged(snapshot), 2, 'the seen one and "other" are unchanged');
-
-    eq(store.clear(snapshot), 2);
-    ok(seen.destroyed && other.destroyed);
-    ok(!updated.destroyed && !urgent.destroyed && !retitled.destroyed && !acted.destroyed);
-    eq(titles(store).sort(), ['2 new messages', 'actions', 'title only, changed', 'urgency']);
-    store.unwatch();
-});
-
-test('store: set unseen again by its app, with nothing else changed, is a change too', () => {
-    const tray = new FakeTray();
-    const mail = makeSource(tray);
-    const unseen = notify(mail);
-    const store = makeStore(tray);
-    store.watch();
-    const snapshot = store.snapshot();
-    // GJS 1.88 notifies only on a change (as this fake); a GObject
-    // property without that check notifies on every set.
-    unseen.notify('acknowledged');
-    eq(store.countUnchanged(snapshot), 0);
-    eq(store.clear(snapshot), 0);
-    ok(!unseen.destroyed);
-    store.unwatch();
-});
-
-test('store: listed again (its app switched off and on), it is not the snapshot\'s any more', () => {
-    const tray = new FakeTray();
-    const mail = makeSource(tray);
-    const n = notify(mail, {acknowledged: true});
-    const store = makeStore(tray);
-    store.watch();
-    const snapshot = store.snapshot();
-    tray.removeByPolicy(mail);
-    tray.add(mail);
-    ok(store.has(n));
-    eq(store.countUnchanged(snapshot), 0);
-    eq(store.clear(snapshot), 0);
-    ok(!n.destroyed);
-    store.unwatch();
-});
-
-test('store: acknowledgeAll() leaves one waiting for its banner to GNOME\'s banner', () => {
-    const tray = new FakeTray();
-    const mail = makeSource(tray);
-    const queued = notify(mail, {title: 'queued'});
-    const listed = notify(mail, {title: 'listed'});
-    const queue = [queued];
-    const store = makeStore(tray, {waitingForBanner: n => queue.includes(n)});
-    store.watch();
-    eq(store.acknowledgeAll(), 1);
-    ok(listed.acknowledged && !queued.acknowledged);
-    eq(store.unseenCount, 1);
-    // Its banner shown (GNOME takes it off the queue and marks it seen).
-    queue.length = 0;
-    queued.acknowledged = true;
-    eq(store.unseenCount, 0);
-    // Out of the queue but still unseen (the queue was full, or banners
-    // are off for its app): marked.
-    const late = notify(mail, {title: 'late'});
-    eq(store.acknowledgeAll(), 1);
-    ok(late.acknowledged);
     store.unwatch();
 });
 

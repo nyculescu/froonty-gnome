@@ -19,7 +19,7 @@ import {notesPage} from './features/notes/prefs.js';
 import {addLocalIconPaths, addLocalPrefs} from './features/localPrefs.js';
 // local:end local-features
 import {panicPage} from './panic/prefs.js';
-import {spinRow, switchRow} from './prefs/rows.js';
+import {choiceRow, spinRow, switchRow} from './prefs/rows.js';
 
 const CLOCK_FORMATS = ['system', '24h', '12h'];
 
@@ -44,7 +44,6 @@ export default class FroontyPreferences extends ExtensionPreferences {
             vexpand: true,
             transition_type: Gtk.StackTransitionType.NONE,
         });
-        const names = new Set();
         const pages = [
             this._generalPage(settings),
             this._appearancePage(settings),
@@ -63,7 +62,6 @@ export default class FroontyPreferences extends ExtensionPreferences {
         });
         for (const page of pages) {
             pageStack.add_named(page, page.name);
-            names.add(page.name);
             const label = new Gtk.Label({
                 label: page.title,
                 xalign: 0,
@@ -109,23 +107,13 @@ export default class FroontyPreferences extends ExtensionPreferences {
             if (row)
                 pageStack.visible_child_name = row._pageName;
         });
-        const selectPage = name => {
-            const row = pageRows.get(name);
-            if (!row)
-                return false;
-            sidebar.select_row(row);
-            pageStack.visible_child_name = name;
-            return true;
-        };
 
         const title = new Adw.WindowTitle({
             title: pages[0].title,
             subtitle: window.title,
         });
         pageStack.connect('notify::visible-child-name', () => {
-            const page = pages.find(item => item.name === pageStack.visible_child_name);
-            if (page)
-                title.title = page.title;
+            title.title = pages.find(item => item.name === pageStack.visible_child_name).title;
         });
         sidebar.select_row(pageRows.get(GENERAL_PAGE));
 
@@ -139,7 +127,6 @@ export default class FroontyPreferences extends ExtensionPreferences {
         });
         const navigationView = new Adw.NavigationView();
         navigationView.add(rootPage);
-        window.search_enabled = false;
         window.set_default_size(960, 700);
         // The preferences service checks for at least one registered page.
         window.add(new Adw.PreferencesPage({
@@ -148,18 +135,19 @@ export default class FroontyPreferences extends ExtensionPreferences {
         }));
         window.set_content(navigationView);
 
-        // The All notes page (a subpage), when the island asked for it.
+        // The All notes page (pushed onto navigationView), when the island
+        // asked for it.
         attachAllNotes(window, settings, navigationView);
-        this._followPrefsPage(window, settings, names, selectPage);
+        this._followPrefsPage(window, settings, sidebar, pageRows);
     }
 
     // A tab's "Open Settings" button names the page to show (prefs-page),
     // also while the window is already open; the key is emptied after.
-    _followPrefsPage(window, settings, names, selectPage) {
+    _followPrefsPage(window, settings, sidebar, pageRows) {
         const show = () => {
             const name = settings.get_string(PREFS_PAGE_KEY);
-            if (names.has(name))
-                selectPage(name);
+            if (pageRows.has(name))
+                sidebar.select_row(pageRows.get(name));
             if (name)
                 settings.reset(PREFS_PAGE_KEY);
         };
@@ -216,7 +204,7 @@ export default class FroontyPreferences extends ExtensionPreferences {
                 ? _('The top bar icon, the shortcut, Froonty in Show Apps or this button start it again')
                 : _('The top bar icon, the shortcut or this button start it again');
             running.subtitle = on
-                ? `${_('Stop it to free the computer: no island and no background work (clipboard history, break tracking, usage checks).')} ${again}`
+                ? `${_('Stop it to free the computer: no island and no background work.')} ${again}`
                 : `${_('Nothing of it runs but the top bar icon. At the next login it follows Start at login.')} ${again}`;
             toggle.label = on ? _('Stop Froonty') : _('Start Froonty');
             toggle.css_classes = on ? ['destructive-action'] : ['suggested-action'];
@@ -261,27 +249,8 @@ export default class FroontyPreferences extends ExtensionPreferences {
         const group = new Adw.PreferencesGroup({title: _('Clock')});
         group.add(switchRow(settings, 'show-date', _('Show date when collapsed')));
 
-        const formatRow = new Adw.ComboRow({
-            title: _('Clock format'),
-            model: Gtk.StringList.new([_('Follow system'), _('24-hour'), _('12-hour')]),
-        });
-        // Showing the setting must not write it back: a change made
-        // elsewhere (the Shell, gsettings) reaches this process late, and
-        // writing back what it shows then would undo a newer one.
-        let syncing = false;
-        const syncFormatRow = () => {
-            const index = CLOCK_FORMATS.indexOf(settings.get_string('clock-format'));
-            syncing = true;
-            formatRow.selected = Math.max(index, 0);
-            syncing = false;
-        };
-        syncFormatRow();
-        formatRow.connect('notify::selected', () => {
-            if (!syncing)
-                settings.set_string('clock-format', CLOCK_FORMATS[formatRow.selected]);
-        });
-        settings.connect('changed::clock-format', syncFormatRow);
-        group.add(formatRow);
+        group.add(choiceRow(settings, 'clock-format', _('Clock format'), CLOCK_FORMATS,
+            [_('Follow system'), _('24-hour'), _('12-hour')]));
         return group;
     }
 

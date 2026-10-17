@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // The settings pages of the local features (including Fan, which is not a
-// hub tab), in their navigation order, then Brightness (a part, not a tab).
-// tools/pack-public replaces this file with one that adds none.
+// hub tab), in their navigation order, then Brightness and Time zones
+// (parts, not tabs). tools/pack-public strips the imports of this file and
+// leaves it out.
 
 import {addIconPath as addBreakIconPath, breakPage} from './break/prefs.js';
 import {brightnessPage} from './brightness/prefs.js';
@@ -43,7 +44,7 @@ export function addLocalPrefs(window, settings, pageStack) {
         zeroTierPage(settings),
         writingPage(settings, window),
         formulasPage(settings),
-        // Not a hub tab (localFeatures.js, LOCAL_PARTS).
+        // Not hub tabs (localFeatures.js, LOCAL_PARTS).
         brightnessPage(settings),
         timezonesPage(settings),
     ];

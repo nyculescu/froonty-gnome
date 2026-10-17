@@ -84,7 +84,7 @@ const sorted = windows => {
  * @param {object} data the parsed file:
  *   {writtenAtMs, rate_limits: {five_hour: {used_percentage, resets_at}, seven_day}}
  *   with resets_at in seconds since the epoch
- * @returns {{writtenAt: number, windows: object[]}|null} Session and Weekly
+ * @returns {{windows: object[]}|null} Session and Weekly
  *   windows shaped as usageFromConfig's; null when there is nothing usable
  */
 export function statusLineFromFile(data) {
@@ -109,7 +109,7 @@ export function statusLineFromFile(data) {
             fetchedAt: writtenAt,
         });
     }
-    return windows.length ? {writtenAt, windows} : null;
+    return windows.length ? {windows} : null;
 }
 
 // Reset times from the two sources differ by a fraction of a second (the
@@ -123,7 +123,7 @@ const SAME_WINDOW_MS = 60 * 1000;
  * an earlier one loses, and within the same window the higher use wins
  * (use only grows until the window resets).
  */
-export function isNewerReading(fresh, old) {
+function isNewerReading(fresh, old) {
     if (fresh.resetsAt !== null && old.resetsAt !== null) {
         const d = fresh.resetsAt - old.resetsAt;
         if (Math.abs(d) >= SAME_WINDOW_MS)

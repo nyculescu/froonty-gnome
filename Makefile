@@ -37,7 +37,8 @@ $(MATHJAX):
 
 # Submodules carrying local patches (third_party/patches/<name>/): applied
 # on a `froonty` branch over the commit the superproject records. The Fan
-# tab's llano.py is third_party/llano-v12-linux/llano.py once patched.
+# settings page's llano.py is third_party/llano-v12-linux/llano.py once
+# patched.
 third-party:
 	bash tools/patch-third-party.sh
 
@@ -66,22 +67,24 @@ pack: schemas
 	GNOME_EXTENSIONS=$(GNOME_EXTENSIONS) GLIB_COMPILE_SCHEMAS=$(GLIB_COMPILE_SCHEMAS) \
 		bash tools/pack-public.sh $(SRC) $(SOURCE_DIRS)
 
-# Plain-gjs unit tests (isolated TMPDIR/XDG_DATA_HOME).
+# Plain-gjs unit tests (isolated TMPDIR and XDG folders, GTK pages on a
+# private Broadway display), then the public build's leak-guard tests.
 unit:
 	tools/unit/run.sh
 
-# Isolated headless GNOME Shell 50 runs; do not touch the real session.
-# Both session modes: layout can depend on the theme (Ubuntu uses Yaru).
 # Froonty in a nested GNOME Shell window, isolated from the session
 # (needs mutter-dev-bin); devkit-public runs the make pack build.
 # SYSTEM_BUS=1 lets it reach the real asusd (tools/devkit.sh --system-bus):
-# the Fan tab's laptop profile and curves then change this computer's.
+# the Fan settings page's laptop profile and curves then change this
+# computer's.
 devkit: schemas $(MATHJAX)
 	tools/devkit.sh $(if $(SYSTEM_BUS),--system-bus)
 
 devkit-public:
 	tools/devkit.sh --public
 
+# Isolated headless GNOME Shell 50 runs; do not touch the real session.
+# Both session modes: layout can depend on the theme (Ubuntu uses Yaru).
 test:
 	tools/headless-test/run.sh
 	FROONTY_TEST_MODE=ubuntu tools/headless-test/run.sh

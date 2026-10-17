@@ -53,63 +53,317 @@ Status: **implemented (v1)**. Decisions made 2026-09-28:
   it reads the same in every Markdown app.
 
 **Rendered Markdown** (second iteration, 2026-10-02, user request: "render
-Markdown so that I can use the edit buttons"):
+Markdown so that I can use the edit buttons"; since 2026-10-13 a separate
+read-only view):
 
-- **What shows.** The editor draws the note formatted while it stays plain
-  Markdown in its file, as in Obsidian's live preview.
-  - Headings are bold and larger (`#`, `##`, `###`).
+- **Two modes.** Rendered (the default) shows the note formatted, to read
+  and copy; the file stays plain Markdown. The `MD` button switches to the
+  literal Markdown source (in the island of working-tree builds, with
+  formulas drawn: "Formulas" below), where the whole note is edited raw
+  (typing, the formatting buttons, Insert image). Rendered, a part of the
+  note can be edited in place and a table as a grid ("Editing in place"
+  below). While rendered, the formatting buttons are insensitive (`MD` and
+  Wrap still work) and the hidden source never takes the key focus. The choice is shared by both Notes editors
+  and remembered in `notes-markdown-source`.
+- **What shows** in the rendered view:
+  - Headings are bold and larger.
   - `**bold**` is bold, `_italic_`/`*italic*` is italic, and `~~struck~~`
-    is struck through, also over a line break inside a paragraph
-    (`**line 1` then `line 2**`), as in CommonMark; a blank line, a
-    heading, a list item, a quote or a code block ends the paragraph.
-  - `` `code` `` and fenced blocks are monospace, code spans on a light
-    grey background.
+    is struck through. In the window this also holds over a line break
+    inside a paragraph (`**line 1` then `line 2**`), as in CommonMark; in
+    the island each line is formatted on its own, so the markers show.
+  - `` `code` `` and fenced blocks are monospace; in the window code spans
+    have a light grey background.
   - Links show their label underlined.
   - `> quotes` are italic and muted.
   - Ticked checklist items (`- [x]`) are struck through and muted.
-- **Formatting markers** (`**`, `_`, `~~`, `` ` ``, `# `, `[`, `](url)`)
-  stay hidden even on the line holding the cursor, so formatted text does
-  not switch back to Markdown syntax while editing. Quote prefixes, list
-  bullets and numbers remain muted; task markers are replaced by drawn
-  checkboxes in both editors. Fence delimiters are hidden while fenced code
-  stays visible in monospace.
-- **Markdown source toggle.** The `MD` button switches between the rendered
-  preview and literal Markdown, including the source for formulas, tables,
-  images, diagrams and checklists. The choice is shared by both Notes editors
-  and remembered in `notes-markdown-source`.
-- **How:** `render.js` (pure, unit-tested) finds the spans. `styler.js`
-  turns them into Pango attributes on the editable `Clutter.Text`, with
-  byte offsets. It restyles on each edit, when the cursor changes line,
-  and on focus changes. Clutter does honour attributes while editable
-  (checked in the headless Shell).
-- **Why markers shrink instead of disappearing.** Pango has no "invisible"
-  attribute and Clutter ignores Pango's foreground alpha. So hidden markers
-  are drawn at 5% size in the muted colour. Every character stays in place,
-  so cursor positions and the formatting bar's edits are those of the plain
-  text.
-- **Muted colour.** It comes from the editor's CSS
-  (`-froonty-markdown-muted`, read from St's theme node), so it follows the
-  note's colour: grey on the pastels, lighter on charcoal.
-- **Task boxes.** Clicking a `- [ ]` / `- [x]` box toggles the Markdown in
-  both editors. All notes records it as one undoable edit.
-- **Keyboard editing.** Tab inserts a tab character in the Notes editor
-  instead of moving focus. Ctrl+Z undoes and Ctrl+Shift+Z or Ctrl+Y redoes
-  grouped edits; All notes uses the GTK text buffer's undo history.
+  - Formatting markers (`**`, `_`, `~~`, `` ` ``, `# `, `[`, `](url)`) and
+    fence delimiters are hidden; list bullets and numbers remain, and task
+    markers are replaced by drawn checkboxes.
+- **How, the island:** `renderer/preview.js` builds the view from the
+  note's text: runs of lines as selectable `St.Label`s with Pango markup,
+  checkboxes, and the rendered blocks as pictures in between, laid out top
+  to bottom, so text never overlaps a table, image or diagram. The
+  `St.Entry` holding the source is hidden while it shows. Quotes and done
+  items are a fixed grey.
+- **How, the window:** `allNotesStyler.js` draws a display copy of the
+  note in a second, non-editable text view, with GTK text tags from the
+  same `render.js` spans; the source view stays plain Markdown. Hidden
+  markers are transparent at a twentieth of the size, not tagged
+  `invisible` (see the window's formatting bar below). The muted colour is
+  a mid grey for light and dark styles alike.
+- **Copying.** Rendered text can be selected (drag, Ctrl+A; in the island
+  a click without a drag edits instead, see below) and copied (Ctrl+C, or
+  right-click → Copy), as drawn: without hidden markers, task boxes or
+  block placeholders. A right-click on a rendered block offers **Copy as
+  PNG** for images, **Copy as JPEG** (on white) for tables and diagrams;
+  images also **Open file location** and **Copy original**, tables also
+  **Copy as Markdown** (their pipe table, as written) and **Edit table**, diagrams also **Copy Mermaid code** (the code alone,
+  without the fence lines) and **Edit Mermaid code** (both below).
+- **Code.** A right-click on code (a fenced block's lines, an inline
+  `` `span` ``) offers **Copy code** (the code alone: no fence lines, info
+  string or backticks) and, on an editable note, **Edit code**, which
+  opens the click-to-edit field (below) on the part holding it: the whole
+  fence, or the line or paragraph around the span (`editUnits.js`
+  `codeAt()`, shared by both views). Over a selection the menu has Copy
+  too; elsewhere a right-click is as before.
+- **Task boxes.** Clicking a `- [ ]` / `- [x]` box in the rendered view
+  toggles the Markdown in both editors, as an undoable edit.
+- **Undo** in both modes and both editors: Ctrl+Z undoes, Ctrl+Shift+Z or
+  Ctrl+Y redoes (the island groups edits; All notes uses the GTK text
+  buffer's undo history). In rendered mode that undoes ticked boxes.
+- **Keyboard editing** (source mode). Tab inserts a tab character in the
+  island's editor; Shift+Tab and Ctrl+Tab still move the focus. Every
+  formatting button has a shortcut ("Keyboard shortcuts" below).
 - **Pipe tables** render as bordered, aligned tables. The image button opens
   a file chooser, copies the chosen image into the note folder and inserts
-  its Markdown reference. Images referenced by a local relative path also
-  render; remote URLs are not loaded.
+  its Markdown reference; nothing is copied when the note changed, became
+  read-only or went (the screen locked) while the chooser was open. Images referenced by a local relative path also
+  render; remote URLs are not loaded. Drag the bottom-right grip on a
+  rendered image, table or diagram to resize it; proportions stay locked.
+  The sizes are kept per note in `.froonty-render-sizes.json` in the notes
+  folder (see Data), shared by Notes and All notes.
 - Fenced `mermaid` blocks render common `flowchart`/`graph`, `stateDiagram`
   and `sequenceDiagram` syntax offline. Unlabeled fences are recognized when
-  their first declaration is one of those diagram types. WebKitGTK 4.1 rasterizes diagrams,
-  tables and images in a separate GTK 3 helper; Froonty's local renderer
-  draws diagrams without a downloaded library or network access.
-- As with formulas, the source stays in the note and is shown for editing
-  while the cursor is inside the block. A render error leaves the Markdown
-  source visible.
-- Rich block rendering needs the WebKitGTK 4.1 GObject bindings
-  (`gir1.2-webkit2-4.1`) and GTK 3 bindings. Notes remain usable without
-  them; tables, images and diagrams stay as source text.
+  their first declaration is one of those diagram types. A separate GTK 3
+  helper renders the blocks: WebKitGTK 4.1 rasterizes diagrams and tables,
+  on white with dark text whatever the note's colour, and images are
+  decoded with GdkPixbuf. Froonty's local renderer draws
+  diagrams without a downloaded library or network access.
+- While a block renders, the view shows "Rendering table…", "Rendering
+  image…" or "Rendering diagram…" in its place. A block that fails and a
+  partly drawn one say why ("Failures" below).
+- The helper needs the WebKitGTK 4.1 GObject bindings
+  (`gir1.2-webkit2-4.1`) and GTK 3 bindings. Without them no block
+  renders, images included: each shows "Could not render …" and its
+  source. Notes remain usable.
+
+### Keyboard shortcuts (2026-10-16)
+
+User request: "Can we add all shortcuts like Ctrl+B or I for the text
+editing in the All notes and Notes tab?"
+
+| Shortcut | Action |
+| --- | --- |
+| Ctrl+B | Bold |
+| Ctrl+I | Italic |
+| Ctrl+Shift+X | Strikethrough |
+| Ctrl+Shift+H | Heading |
+| Ctrl+Shift+8 | Bulleted list |
+| Ctrl+Shift+7 | Numbered list |
+| Ctrl+Shift+9 | Checklist |
+| Ctrl+E | Code |
+| Ctrl+K | Link |
+| Ctrl+Shift+M | `MD`: Markdown source or rendered |
+
+- **Same in both editors.** A shortcut applies the same edit as its button
+  (`formatActions.js`, `markdown.js`): a bare cursor inside `**hi**` counts
+  as bold, Ctrl+B again takes it off, Link selects the URL, and the edit is
+  one undo step.
+- **Where they work:** in the Markdown source (`MD` on) of an editable
+  note, and in a click-to-edit field open in the rendered note, where they
+  edit the field's own Markdown and selection (written back with
+  Ctrl+Enter or a click elsewhere, as typing in it is). Rendered without a
+  field, and on a read-only note, they change nothing; the island takes
+  them there anyway, as St.Entry's own Ctrl+K deletes to the end of the
+  text even when it is not editable (found by the headless test). Ctrl+Shift+M works
+  whenever the note has the keys, read-only too; a field open in the
+  rendered note is written first, and the keys stay in the note.
+- Each button's **tooltip names its shortcut** ("Bold (Ctrl+B)", "Show
+  Markdown source (Ctrl+Shift+M)"), as whole translatable phrases. The
+  island's buttons now show tooltips on hover too (`core/tooltip.js`).
+- **The keys kept:** Ctrl+A, Ctrl+C, Ctrl+V, Ctrl+Z, Ctrl+Y,
+  Ctrl+Shift+Z, Ctrl+Enter, Escape and Tab behave as before. A shortcut
+  needs Ctrl and exactly its Shift: Ctrl+Shift+B is no shortcut, and Alt,
+  AltGr or Super held with it neither. Caps Lock and Num Lock do not
+  count.
+- **Shifted digits.** Shift turns the 8 key's keyval into the layout's
+  symbol: `*` on US keyboards, `(` on German ones, where `(` is Shift+9 on
+  US ones. So the digits are matched by their key on the digit row (XKB
+  keycodes 16 to 18 for 7 to 9, from evdev; the same in Clutter and GDK),
+  or by the digit's keyval (French keyboards type the digit with Shift),
+  never by the shifted symbol. Letters are matched by their keyval, either
+  case.
+- **How:** one table, `formatShortcut(keyval, keycode, state)` in
+  `formatActions.js` (pure; Clutter and GDK share keyvals and modifier
+  bits), gives the action id. The island checks it in the source's key
+  handler (`view.js` `_onEditorKeyPress`; `_onMarkdownKey` also on the
+  rendered view) and in the field's (`renderer/preview.js` `_onFieldKey`).
+  All notes has named actions, `note.bold`, `note.italic`,
+  `note.strikethrough`, `note.heading`, `note.bullets`, `note.numbered`,
+  `note.checklist`, `note.code`, `note.link` and `note.markdown`, beside
+  `note.undo` and `note.redo`; a key controller on the note's views
+  activates them (not `Gtk.ShortcutController` triggers, which match a
+  shifted digit by its symbol). The title entry and the Labels menu keep
+  their keys. A field's edit goes through `allNotesStyler.js`
+  `editField()`.
+- **Fixed on the way** (island, `view.js` `_refreshUndoSelection`): Ctrl+Z
+  after a formatting edit (button or shortcut) emptied the note: the
+  headless test found empty undo steps. Setting the text moves the cursor
+  before `text-changed` comes, and the selection refresh took the
+  half-set (empty) text as the step to go back to. It now only refreshes
+  the selection while the text is unchanged.
+- **Tests:** `tools/unit/notes-format-shortcuts.test.js` (the table:
+  layouts, modifiers, tooltips, the edits), `notes-all-notes.gtk.test.js`
+  (the actions and the key controller: source, field, `MD`, read-only)
+  and the headless `testFormatShortcuts` (key presses in the island, with
+  Ctrl+Shift+8 typed as `*`).
+
+### Editing in place, pasted images and blocks (2026-10-16)
+
+User requests of 2026-10-16. Rendered stays the reading view; these are
+direct edits on it. The `MD` button still shows the whole raw source. The
+same behaviour in the island's Notes tab and in All notes; how each does
+it is below.
+
+- **Image menu.** Right-click a rendered image: **Copy as PNG** (the
+  picture), **Open file location** (Files opens with the image selected,
+  `FileManager1.ShowItems`; without a file manager offering that, its
+  folder opens) and **Copy original** (the file itself: its own bytes and
+  type, so a JPEG stays a JPEG). The last two only for an image with a
+  local file. In All notes Copy original also pastes into Files as a
+  file; in the island it is the image only, since GNOME Shell's clipboard
+  (`St.Clipboard`) offers one type at a time.
+- **Pasting an image.** Ctrl+V (or Shift+Insert) while a note is edited
+  (the `MD` source, or a part being edited in place) with image data on
+  the clipboard and no text (e.g. "Copy image" in a browser) saves it into
+  the note folder as `pasted-2026-10-16-1405.png` (`-2`, `-3` … when the
+  name is taken; `renderer/image-picker.js` `saveImageBytes`) and inserts
+  `![](pasted-2026-10-16-1405.png)` at the cursor. When the clipboard also
+  holds text (office suites offer both), it pastes as text, as before.
+  PNG, JPEG, GIF and WebP are taken.
+- **Failures.** A block that fails shows "Could not render table: <reason>"
+  (image, diagram; the reason is the renderer's, in English, e.g. "pie
+  diagrams cannot be drawn offline; use flowchart, graph, stateDiagram or
+  sequenceDiagram") and under it its Markdown, monospace and selectable,
+  so nothing is hidden. A block drawn only in part shows its picture and
+  a short dim line under it, "Not drawn: <first problem>" (e.g. "Not
+  drawn: Line 3 not drawn: classDef big fill:#f9f"); hovering it lists
+  them all. Other blocks are unaffected.
+- **Click to edit.** A click without a drag on rendered text opens the
+  part under it in a field holding its Markdown, the caret near the
+  click: a paragraph (its run of plain lines), a heading, a list item or a
+  quote line, a task's text (the box stays a checkbox) or a code fence
+  whole (`editUnits.js`, shared by both views). Lines beside a drawn block
+  (an inline image) are not edited in place. **Enter** starts a new line
+  in the field; **Ctrl+Enter** or a click elsewhere writes it back as
+  **one undoable edit** (Ctrl+Z) and the part renders again; **Escape**
+  drops the change. The field opens once the double-click time
+  is over with nothing selected, so a drag still selects text for copying
+  and a double click selects a word. While a field is open
+  the view is not rebuilt under it (a render finishing or an external
+  change waits until it closes).
+- **Edit table.** Right-click a rendered table → **Edit table**: the table
+  turns into a grid of cells (header row in bold), with buttons to add or
+  remove a row and a column at the focused cell (at the end when none is
+  focused) and Done / Cancel. Cells show their Markdown without pipes or
+  escapes. **Done** (or Enter in a cell) writes the table back, aligned
+  (`table.js` `serializeTable`), as one undoable edit, and it renders as a
+  picture again, resizable as before; Done without a change writes
+  nothing. **Cancel** (or Escape) drops the changes.
+- **Edit Mermaid code** (owner's request, 2026-10-16: "like split view in
+  Notion"). Right-click a drawn diagram → **Edit Mermaid code** (editable
+  notes): in its place, a switch **Code | Split | Preview** over the
+  diagram's code (monospace) and its live picture. **Split**, the
+  default, puts the code on the left and the picture on the right, half
+  the width each, in the island too (a wider picture scrolls sideways
+  there); Code shows the code alone, Preview the picture alone. The choice
+  is kept until the Shell or the settings window restarts (no setting).
+  The picture is drawn again 400 ms after typing pauses, by the note's own
+  renderer (one drawing at a time; a drawing of older code is never
+  shown); under it, why it could not be drawn ("Could not render diagram:
+  …", the last picture faded) or what it left out ("Not drawn: …", all of
+  it in the tooltip). In the code, **Enter** starts a new line;
+  **Ctrl+Enter** or **Done** writes the code back between the fence lines,
+  which stay as written (` ```mermaid `, an unlabeled fence, tildes), as
+  one undoable edit, and the diagram is drawn as a picture again,
+  resizable as before; unchanged code writes nothing. **Cancel** or
+  **Escape** drops it (`mermaidEdit.js`: the fence, the layout, the live
+  picture).
+
+#### Island (`renderer/preview.js`, `view.js`)
+
+- **Wide blocks.** Tables and diagrams show at their own size (images
+  within 360×320 by default, as before), not scaled down to the narrow
+  island. Each picture sits in a horizontal scroller (`St.ScrollView`,
+  overlay scrollbar): one wider than the note scrolls sideways (drag the
+  scrollbar, scroll sideways on a touchpad or tilted wheel; the plain
+  wheel still scrolls the note). The resize grip moves with the picture,
+  so a wide one's grip is reached by scrolling.
+- **Pictures** are decoded once per rendered PNG (a `WeakMap` keyed by
+  the render cache's bytes), not on every rebuild.
+- **Click to edit.** Each run of text is one selectable `St.Label`; each
+  of its lines knows where it is in the note. A click maps the pointer to
+  the drawn line and column, then to the Markdown column
+  (`sourceColumn.js`: markers stepped over), and `editUnitAt()` gives the
+  part. The field (a multi-line `St.Entry`) opens after the double-click
+  time, once no button is held, since opening rebuilds the view; a click
+  on other text writes the open field and opens the new part. Clicking a picture or blank space also
+  writes it (the view takes the key focus). The edit goes through
+  `view._replaceSource()`, which closes the island's undo grouping on both
+  sides, so it is a step of its own. Ctrl+Z inside a field does nothing
+  (the note's undo waits until it is closed). Collapsing the island,
+  switching tab or note, opening All notes or `MD` writes an open field
+  or table first; a note that changes under it otherwise (trashed) drops
+  it. Escape goes to the field before it would close the island
+  (`view.handleEscape()`).
+- **Edit table** runs once the menu has closed (it rebuilds the view, the
+  menu's anchor included). The grid is a `Clutter.GridLayout` of
+  `St.Entry` cells in the same sideways scroller; "+ Row", "− Row",
+  "+ Column", "− Column" (short for the narrow island; their accessible
+  names spell them out), then Cancel and Done.
+- **Edit Mermaid code** runs once the menu has closed too. The code is a
+  multi-line `St.Entry`, the halves a homogeneous `St.BoxLayout`; the
+  switch's buttons light as the formatting bar's toggles do. The picture
+  comes from the island's renderer client (`renderer/island.js`
+  `drawDiagram()`, `renderer/blocks.js` `draw()`: drawn as the note's are,
+  outside the cache), so no second helper starts.
+- The formatting bar stays insensitive while a field is open (it acts on
+  the `MD` source only).
+- **Tests** (`tools/headless-test/checks.js`): `testRenderedMarkdown`
+  (a drag selects; click to edit: commit, undo, cancel, click away, a
+  task's text; `testCodeMenu`: Copy code, Edit code) and `testNotesBlocks` (image menu, Copy original, a pasted
+  image, a failed block beside a good one, "Not drawn", a wide table's
+  scroller, Edit table; `testMermaidEditor`: the diagram's menu, Copy
+  Mermaid code, the editor side by side, Code | Split | Preview, a node
+  typed and drawn again, Done with one undo step, Cancel); unit:
+  `tools/unit/notes-source-column.test.js`,
+  `tools/unit/notes-mermaid-edit.test.js` (the fence written back, the
+  live picture's pause and order).
+
+#### All notes (`allNotesStyler.js`, `allNotesTableEditor.js`, `allNotesMermaidEditor.js`)
+
+- **Rendered blocks.** A failed block's reason and selectable Markdown,
+  and a partly drawn block's dim "Not drawn: …" line (its tooltip lists
+  everything left out: a diagram line, a table cell's image), as above.
+  Blocks are at most 600 px wide and scaled to fit, so the window needs
+  no sideways scrolling.
+- **Copy original** offers the file both as an image (paste it into an
+  app) and as a file (paste it into Files).
+- **Editing in the rendered view**: click a paragraph, heading, list item
+  or a task's text; the caret goes where you clicked (`editUnits.js`
+  `sourceOffset()` maps the click in the display copy back to the note).
+  Enter starts a new line, Ctrl+Enter or clicking elsewhere saves,
+  Escape cancels; each edit is one step of the GTK buffer's undo
+  (Ctrl+Z). Drawn blocks are not edited this way.
+- **Edit table**: the cells as a GTK grid (header bold) with Add row, Add
+  column, Remove row, Remove column, Cancel and Done.
+- **Edit Mermaid code**: linked toggle buttons for Code | Split | Preview,
+  a monospace `Gtk.TextView` and a `Gtk.Picture` (its own size, scrolling
+  sideways) in a homogeneous `Gtk.Box`, Cancel and Done; drawn by the
+  page's own renderer client. Both editors open through one helper
+  (`_editBlock`), in place of the block's picture.
+- **Placing.** Pictures, grips, captions and task checks are placed over
+  the text again whenever the rendered view is laid out anew (a line
+  validated, the field or grid resized), not only when it scrolls; a
+  grip shows only on a picture that shows. Presses inside an open field
+  or grid stop there, so the text under it never takes the focus or drags
+  a selection from them (2026-10-16: after Edit table a stale selection
+  and misplaced pictures were reported). The formatting toggles light
+  only while the bar can edit (MD, an editable note).
+- **Code menu**: a right-click on code opens a popover (Copy code, Edit
+  code) instead of the view's own menu.
+- **Pasting images** into the Markdown source or a part being edited, as
+  above.
 
 ## Formulas (2026-10-05, working-tree builds only)
 
@@ -120,19 +374,25 @@ the Formulas tab); the published Notes tab is unchanged.
 
 ### What shows
 
-- **Off the edited line, a formula is a picture**, drawn by MathJax in
-  the note's text colour (the island) or the style's (the window, light
-  or dark), at the editor's font size. `$…$` sits on the text's
+- **Where.** The window draws formulas in its rendered view. The island
+  draws them in its `MD` source view (the owner's choice, 2026-10-16):
+  its rendered view became a separate preview on 2026-10-13, which shows
+  formulas as their plain `$…$` source for now. While the island shows
+  the preview, its formula path does nothing.
+- **A formula is a picture**, drawn by MathJax in the text colour (the
+  note's in the island; the window's style, light or dark), at the
+  editor's font size. `$…$` sits on the text's
   baseline, and a tall one makes its line taller. `$$…$$` is drawn in
   display style; alone on its line or lines, it is centred on a line of
   its own (lines wrapped; unwrapped, it starts at the left), and a block
   over several lines takes the picture's height, not one line each.
-- **On the edited line, the LaTeX shows**, with its dollar delimiters
-  hidden, so it can be edited without showing the surrounding syntax. A
-  `$$` block over several lines shows whole while the cursor is on any of
-  its lines. Without the key focus every formula is drawn. A click on a picture
-  puts the cursor there, so it opens for editing.
-- **Until its picture comes**, a formula shows as dimmed source. One
+- **The edited line shows the LaTeX.** In the island's `MD` view, the
+  line with the cursor (any line of a `$$` block) shows its formulas'
+  source with their dollars, as plain text like the rest of the source;
+  the other lines show pictures, and without the key focus every formula
+  is a picture. The window's `MD` view shows every formula's LaTeX.
+- **Until its picture comes**, a formula shows as dimmed source (in the
+  island, the editor's `-froonty-markdown-muted` colour). One
   MathJax refuses shows its source with a squiggly underline; in the
   window MathJax's message is its tooltip (the island has no tooltip for
   it). Without MathJax (`make mathjax`), or when the helper cannot run,
@@ -162,6 +422,15 @@ As Pandoc reads them (tex_math_dollars):
   stay and `$a_1 * b_2$` is no italic.
 
 ### How: the island (`features/formulas/notes/island.js`)
+
+`MarkdownStyler` (`styler.js`) asks `IslandMath.attributes(text, line)`
+for the source editor's Pango attributes on each edit, style change and
+picture arrival, and when the cursor's line changes (`notify::cursor-position`,
+key focus in and out); the result is the formulas' attributes on otherwise
+plain text. The pictures' layer shows with the source editor only. On
+switching to the preview, the attributes and pictures go once
+(`clear()`), and cursor moves, edits and arriving pictures restyle
+nothing until the source shows again.
 
 Prototyped in the headless Shell (2026-10-05) before building:
 
@@ -255,10 +524,10 @@ path in `local:begin notes-math` blocks, which `tools/pack-public.sh`
 strips (`strip_local.py --several`); `features/formulas` (with `notes/`)
 is deleted, and `check_zip.py` fails on `formulas/notes`, `mathSpans`,
 `mathMarkdownSpans`, `IslandMath`, `WindowMath` or `notes-math` in the
-zip. After stripping, `render.js` and `view.js` are as before; `styler.js`
-gained `spanAttributes()` (what `markdownAttributes()` did, for given
-spans) and `allNotesStyler.js` a `_spans()` method. Inline formatting
-  markers stay hidden on the cursor line in both editors.
+zip. After stripping, `render.js`, `styler.js` and `view.js` have no
+formula code (the island's source editor has no attributes at all), and
+`allNotesStyler.js` keeps its `_spans()` method, which then returns
+`markdownSpans()`.
 
 ### Tests
 
@@ -274,20 +543,20 @@ spans) and `allNotesStyler.js` a `_spans()` method. Inline formatting
   dollar delimiters; text, the saved file (typing around formulas) and undo
   are the plain note; Bold after a formula by the plain offsets; a refused
   formula underlined with tooltips on.
-- Headless (`FROONTY_TEST_ONLY=testNotesMath`): pictures off the edited
-  line by one helper, the inline one on its reserved box and drawn (ink),
+- Headless (`FROONTY_TEST_ONLY=testNotesMath`), in the island's `MD`
+  view: pictures off the edited line by one helper, the inline one on its reserved box and drawn (ink),
   the block centred with its lines one picture high, money as text, the
   source on the edited line, the text and the file unchanged, a helper
   that cannot start leaves plain source, and disable() leaves no helper
   and no picture.
-- `tools/unit/notes-render.test.js` tests `styler.js` as the public build
-  has it (the island's formula path needs GNOME Shell's Clutter).
+- The island's formula path (`island.js`, `styler.js`) needs GNOME
+  Shell's Clutter, so only the headless test covers it.
 
 ### Not done or not verified
 
 - No tooltip with MathJax's message in the island.
 - A change of the monitor's scale is picked up at the next restyle (an
-  edit, a move to another line, a focus change), not at once.
+  edit, or a change of the view's width), not at once.
 - Fractional scaling in the window: the surface's scale is used where
   GTK gives one; not tried on a fractionally scaled display.
 - Very long notes: every formula of the note is asked for, not only the
@@ -352,6 +621,15 @@ should disappear".
     name, date ("16:03" today, "29 Sep" this year, else with the year), a
     two-line excerpt with the matches in bold, and the note's labels. At
     most 300 rows, then "Showing 300 of N — refine the search".
+  - **New note** (+, in the header): a note named after the time, as the
+    island's "+" makes, opened (the island follows), with the search and
+    chips cleared so it is listed.
+  - **Rename**: double-click the note's name in the pane; Enter or
+    leaving the field renames, Escape does not. As the island's rename:
+    the file, its labels, its pictures' sizes, its place and colour
+    (`.froonty.json` gets the new name beside the old first, so the
+    island, which re-reads it, never takes the renamed file for a new
+    note), and the shared selection, so the island follows.
   - Note pane: colour, name, labels, a **Labels** menu (an entry and a
     check per label) and the fold button, then the island's **formatting
     bar** (see below), then the editor with GTK's undo, drawn rendered as
@@ -365,9 +643,9 @@ should disappear".
     change; not while typing in the editor, so rows do not move. A note the
     filter hides stays open in the pane.
   - Both editors share the selected note through a small marker in the notes
-    folder. Selecting a note in either editor selects it in the other. If the
-    marker is absent, All notes falls back to `notes-last`, then the newest
-    note.
+    folder (`.froonty-current-note`, see Data). Selecting a note in either
+    editor selects it in the other. If the marker is absent, All notes
+    falls back to `notes-last`, then the newest note.
   - Another notes folder (Settings → Notes): the page starts over there,
     also when the folder changed while the page was hidden. The open note
     is saved in its own folder first, and closed (it was once still open,
@@ -384,15 +662,17 @@ bar there too."
 
 ```
 ● Plan                       q4 · work  [Labels ▾] [⤴]
-[B][I][S][H][•][1.][☑][</>][🔗][↩]
+[B][I][S][H][•][1.][☑][</>][🔗][🖼][MD][↩]
 ─────────────────────────────────────────────────────
 # Q4 plan
 ```
 
 - **The same buttons, in the same order, as the island's bar:** Bold,
   Italic, Strikethrough, Heading (`H`), Bulleted list, Numbered list,
-  Checklist, Code (`</>`), Link, then Wrap lines. Same icons (Adwaita's),
-  the names as tooltips and accessible names. The list lives in one pure
+  Checklist, Code (`</>`), Link, Insert image, `MD` (rendered or
+  source), then Wrap lines. Same icons (Adwaita's),
+  the names as tooltips (with their shortcuts, since 2026-10-16) and
+  accessible names. The list lives in one pure
   module, `formatActions.js`, which both bars build from, so they cannot
   drift apart. Same edits too (`markdown.js`): a bare cursor inside
   `**hi**` counts as bold, a selection over several lines wraps each line
@@ -413,23 +693,28 @@ bar there too."
   Before, the window always wrapped. The fold button (⤴ / ⤵, the same
   bundled icons, loaded by path in the settings process too) is at the
   end of the note's header; folded, only the bar goes.
-- **Read-only** notes (not plain UTF-8) and no note open (none picked, or
-  gone): the formatting buttons are insensitive. Wrap lines still works:
-  it changes the view, not the note.
-- No keyboard shortcuts (Ctrl+B and so on): the island has none either.
+- **Rendered view, read-only** notes (not plain UTF-8) and no note open
+  (none picked, or gone): the formatting buttons and Insert image are
+  insensitive. `MD` and Wrap lines still work: they change the view, not
+  the note.
+- Keyboard shortcuts (Ctrl+B and so on) came on 2026-10-16, in both
+  editors ("Keyboard shortcuts" above).
 - **Rendered, as in the island** (2026-10-04, for a light, Notion-like
-  editor in the window): `allNotesStyler.js` turns the
-  same `render.js` spans into GTK text tags. Headings, bold, italic,
-  strikethrough, code, links, quotes and done items are drawn formatted.
-  Inline formatting markers stay hidden on every line, including the one
-  with the cursor. A checkbox and a quote's `>` stay, dimmed. The tags
-  recompute on each edit, on a move to another line and on focus changes; they are not
-  edits, so they never reach the undo history or the autosave.
+  editor in the window; a separate read-only view since 2026-10-13):
+  `allNotesStyler.js` turns the same `render.js` spans into GTK text tags
+  on a display copy of the note. Headings, bold, italic, strikethrough,
+  code, links, quotes and done items are drawn formatted, and inline
+  formatting markers are hidden. A checkbox and a quote's `>` stay,
+  dimmed. While it shows, the copy is redrawn when the source changes and
+  when the view's width does; while `MD` shows the source, not at all
+  (switching back redraws it). Each picture is decoded once, not on every
+  scroll. The source buffer, its undo history and the autosave never see
+  the copy.
   - Hidden markers are transparent at a twentieth of the size, not tagged
-    `invisible`: GtkTextBuffer:text leaves invisible characters out, and
-    the pane saves that text, so `invisible` would drop the markers from
-    the file. As in the island, each character also keeps its place for
-    the cursor and the bar.
+    `invisible`. This was chosen while the tags were on the edited buffer:
+    GtkTextBuffer:text leaves invisible characters out, and the pane saves
+    that text, so `invisible` would have dropped the markers from the
+    file.
   - The muted colour is a mid grey for light and dark styles alike (the
     window's editor has no note colour).
 
@@ -502,6 +787,18 @@ the list, the way an index is used; OR would widen it with every click.
     colour still comes back yellow). A rename made outside Froonty leaves
     the labels under the old name, and renaming back restores them: a known
     v1 limit.
+- **`.froonty-current-note`**, next to the notes: the name of the note
+  selected in the island or the window, written by either on each change
+  of selection (empty when none) and followed by the other. It lives in
+  the notes folder, so a synced folder carries it to other machines too.
+- **`.froonty-render-sizes.json`**, next to the notes: the sizes set with
+  a rendered block's grip, `{"version": 1, "notes": {"Plan": {<block>:
+  {"width": …, "height": …}}}}`, where a block is known by its kind, its
+  source and which occurrence of that source it is. Sizes are kept within
+  80–1600 × 60–1600 px. A rename in Froonty moves a note's sizes to its
+  new name (`moveRenderSizes`), and a new note with an old name starts
+  without them; Trash keeps them, for a restore. A click on the grip
+  without a drag saves nothing.
 - `settings-window-view` (`settings` | `all-notes`, internal): which page
   the settings window shows. The Shell sets it before it opens or raises
   the window; the window follows it, sets it as the user navigates, and
@@ -584,14 +881,10 @@ Both save through `noteWriter.js`:
   colours, also when the open note is unchanged: a note made by another
   program (or a window's conflict copy) used to get its tab only once
   something else changed.
-- **Hub header actions** (`ui/hubHeader.js`): a view may expose
-  `headerActions`, widgets it owns and destroys; the hub places them at
-  the header's right end, only while that tab is active. The hub also
-  reports a `minWidth`: the island grows so that the date pill and the
-  panic buttons around it fit between the side column (the tabs, ⚙️) and
-  the header's buttons, 8 px clear of each. The pill is centred on the
-  island where that leaves them clear, and moved as far as needed where
-  not. (With the date pill, from 2026-10-03, the bar used to stay centred
+- **Hub minimum width** (`ui/hub.js`, `ui/hubHeader.js`): the hub
+  reports a `minWidth`: the island grows so that the date pill, always
+  over GNOME's clock, and the panic buttons around it fit 8 px clear of
+  the hub's edges. (With the date pill, from 2026-10-03, the bar used to stay centred
   and the island grew instead: about 498 px on the Notes tab, whose
   default is 428. Until 2026-10-04 the header also held ⚙️, and the
   panic bar sat left of the date pill.) The value it returns
@@ -605,8 +898,9 @@ Both save through `noteWriter.js`:
   group, one `Main.sessionMode` and one `system-modal-opened` handler) and
   is destroyed when it closes, on a tab switch or collapse, and on disable
   or lock. No new timer, monitor or subprocess.
-- **Lifecycle, window:** while the page is shown, one folder monitor and up
-  to 8 reads in flight; while its editor has unsaved text, one 0.8 s
+- **Lifecycle, window:** while the page is shown, one folder monitor (or,
+  only when Gio cannot make one, a 2 s refresh timer instead) and up to 8
+  reads in flight; every refresh also reads the island's selection marker; while its editor has unsaved text, one 0.8 s
   one-shot timer. Everything stops when the page is left or the window
   closes.
 
@@ -626,10 +920,15 @@ Several notes are shown as capsule tabs, and edits save by themselves.
   (Nextcloud, Dropbox, git).
 - **Deleting a note moves it to the Trash** (`Gio.File.trash`), not a hard
   delete.
-- **External changes** (another editor, sync) are picked up through
-  `Gio.FileMonitor` on the folder, with a two-second refresh fallback in
-  sessions where file monitoring is unavailable. An open note that is being
-  edited is not reloaded underneath the user.
+- **External changes** (another editor, sync, the other editor's
+  selection marker, `.froonty.json`, the labels file) are picked up through
+  `Gio.FileMonitor` on the folder; there is no polling while it works. Only
+  when the monitor cannot be made (e.g. the per-user inotify watch limit is
+  used up: "Unable to find default local file monitor type") does each side
+  refresh every two seconds instead, until the folder changes, the Notes
+  service starts again or All notes is shown again (the island's refresh is
+  skipped while one is still pending). An open note that is being edited
+  is not reloaded underneath the user.
 
 ## 3. Structure
 
@@ -641,8 +940,20 @@ features/notes/
 │                 which formatting applies there (toggle state)
 ├── render.js     pure: rendered Markdown spans, markers to hide
 ├── blocks.js     pure: table, image and diagram source ranges
-├── styler.js     Pango attributes on the editor from render.js
-├── renderer/     offline block renderer, image chooser and overlays
+├── table.js      pure: pipe tables as a model (parse, edit, write back)
+├── editUnits.js  pure: which part of a note a click edits in place
+├── sourceColumn.js  pure: a click on a drawn island line → its Markdown
+│                 column
+├── styler.js     switches the island between its source editor and the
+│                 rendered preview
+├── renderer/     offline block renderer (GTK 3 helper; diagram.js and
+│                 tableHtml.js, pure, make its pages), image chooser and
+│                 pasted images (image-picker.js), image files
+│                 (imageFile.js: path, Files, Copy original), the
+│                 island's rendered preview with its in-place edits
+│                 (preview.js)
+├── renderSizes.js  block sizes set with the grip
+│                 (.froonty-render-sizes.json), clipboard images
 ├── labels.js     pure: labels, their file, label filters
 ├── search.js     pure: folding, search, ranking, excerpts, Pango markup
 ├── store.js      Gio async file I/O: list, read, atomic write (etag-
@@ -655,7 +966,8 @@ features/notes/
 ├── labelMenu.js  St: note actions and labels in a GNOME popup menu
 ├── formatActions.js  pure: the formatting bar's buttons, in order (both
 │                 bars)
-├── formatBar.js  St: formatting buttons; lights the active toggles
+├── formatBar.js  St: formatting buttons, Insert image, MD and Wrap;
+│                 lights the active toggles
 ├── view.js       St: composes tabs, fold button, tools row, editor,
 │                 empty state
 ├── icons/        ⤴ / ⤵ fold icons (symbolic SVG)
@@ -664,6 +976,10 @@ features/notes/
 ├── allNotesPage.js  GTK: the All notes page (search, labels, list)
 ├── allNotesNote.js  GTK: its note pane (header, Labels, bar, editor)
 ├── allNotesFormatBar.js  GTK: the window's formatting bar
+├── allNotesTableEditor.js  GTK: the window's Edit table cell grid
+├── allNotesMermaidEditor.js  GTK: the window's Edit Mermaid code
+├── mermaidEdit.js  Edit Mermaid code, both editors: the fence written
+│                 back, Code | Split | Preview, the live picture
 └── allNotesStyler.js  GTK: text tags on the window's editor from
                   render.js
 ```
@@ -688,14 +1004,17 @@ stub.
 
 - **Autosave:** 0.8 s after the last keystroke, a single `GLib.timeout`
   that is reset on each change. Changes are also flushed immediately when
-  the island collapses, when the tab changes, and on disable. This is the
-  only timer; it exists only while there are unsaved changes.
+  the island collapses, when the tab changes, and on disable. It exists
+  only while there are unsaved changes. The island's other timers: the
+  service's 2 s refresh, only without a folder monitor (see Storage), and a
+  0.75 s one-shot after an edit that groups typing into one undo step.
 - **Writes** use `replace_contents_async`, which is atomic (write to a
   temporary file, then rename), so a crash never leaves half a note.
 - **Editor:** a multi-line `St.Entry` in an `St.ScrollView`, with wrapped
-  text.
-  - Limitation: Clutter's text widget has **no undo**. Undo would have to be
-    written by us, so it is left out of v1.
+  text, shown in the `MD` source view; the rendered preview takes its
+  place otherwise (see Rendered Markdown).
+  - Clutter's text widget has no undo, so the view keeps its own (up to
+    200 steps, cleared when another note or version is loaded).
 - **Tabs:**
   - capsule tabs with a "+" to add a note
   - the selected note is remembered
@@ -722,8 +1041,10 @@ stub.
   The gap is the editor's bottom padding in `stylesheet.css` (16 px).
   Before this, the cursor position was taken relative to the text instead
   of the scrolled box, so the last line ended up 8 px under the edge.
-- The editor takes the key focus when the tab is shown, when a note is
-  created, and when a tab is picked (`view.setActive`).
+- In the `MD` source view, the editor takes the key focus when the tab is
+  shown, when a note is created, and when a tab is picked
+  (`view.setActive`). The rendered view leaves the focus alone: the hidden
+  source must not take keys.
 - Long notes scroll inside the editor. Ubuntu's Yaru theme sets
   `StEntry { min-height: 22px }`. A scrolled view sizes its content by its
   minimum height, so that rule stopped scrolling; `min-height: auto` on the

@@ -105,8 +105,8 @@ function cachedFold(note, cache) {
     return folded;
 }
 
-// All occurrences of the terms, as merged source ranges.
-function rangesIn(f, words) {
+/** All occurrences of the terms in fold()ed text, as merged source ranges. */
+export function rangesIn(f, words) {
     const ranges = [];
     for (const word of words) {
         for (let at = f.folded.indexOf(word); at >= 0; at = f.folded.indexOf(word, at + word.length))

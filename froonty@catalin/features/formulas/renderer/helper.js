@@ -13,17 +13,16 @@
 // width and height are pixels; baseline is the pixels from the image's
 // top edge down to the text baseline (below the image for a formula that
 // sits above it, ° say). kind is 'tex' (MathJax refused the formula: the
-// message is MathJax's own), 'unavailable' (MathJax is not fetched) or
-// 'request' (not a valid request). MathJax loads on the first request. The
-// helper ends when stdin closes. Imported as a module (the unit tests'
-// parse check), it does nothing.
+// message is MathJax's own) or 'unavailable' (MathJax is not fetched).
+// MathJax loads on the first request. The helper ends when stdin closes.
+// Imported as a module (the unit tests' parse check), it does nothing.
 
 import Gio from 'gi://Gio';
 import GioUnix from 'gi://GioUnix';
 import GLib from 'gi://GLib';
 import System from 'system';
 
-import {defaultMathJaxDir, FormulaError, MathRenderer} from './mathjax.js';
+import {FormulaError, MathRenderer} from './mathjax.js';
 
 Gio._promisify(Gio.DataInputStream.prototype, 'read_line_async');
 
@@ -34,30 +33,22 @@ function reply(message) {
     output.write_all(new TextEncoder().encode(`${JSON.stringify(message)}\n`), null);
 }
 
-async function load(dir) {
-    renderer ??= MathRenderer.load(dir).catch(e => {
+async function load() {
+    renderer ??= MathRenderer.load().catch(e => {
         // Not fetched, or a broken tree: every request says so.
         throw new FormulaError(`MathJax is not available (${e.message})`);
     });
     return renderer;
 }
 
-async function handle(line, dir) {
-    let request;
-    try {
-        request = JSON.parse(line);
-    } catch (e) {
-        reply({id: null, error: 'Not JSON', kind: 'request'});
-        return;
-    }
-    const id = request?.id ?? null;
-    if (typeof id !== 'number' && typeof id !== 'string') {
-        reply({id: null, error: 'No id', kind: 'request'});
-        return;
-    }
+async function handle(line) {
+    // Only client.js writes here: a line that is not a request ends the
+    // helper (serve()), and the client starts a new one.
+    const request = JSON.parse(line);
+    const {id} = request;
     let mathjax;
     try {
-        mathjax = await load(dir);
+        mathjax = await load();
     } catch (e) {
         reply({id, error: e.message, kind: 'unavailable'});
         return;
@@ -73,7 +64,7 @@ async function handle(line, dir) {
     }
 }
 
-async function serve(input, dir) {
+async function serve(input) {
     try {
         for (;;) {
             // eslint-disable-next-line no-await-in-loop
@@ -84,7 +75,7 @@ async function serve(input, dir) {
             if (text)
                 // One at a time: replies keep the requests' order.
                 // eslint-disable-next-line no-await-in-loop
-                await handle(text, dir);
+                await handle(text);
         }
     } catch (e) {
         console.warn(`Froonty math renderer: ${e.message}`);
@@ -92,13 +83,12 @@ async function serve(input, dir) {
 }
 
 function main() {
-    const dir = GLib.getenv('FROONTY_MATHJAX_DIR') || defaultMathJaxDir();
     const input = new Gio.DataInputStream({
         base_stream: new GioUnix.InputStream({fd: 0, close_fd: false}),
     });
     output = new GioUnix.OutputStream({fd: 1, close_fd: false});
     const loop = new GLib.MainLoop(null, false);
-    serve(input, dir).finally(() => loop.quit());
+    serve(input).finally(() => loop.quit());
     loop.run();
 }
 

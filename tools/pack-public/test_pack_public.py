@@ -208,6 +208,9 @@ class PackTest(unittest.TestCase):
             "features/writing", "features/zerotier", "features/media", "features/claude",
             "features/sysmon", "features/clipboard", "features/killprocess", "features/break"))])
         self.assertIn("features/notes/index.js", names)
+        # The renderer's helper programs, spawned by path (pack:asset).
+        self.assertIn("features/notes/renderer/helper.js", names)
+        self.assertIn("features/notes/renderer/image-picker-helper.js", names)
         # The Formulas tab and its renderer, fetched or not, stay out.
         self.assertFalse([n for n in names if n.startswith(("features/formulas", "third_party"))])
         self.assertFalse([n for n in names if "mathjax" in n.lower()])
@@ -215,7 +218,9 @@ class PackTest(unittest.TestCase):
         for module in ("render.js", "styler.js", "view.js", "allNotesStyler.js"):
             text = archive_text(path, f"features/notes/{module}")
             self.assertNotIn("formulas", text, module)
-            self.assertNotRegex(text, r"(?i)math(?!\.)", module)  # Math.round() is no formula
+            # Math.round() is no formula; this.math, mathSpans and IslandMath are.
+            self.assertNotRegex(text, r"(?<![A-Za-z])math|Math(?!\.(?:max|min|round|floor|ceil|abs)\b)",
+                                module)
         # The Calendar and Notifications tabs are gone; the message tray
         # modules only the local Claude attention bar imports stay out.
         self.assertFalse([n for n in names if n.startswith(("features/calendar", "features/notifications"))])
@@ -251,6 +256,7 @@ class PackTest(unittest.TestCase):
         self.assertNotIn(b'name="zerotier-', schema)
         self.assertNotIn(b'name="formulas-', schema)
         self.assertNotIn(b'name="timezone-planner-', schema)
+        self.assertNotIn(b'name="fan-', schema)
         self.assertNotIn(b"froonty-timezone", css)
         self.assertNotIn(b"froonty-formulas", css)
         self.assertNotIn(b'name="calendar-', schema)

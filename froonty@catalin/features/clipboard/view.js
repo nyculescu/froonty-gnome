@@ -23,10 +23,14 @@ const BUBBLE_FILES = 10;
 // Thumbnails are this tall, in proportion, and at most as wide as the CSS allows.
 const THUMBNAIL_HEIGHT = 56;
 
-// A hidden password's preview: the same dots whatever its length.
-const HIDDEN = '••••••••';
+// The preview goes on any of these; not on a click, which may be the
+// right-click that opens it.
+const HIDES_PREVIEW = [Clutter.EventType.MOTION, Clutter.EventType.SCROLL, Clutter.EventType.KEY_PRESS];
 
-function kindIcon(entry) {
+// A hidden password's preview: the same dots whatever its length.
+export const HIDDEN = '••••••••';
+
+export function kindIcon(entry) {
     if (entry.kind === 'password')
         return 'dialog-password-symbolic';
     if (entry.kind === 'image')
@@ -36,14 +40,14 @@ function kindIcon(entry) {
     return 'text-x-generic-symbolic';
 }
 
-function filesHeading(entry) {
+export function filesHeading(entry) {
     const count = entry.uris.length;
     return (entry.operation === 'cut'
         ? ngettext('Cut %d item', 'Cut %d items', count)
         : ngettext('Copied %d item', 'Copied %d items', count)).format(count);
 }
 
-function filesPreview(entry, max) {
+export function filesPreview(entry, max) {
     const names = entry.uris.slice(0, max).map(uriName);
     const more = entry.uris.length - names.length;
     return more > 0 ? [...names, _('and %d more').format(more)].join('\n') : names.join('\n');
@@ -55,7 +59,7 @@ export class ClipboardView {
         this._clock = ctx.clock;
         this._active = false;
         this._dirty = true;
-        this._tooltipMotionSource = 0;
+        this._tooltipEventId = 0;
 
         // Content, plus an overlay layer (fixed positions, click-through)
         // for the preview bubble.
@@ -119,7 +123,6 @@ export class ClipboardView {
             x_expand: true,
         });
         this._scroll = new St.ScrollView({
-            style_class: 'froonty-clipboard-scroll',
             hscrollbar_policy: St.PolicyType.NEVER,
             overlay_scrollbars: true,
             x_expand: true,
@@ -222,7 +225,7 @@ export class ClipboardView {
         button.connect('clicked', () => this._recorder.copy(entry.id));
         const showPreview = () => {
             this._tooltip.show(button, this._bubble(entry), 'below');
-            this._watchTooltipPointer();
+            this._watchTooltip();
         };
         const rightClick = new Clutter.ClickGesture({
             required_button: Clutter.BUTTON_SECONDARY,
@@ -247,24 +250,21 @@ export class ClipboardView {
     }
 
     _hideTooltip() {
-        if (this._tooltipMotionSource) {
-            GLib.source_remove(this._tooltipMotionSource);
-            this._tooltipMotionSource = 0;
+        if (this._tooltipEventId) {
+            this.actor.disconnect(this._tooltipEventId);
+            this._tooltipEventId = 0;
         }
         this._tooltip.hide();
     }
 
-    _watchTooltipPointer() {
-        if (this._tooltipMotionSource)
-            GLib.source_remove(this._tooltipMotionSource);
-        const [startX, startY] = global.get_pointer();
-        this._tooltipMotionSource = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 25, () => {
-            const [x, y] = global.get_pointer();
-            if (x === startX && y === startY)
-                return GLib.SOURCE_CONTINUE;
-            this._tooltipMotionSource = 0;
-            this._hideTooltip();
-            return GLib.SOURCE_REMOVE;
+    // The pointer moving, the list scrolling or a key hides the preview.
+    _watchTooltip() {
+        if (this._tooltipEventId)
+            return;
+        this._tooltipEventId = this.actor.connect('captured-event', (actor, event) => {
+            if (HIDES_PREVIEW.includes(event.type()))
+                this._hideTooltip();
+            return Clutter.EVENT_PROPAGATE;
         });
     }
 
@@ -308,8 +308,10 @@ export class ClipboardView {
         const time = this._clock.formatTime(entry.time, {weekday: day !== today});
         if (entry.kind === 'image')
             return `${time} · ${GLib.format_size(entry.size ?? 0)}`;
-        if (entry.kind === 'text')
-            return `${time} · ${_('%d characters').format(entry.text.length)}`;
+        if (entry.kind === 'text') {
+            const count = entry.text.length;
+            return `${time} · ${ngettext('%d character', '%d characters', count).format(count)}`;
+        }
         return time;
     }
 

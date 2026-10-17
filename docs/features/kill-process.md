@@ -6,8 +6,9 @@ request); after its review, the keyboard and the pointer kept apart, a
 row out of sight never acted on, readings in batches, and processes
 whose main thread exited listed. 2026-10-03: the core desktop services
 protected too (GNOME's settings daemon, IBus, the accessibility bus,
-mutter's X11 frames; user's question, see the safety rules). Public (in
-`make pack` output). **Off by default.**
+mutter's X11 frames; user's question, see the safety rules). Working
+tree only (`features/localFeatures.js`; `make pack` leaves it out).
+**Off by default.**
 
 All of your own processes, sorted by CPU load, memory or threads, with a
 button to kill each. It is for the moment an app hangs or something eats
@@ -267,14 +268,17 @@ live, and no event says when it changes.
   needs two), then every `killprocess-interval` seconds (1-10, default 3),
   with `GLib.timeout_add_seconds` so GLib can batch the Shell's wakeups.
 - While a kill is under way, an extra reading 0.5 s after each signal and
-  then every second, until the process is gone, so "has ended" and
-  "Force quit" show without waiting for the interval.
+  then every second, until the process is gone, it is offered "Force
+  quit", or 10 s have passed (`FOLLOW_KILL_S`), so "has ended" and
+  "Force quit" show without waiting for the interval; then the interval
+  goes on.
 - It stops when the island collapses, another tab is selected, the screen
   locks, or the extension is disabled (`KillProcessService.setActive(false)`).
-  A reading in flight is cancelled and dropped; kills in progress are
-  forgotten (a signal already sent stays sent).
+  A reading in flight is cancelled and dropped; the list and kills in
+  progress are forgotten (a signal already sent stays sent), so the next
+  visit shows "Reading your processes…" until its first reading.
 - A slow reading never piles up: a tick that finds the previous one still
-  running is skipped. The interval's ticks also wait for ten times as long
+  running is skipped (an early one runs once that reading ends). The interval's ticks also wait for ten times as long
   as the previous reading took (`PACE`), so a reading of very many
   processes, or on a busy machine, comes less often than the interval says
   rather than take more of the Shell's time. The early readings (after a
@@ -298,8 +302,8 @@ Each reading:
 | `/proc` listed once, with each entry's owner (`unix::uid`) | Every reading |
 | `/proc/stat` (the whole computer's CPU time) | Every reading |
 | `/proc/<pid>/stat` for each of your processes (CPU time, memory, threads, start time) | Every reading |
-| `/proc/<pid>/cmdline` | Once per process (kept by process id and start time, dropped when it ends or the tab is hidden) |
-| `/proc/self/stat`, `/proc/self/status` (the page size, for memory) | Once per Shell session |
+| `/proc/<pid>/cmdline` | Once per process (kept by process id and start time, read again when its comm changes, which a rename or an exec does; dropped when it ends or at the tab's next visit) |
+| `/proc/self/stat`, `/proc/self/status` (the page size, for memory) | Once per Shell session (again if that reading was cancelled) |
 | `/proc/<pid>/stat`, `status`, `cmdline`, and `stat` up GNOME Shell's parents | Right before each signal |
 
 Measured on the development machine (2026-10-02), from plain `gjs` with

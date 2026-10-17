@@ -20,7 +20,8 @@ import {deleteModel, listModels} from './ollamaModels.js';
 import {hasMarker} from './ollamaInstall.js';
 import {readState, writeState} from './state.js';
 
-export const OLLAMA_KEYS = ['writing-ollama-enabled', 'writing-ollama-model'];
+const OLLAMA_KEYS = ['writing-ollama-enabled', 'writing-ollama-model',
+    'writing-ollama-translate-model'];
 
 const digestOf = d => String(d ?? '').replace(/^sha256:/, '');
 
@@ -231,8 +232,10 @@ export async function execute(plan, {paths, run, session, url, settings}) {
                 }
                 break;
             case 'model-unfinished':
-            case 'model-changed':
                 break;
+            // Kept, so not reported as removed.
+            case 'model-changed':
+                continue;
             case 'claude-purge':
                 // eslint-disable-next-line no-await-in-loop
                 await runChecked(run, item.argv);

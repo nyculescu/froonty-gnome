@@ -8,7 +8,7 @@
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 
-import {test, eq, ok, done} from './test.js';
+import {test, eq, ok, done, sleep} from './test.js';
 import {NotesStore} from '../../froonty@catalin/features/notes/store.js';
 import {NoteWriter} from '../../froonty@catalin/features/notes/noteWriter.js';
 
@@ -17,11 +17,6 @@ if (!GLib.getenv('FROONTY_UNIT_ISOLATED')) {
     imports.system.exit(2);
 }
 
-const sleep = ms => new Promise(resolve => GLib.timeout_add(GLib.PRIORITY_DEFAULT, ms,
-    () => {
-        resolve();
-        return GLib.SOURCE_REMOVE;
-    }));
 const GAP = 30;
 
 function tempStore() {

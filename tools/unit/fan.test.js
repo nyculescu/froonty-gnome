@@ -2,10 +2,9 @@
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 
-import {AsusFans, curvesState, modelName, offeredProfiles, parseCurves, parseFans, profileNumber} from '../../froonty@catalin/features/fan/asus.js';
+import {AsusFans, modelName, offeredProfiles, parseCurves, parseFans, profileNumber} from '../../froonty@catalin/features/fan/asus.js';
 import {deviceFan, parseLut, recommend} from '../../froonty@catalin/features/fan/lut.js';
-import {activeUnits, failureKind, parseLastControl, parseLock, parseNoise, parseStatus} from '../../froonty@catalin/features/fan/pad.js';
-import {physicalCores} from '../../froonty@catalin/features/fan/service.js';
+import {activeUnits, failureKind, parseLock, parseNoise, parseStatus} from '../../froonty@catalin/features/fan/pad.js';
 import {done, eq, test} from './test.js';
 
 const LUT = JSON.stringify({
@@ -20,7 +19,7 @@ const LUT = JSON.stringify({
 test('pad: llano.py\'s status line, software and pad control', () => {
     eq(parseStatus('LOCKED  speed 0% (software control)  lights off  raw 80 00 00 82 04 00 ff fa').speed, 0);
     eq(parseStatus('speed 20% (software control)  lights off  raw 80 14 00 82 04 00 ff e6\n'),
-        {speed: 20, control: 'software', off: false, lightsOff: true, raw: '80 14 00 82 04 00 ff e6'});
+        {speed: 20, control: 'software', off: false, lightsOff: true});
     // speed 0: the whole pad off (on_off), lights with it.
     const off = parseStatus('speed 0% (software control)  pad off  lights off  raw 80 00 01 00 04 00 ff 7b');
     eq([off.speed, off.off, off.lightsOff], [0, true, true]);
@@ -38,14 +37,10 @@ test('pad: why llano.py failed', () => {
     eq(failureKind('the pad is locked off (llano.py unlock to start it again)'), 'locked');
 });
 
-test('pad: the lock file and the last control.log entry', () => {
+test('pad: the lock file', () => {
     eq(parseLock(null), null);
     eq(parseLock('{"time": 1, "by": "Froonty", "speed": 45, "ctl": "software"}\n').by, 'Froonty');
     eq(parseLock('garbage'), {});
-    eq(parseLastControl('{"by": "a", "action": "speed", "speed": 10}\n{"by": "llano-guard", "action": "speed", "speed": 40}\n'),
-        {by: 'llano-guard', action: 'speed', speed: 40});
-    eq(parseLastControl(''), null);
-    eq(parseLastControl(null), null);
 });
 
 test('pad: the noise line after the status', () => {
@@ -63,13 +58,6 @@ test('pad: units that drive the pad, from is-active\'s lines', () => {
     eq(activeUnits('active\ninactive\n'), ['llano-guard.service']);
     eq(activeUnits('inactive\nactive\n'), ['llanod.service']);
     eq(activeUnits(''), []);
-});
-
-test('cores: one per physical core, with its thread count', () => {
-    eq(physicalCores([
-        {cpu: 0, core: 0, temp: 50}, {cpu: 1, core: 0, temp: 50},
-        {cpu: 2, core: 32, temp: 45}, {cpu: 3, core: null, temp: 40},
-    ]), [{core: 0, temp: 50, threads: 2}, {core: 32, temp: 45, threads: 1}]);
 });
 
 test('lut: rows are interpolated and clamped at the ends', () => {
@@ -112,10 +100,7 @@ test('asus: fan curves, PWM as percent, and whether they are on', () => {
     eq(curves[0].fan, 'cpu');
     eq(curves[0].points[0], [40, 11]);
     eq(curves[1].points[7], [87, 86]);
-    eq(curvesState(curves), 'some');
-    eq(curvesState(curves.map(c => ({...c, enabled: true}))), 'all');
-    eq(curvesState(curves.map(c => ({...c, enabled: false}))), 'none');
-    eq(curvesState([]), 'none');
+    eq(curves.map(c => c.enabled), [false, true]);
 });
 
 test('asus: the hwmon fans and the model name', () => {
@@ -183,11 +168,11 @@ test('asus: reads the fans, the profile and its curves, and changes them', async
     eq(laptop.model, 'ROG Strix G634JZ');
     eq(laptop.fans, [{n: 1, id: 'cpu', rpm: 2500}]);
     eq([laptop.daemon, laptop.profile, laptop.profiles], [true, 1, [2, 0, 1]]);
-    eq(curvesState(laptop.curves), 'none');
+    eq(laptop.curves.some(c => c.enabled), false);
     await laptop.setProfile(2);
     eq([state.profile, laptop.profile], [2, 2]);
     await laptop.setCurvesEnabled(true);
-    eq([state.enabled, curvesState(laptop.curves), laptop.error], [true, 'all', '']);
+    eq([state.enabled, laptop.curves.every(c => c.enabled), laptop.error], [true, true, '']);
 
     // A tick reads the rpm and platform_profile only; asusd is asked for
     // the curves again only when the profile changed (here, from GNOME).

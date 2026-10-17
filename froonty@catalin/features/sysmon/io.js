@@ -15,7 +15,8 @@ Gio._promisify(Gio.FileEnumerator.prototype, 'close_async');
 Gio._promisify(Gio.Subprocess.prototype, 'communicate_utf8_async');
 
 const SIGKILL = 9;
-// nvidia-smi answers in about 40 ms; one stuck on a broken driver is stopped.
+// nvidia-smi answers in about 40 ms and llano.py (Fan) in about 0.15 s; one
+// stuck on a broken driver or a hung device is stopped.
 const RUN_TIMEOUT_S = 5;
 const decoder = new TextDecoder();
 
@@ -104,16 +105,21 @@ async function filesystem(path, cancellable = null) {
 }
 
 /**
- * Runs `argv` (no shell); resolves its standard output, or null when it
- * fails, is cancelled or takes longer than RUN_TIMEOUT_S.
+ * Runs `argv` (no shell): {ok, stdout, stderr}; ok is false when it fails,
+ * is cancelled or takes longer than RUN_TIMEOUT_S. `env`: variables to set
+ * for it.
  */
-async function run(argv, cancellable = null) {
+export async function runCaptured(argv, cancellable = null, env = {}) {
     let proc;
     try {
-        proc = Gio.Subprocess.new(argv,
-            Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_SILENCE);
+        const launcher = new Gio.SubprocessLauncher({
+            flags: Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE,
+        });
+        for (const [name, value] of Object.entries(env))
+            launcher.setenv(name, value, true);
+        proc = launcher.spawnv(argv);
     } catch (e) {
-        return null;
+        return {ok: false, stdout: '', stderr: e.message};
     }
     const cancelId = cancellable?.connect(() => proc.send_signal(SIGKILL)) ?? 0;
     let timeoutId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, RUN_TIMEOUT_S, () => {
@@ -122,16 +128,22 @@ async function run(argv, cancellable = null) {
         return GLib.SOURCE_REMOVE;
     });
     try {
-        const [stdout] = await proc.communicate_utf8_async(null, null);
-        return proc.get_successful() ? stdout ?? '' : null;
+        const [stdout, stderr] = await proc.communicate_utf8_async(null, null);
+        return {ok: proc.get_successful(), stdout: stdout ?? '', stderr: stderr ?? ''};
     } catch (e) {
-        return null;
+        return {ok: false, stdout: '', stderr: e.message};
     } finally {
         if (timeoutId)
             GLib.source_remove(timeoutId);
         if (cancelId)
             cancellable.disconnect(cancelId);
     }
+}
+
+/** Runs `argv` (no shell); resolves its standard output, or null (see runCaptured). */
+async function run(argv, cancellable = null) {
+    const {ok, stdout} = await runCaptured(argv, cancellable);
+    return ok ? stdout : null;
 }
 
 export const SYSTEM_IO = {read, list, link, exists, executable, filesystem, run};

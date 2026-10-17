@@ -110,9 +110,19 @@ test('notices put a missing install first and alone', () => {
         online: false, networks: []}), ['offline', 'no-networks']);
 });
 
+test('the service reads nothing until the tab is shown', async () => {
+    const {service, calls} = fakeService(RUNNING);
+    service.start();
+    eq(calls, []);
+    service.setActive(true);
+    await service.refresh();
+    eq(service.state.installed, true);
+    service.stop();
+});
+
 test('service reads node and network details without elevation', async () => {
     const {service, calls} = fakeService(RUNNING);
-    await service.start();
+    await service.refresh();
     eq(service.state.installed, true);
     eq(service.state.serviceActive, true);
     eq(service.state.autostart, true);
@@ -127,7 +137,7 @@ test('service reads node and network details without elevation', async () => {
 
 test('without zerotier-cli the service reports it is not installed', async () => {
     const {service, calls} = fakeService(RUNNING, {systemctl: BINARIES.systemctl});
-    await service.start();
+    await service.refresh();
     eq(service.state.installed, false);
     eq(calls, []);
     service.stop();
@@ -135,7 +145,7 @@ test('without zerotier-cli the service reports it is not installed', async () =>
 
 test('a service not starting at boot is reported', async () => {
     const {service} = fakeService({...RUNNING, 'is-enabled': {stdout: 'disabled\n'}});
-    await service.start();
+    await service.refresh();
     eq(notices(service.state), ['no-autostart']);
     service.stop();
 });
@@ -144,7 +154,7 @@ test('an unreadable auth token keeps the service state and asks for access', asy
     const denied = {success: false, stderr: '/usr/sbin/zerotier-cli: authtoken.secret ' +
         'not found or readable in /var/lib/zerotier-one (try again as root)\n'};
     const {service} = fakeService({...RUNNING, info: denied, listnetworks: denied});
-    await service.start();
+    await service.refresh();
     eq(service.state.serviceActive, true);
     eq(service.state.access, false);
     eq(service.state.networks, null);
@@ -155,7 +165,7 @@ test('an unreadable auth token keeps the service state and asks for access', asy
 
 test('other CLI failures are shown as errors', async () => {
     const {service} = fakeService({...RUNNING, info: {success: false, stderr: 'boom\n'}});
-    await service.start();
+    await service.refresh();
     eq(service.state.serviceActive, true);
     eq(service.state.error, 'boom');
     service.stop();

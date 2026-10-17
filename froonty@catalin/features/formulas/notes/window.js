@@ -1,20 +1,18 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Formulas in the All notes window's editor (docs/features/notes.md,
-// "Formulas"; working-tree builds only), as in the island (island.js):
-// $…$ and $$…$$ drawn as pictures on the lines without the cursor, as
-// LaTeX on the line being edited. The buffer, its undo history and the
-// note's file stay the plain Markdown: only text tags and overlays change.
+// Formulas in the All notes window's rendered view (docs/features/notes.md,
+// "Formulas"; working-tree builds only): $…$ and $$…$$ drawn as pictures
+// over the view's display copy of the note (allNotesStyler.js). The note
+// and its source editor stay plain Markdown.
 //
 // How (render.js finds the formulas; MarkdownStyler asks update() on each
 // restyle):
 // - A formula's characters are drawn transparent and almost no size
-//   (never "invisible": GtkTextBuffer:text, which the pane saves, leaves
-//   invisible characters out). Its first character makes room for the
-//   picture: letter spacing as wide as it, raised by its height above the
-//   baseline, and the last one lowered by its depth below, so the line is
-//   as tall as the picture. A formula alone on its lines gets the
-//   picture's height as space above its first line instead, and is
-//   centred.
+//   (not "invisible": the pictures are placed at their locations). Its
+//   first character makes room for the picture: letter spacing as wide
+//   as it, raised by its height above the baseline, and the last one
+//   lowered by its depth below, so the line is as tall as the picture. A
+//   formula alone on its lines gets the picture's height as space above
+//   its first line instead, and is centred.
 // - The pictures are overlays of the text view (add_overlay(), buffer
 //   coordinates, so they scroll with the text), placed from the iterators'
 //   locations after GTK has laid the lines out: once at once, and again
@@ -72,7 +70,7 @@ export class WindowMath {
     /**
      * @param {Gtk.TextView} view the editor; this goes with it
      * @param {Function} restyle restyles the editor (the styler's
-     *   update(true)), which calls update()
+     *   update()), which calls update()
      */
     constructor(view, restyle) {
         this._view = view;
@@ -81,10 +79,11 @@ export class WindowMath {
         this._images = new FormulaImages(() => this._restyle());
         const table = this._buffer.get_tag_table();
         // After the Markdown tags: a formula's characters stay hidden in a
-        // heading too.
+        // heading too. Not quite transparent: GTK 4 draws a fully
+        // transparent foreground in the default colour.
         this._hidden = new Gtk.TextTag({
             name: 'froonty-math-hidden',
-            foreground: 'rgba(0, 0, 0, 0)',
+            foreground: 'rgba(0, 0, 0, 0.01)',
             scale: 0.01,
             allow_breaks: false,
         });
@@ -130,23 +129,14 @@ export class WindowMath {
      * pictures; asks for those it does not have yet.
      *
      * @param {string} text
-     * @param {number} line the edited line, -1 for none
      * @returns {object[]} the Markdown spans to draw (render.js)
      */
-    update(text, line, enabled = true) {
+    update(text) {
         const buffer = this._buffer;
         for (const tag of [this._hidden, this._refused, ...this._boxTags.values()])
             buffer.remove_tag(tag, ...buffer.get_bounds());
 
-        if (!enabled) {
-            this._placed = [];
-            this._refusals = [];
-            this._pruneBoxTags(new Set());
-            this._queuePlace();
-            return [];
-        }
-
-        const {spans, formulas} = mathMarkdownSpans(text, line);
+        const {spans, formulas} = mathMarkdownSpans(text);
         const {color, scale, resource} = this._style();
 
         const requests = [];
@@ -156,8 +146,6 @@ export class WindowMath {
         for (const formula of formulas) {
             const request = {tex: formula.tex, display: formula.display, color, scale};
             requests.push(request);
-            if (formula.active)
-                continue;
             const entry = this._images.get(request);
             const state = entry?.state ?? 'pending';
             if (state === 'pending') {
@@ -215,8 +203,7 @@ export class WindowMath {
         return {start: formula.start, block: formula.block, width, height, paintable: entry.paintable};
     }
 
-    // One tag per set of properties, just under the hidden one (so a
-    // search match, added after the styler's tags, stays on top).
+    // One tag per set of properties, just under the hidden one.
     _boxTag(properties) {
         const key = JSON.stringify(properties);
         let tag = this._boxTags.get(key);

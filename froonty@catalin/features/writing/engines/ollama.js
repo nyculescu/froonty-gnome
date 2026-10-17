@@ -19,7 +19,7 @@ import {runProcess} from '../process.js';
 import {exists} from '../setup/fs.js';
 import {readState} from '../setup/state.js';
 
-export const ID = 'ollama';
+const ID = 'ollama';
 export const LOCAL_URL = 'http://127.0.0.1:11434';
 const PROBE_TIMEOUT_S = 2;
 // Per read: loading a model can take a while, and a stream that stalls
@@ -38,7 +38,7 @@ export function overallTimeoutMs(chars) {
     return 180 * 1000 + 60 * Math.max(0, chars);
 }
 
-export function busyText(chars = 0, thinking = false) {
+function busyText(chars = 0, thinking = false) {
     if (thinking)
         return 'Ollama is thinking first (a thinking model is slow: a non-thinking one answers in seconds)…';
     return chars > LONG_TEXT_CHARS
@@ -102,7 +102,7 @@ export async function systemOllama() {
 }
 
 /** Why Ollama cannot be used: not installed, or how to start it. */
-export function notRunningError(system) {
+function notRunningError(system) {
     if (!system?.binary) {
         return new WritingError('not-installed', 'Ollama is not installed.',
             'Settings → Writing explains how to set it up.');
@@ -117,7 +117,7 @@ export function systemctlPath() {
 }
 
 /** Whether a listed model runs elsewhere (Ollama's cloud models). */
-export function isCloudModel(model) {
+function isCloudModel(model) {
     const name = String(model?.name ?? model?.model ?? '');
     return Boolean(model?.remote_host || model?.remote_model) ||
         /[-:]cloud$/.test(name);
@@ -144,9 +144,15 @@ export function maxTokens(chars, kind = 'text') {
     return Math.max(kind === 'idioms' ? 1024 : 256, Math.ceil(chars) + 256);
 }
 
-/** The context window for a text of `chars` characters, in tokens. */
-export function numCtx(chars) {
-    const tokens = 2.5 * Math.ceil(chars / 3) + 512;
+/**
+ * The context window of one request (actions.js buildRequest) for a text
+ * of `chars` characters, in tokens: its system prompt and message (with
+ * any earlier versions or translation; a token is about three
+ * characters) and the most its reply may write, within 4096-16384.
+ */
+export function numCtx(request, chars) {
+    const tokens = Math.ceil((request.system.length + request.message.length) / 3) +
+        maxTokens(chars, request.step?.kind);
     const rounded = Math.ceil(tokens / 1024) * 1024;
     return Math.min(16384, Math.max(4096, rounded));
 }
@@ -167,7 +173,7 @@ export function chatBody({model, request, chars, thinking = false}) {
             {role: 'system', content: request.system},
             {role: 'user', content: request.message},
         ],
-        options: {temperature: request.temperature, num_ctx: numCtx(chars),
+        options: {temperature: request.temperature, num_ctx: numCtx(request, chars),
             num_predict: maxTokens(chars, request.step?.kind)},
     };
     if (request.schema)
@@ -178,7 +184,7 @@ export function chatBody({model, request, chars, thinking = false}) {
 }
 
 /** Ollama's error text as a WritingError. */
-export function mapError(status, text, model) {
+function mapError(status, text, model) {
     const message = String(text ?? '');
     if (status === 404 || /model .*not found|not found, try pulling/i.test(message)) {
         return new WritingError('needs-setup',
@@ -220,7 +226,7 @@ export async function probe({url = baseUrl(), cache = new Map(), cancellable = n
 }
 
 /** Whether Froonty installed Ollama and its user service is there. */
-export async function froontyOwned(paths = defaultPaths()) {
+async function froontyOwned(paths = defaultPaths()) {
     const state = await readState(paths);
     return Boolean(state.ollama?.installedByFroonty && state.ollama.step === 'done' &&
         await exists(paths.unitFile));
@@ -228,20 +234,21 @@ export async function froontyOwned(paths = defaultPaths()) {
 
 /**
  * Starts Froonty's own Ollama (its user service) and waits until it
- * answers, at most 15 s.
+ * answers, at most 15 s. The tab passes its `cache`, Settings its own
+ * `session` and `systemctl`.
  */
-export async function startOwn({url = baseUrl(), cache = new Map(), cancellable = null,
-    run = runProcess, waitMs = START_WAIT_MS} = {}) {
+export async function startOwn({url = baseUrl(), cache = new Map(), session = null,
+    cancellable = null, run = runProcess, systemctl = null, waitMs = START_WAIT_MS} = {}) {
     // Cancelled while Froonty's set-up record was read: nothing is started.
     if (cancellable?.is_cancelled())
         throw new WritingError('cancelled', 'Cancelled.');
-    const result = await run({argv: [systemctlPath(), '--user', 'start', UNIT_NAME],
+    const result = await run({argv: [systemctl ?? systemctlPath(), '--user', 'start', UNIT_NAME],
         cancellable, timeoutMs: 20000, label: 'systemctl (Writing)'});
     if (!result.exitOk) {
         throw new WritingError('not-running',
             `Could not start Froonty's Ollama: ${result.stderr.trim().slice(0, 200)}`);
     }
-    const {probe: session} = sessions(cache);
+    session ??= sessions(cache).probe;
     for (let waited = 0; waited <= waitMs; waited += START_POLL_MS) {
         try {
             // eslint-disable-next-line no-await-in-loop
@@ -280,8 +287,9 @@ async function thinks(session, url, model, cache, cancellable) {
  * writing-ollama-translate-model when one is chosen).
  *
  * @param {object} request see claudeCode.js run(); `onBusy(text)` tells
- *   the view when Ollama is being started, and `onPartial(raw, code)`
- *   hands over the reply streamed so far (see actions.js cleanPartial)
+ *   the view when Ollama is being started, and `onPartial(raw, key)`
+ *   hands over the reply streamed so far and its JSON field (see
+ *   actions.js cleanPartial)
  */
 export async function run({action, text, settings, request = null, cancellable = null,
     cache = new Map(), onBusy = () => {}, onPartial = () => {}, deps = {}}) {

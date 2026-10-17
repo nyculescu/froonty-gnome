@@ -24,19 +24,19 @@ Gio._promisify(Gio.DataInputStream.prototype, 'read_line_async');
 Gio._promisify(Gio.OutputStream.prototype, 'write_all_async');
 Gio._promisify(Gio.File.prototype, 'query_info_async');
 
-export const IDLE_MS = 60000;
-export const TIMEOUT_MS = 10000;
-export const CACHE_SIZE = 200;
+const IDLE_MS = 60000;
+const TIMEOUT_MS = 10000;
+const CACHE_SIZE = 200;
 // Pauses before starting a helper that died, growing with each death in a
 // row, up to the last.
-export const RESTART_DELAYS_MS = [200, 1000, 5000, 20000];
+const RESTART_DELAYS_MS = [200, 1000, 5000, 20000];
 const HELPER_PATH = GLib.build_filenamev([
     GLib.path_get_dirname(GLib.filename_from_uri(import.meta.url)[0]), 'helper.js']);
 // gjs from the system first: other toolchains may put their own gjs (or
 // something else named so) earlier on PATH.
 const GJS = ['/usr/bin/gjs', 'gjs'];
 
-/** Why a render failed. kind: 'tex', 'unavailable', 'superseded', 'timeout', 'crashed', 'stopped', 'request'. */
+/** Why a render failed. kind: 'tex', 'unavailable', 'superseded', 'timeout', 'crashed', 'stopped'. */
 export class RenderError extends Error {
     constructor(kind, message) {
         super(message);
@@ -44,10 +44,13 @@ export class RenderError extends Error {
     }
 }
 
-/** The fetched MathJax tree's folder (tools/fetch-mathjax.py). */
+/**
+ * The fetched MathJax tree's folder (tools/fetch-mathjax.py), or the one
+ * FROONTY_MATHJAX_DIR names (tests).
+ */
 export function defaultMathJaxDir() {
-    return GLib.build_filenamev([GLib.path_get_dirname(HELPER_PATH),
-        '..', '..', '..', 'third_party', 'mathjax']);
+    return GLib.getenv('FROONTY_MATHJAX_DIR') || GLib.build_filenamev([
+        GLib.path_get_dirname(HELPER_PATH), '..', '..', '..', 'third_party', 'mathjax']);
 }
 
 /**
@@ -66,9 +69,6 @@ export async function isMathJaxFetched(dir = defaultMathJaxDir()) {
         return false;
     }
 }
-
-const cacheKey = ({tex, display, color, scale}) =>
-    JSON.stringify([tex, Boolean(display), color, scale]);
 
 export class MathRenderClient {
     /**
@@ -91,7 +91,7 @@ export class MathRenderClient {
         this._restartDelaysMs = restartDelaysMs;
 
         this._cache = new Map(); // key → result, oldest first
-        this._waiting = new Map(); // key → {request, callers, tries}
+        this._waiting = new Map(); // key → {request, callers, crashes}
         this._sent = new Map(); // id → key, in order
         this._channels = new Map(); // channel → {key, caller}
         this._nextId = 1;
@@ -126,7 +126,7 @@ export class MathRenderClient {
         if (this._destroyed)
             return Promise.reject(new RenderError('stopped', 'The renderer is stopped'));
         const request = {tex, display: Boolean(display), color, scale};
-        const key = cacheKey(request);
+        const key = JSON.stringify(request);
         if (channel !== null)
             this._supersede(channel);
 
@@ -148,7 +148,7 @@ export class MathRenderClient {
                 waiting.callers.add(caller);
                 return;
             }
-            this._waiting.set(key, {request, callers: new Set([caller]), tries: 0});
+            this._waiting.set(key, {request, callers: new Set([caller]), crashes: 0});
             this._stopIdleTimer();
             this._send(key);
         });
@@ -187,7 +187,6 @@ export class MathRenderClient {
         const waiting = this._waiting.get(key);
         const id = this._nextId++;
         this._sent.set(id, key);
-        waiting.tries++;
         const line = new TextEncoder().encode(`${JSON.stringify({id, ...waiting.request})}\n`);
         // Writes are queued, in order, on the helper's stdin.
         helper.writing = helper.writing
@@ -329,12 +328,12 @@ export class MathRenderClient {
         this._helper = null;
         helper.cancellable.cancel();
         for (const key of this._takeUnanswered()) {
-            if (this._waiting.get(key).tries > 1) {
+            if (++this._waiting.get(key).crashes > 1) {
                 this._fail(key, new RenderError('crashed',
                     'The math renderer stopped while drawing this formula'));
             }
         }
-        if (this._destroyed || this._waiting.size === 0)
+        if (this._waiting.size === 0)
             return;
         const delays = this._restartDelaysMs;
         const delay = delays[Math.min(this._crashes, delays.length - 1)];

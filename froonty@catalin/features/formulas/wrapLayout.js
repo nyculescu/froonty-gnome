@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Children in rows that wrap at the container's width, each at its natural
-// size (the Formulas tab's symbol and template buttons), apart by the
+// size (the Formulas palettes, the Writing language chooser), apart by the
 // container's CSS spacing (an St.Widget's). Clutter's own
 // FlowLayout gave a section of several rows the height of one when it sat
 // in a scrolled box, so its rows overlapped.
@@ -11,7 +11,7 @@ import GObject from 'gi://GObject';
 export const WrapLayout = GObject.registerClass(
 class WrapLayout extends Clutter.LayoutManager {
     _spacing(container) {
-        return container.peek_theme_node?.()?.get_length('spacing') ?? 0;
+        return container.peek_theme_node()?.get_length('spacing') ?? 0;
     }
 
     // Places the visible children in rows of at most `width`: each one's

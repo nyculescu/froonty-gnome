@@ -28,7 +28,7 @@ export function acquireMedia(ctx) {
     if (!shared) {
         shared = new MediaService({
             settings: ctx.settings,
-            memory: ctx.memory ?? {},
+            memory: ctx.memory,
             apps: shellApps,
             artSide: () => Math.round(200 * St.ThemeContext.get_for_stage(global.stage).scale_factor),
             userAgent: userAgent(ctx.version),

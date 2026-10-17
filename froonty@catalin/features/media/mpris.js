@@ -19,20 +19,19 @@ import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 
 import {Emitter} from '../../core/emitter.js';
-import {decodeMetadata, decodePlayer, decodeRoot, glibTimers, isIgnored, PREFIX} from './model.js';
+import {isCancelled} from './fetch.js';
+import {decodeMetadata, decodePlayer, decodeRoot, glibTimers, isIgnored} from './model.js';
 
 export const PATH = '/org/mpris/MediaPlayer2';
 export const ROOT = 'org.mpris.MediaPlayer2';
 export const PLAYER = 'org.mpris.MediaPlayer2.Player';
 export const TRACKLIST = 'org.mpris.MediaPlayer2.TrackList';
-export const MAX_PLAYERS = 16;
-export const CALL_MS = 2000;
-export const GET_MS = 1000;
+const MAX_PLAYERS = 16;
+const CALL_MS = 2000;
+const GET_MS = 1000;
 const READY_MS = 1000;
 const PROXY_FLAGS = Gio.DBusProxyFlags.DO_NOT_AUTO_START |
     Gio.DBusProxyFlags.GET_INVALIDATED_PROPERTIES;
-
-const isCancelled = e => e?.matches?.(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED) ?? false;
 
 /**
  * A D-Bus method call as a promise (callbacks, so no prototype is patched).
@@ -55,7 +54,7 @@ export function busCall(bus, {name, path, iface, method, params = null, replyTyp
 }
 
 /** A proxy without interface info, on a unique name. */
-export function newProxy(bus, owner, iface, cancellable) {
+function newProxy(bus, owner, iface, cancellable) {
     return new Promise((resolve, reject) => {
         Gio.DBusProxy.new(bus, PROXY_FLAGS, null, owner, PATH, iface, cancellable, (_object, result) => {
             try {
@@ -79,7 +78,7 @@ const busDaemon = (bus, method, params, replyType, timeout, cancellable) => busC
 });
 
 /** One player: one well-known name of one owner. */
-export class MprisPlayer {
+class MprisPlayer {
     constructor(bus, name, owner, now = () => GLib.get_monotonic_time()) {
         this._bus = bus;
         this._now = now;
@@ -89,6 +88,8 @@ export class MprisPlayer {
         this.owner = owner;
         /** Process id, or null when the bus would not tell. */
         this.pid = null;
+        /** Found by the watcher's first ListNames (there at the start). */
+        this.initial = false;
         this.root = decodeRoot(() => null);
         this.props = decodePlayer(() => null);
         this.track = null;
@@ -293,7 +294,7 @@ export class MprisWatcher extends Emitter {
                 const owner = await busDaemon(this.bus, 'GetNameOwner',
                     new GLib.Variant('(s)', [name]), '(s)', GET_MS, cancellable);
                 if (!cancellable.is_cancelled())
-                    await this._add(name, owner.get_child_value(0).get_string()[0]);
+                    await this._add(name, owner.get_child_value(0).get_string()[0], true);
             }));
         } catch (e) {
             if (!isCancelled(e))
@@ -338,8 +339,8 @@ export class MprisWatcher extends Emitter {
             this._add(name, newOwner);
     }
 
-    async _add(name, owner) {
-        if (!this._started || isIgnored(name) || !name.startsWith(PREFIX) || !owner)
+    async _add(name, owner, initial = false) {
+        if (!this._started)
             return;
         // (name, owner) is unique: the ListNames race gives duplicates.
         if (this._players.get(name)?.owner === owner ||
@@ -352,6 +353,7 @@ export class MprisWatcher extends Emitter {
             return;
         }
         const player = new MprisPlayer(this.bus, name, owner, this._timers.now);
+        player.initial = initial;
         this._pending.add(player);
         let ok = false;
         try {

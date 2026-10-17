@@ -20,8 +20,9 @@ import St from 'gi://St';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import {gettext as _, ngettext} from 'resource:///org/gnome/shell/extensions/extension.js';
 
-import {excerpt, uriName} from './entries.js';
+import {excerpt} from './entries.js';
 import {popupPlacement, stepIndex} from './switching.js';
+import {filesHeading, filesPreview, HIDDEN, kindIcon} from './view.js';
 
 // As Alt+Tab's (POPUP_DELAY_TIMEOUT, POPUP_FADE_OUT_TIME).
 const POPUP_DELAY_MS = 150;
@@ -32,8 +33,6 @@ const FILE_NAMES = 4;
 const THUMBNAIL_HEIGHT = 120;
 // The pop-up's width in logical pixels (CSS .froonty-clipboard-switcher).
 const WIDTH = 360;
-// A hidden password's preview, as in the tab: the same dots whatever its length.
-const HIDDEN = '••••••••';
 
 // The highest bit of a binding's mask: the modifier whose release ends it
 // (as Alt+Tab's primaryModifier()).
@@ -46,27 +45,13 @@ function primaryModifier(mask) {
     return primary;
 }
 
-function kindIcon(entry) {
-    if (entry.kind === 'password')
-        return 'dialog-password-symbolic';
-    if (entry.kind === 'image')
-        return 'image-x-generic-symbolic';
-    if (entry.kind === 'files')
-        return entry.operation === 'cut' ? 'edit-cut-symbolic' : 'folder-symbolic';
-    return 'text-x-generic-symbolic';
-}
-
 function kindLabel(entry) {
     if (entry.kind === 'password')
         return _('Password, hidden');
     if (entry.kind === 'image')
         return `${_('Image')} · ${GLib.format_size(entry.size ?? 0)}`;
-    if (entry.kind === 'files') {
-        const count = entry.uris.length;
-        return (entry.operation === 'cut'
-            ? ngettext('Cut %d item', 'Cut %d items', count)
-            : ngettext('Copied %d item', 'Copied %d items', count)).format(count);
-    }
+    if (entry.kind === 'files')
+        return filesHeading(entry);
     return ngettext('%d character', '%d characters', entry.text.length).format(entry.text.length);
 }
 
@@ -314,9 +299,7 @@ export class SwitcherPopup {
         if (entry.kind === 'password') {
             text = HIDDEN;
         } else if (entry.kind === 'files') {
-            const names = entry.uris.slice(0, FILE_NAMES).map(uriName);
-            const more = entry.uris.length - names.length;
-            text = more > 0 ? [...names, _('and %d more').format(more)].join('\n') : names.join('\n');
+            text = filesPreview(entry, FILE_NAMES);
         } else {
             text = excerpt(entry.text, TEXT_LINES, TEXT_WIDTH);
         }

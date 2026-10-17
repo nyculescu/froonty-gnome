@@ -1,151 +1,114 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Coordinates source editing with the flow-based Markdown preview. The
-// Markdown/source button chooses the mode; focus and hover never affect it.
-//
-// Hidden markers are drawn at a twentieth of the size in the muted colour:
-// Pango has no "invisible" attribute (and Clutter ignores Pango's
-// foreground alpha), and this keeps every character in place, so cursor
-// positions and the formatting bar's edits are those of the plain text.
-// The muted colour (markers, quotes, done items) comes from the editor's
-// CSS (-froonty-markdown-muted), so it follows the note's colour.
-
-import Pango from 'gi://Pango';
+// Coordinates source editing with the flow-based Markdown preview
+// (renderer/preview.js). The Markdown/source button chooses the mode; focus
+// and hover never affect it. Rendered, the source editor is hidden; as
+// source, it shows the plain Markdown.
 
 import {IslandMarkdownBlocks} from './renderer/island.js';
 import {IslandMarkdownPreview} from './renderer/preview.js';
-import {byteOffsets, markdownSpans} from './render.js';
 // local:begin notes-math (working-tree only; tools/pack-public strips it)
+import {lineAt} from './render.js';
 import {IslandMath} from '../formulas/notes/island.js';
 // local:end notes-math
 
-const OPAQUE = 65535;
-const HEADING_SCALE = {h1: 1.45, h2: 1.3, h3: 1.15};
-
-// Pango attributes for one span style; `muted` is a Cogl.Color.
-function attributesFor(style, muted) {
-    const mutedColor = () => Pango.attr_foreground_new(muted.red * 257, muted.green * 257,
-        muted.blue * 257);
-    switch (style) {
-    case 'h1':
-    case 'h2':
-    case 'h3':
-    case 'h4':
-    case 'h5':
-    case 'h6':
-        return [Pango.attr_weight_new(Pango.Weight.BOLD),
-            ...style in HEADING_SCALE ? [Pango.attr_scale_new(HEADING_SCALE[style])] : []];
-    case 'bold':
-        return [Pango.attr_weight_new(Pango.Weight.BOLD)];
-    case 'italic':
-        return [Pango.attr_style_new(Pango.Style.ITALIC)];
-    case 'strike':
-        return [Pango.attr_strikethrough_new(true)];
-    case 'code':
-        return [Pango.attr_family_new('monospace'), Pango.attr_background_new(0, 0, 0),
-            Pango.attr_background_alpha_new(Math.round(0.08 * OPAQUE))];
-    case 'fence':
-        return [Pango.attr_family_new('monospace')];
-    case 'link':
-        return [Pango.attr_underline_new(Pango.Underline.SINGLE)];
-    case 'quote':
-        return [Pango.attr_style_new(Pango.Style.ITALIC), mutedColor()];
-    case 'done':
-        return [Pango.attr_strikethrough_new(true), mutedColor()];
-    case 'marker':
-        return [mutedColor()];
-    case 'taskbox':
-        // Preserve the three source characters' width below the checkbox.
-        return [mutedColor()];
-    case 'hidden':
-        return [mutedColor(), Pango.attr_scale_new(0.05)];
-    default:
-        return [];
-    }
-}
-
-/** The Pango attributes that draw `text` as rendered Markdown. */
-export function markdownAttributes(text, activeLine, muted) {
-    return spanAttributes(text, markdownSpans(text, activeLine), muted);
-}
-
-/** The Pango attributes for render.js spans of `text`. */
-export function spanAttributes(text, spans, muted) {
-    const list = new Pango.AttrList();
-    const bytes = byteOffsets(text);
-    for (const {start, end, style} of spans) {
-        for (const attribute of attributesFor(style, muted)) {
-            attribute.start_index = bytes[start];
-            attribute.end_index = bytes[end];
-            list.insert(attribute);
-        }
-    }
-    return list;
-}
-
 export class MarkdownStyler {
-    /** @param {St.Entry} entry the editor; signals die with it */
-    constructor(entry, {folder = () => null} = {}) {
+    /**
+     * @param {St.Entry} entry the editor; signals die with it
+     * @param {object} options folder and note (getters), and the
+     *   preview's (renderer/preview.js): contextMenu, edit, pasteImage,
+     *   showFile, tooltip, drawDiagram
+     */
+    constructor(entry, {folder, note, ...options}) {
         const text = entry.clutter_text;
         this._entry = entry;
         this._text = text;
-        this._line = null;
         this._rendered = true;
-        this._folder = folder;
-        // A grey that reads on every note colour until the CSS is known.
-        this._muted = {red: 128, green: 128, blue: 128};
-        // The note's colour changes the editor's style, and its muted colour.
-        entry.connect('style-changed', () => {
-            const [found, color] = entry.get_theme_node().lookup_color('-froonty-markdown-muted', false);
-            if (found)
-                this._muted = color;
-            this.update(true);
-        });
-        text.connect('text-changed', () => this.update(true));
+        text.connect('text-changed', () => this.update());
         // local:begin notes-math
-        // Formulas drawn as pictures (features/formulas/notes/island.js).
-        this.math = new IslandMath(entry, {spanAttributes, restyle: () => this.update(true)});
+        // As source, formulas are drawn as pictures, except on the edited
+        // line (features/formulas/notes/island.js). The line styled last;
+        // null while rendered (no formula attributes).
+        this._line = null;
+        this.math = new IslandMath(entry, () => this._styleMath());
+        const lineMoved = () => this._styleMath(false);
+        text.connect('notify::cursor-position', lineMoved);
+        text.connect('key-focus-in', lineMoved);
+        text.connect('key-focus-out', lineMoved);
+        // The note's colour changes the pictures' and the dimmed source's.
+        entry.connect('style-changed', () => {
+            // Also emitted as it leaves the stage (closing, destroying).
+            if (entry.get_stage())
+                this._styleMath();
+        });
         // local:end notes-math
-        this.blocks = new IslandMarkdownBlocks(entry, {spanAttributes,
-            restyle: () => this.update(true), folder: this._folder});
-        this.preview = new IslandMarkdownPreview(entry);
-        this.update(true);
+        this.blocks = new IslandMarkdownBlocks(entry, {restyle: () => this.update(), folder, note});
+        this.preview = new IslandMarkdownPreview(entry, {
+            ...options,
+            folder,
+            onResize: (itemKey, size) => {
+                this.blocks.resize(itemKey, size);
+                this.update();
+            },
+        });
+        this.update();
     }
 
-    /** Restyles; unless `force`, only when the edited line changed. */
-    update(force = false) {
+    /** Shows the preview, rebuilt, or the source editor. */
+    update() {
         const text = this._text;
-        const line = -1;
+        this.preview.widget.visible = this._rendered;
+        this._entry.visible = !this._rendered;
+        // local:begin notes-math
+        this._styleMath();
+        // local:end notes-math
+        // While hidden, the preview is neither rebuilt nor asks for renders;
+        // setRendered(true) brings it up to date.
+        if (!this._rendered)
+            return;
+        // Laid-out widths only: measuring a widget off the stage (as the
+        // view is being built) asks St for a theme node it cannot have.
+        const width = actor => (actor.has_allocation() ? actor.width : 0);
+        const pictures = this.blocks.pictures(text.text,
+            Math.max(600, width(this._entry), width(this.preview.widget)));
+        this.preview.update(text.text, pictures);
+    }
+    // local:begin notes-math
+
+    // The source editor's formulas; unless `force`, only when the edited
+    // line changed (no key focus: none). Rendered, the formulas' attributes
+    // and pictures go once, and nothing is done until the source shows.
+    _styleMath(force = true) {
+        // The editor losing the key focus as it is destroyed.
+        if (this.math.gone)
+            return;
+        const text = this._text;
+        this.math.layer.visible = !this._rendered;
+        if (this._rendered) {
+            if (this._line !== null) {
+                this._line = null;
+                this.math.clear();
+                text.set_attributes(null);
+            }
+            return;
+        }
+        const line = text.has_key_focus()
+            ? lineAt(text.text, text.cursor_position < 0 ? Infinity : text.cursor_position) : -1;
         if (!force && line === this._line)
             return;
         this._line = line;
-        const pictures = this.blocks.pictures(text.text,
-            Math.max(600, this._entry.get_width(), this.preview.widget.get_width()));
-        this.preview.setEditable(text.editable);
-        this.preview.update(text.text, pictures);
-        this.preview.widget.visible = this._rendered;
-        this._entry.visible = !this._rendered;
-        this.blocks.layer.visible = false;
-        this.math.layer.visible = false;
-        this.blocks.attributes(text.text, line, this._muted, new Pango.AttrList(), false);
-        // local:begin notes-math
-        if (this.math) {
-            text.set_attributes(this.math.attributes(text.text, line, this._muted, false));
-            return;
-        }
-        // local:end notes-math
-        const attrs = this._rendered
-            ? markdownAttributes(text.text, line, this._muted) : new Pango.AttrList();
-        text.set_attributes(attrs);
+        text.set_attributes(this.math.attributes(text.text, line));
     }
+    // local:end notes-math
 
     setRendered(rendered) {
         rendered = Boolean(rendered);
         if (this._rendered === rendered)
             return;
+        // A field or table open in the preview goes into the source first.
+        if (!rendered)
+            this.preview.finish();
         this._rendered = rendered;
-        this.preview.widget.visible = rendered;
-        this.math.layer.visible = !rendered;
-        this.update(true);
+        this.update();
     }
 
     setEditable(editable) {

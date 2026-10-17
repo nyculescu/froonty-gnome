@@ -137,7 +137,6 @@ export class ResizeGrip {
     destroy() {
         this._cancelDrag();
         this.actor.destroy();
-        this.grip = null;
     }
 
     /**
@@ -349,7 +348,7 @@ export class ResizeGrip {
         this._drag = null;
         this._grab?.dismiss();
         this._grab = null;
-        if (drag && this.grip) {
+        if (drag) {
             this.grip.remove_style_pseudo_class('active');
             this._syncTip();
         }

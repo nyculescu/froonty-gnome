@@ -105,7 +105,7 @@ test('MessageTrayKey: on, kept through disable/enable, restored on off', () => {
     const gnome = fakeSettings({'toggle-message-tray': []}, {'toggle-message-tray': GNOME_DEFAULT});
     new MessageTrayKey(froonty, gnome).turnOn();
     eq(gnome.values['toggle-message-tray'], ['<Super>m']);
-    ok(new MessageTrayKey(froonty, gnome).changed);
+    ok(parseTrayRecord(froonty.values['clipboard-switcher-tray-backup']) !== null);
     // Each enable() turns it on again: no second change, the original kept.
     gnome.values['toggle-message-tray'] = ['<Super>m'];
     new MessageTrayKey(froonty, gnome).turnOn();

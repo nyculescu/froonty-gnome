@@ -4,7 +4,7 @@
 // 2026-10-05 (docs/features/writing.md §3.1). In one place so the tab and
 // the settings say the same; each side passes them through its gettext.
 
-export const MODEL_ADVICE = 'Recommended: qwen3:4b-instruct-2507-q4_K_M as Model (the best editor: under a second per version), gemma3:4b as Model for Translate. As a rewriter gemma3:4b adds "Please" and "I\'m struggling", answers questions, and caused most odd results; qwen3:4b thinks first (30 s or more per version).';
+const MODEL_ADVICE = 'Recommended: qwen3:4b-instruct-2507-q4_K_M as Model (the best editor: under a second per version), gemma3:4b as Model for Translate. As a rewriter gemma3:4b adds "Please" and "I\'m struggling", answers questions, and caused most odd results; qwen3:4b thinks first (30 s or more per version).';
 
 export const HINTS = {
     grammar: 'Two versions. B2: a light edit that keeps your own words and your politeness. C1: a fluent rewrite, same tone, at most slightly more courteous. Both keep your directness: no "really", no added "please". Best with qwen3:4b-instruct-2507-q4_K_M.',

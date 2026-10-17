@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Running one of the Writing tab's subprocesses (docs/features/writing.md
-// §4.3): a fixed argv, no shell, a chosen working folder and environment,
+// §4.2): a fixed argv, no shell, a chosen working folder and environment,
 // text on stdin, a timeout, and SIGTERM (then SIGKILL) when it is
 // cancelled or times out. No St or Gtk.
 
@@ -22,7 +22,7 @@ Gio._promisify(Gio.Subprocess.prototype, 'communicate_utf8_async');
  * @param {?Gio.Cancellable} [options.cancellable]
  * @param {number} [options.timeoutMs]
  * @param {string} [options.label] names the process in a warning
- * @returns {Promise<{stdout: string, stderr: string, exitOk: boolean, status: number}>}
+ * @returns {Promise<{stdout: string, stderr: string, exitOk: boolean}>}
  * @throws {WritingError} 'cancelled', 'timeout', or 'failed' (could not run)
  */
 export async function runProcess({argv, cwd = null, unset = [], set = {}, stdin = null,
@@ -66,7 +66,6 @@ export async function runProcess({argv, cwd = null, unset = [], set = {}, stdin 
             stdout: stdout ?? '',
             stderr: stderr ?? '',
             exitOk: proc.get_successful(),
-            status: proc.get_if_exited() ? proc.get_exit_status() : -1,
         };
     } catch (e) {
         if (timedOut)

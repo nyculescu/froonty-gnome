@@ -6,8 +6,7 @@
 // GNOME's real class loaded from the installed Shell, with a fake clock.
 //
 // PRIVATE / INTERNAL API (docs/DESIGN.md §6.3):
-//   getters    state, currentBreakType, nextBreakDueTime,
-//              getNextBreakDue(t), getCurrentTime(), getDurationForBreakType(t)
+//   getters    state, getNextBreakDue(t), getCurrentTime()
 //   methods    delayBreak(), skipBreak(), takeBreak()
 //   signals    the six in SIGNALS
 //   _breakLastEnd  a private Map of break type → last end (wall-clock s).
@@ -27,7 +26,7 @@ export const IDLE_WATCH_SECONDS = 10;   // MIN_BREAK_LENGTH_SECONDS
 export const UPCOMING_SECONDS = 120;    // BREAK_UPCOMING_NOTIFICATION_TIME_SECONDS
 export const OVERDUE_SECONDS = 60;      // BREAK_OVERDUE_TIME_SECONDS
 
-export const SIGNALS = ['notify::state', 'notify::next-break-due-time',
+const SIGNALS = ['notify::state', 'notify::next-break-due-time',
     'notify::last-break-end-time', 'break-due', 'break-finished', 'take-break'];
 
 /** Emits 'changed' (signal name) for each of GNOME's signals while started. */
@@ -69,8 +68,8 @@ export class BreakEngine extends Emitter {
     /**
      * GNOME's times, in wall-clock seconds.
      *
-     * @returns {{state: number, now: number, currentType: ?string,
-     *   nextDue: number, nextType: ?string, lastEnd: ?object}}
+     * @returns {{state: number, now: number, nextDue: number, nextType: ?string,
+     *   lastEnd: ?object}}
      */
     read() {
         const m = this._manager;
@@ -81,9 +80,6 @@ export class BreakEngine extends Emitter {
         return {
             state,
             now,
-            // Only meaningful while a break is due or in progress.
-            currentType: state === STATE.BREAK_DUE || state === STATE.IN_BREAK
-                ? m.currentBreakType ?? null : null,
             nextDue,
             nextType: nextType ?? null,
             lastEnd: map instanceof Map ? Object.fromEntries(map) : null,

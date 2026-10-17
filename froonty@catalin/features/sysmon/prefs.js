@@ -3,29 +3,15 @@
 // which sections it shows (docs/features/sysmon.md).
 
 import Adw from 'gi://Adw';
-import Gdk from 'gi://Gdk';
-import Gio from 'gi://Gio';
-import Gtk from 'gi://Gtk';
 
 import {gettext as _} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
+import {addIconPath, choiceRow, sizeGroup, spinRow, switchRow} from '../../prefs/rows.js';
 import {BTOP_ICON_NAME} from './icon.js';
-// local:begin local-features (working-tree only; tools/pack-public strips it)
 import {PANIC_LOAD_KEY, PANIC_TEMP_KEY} from './panicMetrics.js';
-// local:end local-features
-
-const SIZE_KEYS = ['sysmon-width', 'sysmon-height'];
-
-// The tab's icon in the settings window's view switcher.
-function addIconPath() {
-    const display = Gdk.Display.get_default();
-    const icons = Gio.File.new_for_uri(import.meta.url).get_parent().get_child('icons');
-    if (display)
-        Gtk.IconTheme.get_for_display(display).add_search_path(icons.get_path());
-}
 
 export function sysmonPage(settings) {
-    addIconPath();
+    addIconPath(import.meta.url);
     const page = new Adw.PreferencesPage({
         name: 'sysmon',
         title: _('Btop'),
@@ -55,14 +41,12 @@ export function sysmonPage(settings) {
     sections.add(switchRow(settings, 'sysmon-show-network', _('Network'),
         _('Download and upload speed and totals')));
     page.add(sections);
-    // local:begin local-features
     page.add(panicMetricsGroup(settings));
-    // local:end local-features
-    page.add(sizeGroup(settings));
+    page.add(sizeGroup(settings, ['sysmon-width', 'sysmon-height'],
+        _('Of the island while the Btop tab is shown, in logical pixels. Below 460 wide, each thread takes a row of its own. Or drag the open island’s bottom-right corner.')));
     return page;
 }
 
-// local:begin local-features
 function panicMetricsGroup(settings) {
     const group = new Adw.PreferencesGroup({
         title: _('Panic buttons'),
@@ -75,65 +59,4 @@ function panicMetricsGroup(settings) {
         [_('Average CPU temperature'), _('Maximum CPU temperature'), _('GPU temperature'),
             _('Follow the load button')]));
     return group;
-}
-
-function choiceRow(settings, key, title, values, labels) {
-    const row = new Adw.ComboRow({title, model: Gtk.StringList.new(labels)});
-    let syncing = false;
-    const sync = () => {
-        syncing = true;
-        row.selected = Math.max(values.indexOf(settings.get_string(key)), 0);
-        syncing = false;
-    };
-    sync();
-    row.connect('notify::selected', () => {
-        if (!syncing)
-            settings.set_string(key, values[row.selected]);
-    });
-    settings.connect(`changed::${key}`, sync);
-    return row;
-}
-// local:end local-features
-
-// Island size while the Btop tab is shown; applies live. As Notes' (notes/prefs.js).
-function sizeGroup(settings) {
-    const reset = new Gtk.Button({
-        label: _('Default size'),
-        valign: Gtk.Align.CENTER,
-        css_classes: ['flat'],
-    });
-    const group = new Adw.PreferencesGroup({
-        title: _('Size'),
-        description: _('Of the island while the Btop tab is shown, in logical pixels. Below 460 wide, each thread takes a row of its own. Or drag the open island’s bottom-right corner.'),
-        header_suffix: reset,
-    });
-    group.add(spinRow(settings, 'sysmon-width', _('Width')));
-    group.add(spinRow(settings, 'sysmon-height', _('Height')));
-
-    const sync = () => {
-        const defaults = SIZE_KEYS.map(key => settings.get_default_value(key).unpack());
-        reset.tooltip_text = defaults.join(' × ');
-        reset.sensitive = SIZE_KEYS.some(key => settings.get_user_value(key) !== null);
-    };
-    sync();
-    for (const key of SIZE_KEYS)
-        settings.connect(`changed::${key}`, sync);
-    reset.connect('clicked', () => SIZE_KEYS.forEach(key => settings.reset(key)));
-    return group;
-}
-
-function switchRow(settings, key, title, subtitle = '') {
-    const row = new Adw.SwitchRow({title, subtitle});
-    settings.bind(key, row, 'active', Gio.SettingsBindFlags.DEFAULT);
-    return row;
-}
-
-// Spin bounds are read from the schema's <range>, as in prefs.js.
-function spinRow(settings, key, title) {
-    const [, [lower, upper]] = settings.settings_schema.get_key(key)
-        .get_range().recursiveUnpack();
-    const row = Adw.SpinRow.new_with_range(lower, upper, 1);
-    row.title = title;
-    settings.bind(key, row, 'value', Gio.SettingsBindFlags.DEFAULT);
-    return row;
 }

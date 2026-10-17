@@ -26,8 +26,6 @@ function noticeText(notice) {
         return _('ZeroTier cannot reach its network. Check the internet connection, or a firewall blocking UDP port 9993.');
     case 'no-networks':
         return _('No networks joined. Join one in ZeroTier.');
-    default:
-        return '';
     }
 }
 

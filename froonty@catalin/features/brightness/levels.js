@@ -25,7 +25,7 @@ export function targetMonitors(target, count, builtIn) {
 
 /** The level applied: the stored one, never below the minimum. */
 export function appliedLevel(level, minimum) {
-    return Math.min(100, Math.max(minimum, level));
+    return Math.max(minimum, level);
 }
 
 /** The dimming overlay's opacity (0-255) for a level. */
@@ -35,13 +35,11 @@ export function overlayOpacity(level) {
 
 /** A warm tint's opacity (0-255), capped at 25% to keep it subtle. */
 export function warmthOpacity(warmth) {
-    return Math.round(64 * Math.min(100, Math.max(0, warmth)) / 100);
+    return Math.round(64 * warmth / 100);
 }
 
 /** Where the Quick Settings slider stands (0-1): it spans minimum-100 %. */
 export function sliderValue(level, minimum) {
-    if (minimum >= 100)
-        return 1;
     return (appliedLevel(level, minimum) - minimum) / (100 - minimum);
 }
 

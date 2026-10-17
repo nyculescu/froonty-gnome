@@ -211,7 +211,7 @@ export function pciDeviceName(ids, vendorId, deviceId) {
     return short && !name.startsWith(short) ? `${short} ${name}` : name;
 }
 
-// nvidia-smi --query-gpu fields, in order; see NVIDIA_QUERY.
+// nvidia-smi --query-gpu fields, in order (sampler.js _gpus asks for them).
 export const NVIDIA_FIELDS = ['pci.bus_id', 'name', 'utilization.gpu', 'temperature.gpu',
     'power.draw', 'memory.used', 'memory.total'];
 

@@ -40,6 +40,7 @@ export class LabelMenu {
         this._callbacks = callbacks;
         this._menu = null;
         this._pendingAction = null;
+        this._actionId = 0;
         this._labelsId = 0;
         this._changedId = 0;
     }
@@ -51,7 +52,7 @@ export class LabelMenu {
     /** Opens the labels of note `name` below `anchor`. */
     open(anchor, name) {
         // At once, not animated: its handlers go with it.
-        this.destroy();
+        this._menu?.destroy();
         const service = this._service;
         const menu = this._ctx.contextMenu(anchor, {
             styleClass: 'froonty-label-menu',
@@ -108,6 +109,9 @@ export class LabelMenu {
 
     destroy() {
         this._menu?.destroy();
+        if (this._actionId)
+            GLib.source_remove(this._actionId);
+        this._actionId = 0;
     }
 
     _onClosed(menu) {
@@ -124,7 +128,8 @@ export class LabelMenu {
         const action = this._pendingAction;
         this._pendingAction = null;
         if (action) {
-            GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+            this._actionId = GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+                this._actionId = 0;
                 action();
                 return GLib.SOURCE_REMOVE;
             });

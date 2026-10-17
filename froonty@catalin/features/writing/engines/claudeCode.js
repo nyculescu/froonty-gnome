@@ -6,7 +6,7 @@
 // - has every tool, MCP server, skill, slash command, hook and settings
 //   file turned off (claudeArgv), so text that contains instructions can
 //   never make it run anything;
-// - gets the text on stdin, between markers, never in argv;
+// - gets the text on stdin, as JSON, never in argv;
 // - runs in an empty private folder ($XDG_RUNTIME_DIR/froonty-writing), so
 //   no project's CLAUDE.md or settings are read, with no session saved;
 // - only on a Claude plan sign-in: `claude auth status` is checked first,
@@ -14,26 +14,25 @@
 //
 // No St or Gtk: the pure parts are unit-tested with plain gjs.
 
-import Gio from 'gi://Gio';
-
 import {findClaudeCode} from '../../claude/refresher.js';
-import {actionById, buildRequest, finishReply, stepsFor, systemPrompt, LIMITS, LONG_TEXT_CHARS} from '../actions.js';
+import {buildRequest, finishReply, stepsFor, LIMITS, LONG_TEXT_CHARS} from '../actions.js';
 import {WritingError} from '../errors.js';
+import {isOnline} from '../http.js';
 import {defaultPaths, override} from '../paths.js';
 import {runProcess} from '../process.js';
 import {ensurePrivateDir, isPrivateDir} from '../setup/fs.js';
 
-export const ID = 'claude-code';
+const ID = 'claude-code';
 export const CLAUDE_MODELS = ['haiku', 'sonnet'];
 // --permission-prompts came in 2.1.259 (--safe-mode in 2.1.169).
-export const MIN_VERSION = [2, 1, 259];
-export const PLAN_TYPES = ['pro', 'max', 'team', 'enterprise'];
+const MIN_VERSION = [2, 1, 259];
+const PLAN_TYPES = ['pro', 'max', 'team', 'enterprise'];
 const AUTH_TIMEOUT_MS = 10 * 1000;
 const MAX_STDOUT = 1024 * 1024;
 const LABEL = 'Claude Code (Writing)';
 
 /**
- * Fixed, in this order, in every run (docs/features/writing.md §4.2):
+ * Fixed, in this order, in every run (docs/features/writing.md §4.1):
  * nothing of the user's configuration is loaded and nothing can be used
  * but the model's reply.
  */
@@ -63,26 +62,21 @@ export function runTimeoutMs(chars, model = 'haiku') {
     return 90 * 1000 + (model === 'sonnet' ? 15 : 8) * Math.max(0, chars);
 }
 
-export function busyText(chars = 0) {
+function busyText(chars = 0) {
     return chars > LONG_TEXT_CHARS
         ? 'Rewriting with Claude Code (a long text can take a few minutes)…'
         : 'Rewriting with Claude Code…';
 }
 
 /**
- * The argv of one run, for an action (its first step) or a step's
- * request (actions.js buildRequest). The text is never in it (it goes on
- * stdin): a step's system prompt holds no text.
+ * The argv of one run, for a step's request (actions.js buildRequest).
+ * The text is never in it (it goes on stdin): a step's system prompt
+ * holds no text.
  */
-export function claudeArgv(bin, actionOrRequest, model) {
+export function claudeArgv(bin, request, model) {
     if (!CLAUDE_MODELS.includes(model))
         throw new WritingError('failed', `Unknown model ${model}`);
-    let system = actionOrRequest?.system;
-    if (typeof actionOrRequest === 'string') {
-        if (!actionById(actionOrRequest))
-            throw new WritingError('failed', `Unknown action ${actionOrRequest}`);
-        system = systemPrompt(actionOrRequest);
-    }
+    const system = request?.system;
     if (typeof system !== 'string')
         throw new WritingError('failed', 'No system prompt');
     return [bin, '-p',
@@ -269,9 +263,6 @@ export async function version(bin, cwd, run = runProcess) {
     return parseVersion(result.stdout);
 }
 
-const isOnline = network => (network ?? Gio.NetworkMonitor.get_default()).connectivity ===
-    Gio.NetworkConnectivity.FULL;
-
 /**
  * One rewrite.
  *
@@ -319,7 +310,7 @@ export async function run({action, text, settings, request = null, cancellable =
     return finishReply(wrapped, raw, text.includes('```'), text);
 }
 
-export function modelLabel(model) {
+function modelLabel(model) {
     return model === 'sonnet' ? 'Sonnet' : 'Haiku';
 }
 

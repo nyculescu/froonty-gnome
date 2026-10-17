@@ -33,8 +33,8 @@ import {CLAUDE_APP_ID, pickWindow} from '../features/claude/attention.js';
 
 /**
  * Whether the screen is locked. GNOME Shell disables extensions at a lock
- * with `isLocked` already set, so Island.destroy() can tell a lock (what
- * waits is kept) from the extension or the island being turned off.
+ * with `isLocked` already set, so AttentionHost.destroy() can tell a lock
+ * (what waits is kept) from the extension or the island being turned off.
  */
 export function screenLocked() {
     return Main.sessionMode.isLocked === true;
@@ -129,10 +129,6 @@ export class ClaudeDesktop extends EventEmitter {
         const [window] = Shell.AppSystem.get_default().lookup_app(appId)?.get_windows() ?? [];
         if (window)
             Main.activateWindow(window);
-    }
-
-    isClaudeApp(appId) {
-        return appId === CLAUDE_APP_ID;
     }
 
     /**

@@ -16,6 +16,9 @@ const FACTORIES = {
     'mute-microphone': title => new AudioMuteButton('input', title),
     'mute-sound': title => new AudioMuteButton('output', title),
     // local:begin local-features
+    // The load and thermometer buttons also take actions.metrics, the
+    // panic bar's shared PanicMetricsService, and set `usesMetrics`, so
+    // the bar samples only while one of them is shown (ui/panicBar.js).
     // The camera button is switched off for now (localCatalog.js); offering
     // it again also takes its factory here: a CameraBlockButton, of
     // camera.js, for 'block-camera'.

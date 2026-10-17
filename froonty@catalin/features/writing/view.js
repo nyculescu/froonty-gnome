@@ -65,23 +65,23 @@ function wrapping(label) {
     return label;
 }
 
-function textButton(styleClass, text) {
+function textButton(text, styleClass = '') {
     return new St.Button({
-        style_class: `froonty-writing-button ${styleClass}`,
+        style_class: `froonty-writing-button ${styleClass}`.trim(),
         label: text,
         can_focus: true,
         track_hover: true,
     });
 }
 
-// A read-only result text, a direct child of the scroll view's child box
-// (so keepCursorVisible's coordinates hold).
-function resultText(scroll) {
+// A multi-line plain-text St.Entry.
+function plainEntry(params = {}) {
     const entry = new St.Entry({
-        style_class: 'froonty-writing-text froonty-writing-result',
+        style_class: 'froonty-writing-text',
         can_focus: true,
         x_expand: true,
         y_align: Clutter.ActorAlign.START,
+        ...params,
     });
     const text = entry.clutter_text;
     text.single_line_mode = false;
@@ -89,28 +89,24 @@ function resultText(scroll) {
     text.line_wrap = true;
     text.line_wrap_mode = Pango.WrapMode.WORD_CHAR;
     text.use_markup = false;
-    text.editable = false;
-    text.selectable = true;
+    return entry;
+}
+
+// A read-only result text, a direct child of the scroll view's child box
+// (so keepCursorVisible's coordinates hold).
+function resultText(scroll) {
+    const entry = plainEntry();
+    entry.clutter_text.editable = false;
+    entry.clutter_text.selectable = true;
     makeNavigable(entry, scroll);
     return entry;
 }
 
 // The text box: a multi-line St.Entry in a vertical scroll view, as the
 // Notes editor.
-function textArea(styleClass, hint) {
-    const entry = new St.Entry({
-        style_class: `froonty-writing-text ${styleClass}`,
-        hint_text: hint,
-        can_focus: true,
-        x_expand: true,
-        y_align: Clutter.ActorAlign.START,
-    });
+function textArea(hint) {
+    const entry = plainEntry({hint_text: hint});
     const text = entry.clutter_text;
-    text.single_line_mode = false;
-    text.activatable = false;
-    text.line_wrap = true;
-    text.line_wrap_mode = Pango.WrapMode.WORD_CHAR;
-    text.use_markup = false;
     const box = new St.BoxLayout({
         orientation: Clutter.Orientation.VERTICAL,
         x_expand: true,
@@ -123,7 +119,7 @@ function textArea(styleClass, hint) {
         return Clutter.EVENT_PROPAGATE;
     });
     const scroll = new St.ScrollView({
-        style_class: `froonty-writing-scroll ${styleClass}-scroll`,
+        style_class: 'froonty-writing-scroll',
         hscrollbar_policy: St.PolicyType.NEVER,
         vscrollbar_policy: St.PolicyType.AUTOMATIC,
         overlay_scrollbars: true,
@@ -131,7 +127,7 @@ function textArea(styleClass, hint) {
         y_expand: true,
         child: box,
     });
-    return {entry, box, scroll};
+    return {entry, scroll};
 }
 
 export class WritingView {
@@ -163,7 +159,7 @@ export class WritingView {
         this._destination = wrapping(new St.Label({style_class: 'froonty-writing-destination'}));
         this._main.add_child(this._destination);
 
-        const input = textArea('froonty-writing-input', _('Type or paste text (Ctrl+V)'));
+        const input = textArea(_('Type or paste text (Ctrl+V)'));
         this._input = input.entry;
         this._inputScroll = input.scroll;
         this._input.clutter_text.connect('text-changed', () => {
@@ -177,9 +173,9 @@ export class WritingView {
         this._main.add_child(this._inputScroll);
 
         const tools = new St.BoxLayout({style_class: 'froonty-writing-tools'});
-        this._clipboardButton = textButton('froonty-writing-small', _('From clipboard'));
+        this._clipboardButton = textButton(_('From clipboard'), 'froonty-writing-small');
         this._clipboardButton.connect('clicked', () => this._service.fromClipboard());
-        this._clearButton = textButton('froonty-writing-small', _('Clear'));
+        this._clearButton = textButton(_('Clear'), 'froonty-writing-small');
         this._clearButton.connect('clicked', () => {
             this._service.clear();
             this._focusInput();
@@ -201,7 +197,7 @@ export class WritingView {
         });
         this._actionButtons = new Map();
         for (const action of ACTIONS) {
-            const button = textButton('froonty-writing-action', _(action.label));
+            const button = textButton(_(action.label));
             button.connect('clicked', () => {
                 this._chooser.visible = false;
                 this._service.run(action.id);
@@ -236,8 +232,9 @@ export class WritingView {
         for (const id of this._settingsIds)
             this._ctx.settings.disconnect(id);
         // Kept out of the tree between engines: destroyed here.
-        for (const button of this._actionButtons.values())
-            button.destroy();
+        for (const actor of [...this._actionButtons.values(), this._fromButton, this._toButton,
+            ...this._translateWords])
+            actor.destroy();
         this._translateRow.destroy();
         this._chooser.destroy();
         this.actor.destroy();
@@ -271,9 +268,9 @@ export class WritingView {
             style_class: 'froonty-writing-empty-text',
             x_align: Clutter.ActorAlign.CENTER,
         }));
-        this._settingsButton = textButton('froonty-writing-settings', _('Open Settings → Writing'));
+        this._settingsButton = textButton(_('Open Settings → Writing'));
         this._settingsButton.x_align = Clutter.ActorAlign.CENTER;
-        this._settingsButton.connect('clicked', () => this._ctx.openSettings?.('writing'));
+        this._settingsButton.connect('clicked', () => this._ctx.openSettings('writing'));
         this._empty.add_child(this._emptyLabel);
         this._empty.add_child(this._settingsButton);
     }
@@ -291,7 +288,7 @@ export class WritingView {
         });
         this._busyLabel.clutter_text.ellipsize = Pango.EllipsizeMode.END;
         this._busy.add_child(this._busyLabel);
-        this._cancelButton = textButton('froonty-writing-small', _('Cancel'));
+        this._cancelButton = textButton(_('Cancel'), 'froonty-writing-small');
         this._cancelButton.connect('clicked', () => this._service.cancel());
         this._busy.add_child(this._cancelButton);
         this._main.add_child(this._busy);
@@ -325,7 +322,7 @@ export class WritingView {
         this._main.add_child(this._resultScroll);
 
         const resultTools = new St.BoxLayout({style_class: 'froonty-writing-tools'});
-        this._againButton = textButton('froonty-writing-small', _('Another option'));
+        this._againButton = textButton(_('Another option'), 'froonty-writing-small');
         this._againButton.connect('clicked', () => this._service.again());
         this._attribution = new St.Button({
             style_class: 'froonty-writing-link',
@@ -351,7 +348,7 @@ export class WritingView {
                 x_expand: true,
                 y_align: Clutter.ActorAlign.CENTER,
             });
-            const copy = textButton('froonty-writing-small froonty-writing-copy', _('Copy'));
+            const copy = textButton(_('Copy'), 'froonty-writing-small froonty-writing-copy');
             copy.connect('clicked', () => this._copy(index));
             header.add_child(label);
             header.add_child(copy);
@@ -375,7 +372,7 @@ export class WritingView {
 
     _buildTranslate() {
         this._translateRow = new St.BoxLayout({
-            style_class: 'froonty-writing-action-row froonty-writing-translate',
+            style_class: 'froonty-writing-action-row',
         });
         const word = text => new St.Label({
             style_class: 'froonty-writing-translate-word',
@@ -383,8 +380,8 @@ export class WritingView {
             y_align: Clutter.ActorAlign.CENTER,
         });
         this._translateWords = [word(_('from')), word(_('to'))];
-        this._fromButton = textButton('froonty-writing-small froonty-writing-language', '');
-        this._toButton = textButton('froonty-writing-small froonty-writing-language', '');
+        this._fromButton = textButton('', 'froonty-writing-small froonty-writing-language');
+        this._toButton = textButton('', 'froonty-writing-small froonty-writing-language');
         this._fromButton.connect('clicked', () => this._toggleChooser(FROM_KEY));
         this._toButton.connect('clicked', () => this._toggleChooser(TO_KEY));
         this._chooser = new St.Widget({
@@ -411,7 +408,7 @@ export class WritingView {
         const choices = key === FROM_KEY
             ? [{code: ANY_LANGUAGE, name: _('Any language')}, ...LANGUAGES] : LANGUAGES;
         for (const {code, name} of choices) {
-            const button = textButton('froonty-writing-small froonty-writing-language-choice', name);
+            const button = textButton(name, 'froonty-writing-small froonty-writing-language-choice');
             if (code === current)
                 button.add_style_pseudo_class('checked');
             button.connect('clicked', () => {
@@ -428,7 +425,7 @@ export class WritingView {
         const url = this._service.result?.attribution?.url;
         if (!url)
             return;
-        this._ctx.collapse?.();
+        this._ctx.collapse();
         try {
             Gio.AppInfo.launch_default_for_uri(url, global.create_app_launch_context(0, -1));
         } catch (e) {
@@ -536,7 +533,8 @@ export class WritingView {
         const engines = service.enabledEngines;
         const checking = engines.some(e => e.availability.checking);
         const anyReady = engines.some(e => e.availability.ready);
-        const empty = !engines.length || (!checking && !anyReady);
+        // Never while a request runs: its busy line and Cancel stay.
+        const empty = service.state !== 'busy' && (!engines.length || (!checking && !anyReady));
         this._empty.visible = empty;
         this._main.visible = !empty;
         setText(this._emptyLabel, empty ? this._emptyText(engines) : '');
@@ -589,7 +587,7 @@ export class WritingView {
             ? service.result : null;
         let options = [];
         if (result)
-            options = result.options ?? [{label: '', text: result.text}];
+            options = result.options;
         else if (busy)
             options = service.progress;
         this._resultScroll.visible = options.length > 0;
@@ -607,11 +605,11 @@ export class WritingView {
             block.header.visible = block.entry.visible = false;
             setText(block.entry, '');
         }
-        // A model's rewrite can be asked for again; LanguageTool's
+        // A model's rewrite can be asked for again, while its engine is the
+        // selected one (Another option runs there); LanguageTool's
         // corrections would come out the same.
-        const resultEngine = engines.find(e => e.id === result?.engineId)?.engine;
-        this._againButton.visible = Boolean(result && !result.partial && resultEngine?.prompted &&
-            service.lastAction);
+        this._againButton.visible = Boolean(result && !result.partial && engine.prompted &&
+            result.engineId === engine.id && service.lastAction);
         this._againButton.reactive = !busy && availability.ready;
         const attribution = result?.attribution ?? null;
         this._attribution.visible = Boolean(attribution);
@@ -642,8 +640,8 @@ export class WritingView {
     _changesText(result) {
         if (result.partial)
             return _('Stopped before the end: this is what it wrote until then.');
-        // service.js looksAnswered, twice.
-        const answered = (result.options ?? []).filter(o => o.answered);
+        // service.js: still answered after the strict retry (replyProblem).
+        const answered = result.options.filter(o => o.answered);
         if (answered.length) {
             const which = answered.map(o => o.label).filter(Boolean).join(', ');
             return (which ? _('%s may answer your text instead of rewording it.').format(which)

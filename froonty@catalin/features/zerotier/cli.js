@@ -13,7 +13,7 @@ export const UNIT = 'zerotier-one.service';
 // zerotier-cli reads this root-only token unless the user has a copy at
 // USER_TOKEN; Froonty never reads either, it only has the copy made.
 export const NODE_TOKEN = '/var/lib/zerotier-one/authtoken.secret';
-export const USER_TOKEN_NAME = '.zeroTierOneAuthToken';
+const USER_TOKEN_NAME = '.zeroTierOneAuthToken';
 // zerotier-cli's message when the user cannot read the node's API token.
 export const NO_TOKEN = /authtoken\.secret/;
 const SIGTERM = 15;

@@ -96,7 +96,7 @@ export class CollapsedView {
      * @param {?string} text
      */
     setPeek(text) {
-        const was = this._peekText ?? null;
+        const was = this._peekText;
         this._peekText = text || null;
         if (text) {
             this._peekLabel.text = text;
@@ -112,11 +112,6 @@ export class CollapsedView {
             this._peekLabel.hide();
             this._fade(this._labels, 255);
         }
-    }
-
-    /** The notice shown in place of the time, or null. */
-    get peekText() {
-        return this._peekText ?? null;
     }
 
     /**

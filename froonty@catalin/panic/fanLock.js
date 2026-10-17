@@ -25,9 +25,10 @@ export class FanLockButton {
         this._title = title;
         this._settings = settings;
         this._busy = false;
+        this._destroyed = false;
         this._failed = '';
         this.actor = new St.Button({
-            style_class: 'froonty-icon-button froonty-panic-button froonty-panic-fan-lock',
+            style_class: 'froonty-icon-button froonty-panic-button',
             accessible_name: title,
             can_focus: true,
             track_hover: true,
@@ -44,6 +45,7 @@ export class FanLockButton {
     }
 
     destroy() {
+        this._destroyed = true;
         this._monitor.disconnect(this._monitorId);
         this._monitor.cancel();
         this.actor.destroy();
@@ -60,6 +62,9 @@ export class FanLockButton {
         this._sync();
         const {error, message} = await llano(this._settings.get_string('fan-llano-path'),
             [this._locked ? 'unlock' : 'lock']);
+        // The bar was rebuilt or Froonty disabled meanwhile.
+        if (this._destroyed)
+            return;
         this._busy = false;
         this._failed = error ? message : '';
         this._sync();

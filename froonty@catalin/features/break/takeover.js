@@ -17,10 +17,9 @@
 
 import GLib from 'gi://GLib';
 
-import {Emitter} from '../../core/emitter.js';
 import {GnomeBreakSettings, parseSaved, takeoverStatus} from './gnomeSettings.js';
 
-export const SAVED_KEY = 'break-gnome-saved';
+const SAVED_KEY = 'break-gnome-saved';
 const TRIGGERS = ['break-enabled', 'break-pill-reminders', 'break-pill-cue'];
 
 // What Froonty changes, by record id.
@@ -40,14 +39,12 @@ export function desired({enabled, pillReminders, cue, pillShown, selected}) {
     return enabled && pillReminders && cue !== 'off' && pillShown && selected.length > 0;
 }
 
-/** Emits 'changed' after applying or restoring. */
-export class NotificationTakeover extends Emitter {
+export class NotificationTakeover {
     /**
      * @param {Gio.Settings} settings Froonty's
      * @param {GnomeBreakSettings} [gnome] tests pass one on a memory backend
      */
     constructor(settings, gnome = null) {
-        super();
         this._settings = settings;
         this._pillShown = false;
         this._gnome = gnome ?? new GnomeBreakSettings();
@@ -142,8 +139,6 @@ export class NotificationTakeover extends Emitter {
         this._writeSaved(record);
         for (const [s, key] of writes)
             s.set_boolean(key, TARGET);
-        if (writes.length)
-            this.emit('changed');
     }
 
     _restore() {
@@ -165,7 +160,6 @@ export class NotificationTakeover extends Emitter {
             delete record[id];
         }
         this._writeSaved(record);
-        this.emit('changed');
     }
 }
 

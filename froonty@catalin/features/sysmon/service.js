@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Btop tab (docs/features/sysmon.md): samples the machine while its
-// tab is on screen, and not at all otherwise. This is Froonty's one
-// periodic timer (DESIGN.md §2 and §8): readings are only worth anything
+// tab is on screen, and not at all otherwise. One of Froonty's few
+// periodic timers (DESIGN.md §2 and §8): readings are only worth anything
 // live, and no event tells when a CPU's load or a GPU's temperature has
 // changed. The interval is the user's (sysmon-interval); sections that
 // are turned off are not read.
@@ -18,11 +18,11 @@ import {Sampler, SECTIONS} from './sampler.js';
 export const INTERVAL_KEY = 'sysmon-interval';
 // Load and speed need two samples: the second of a visit comes this soon,
 // so the tab does not show "—" for a whole interval.
-const FOLLOW_UP_MS = 500;
-export const CORES_KEY = 'sysmon-cores-expanded';
+export const FOLLOW_UP_MS = 500;
+const CORES_KEY = 'sysmon-cores-expanded';
 // The island's width while the tab is shown; the view lays out by it.
-export const WIDTH_KEY = 'sysmon-width';
-export const sectionKey = section => `sysmon-show-${section}`;
+const WIDTH_KEY = 'sysmon-width';
+const sectionKey = section => `sysmon-show-${section}`;
 
 export class SysmonService extends Emitter {
     /**

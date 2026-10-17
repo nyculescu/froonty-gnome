@@ -5,8 +5,10 @@
 //
 // It runs only while the page is shown: start() lists and reads the notes
 // (at most 8 reads at a time), then follows the folder monitor, re-reading
-// only notes whose etag changed. It never writes .froonty.json (the island
-// owns it); labels are written through store.updateLabels().
+// only notes whose etag changed. Without a monitor (Gio could not make one,
+// e.g. no inotify watches left) it looks again every 2 s instead. It never
+// writes .froonty.json (the island owns it); labels are written through
+// store.updateLabels().
 //
 // `store` stays the same object while the folder does (across stop() and
 // start()); a start() in another folder (the setting changed while the
@@ -16,9 +18,12 @@
 // Emits 'changed' ({names, structure}) after a refresh that changed
 // something: `names` whose text changed, `structure` when notes came or
 // went, or labels, colours or errors changed. Also 'renamed' (from, to)
-// for a rename in the folder, and 'removed' (name) for a note that is gone.
+// for a rename in the folder, 'removed' (name) for a note that is gone,
+// and 'refreshed' after every refresh, changes or not (the page then reads
+// the island's selection marker, store.readCurrentNote()).
 
 import Gio from 'gi://Gio';
+import GLib from 'gi://GLib';
 
 import {Emitter} from '../../core/emitter.js';
 import * as Labels from './labels.js';
@@ -28,6 +33,7 @@ import {NotesStore} from './store.js';
 
 const FOLDER_KEY = 'notes-folder';
 const READS_IN_FLIGHT = 8;
+const POLL_SECONDS = 2;
 
 const isError = (e, code) => e?.matches?.(Gio.IOErrorEnum, code) ?? false;
 
@@ -56,6 +62,7 @@ export class NotesLibrary extends Emitter {
         this.store = null;
         this._running = false;
         this._monitor = null;
+        this._pollId = 0;
         this._refreshing = null;
         this._again = false;
         this._listChanged = false;
@@ -74,6 +81,11 @@ export class NotesLibrary extends Emitter {
         return this._running;
     }
 
+    /** Whether it looks every 2 s, having no folder monitor (for tests). */
+    get polling() {
+        return this._pollId !== 0;
+    }
+
     start() {
         if (this._running)
             return this.whenIdle();
@@ -88,8 +100,13 @@ export class NotesLibrary extends Emitter {
         try {
             this._monitor = this.store.monitor((file, other, type) => this._onEvent(file, other, type));
         } catch (e) {
-            this._monitor = null;
-            this.error = e.message;
+            console.warn(`Froonty notes: cannot watch the folder, looking every ${POLL_SECONDS} s: ${e.message}`);
+        }
+        if (!this._monitor) {
+            this._pollId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, POLL_SECONDS, () => {
+                this.refresh();
+                return GLib.SOURCE_CONTINUE;
+            });
         }
         return this.refresh();
     }
@@ -101,6 +118,9 @@ export class NotesLibrary extends Emitter {
         this._cancellable.cancel();
         this._monitor?.cancel();
         this._monitor = null;
+        if (this._pollId)
+            GLib.source_remove(this._pollId);
+        this._pollId = 0;
     }
 
     /** Another folder (setting changed): everything is read again. */
@@ -173,6 +193,8 @@ export class NotesLibrary extends Emitter {
                 }
             } while (this._again && this._running);
             this._refreshing = null;
+            if (this._running)
+                this.emit('refreshed');
         })();
         return this._refreshing;
     }

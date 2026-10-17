@@ -9,8 +9,8 @@
 /** Marks the cursor's place in a snippet (symbols.js, templates.js). */
 export const SLOT = '‸';
 
-// A selection longer than this is not saved in the recent list.
-export const MAX_SAVED_LENGTH = 2000;
+// A formula longer than this is neither kept in the recent list nor starred.
+const MAX_SAVED_LENGTH = 2000;
 export const RECENT_LIMIT = 20;
 export const FAVOURITES_LIMIT = 100;
 
@@ -79,39 +79,32 @@ export function copyText(tex, format) {
  *
  * @param {string[]} list most recent first
  * @param {string} tex
- * @param {number} [limit]
  * @returns {string[]} a new list (the same one when nothing changes)
  */
-export function pushRecent(list, tex, limit = RECENT_LIMIT) {
+export function pushRecent(list, tex) {
     const body = tex.trim();
     if (!body || body.length > MAX_SAVED_LENGTH || list[0] === body)
         return list;
-    return [body, ...list.filter(item => item !== body)].slice(0, limit);
+    return [body, ...list.filter(item => item !== body)].slice(0, RECENT_LIMIT);
 }
 
 /**
- * Stars or unstars a formula.
+ * Stars or unstars a formula. A full list keeps its oldest favourites and
+ * takes no new one.
  *
  * @param {string[]} list newest first
  * @param {string} tex
- * @param {number} [limit] a full list keeps its oldest favourites and
- *   takes no new one
  * @returns {string[]} a new list (the same one when nothing changes)
  */
-export function toggleFavourite(list, tex, limit = FAVOURITES_LIMIT) {
+export function toggleFavourite(list, tex) {
     const body = tex.trim();
     if (!body)
         return list;
     if (list.includes(body))
         return list.filter(item => item !== body);
-    if (body.length > MAX_SAVED_LENGTH || list.length >= limit)
+    if (body.length > MAX_SAVED_LENGTH || list.length >= FAVOURITES_LIMIT)
         return list;
     return [body, ...list];
-}
-
-/** Whether tex is starred. */
-export function isFavourite(list, tex) {
-    return list.includes(tex.trim());
 }
 
 /**

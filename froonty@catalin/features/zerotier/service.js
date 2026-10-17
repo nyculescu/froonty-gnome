@@ -113,9 +113,8 @@ export class ZeroTierService extends Emitter {
         };
     }
 
-    start() {
-        return this.refresh();
-    }
+    // Nothing to read yet: it reads when the tab is shown (setActive).
+    start() {}
 
     stop() {
         this._cancellable.cancel();
@@ -239,8 +238,11 @@ export class ZeroTierService extends Emitter {
             this.state = {...this.state, busy: false};
             this.emit('changed');
         }
-        if (succeeded)
+        // A refresh that began before the action would show the old state.
+        if (succeeded) {
+            await this._refreshing;
             await this.refresh();
+        }
         return succeeded;
     }
 }

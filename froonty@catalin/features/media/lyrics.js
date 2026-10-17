@@ -11,17 +11,14 @@
 
 import GLib from 'gi://GLib';
 
-import {cleanText} from './model.js';
+import {byteLength, cleanText} from './model.js';
 
 export const MAX_LYRICS_BYTES = 128 * 1024;
-export const MAX_LYRICS_LINES = 2000;
-export const MAX_QUEUE = 20;
+const MAX_LYRICS_LINES = 2000;
+const MAX_QUEUE = 20;
 export const OFFSET_STEP = 0.25;
-export const OFFSET_LIMIT = 10;
+const OFFSET_LIMIT = 10;
 export const LRCLIB_URL = 'https://lrclib.net/api/get';
-
-const utf8 = new TextEncoder();
-const byteLength = text => utf8.encode(text).length;
 
 // "mm:ss.xx" → seconds, or null.
 function timestamp(value) {

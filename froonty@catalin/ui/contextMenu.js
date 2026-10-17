@@ -40,7 +40,7 @@ function followPointer(item, pointerMoved) {
 const ToggleItem = GObject.registerClass(
 class FroontyToggleItem extends PopupMenu.PopupBaseMenuItem {
     _init(text, checked, onToggled, pointerMoved) {
-        super._init({style_class: 'froonty-menu-toggle', hover: false});
+        super._init({hover: false});
         followPointer(this, pointerMoved);
         this.accessible_role = Atk.Role.CHECK_MENU_ITEM;
         this.label = new St.Label({text, y_expand: true, y_align: Clutter.ActorAlign.CENTER});
@@ -70,7 +70,7 @@ class FroontyToggleItem extends PopupMenu.PopupBaseMenuItem {
 const ActionItem = GObject.registerClass(
 class FroontyActionItem extends PopupMenu.PopupBaseMenuItem {
     _init(text, onActivate, pointerMoved) {
-        super._init({style_class: 'froonty-menu-action', hover: false});
+        super._init({hover: false});
         followPointer(this, pointerMoved);
         // Lines up with the toggles' labels.
         this.setOrnament(PopupMenu.Ornament.NONE);
@@ -110,7 +110,7 @@ class Items {
     }
 
     /**
-     * @returns {{item: object, setChecked: Function, readonly checked: boolean}}
+     * @returns {ToggleItem}
      */
     addToggle(text, checked, onToggled) {
         return this._add(new ToggleItem(text, checked, onToggled, this._pointerMoved));
@@ -177,7 +177,7 @@ export class ContextMenu extends Items {
         return this._menu?.isOpen ?? false;
     }
 
-    /** The menu's actor (a BoxPointer), for tests and positioning checks. */
+    /** The menu's actor (a BoxPointer); its 'destroy' ends the island's tracking. */
     get actor() {
         return this._actor;
     }

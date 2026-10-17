@@ -73,6 +73,6 @@ export function nudgedSize(size, direction, large = false) {
         right: [step, 0],
         up: [0, -step],
         down: [0, step],
-    }[direction] ?? [0, 0];
+    }[direction];
     return {width: size.width + dw, height: size.height + dh};
 }

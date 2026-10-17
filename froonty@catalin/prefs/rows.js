@@ -2,10 +2,26 @@
 // Rows and groups the settings tabs share. Runs in the preferences process.
 
 import Adw from 'gi://Adw';
+import Gdk from 'gi://Gdk';
 import Gio from 'gi://Gio';
 import Gtk from 'gi://Gtk';
 
 import {gettext as _} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
+
+/**
+ * Puts a feature's bundled icons (the icons folder next to `moduleUrl`) on
+ * the icon search path, so they are icon names. The folder is laid out as
+ * an icon theme (icons/hicolor/scalable/actions/): GTK 4.14 recolours a
+ * -symbolic icon found that way, but not a loose file on the search path.
+ *
+ * @param {string} moduleUrl import.meta.url of a module in the feature's folder
+ */
+export function addIconPath(moduleUrl) {
+    const display = Gdk.Display.get_default();
+    const icons = Gio.File.new_for_uri(moduleUrl).get_parent().get_child('icons');
+    if (display)
+        Gtk.IconTheme.get_for_display(display).add_search_path(icons.get_path());
+}
 
 export function switchRow(settings, key, title, subtitle = '') {
     const row = new Adw.SwitchRow({title, subtitle});
@@ -24,15 +40,42 @@ export function spinRow(settings, key, title, step = 1) {
 }
 
 /**
+ * A drop-down for a string key that holds one of `values`, shown as `labels`.
+ *
+ * @param {Gio.Settings} settings Froonty's
+ * @param {string} key
+ * @param {string} title
+ * @param {string[]} values
+ * @param {string[]} labels one per value
+ */
+export function choiceRow(settings, key, title, values, labels) {
+    const row = new Adw.ComboRow({title, model: Gtk.StringList.new(labels)});
+    // Showing the setting must not write it back: a change made elsewhere
+    // (the Shell, gsettings) reaches this process late, and writing back
+    // what it shows then would undo a newer one.
+    let syncing = false;
+    const sync = () => {
+        syncing = true;
+        row.selected = Math.max(values.indexOf(settings.get_string(key)), 0);
+        syncing = false;
+    };
+    sync();
+    row.connect('notify::selected', () => {
+        if (!syncing)
+            settings.set_string(key, values[row.selected]);
+    });
+    settings.connect(`changed::${key}`, sync);
+    return row;
+}
+
+/**
  * A tab's island size, with a "Default size" button; applies live.
  *
  * @param {Gio.Settings} settings Froonty's
  * @param {string[]} keys its width and height keys
  * @param {string} description the group's description
- * @param {Function[]} [cleanups] gets a function that disconnects the
- *   group's settings handlers (else they go with the settings object)
  */
-export function sizeGroup(settings, [widthKey, heightKey], description, cleanups = null) {
+export function sizeGroup(settings, [widthKey, heightKey], description) {
     const keys = [widthKey, heightKey];
     const reset = new Gtk.Button({
         label: _('Default size'),
@@ -53,8 +96,7 @@ export function sizeGroup(settings, [widthKey, heightKey], description, cleanups
         reset.sensitive = keys.some(key => settings.get_user_value(key) !== null);
     };
     sync();
-    const ids = keys.map(key => settings.connect(`changed::${key}`, sync));
-    cleanups?.push(() => ids.forEach(id => settings.disconnect(id)));
+    keys.forEach(key => settings.connect(`changed::${key}`, sync));
     reset.connect('clicked', () => keys.forEach(key => settings.reset(key)));
     return group;
 }

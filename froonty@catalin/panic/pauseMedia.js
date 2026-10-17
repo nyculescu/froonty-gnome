@@ -66,11 +66,6 @@ export class PauseMediaButton {
         this._sync();
     }
 
-    /** Players it paused that are still paused (tests). */
-    get held() {
-        return this._held;
-    }
-
     async _toggle() {
         const media = this._media;
         if (!media || this._busy)

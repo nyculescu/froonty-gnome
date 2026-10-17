@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // What went wrong with a Writing request (docs/features/writing.md): a
-// short code the view and the tests branch on, the message shown, and an
-// optional hint (what to do about it). Messages never contain the text.
+// short code the service, Settings and the tests branch on, the message
+// shown, and an optional hint (what to do about it). Messages never
+// contain the text.
 //
 // Codes: empty, too-long, password, offline, not-installed, not-signed-in,
 // api-key, not-a-plan, too-old, limit, rate-limited, unavailable,

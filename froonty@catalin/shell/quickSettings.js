@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Quick Settings: an item right under GNOME's own brightness slider
-// (Software brightness, features/brightness/overlay.js).
+// Quick Settings: items right under GNOME's own brightness slider
+// (Software brightness, the pad speed slider).
 
 import GLib from 'gi://GLib';
 
@@ -13,15 +13,21 @@ const RETRY_MS = 100;
 const TRIES = 50;
 // Both columns, as GNOME's sliders.
 const FULL_WIDTH = 2;
+// The order of each item added here.
+const orders = new WeakMap();
 
 /**
- * Adds a full-width item under GNOME's brightness slider.
+ * Adds a full-width item under GNOME's brightness slider, after the items
+ * added here with the same or a lower order, so their order does not
+ * depend on which was added first.
  *
  * @param {QuickSettingsItem} item the item to add (destroying it removes it;
  *   its menu, which Quick Settings keeps in its overlay, needs destroying too)
+ * @param {number} [order] lower ones go higher
  * @returns {Function} cancels the add while it waits
  */
-export function addUnderBrightness(item) {
+export function addUnderBrightness(item, order = 0) {
+    orders.set(item, order);
     let tries = 0;
     let id = 0;
     const place = () => {
@@ -31,7 +37,9 @@ export function addUnderBrightness(item) {
         if (!gnome && ++tries < TRIES)
             return GLib.SOURCE_CONTINUE;
         id = 0;
-        const next = gnome?.get_parent() ? gnome.get_next_sibling() : null;
+        let next = gnome?.get_parent() ? gnome.get_next_sibling() : null;
+        while (next && orders.get(next) <= order)
+            next = next.get_next_sibling();
         if (next)
             quickSettings.menu.insertItemBefore(item, next, FULL_WIDTH);
         else

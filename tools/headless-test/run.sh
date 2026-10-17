@@ -177,8 +177,9 @@ mkdir -p "$XDG_DATA_HOME/gnome-shell/extensions" "$XDG_CONFIG_HOME/glib-2.0/sett
 mkdir -m 700 "$XDG_RUNTIME_DIR"
 mkdir -p "$CLAUDE_CONFIG_DIR" "$FROONTY_OLLAMA_SYSTEM_ROOT"
 # Apps the attention bar's checks pose as: the Claude app (its desktop id,
-# so it shadows a real one in /usr/share) and a web browser. When GNOME
-# opens one (a click on its notification), /bin/true is all that runs.
+# so it shadows a real one in /usr/share) and a web browser (also the Media
+# tab's fake browser player). When GNOME opens one (a click on its
+# notification), /bin/true is all that runs.
 cat >"$XDG_DATA_HOME/applications/com.anthropic.Claude.desktop" <<'EOF'
 [Desktop Entry]
 Type=Application
@@ -241,17 +242,13 @@ chmod +x "$FROONTY_CLAUDE_CODE"
 cat >"$FROONTY_SYSTEMCTL" <<'EOF'
 #!/bin/sh
 echo "$*" >>"$CLAUDE_CONFIG_DIR/systemctl.log"
-# The Fan tab's `is-active` answers, when a check has written them.
-case "$*" in
-*is-active*) cat "$CLAUDE_CONFIG_DIR/systemctl.is-active" 2>/dev/null ;;
-*stop\ llano*) rm -f "$CLAUDE_CONFIG_DIR/systemctl.is-active" ;;
-esac
 exit 0
 EOF
 chmod +x "$FROONTY_SYSTEMCTL"
 
-# Fan tab: a stand-in for llano-v12-linux's llano.py, so the real cooling
-# pad is never driven (FROONTY_TEST_LLANO=/path/to/llano.py runs the checks
+# The pad noise slider, the Fan lock panic button and the Fan settings
+# page: a stand-in for llano-v12-linux's llano.py, so the real cooling pad
+# is never driven (FROONTY_TEST_LLANO=/path/to/llano.py runs the checks
 # against the real pad instead). Same commands, output and state files
 # ($XDG_STATE_HOME/llano: the lock and control.log); like the pad, release
 # keeps the speed and the status still says software (0x80). Noise is
@@ -263,8 +260,6 @@ state_path = os.path.join(here, 'fake-llano.state')
 llano_dir = os.path.join(os.environ['XDG_STATE_HOME'], 'llano')
 lock_path = os.path.join(llano_dir, 'lock')
 os.makedirs(llano_dir, exist_ok=True)
-with open(os.path.join(here, 'fake-llano.log'), 'a') as log:
-    log.write(' '.join(sys.argv[1:]) + '\n')
 st, speed, off = (0x88, 60, 0)
 if os.path.exists(state_path):
     st, speed, off = (int(v) for v in open(state_path).read().split())
@@ -310,13 +305,10 @@ print('noise ' + json.dumps({'rpm': rpm, 'ear_db': 37.5 + rpm / 50, 'band': 'qui
                 'max_percent': 100, 'override_until': None, 'mapping_measured': 'partly'}}))
 EOF
 
-# Media tab: apps for the fake players (fake-mpris.js) to name, one music
-# player and one browser, never shown in the app grid.
-mkdir -p "$XDG_DATA_HOME/applications"
+# Media tab: a music player for the fake players (fake-mpris.js) to name
+# (the browser is the attention bar's), never shown in the app grid.
 printf '[Desktop Entry]\nType=Application\nName=Test Music\nExec=true\nNoDisplay=true\nCategories=Audio;Player;\n' \
     >"$XDG_DATA_HOME/applications/froonty-test-music.desktop"
-printf '[Desktop Entry]\nType=Application\nName=Test Browser\nExec=true\nNoDisplay=true\nCategories=Network;WebBrowser;\n' \
-    >"$XDG_DATA_HOME/applications/froonty-test-browser.desktop"
 # lrclib.net (Media lyrics, only when allowed): a closed local port, so the
 # Shell under test never goes online; the checks point it at a fake.
 export FROONTY_LRCLIB_URL=http://127.0.0.1:9/api/get

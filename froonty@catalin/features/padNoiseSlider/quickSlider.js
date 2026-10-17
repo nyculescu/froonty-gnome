@@ -29,24 +29,31 @@ function stageText(stage) {
     return _('%s · %d RPM').format(_(stage.name), stage.rpm);
 }
 
+function handleRadius(slider) {
+    return slider.get_stage()
+        ? slider.get_theme_node().get_length('-slider-handle-radius') : 0;
+}
+
+// GNOME's Slider centres the knob at radius + (width - 2 radius) x value.
+function knobX(width, radius, fraction) {
+    return radius + Math.max(0, width - 2 * radius) * fraction;
+}
+
 function prioritizeSliderHandle(slider, dots) {
     const width = slider.get_width();
     if (!width)
         return;
-    const radius = slider.get_stage()
-        ? slider.get_theme_node().get_length('-slider-handle-radius') : 0;
-    const trackWidth = Math.max(0, width - 2 * radius);
-    const handleX = radius + trackWidth * slider.value;
+    const radius = handleRadius(slider);
+    const handleX = knobX(width, radius, slider.value);
     for (const dot of dots) {
-        const dotX = radius + trackWidth * dot._fraction;
+        const dotX = knobX(width, radius, dot._fraction);
         // Let the slider receive presses on its knob, even when a stage dot
         // is directly underneath it. The slider then owns the drag sequence.
         dot.reactive = Math.abs(dotX - handleX) > radius + 6;
     }
 }
 
-// Puts each dot where the slider's knob is drawn for its value: GNOME's
-// Slider centres the knob at radius + (width - 2 radius) x value.
+// Puts each dot where the slider's knob is drawn for its value.
 const DotsLayout = GObject.registerClass(
 class DotsLayout extends Clutter.LayoutManager {
     _init(slider) {
@@ -65,12 +72,11 @@ class DotsLayout extends Clutter.LayoutManager {
     vfunc_allocate(container, box) {
         const width = box.get_width();
         const height = box.get_height();
-        const radius = this._slider.get_stage()
-            ? this._slider.get_theme_node().get_length('-slider-handle-radius') : 0;
+        const radius = handleRadius(this._slider);
         for (const dot of container.get_children()) {
             const [, w] = dot.get_preferred_width(-1);
             const [, h] = dot.get_preferred_height(w);
-            const x = radius + (width - 2 * radius) * dot._fraction - w / 2;
+            const x = knobX(width, radius, dot._fraction) - w / 2;
             const y = (height - h) / 2;
             const child = new Clutter.ActorBox();
             child.set_origin(Math.round(x), Math.round(y));
@@ -87,7 +93,6 @@ class PadNoiseSlider extends QuickSlider {
             // The bundled icon works where weather-wind is missing.
             gicon: fanIcon(),
             iconLabel: _('llano pad speed'),
-            style_class: 'quick-slider froonty-pad-noise-slider',
         });
         this._openSettings = openSettings;
         this.icon_reactive = true;
@@ -202,21 +207,31 @@ export class PadNoiseSliderPart {
             this._slider = new PadNoiseSlider(this._openSettings);
             this._slider.slider.value = rpmToSlider(this._rpm);
             this._slider.slider.connectObject('notify::value', () => this._onSliderValue(), this);
-            this._cancelPlace = addUnderBrightness(this._slider);
+            this._cancelPlace = addUnderBrightness(this._slider, 1);
+            // The pad is polled only while the slider can be seen.
+            const menu = Main.panel.statusArea.quickSettings.menu;
+            menu.connectObject('open-state-changed', (_menu, open) => this._poll(open), this);
+            this._refresh();
+            this._poll(menu.isOpen);
         }
-        if (!this._timerId) {
+    }
+
+    _poll(on) {
+        if (on && !this._timerId) {
             this._refresh();
             this._timerId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, POLL_S, () => {
                 this._refresh();
                 return GLib.SOURCE_CONTINUE;
             });
+        } else if (!on && this._timerId) {
+            GLib.source_remove(this._timerId);
+            this._timerId = 0;
         }
     }
 
     _hide() {
-        if (this._timerId)
-            GLib.source_remove(this._timerId);
-        this._timerId = 0;
+        Main.panel.statusArea.quickSettings.menu.disconnectObject(this);
+        this._poll(false);
         if (this._applyTimerId)
             GLib.source_remove(this._applyTimerId);
         this._applyTimerId = 0;
@@ -237,13 +252,21 @@ export class PadNoiseSliderPart {
         const generation = this._changeGeneration;
         this._refreshing = true;
         try {
-            this._padPresent = await this._padConnected();
+            const present = await this._padConnected();
+            // Hidden or destroyed meanwhile.
+            if (!this._slider)
+                return;
+            this._padPresent = present;
             if (!this._padPresent) {
+                // A target the pad never got must not stop following it later.
+                this._pendingRpm = null;
                 this._error = '';
                 this._syncSlider();
                 return;
             }
             const result = await Pad.llano(this._settings.get_string('fan-llano-path'), ['status']);
+            if (!this._slider)
+                return;
             if (result.error) {
                 this._error = result.message || result.error;
             } else {
@@ -254,6 +277,9 @@ export class PadNoiseSliderPart {
                     this._rpm = snapRpm(result.noise.rpm);
                     this._following = true;
                     this._slider.slider.value = rpmToSlider(this._rpm);
+                    // Private: GNOME's base for the next scroll or arrow key,
+                    // still the last dragged position otherwise.
+                    this._slider.slider._unsnappedValue = null;
                     this._following = false;
                 }
             }
@@ -283,6 +309,8 @@ export class PadNoiseSliderPart {
         // The knob moves in the pad's 50 RPM steps, not freely.
         this._following = true;
         this._slider.slider.value = rpmToSlider(this._rpm);
+        // Private, as above: the next step starts from the snapped speed.
+        this._slider.slider._unsnappedValue = null;
         this._following = false;
         this._error = '';
         this._syncSlider();

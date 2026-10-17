@@ -28,7 +28,7 @@ import System from 'system';
 
 import {
     DESKTOP_RE, ENTRYPOINTS, HOOK_EVENTS, MAX_INPUT, MAX_PIDS, SESSION_RE,
-    actionFor, parseProcStat, projectName, serializeEntry, stateDir,
+    actionFor, isPlainObject, isRealDir, parseProcStat, projectName, serializeEntry, stateDir,
 } from './attention.js';
 
 const CHUNK = 65536;
@@ -38,9 +38,6 @@ const SCRIPT_NAME = 'attentionHook.js';
 export function hookScriptPath() {
     return Gio.File.new_for_uri(import.meta.url).get_path();
 }
-
-const isRealDir = file => file.query_file_type(Gio.FileQueryInfoFlags.NOFOLLOW_SYMLINKS, null) ===
-    Gio.FileType.DIRECTORY;
 
 // Claude Code's JSON on stdin, at most MAX_INPUT bytes kept (the rest is
 // read and dropped, so Claude Code never writes into a closed pipe); {}
@@ -76,7 +73,7 @@ function readInput() {
     }
     try {
         const input = JSON.parse(new TextDecoder().decode(all));
-        return typeof input === 'object' && input !== null && !Array.isArray(input) ? input : {};
+        return isPlainObject(input) ? input : {};
     } catch {
         return {};
     }

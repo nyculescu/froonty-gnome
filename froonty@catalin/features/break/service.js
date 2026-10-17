@@ -54,8 +54,7 @@ function restoreState(saved, now, days) {
     const s = freshState(now, days);
     if (!saved)
         return s;
-    s.ledger = pick(saved.ledger, {...s.ledger, lastLongRestEnd: 0, idleStart: 0});
-    s.ledger.lastLongRestEnd = num(saved.ledger?.lastLongRestEnd, null);
+    s.ledger = pick(saved.ledger, {...s.ledger, idleStart: 0});
     s.ledger.idleStart = num(saved.ledger?.idleStart, null);
     for (const t of BREAK_TYPES)
         s.breaks[t] = pick(saved.breaks?.[t], s.breaks[t]);
@@ -135,7 +134,7 @@ export class BreakService extends Emitter {
         if (generation !== this._generation)
             return;
         this._history = history;
-        this._gnome = this._deps.gnome(key => this._onGnomeChanged(key));
+        this._gnome = this._deps.gnome(() => this._onGnomeChanged());
         const now = this._deps.now();
         this._s = restoreState(saved, now, this._days);
         this._connect();
@@ -233,7 +232,6 @@ export class BreakService extends Emitter {
             lastEnd: read?.lastEnd ?? null,
             nextDue: read?.nextDue ?? 0,
             nextType: read?.nextType ?? null,
-            currentType: read?.currentType ?? null,
             types,
             breaks: this._s?.breaks ?? freshState(nowMs, this._days).breaks,
             prefs: {
@@ -255,7 +253,6 @@ export class BreakService extends Emitter {
                 standAfter: s.get_int('posture-stand-minutes') * 60,
                 standingSeconds: today.standingSeconds,
                 targetSeconds: targetMinutes * 60,
-                targetMinutes,
                 minimumToday,
                 plan,
                 building: plan.buildup && !minimumToday && builtTarget(plan) > plan.base,
@@ -319,7 +316,6 @@ export class BreakService extends Emitter {
             p.mode = mode;
             p.modeActiveSeconds = 0;
         }
-        p.notNowAt = null;
         this._changed();
     }
 
@@ -327,10 +323,8 @@ export class BreakService extends Emitter {
     notNow() {
         if (!this.loaded)
             return;
-        const now = this._deps.now();
-        this._accountTo(now);
+        this._accountTo(this._deps.now());
         this._s.posture.modeActiveSeconds = 0;
-        this._s.posture.notNowAt = now;
         this._changed();
     }
 

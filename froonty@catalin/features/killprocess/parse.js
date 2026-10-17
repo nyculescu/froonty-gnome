@@ -23,7 +23,7 @@ const FIELDS = 22;
  * (`leaderExited`), but its CPU time is all of its threads', and a
  * signal still reaches them.
  *
- * @returns {?{pid: number, comm: string, state: string, ppid: number,
+ * @returns {?{pid: number, comm: string, ppid: number,
  *   ticks: number, threads: number, start: number, rssPages: number,
  *   kernel: boolean, ended: boolean, leaderExited: boolean}} ticks is
  *   user + system CPU time, start the start time since boot, both in
@@ -54,7 +54,6 @@ export function parseProcStat(text) {
     return {
         pid,
         comm: text.slice(open + 1, close),
-        state,
         ppid,
         ticks: utime + stime,
         threads,
@@ -121,7 +120,7 @@ export function pageSize(rssPages, rssKb) {
  * @param {number} machineTicks all CPUs' ticks in between (/proc/stat)
  */
 export function cpuShare(previous, current, machineTicks) {
-    if (previous === undefined || previous === null || !(machineTicks > 0) || current < previous)
+    if (previous === undefined || !(machineTicks > 0) || current < previous)
         return null;
     return Math.min(100, 100 * (current - previous) / machineTicks);
 }

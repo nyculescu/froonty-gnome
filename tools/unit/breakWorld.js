@@ -12,25 +12,13 @@ import {GnomeBreakSettings} from '../../froonty@catalin/features/break/gnomeSett
 import {BreakService} from '../../froonty@catalin/features/break/service.js';
 import {BreakStore} from '../../froonty@catalin/features/break/store.js';
 import {loadGnomeBreakManager, makeWorld} from './gnomeBreakManager.js';
-
-const EXTENSION_DIR = GLib.build_filenamev([
-    GLib.path_get_dirname(GLib.filename_from_uri(import.meta.url)[0]), '..', '..', 'froonty@catalin']);
+import {EXTENSION_DIR, makeSettings} from './test.js';
 
 export const isMemory = settings =>
     GObject.type_name(settings.backend.constructor.$gtype) === 'GMemorySettingsBackend';
 
 /** Froonty's real schema on an in-memory backend: nothing touches dconf. */
-export function froontySettings() {
-    const source = Gio.SettingsSchemaSource.new_from_directory(
-        GLib.build_filenamev([EXTENSION_DIR, 'schemas']), null, false);
-    const settings = new Gio.Settings({
-        settings_schema: source.lookup('org.gnome.shell.extensions.froonty', false),
-        backend: Gio.memory_settings_backend_new(),
-    });
-    if (!isMemory(settings))
-        throw new Error('test settings must be in memory');
-    return settings;
-}
+export const froontySettings = makeSettings;
 
 export const froontySchemaSource = () => Gio.SettingsSchemaSource.new_from_directory(
     GLib.build_filenamev([EXTENSION_DIR, 'schemas']), null, false);

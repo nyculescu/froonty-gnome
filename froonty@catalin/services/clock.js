@@ -124,7 +124,7 @@ export class ClockService extends EventEmitter {
     snapshot() {
         const now = GLib.DateTime.new_now(this._timeZone());
         return {
-            time: now.format(this._timeFormat()).trim(),
+            time: now.format(this.timeFormat()).trim(),
             shortDate: now.format(SHORT_DATE_FORMAT),
             date: now.format(topBarDateFormat()),
             weekday: now.format(WEEKDAY_FORMAT),
@@ -145,7 +145,7 @@ export class ClockService extends EventEmitter {
     formatTime(ms, {weekday = false, date = false} = {}) {
         const time = GLib.DateTime.new_from_unix_utc(Math.floor(ms / 1000))
             .to_timezone(this._timeZone());
-        let format = this._timeFormat();
+        let format = this.timeFormat();
         if (date)
             format = `${DATE_FORMAT} ${format}`;
         else if (weekday)
@@ -153,16 +153,12 @@ export class ClockService extends EventEmitter {
         return time.format(format).trim();
     }
 
-    /** The top bar clock's time zone (GLib.TimeZone). */
-    get timeZone() {
-        return this._timeZone();
-    }
-
     _timeZone() {
         return this._wallClock?.timezone ?? GLib.TimeZone.new_local();
     }
 
-    _timeFormat() {
+    /** The time format clock-format asks for (also the time zone planner's). */
+    timeFormat() {
         let format = this._settings.get_string('clock-format');
         if (format === 'system')
             format = this._interfaceSettings?.get_string('clock-format') ?? '24h';

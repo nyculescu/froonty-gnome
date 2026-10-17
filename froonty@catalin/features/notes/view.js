@@ -1,17 +1,27 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Notes tab:
 //
-//   [2026-09-28 15.40 ×] [Plan] [+] [⤴]      capsule tabs, fold button
-//   [B][I][S][H][•][1.][☑][</>][🔗][↩]  (●)  tools row: formatting bar,
-//                                             wrap, note colour
+//   [28.09.26 16.03] [Plan] [+] [⤴]                capsule tabs, fold button
+//   [B][I][S][H][•][1.][☑][</>][🔗][🖼][MD][↩]  (●)  tools row: formatting
+//                                                   bar, MD, wrap, colour
 //   ┌──────────────────────────────────┐
 //   │ editor                           │     multi-line, scrolls
 //   └──────────────────────────────────┘
 //
-// Renders NotesService state; typing goes to service.setText().
+// Renders NotesService state; typing goes to service.setText(). The note
+// shows rendered, to read and copy, or as its Markdown source (MD), where
+// it is edited: while rendered, the editing buttons are insensitive and
+// the hidden source never takes the key focus. Rendered, a click on text
+// edits that part in place, a table can be edited as a grid and a Mermaid
+// diagram as its code beside its live picture (renderer/preview.js); each
+// is one undo step (_replaceSource). An image
+// pasted (Ctrl+V) without text on the clipboard is saved into the note
+// folder and referenced (_pasteImage).
 // ⤴ folds the tools row away for a taller editor; ⤵ brings it back
 // (notes-show-tools). The formatting toggles light up for the formatting
-// at the cursor. A right-click on a tab opens note actions and labels
+// at the cursor. Each button's edit has a shortcut (Ctrl+B, …;
+// formatActions.js) in the source of an editable note, and in a field
+// open in the rendered note (preview.js); Ctrl+Shift+M is MD. A right-click on a tab opens note actions and labels
 // (labelMenu.js), including the All notes window.
 
 import Clutter from 'gi://Clutter';
@@ -23,14 +33,16 @@ import St from 'gi://St';
 import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 
 import {keepCursorVisible} from '../../core/textScroll.js';
+import {Tooltip} from '../../core/tooltip.js';
 import {ColorPicker} from './colorPicker.js';
 import {COLOR_IDS} from './colors.js';
+import {formatEdit, formatShortcut} from './formatActions.js';
 import {FormatBar} from './formatBar.js';
 import {LabelMenu} from './labelMenu.js';
 import {MarkdownStyler} from './styler.js';
-import {chooseImage} from './renderer/image-picker.js';
+import {chooseImage, copyImage, saveImageBytes} from './renderer/image-picker.js';
+import {imageExtension, markdownImagePath, showInFileManager} from './renderer/imageFile.js';
 import * as Md from './markdown.js';
-import {toggleTask} from './render.js';
 import {NoteTabs} from './tabs.js';
 
 // ⤴ / ⤵ as bundled symbolic icons: the Unicode arrows need a fallback font
@@ -40,6 +52,10 @@ const foldIcon = name => new Gio.FileIcon({
     file: Gio.File.new_for_uri(import.meta.url).get_parent()
         .get_child('icons').get_child(`froonty-fold-${name}-symbolic.svg`),
 });
+
+// Clipboard types that hold text: then a paste is text, even if an image
+// is offered too (as office suites do).
+const TEXT_TYPES = /^(?:text\/plain|UTF8_STRING$|STRING$|TEXT$)/;
 
 export class NotesView {
     constructor(ctx, service) {
@@ -55,20 +71,24 @@ export class NotesView {
         this._restoringUndo = false;
         this._foldUp = foldIcon('up');
         this._foldDown = foldIcon('down');
+        // Stops saving a pasted image once the view is gone.
+        this._cancellable = new Gio.Cancellable();
+        // A partly drawn block's problems (preview.js), in the overlay.
+        this._blockTooltip = new Tooltip({maxWidth: 320});
+        // The formatting buttons' names and shortcuts, in the overlay.
+        this._toolsTooltip = new Tooltip();
 
         this._labelMenu = new LabelMenu(ctx, service, {
+            // All notes reads the file in another process: save first.
             onAllNotes: () => {
-                // All notes reads the persisted Markdown in another process.
-                // Commit the island's pending edit before that process opens it.
+                this._finishEdit();
                 service.flush().finally(() => {
-                    // Make the selected tab explicit at the handoff boundary;
-                    // All notes uses this key to open the matching Markdown file.
-                    if (service.selected)
-                        ctx.settings.set_string('notes-last', service.selected);
-                    ctx.openSettingsWindow('all-notes');
+                    if (this._service)
+                        ctx.openSettingsWindow('all-notes');
                 });
             },
             onRename: async name => {
+                this._finishEdit();
                 await service.select(name);
                 if (this._service && service.selected === name)
                     this._tabs.renameSelected();
@@ -105,6 +125,7 @@ export class NotesView {
             // The view may be gone once the service answers: destroy()
             // drops this._service (a rename commits when the screen locks).
             onSelect: async name => {
+                this._finishEdit();
                 await service.select(name);
                 if (this._service)
                     this._focusEditor();
@@ -132,7 +153,8 @@ export class NotesView {
         });
         this._toolsButton.connect('clicked', () => this._focusEditor());
         this._tabs.actor.add_child(this._toolsButton);
-        this._formatBar = new FormatBar(edit => this._applyEdit(edit), () => this._chooseImage());
+        this._formatBar = new FormatBar(edit => this._applyEdit(edit), () => this._chooseImage(),
+            this._toolsTooltip);
         this._colorPicker = new ColorPicker({
             onPick: color => service.setColor(color),
             // The swatches take the formatting bar's place while open.
@@ -165,6 +187,8 @@ export class NotesView {
         grid.attach(editorArea, 0, 1, 1, 1); // first: drawn below the header
         grid.attach(header, 0, 0, 1, 1);
         overlay.add_child(this._tabs.tooltip);
+        overlay.add_child(this._blockTooltip.actor);
+        overlay.add_child(this._toolsTooltip.actor);
 
         // Wrap toggle (formatting bar) ↔ notes-wrap setting ↔ editor.
         this._settings.bind('notes-wrap', this._formatBar.wrapButton, 'checked',
@@ -186,6 +210,8 @@ export class NotesView {
     }
 
     destroy() {
+        this._imageCancellable?.cancel();
+        this._cancellable.cancel();
         this._closeUndoGroup();
         this._settings.disconnect(this._wrapId);
         this._settings.disconnect(this._toolsId);
@@ -203,9 +229,21 @@ export class NotesView {
     setActive(active) {
         if (!active) {
             this._labelMenu.close();
+            this._finishEdit();
             return;
         }
         this._focusEditor();
+    }
+
+    // Escape first drops a field or table open in the rendered note.
+    handleEscape() {
+        return this._styler.preview.cancel();
+    }
+
+    // A field or table open in the rendered note goes into it, before the
+    // note changes or goes.
+    _finishEdit() {
+        this._styler.preview.finish();
     }
 
     /**
@@ -231,14 +269,21 @@ export class NotesView {
     }
 
     async _create() {
+        this._finishEdit();
         await this._service.create();
         if (this._service)
             this._focusEditor();
     }
 
+    // Not while rendered: the source behind the preview is hidden.
+    // The source when it is shown; else the rendered view, for its keys.
     _focusEditor() {
-        if (this._service.selected !== null && this._scroll.visible)
+        if (this._service.selected === null || !this._scroll.visible)
+            return;
+        if (this._entry.visible)
             this._entry.clutter_text.grab_key_focus();
+        else
+            this._styler.preview.widget.grab_key_focus();
     }
 
     _buildEditor() {
@@ -259,10 +304,9 @@ export class NotesView {
         text.connect('text-changed', () => {
             if (!this._settings.get_boolean('notes-wrap'))
                 this._syncNoWrapWidth();
-            if (!this._syncing && !this._restoringUndo) {
-                this._recordUndo();
-                this._service.setText(text.text);
-            } else if (this._restoringUndo) {
+            if (!this._syncing) {
+                if (!this._restoringUndo)
+                    this._recordUndo();
                 this._service.setText(text.text);
             }
             this._syncFormatState();
@@ -273,29 +317,33 @@ export class NotesView {
             this._syncFormatState();
             this._refreshUndoSelection();
         });
-        text.connect('notify::selection-bound', () => this._refreshUndoSelection());
-        text.connect('key-press-event', (_text, event) => this._onEditorKeyPress(event));
-        text.connect('button-press-event', (_text, event) => {
-            if (this._service.readOnly)
-                return Clutter.EVENT_PROPAGATE;
-            const [hasCoords, stageX, stageY] = event.get_coords();
-            if (!hasCoords)
-                return Clutter.EVENT_PROPAGATE;
-            const [inside, x, y] = text.transform_stage_point(stageX, stageY);
-            if (!inside)
-                return Clutter.EVENT_PROPAGATE;
-            const offset = text.coords_to_position(x, y);
-            const replacement = toggleTask(text.text, offset);
-            if (replacement === null)
-                return Clutter.EVENT_PROPAGATE;
-            this._closeUndoGroup();
-            const cursor = text.cursor_position;
-            text.text = replacement;
-            text.set_cursor_position(Math.min(cursor, [...replacement].length));
-            return Clutter.EVENT_STOP;
+        text.connect('notify::selection-bound', () => {
+            this._syncFormatState();
+            this._refreshUndoSelection();
         });
+        text.connect('key-press-event', (_text, event) => this._onEditorKeyPress(event));
         // Bold looks bold, headings large: Markdown drawn rendered.
-        this._styler = new MarkdownStyler(this._entry, {folder: () => this._service?.folder ?? null});
+        this._styler = new MarkdownStyler(this._entry, {folder: () => this._service?.folder ?? null,
+            note: () => this._service?.selected ?? null,
+            contextMenu: (source, params) => this._ctx.contextMenu(source, params),
+            edit: (start, end, replacement) => this._replaceSource(start, end, replacement),
+            pasteImage: event => this._pasteImage(event),
+            // Edit Mermaid code's live picture, by the note's own renderer.
+            drawDiagram: source => this._styler.blocks.drawDiagram(source),
+            showFile: file => {
+                // Files comes up in front: the island lets go first.
+                this._ctx.collapse();
+                showInFileManager(file, global.create_app_launch_context(0, -1)).catch(error =>
+                    console.warn(`Froonty notes: could not show ${file.get_path()}: ${error.message}`));
+            },
+            tooltip: this._blockTooltip});
+        // Ctrl+Z is the note's, except in an open field or table; MD's
+        // Ctrl+Shift+M also comes up from them.
+        this._styler.preview.widget.connect('key-press-event', (_widget, event) => {
+            if (this._onMarkdownKey(event) === Clutter.EVENT_STOP)
+                return Clutter.EVENT_STOP;
+            return this._styler.preview.editing ? Clutter.EVENT_PROPAGATE : this._onUndoKey(event);
+        });
 
         // St.Entry is not scrollable itself; a BoxLayout is. A click on the
         // box below the text (or on the entry's padding) focuses the editor
@@ -311,11 +359,16 @@ export class NotesView {
         // The formulas' pictures, drawn over the text (a layer of no size).
         box.add_child(this._styler.math.layer);
         // local:end notes-math
-        box.add_child(this._styler.blocks.layer);
         box.add_child(this._styler.preview.widget);
-        box.connect('button-press-event', () => {
-            if (this._styler.preview.widget.visible)
+        box.connect('button-press-event', (_box, event) => {
+            // Rendered: a click below the view gives it the keys, which
+            // writes an open field (clicks in it are its own).
+            const preview = this._styler.preview.widget;
+            if (preview.visible) {
+                if (!preview.contains(global.stage.get_event_actor(event)))
+                    preview.grab_key_focus();
                 return Clutter.EVENT_PROPAGATE;
+            }
             text.grab_key_focus();
             text.set_cursor_position(-1);
             text.set_selection_bound(-1);
@@ -383,18 +436,23 @@ export class NotesView {
         this._error.text = message ?? '';
         this._error.visible = Boolean(message);
         this._entry.clutter_text.editable = !this._service.readOnly;
-        this._styler?.setEditable(!this._service.readOnly);
+        this._styler.setEditable(!this._service.readOnly);
+        this._syncEditable();
 
         // Only replace the text when the service loaded something else;
         // never while it matches what the user is typing.
         if (this._entry.text !== text || this._undoNote !== selected) {
+            // Another note now (trashed, or chosen elsewhere): an edit still
+            // open was the previous note's, so it goes.
+            if (this._undoNote !== selected)
+                this._styler.preview.cancel();
             this._syncing = true;
             this._entry.text = text;
             this._syncing = false;
             this._closeUndoGroup();
             this._undo = [];
             this._redo = [];
-            this._undoState = this._captureUndoState();
+            this._undoState = this._editorState();
             this._undoNote = selected;
         }
         this._syncFormatState();
@@ -442,39 +500,98 @@ export class NotesView {
         this._closeUndoGroup();
         text.text = result.text;
         text.set_selection(result.start, result.end);
-        this._entry.grab_key_focus();
+        if (this._entry.visible)
+            this._entry.grab_key_focus();
     }
 
     async _chooseImage() {
         if (this._service.selected === null || this._service.readOnly)
             return;
         this._ctx.collapse();
+        const note = this._service.selected;
+        // destroy() closes the chooser, or stops the copy.
+        this._imageCancellable = new Gio.Cancellable();
+        const stillHere = () => this._service?.selected === note && !this._service.readOnly;
         try {
-            const name = await chooseImage(this._service.folder);
-            if (name && this._service && this._service.selected !== null && !this._service.readOnly)
+            // Copied only if it is still to go into the same note.
+            const path = await chooseImage(this._imageCancellable);
+            if (!path || !stillHere())
+                return;
+            const name = await copyImage(path, this._service.folder, this._imageCancellable);
+            if (stillHere())
                 this._applyEdit(state => Md.insertImage(state, name));
         } catch (e) {
-            console.warn(`Froonty notes: could not insert image: ${e.message}`);
+            if (!e.matches?.(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
+                console.warn(`Froonty notes: could not insert image: ${e.message}`);
         } finally {
+            this._imageCancellable = null;
             if (this._service)
                 this._ctx.expand();
         }
     }
 
-    _captureUndoState() {
+    // An edit made in the rendered view (preview.js): `replacement` in place
+    // of [start, end) (UTF-16) of the note, as an undo step of its own.
+    _replaceSource(start, end, replacement) {
+        if (this._service.readOnly)
+            return;
         const text = this._entry.clutter_text;
-        const chars = [...text.text];
-        const offset = position => position < 0 ? chars.length : position;
-        return {text: text.text, cursor: offset(text.cursor_position), bound: offset(text.selection_bound)};
+        this._closeUndoGroup();
+        text.text = text.text.slice(0, start) + replacement + text.text.slice(end);
+        this._closeUndoGroup();
     }
 
+    // Ctrl+V or Shift+Insert with an image on the clipboard and no text
+    // ("Copy image" in a browser): null for other keys or clipboards (a
+    // text paste goes on as usual), else a Promise of the Markdown
+    // reference of the image, saved into the note folder (null when the
+    // note changed meanwhile or it could not be saved).
+    _pasteImage(event) {
+        const state = event.get_state();
+        const key = event.get_key_symbol();
+        const paste = state & Clutter.ModifierType.CONTROL_MASK
+            ? key === Clutter.KEY_v || key === Clutter.KEY_V
+            : (state & Clutter.ModifierType.SHIFT_MASK) !== 0 && key === Clutter.KEY_Insert;
+        if (!paste || this._service.selected === null || this._service.readOnly)
+            return null;
+        const clipboard = St.Clipboard.get_default();
+        const types = clipboard.get_mimetypes(St.ClipboardType.CLIPBOARD);
+        const mime = types.find(type => imageExtension(type));
+        if (!mime || types.some(type => TEXT_TYPES.test(type)))
+            return null;
+        const note = this._service.selected;
+        const folder = this._service.folder;
+        const here = () => this._service?.selected === note;
+        // St frees the bytes once the callback returns: copied there.
+        return new Promise(resolve => clipboard.get_content(St.ClipboardType.CLIPBOARD, mime,
+            (_clipboard, bytes) => resolve(bytes?.toArray() ?? null)))
+            .then(async bytes => {
+                if (!bytes?.length || !here())
+                    return null;
+                const name = await saveImageBytes(bytes, mime, folder, this._cancellable);
+                return here() ? `![](${markdownImagePath(name)})` : null;
+            })
+            .catch(error => {
+                if (!error.matches?.(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
+                    console.warn(`Froonty notes: could not paste an image: ${error.message}`);
+                return null;
+            });
+    }
+
+    // The selection moved: the step to come back to keeps it. Only while
+    // the text is unchanged: setting it (an edit of the bar) moves the
+    // cursor before text-changed records the step, which must keep the
+    // text from before.
     _refreshUndoSelection() {
-        if (!this._restoringUndo && this._undoState)
-            this._undoState = this._captureUndoState();
+        if (this._restoringUndo || !this._undoState)
+            return;
+        const current = this._editorState();
+        if (current.text === this._undoState.text)
+            this._undoState = current;
     }
 
     _recordUndo() {
-        const current = this._captureUndoState();
+        const current = this._editorState();
         if (!this._undoState) {
             this._undoState = current;
             return;
@@ -506,17 +623,15 @@ export class NotesView {
     }
 
     _restoreUndoState(state) {
-        if (!state)
-            return;
         this._closeUndoGroup();
         const text = this._entry.clutter_text;
         this._restoringUndo = true;
         text.text = state.text;
         const length = [...state.text].length;
-        text.set_selection(Math.max(0, Math.min(state.bound, length)),
-            Math.max(0, Math.min(state.cursor, length)));
+        text.set_selection(Math.max(0, Math.min(state.start, length)),
+            Math.max(0, Math.min(state.end, length)));
         this._restoringUndo = false;
-        this._undoState = this._captureUndoState();
+        this._undoState = this._editorState();
     }
 
     _undoEdit(redo = false) {
@@ -525,36 +640,66 @@ export class NotesView {
         const target = redo ? this._undo : this._redo;
         if (!source.length)
             return;
-        target.push(this._captureUndoState());
+        target.push(this._editorState());
         this._restoreUndoState(source.pop());
     }
 
+    // Ctrl+Z, and Ctrl+Shift+Z or Ctrl+Y, in the source and in the rendered
+    // view (a task ticked there is an edit too).
+    _onUndoKey(event) {
+        if (!this._entry.clutter_text.editable ||
+            !(event.get_state() & Clutter.ModifierType.CONTROL_MASK))
+            return Clutter.EVENT_PROPAGATE;
+        const key = event.get_key_symbol();
+        const shift = (event.get_state() & Clutter.ModifierType.SHIFT_MASK) !== 0;
+        if (key === Clutter.KEY_z || key === Clutter.KEY_Z)
+            this._undoEdit(shift);
+        else if (key === Clutter.KEY_y || key === Clutter.KEY_Y)
+            this._undoEdit(true);
+        else
+            return Clutter.EVENT_PROPAGATE;
+        return Clutter.EVENT_STOP;
+    }
+
+    // Ctrl+Shift+M switches MD, also on a read-only note; the keys stay
+    // in the note.
+    _onMarkdownKey(event) {
+        if (formatShortcut(event.get_key_symbol(), event.get_key_code(), event.get_state()) !== 'markdown')
+            return Clutter.EVENT_PROPAGATE;
+        this._finishEdit();
+        this._settings.set_boolean('notes-markdown-source',
+            !this._settings.get_boolean('notes-markdown-source'));
+        this._focusEditor();
+        return Clutter.EVENT_STOP;
+    }
+
     _onEditorKeyPress(event) {
+        if (this._onMarkdownKey(event) === Clutter.EVENT_STOP)
+            return Clutter.EVENT_STOP;
+        // Ctrl+B and the others: the formatting bar's edits. Taken on a
+        // read-only note too, where they do nothing: St.Entry's own Ctrl+K
+        // deletes to the end even there.
+        const shortcut = formatShortcut(event.get_key_symbol(), event.get_key_code(), event.get_state());
+        if (shortcut) {
+            this._applyEdit(formatEdit(shortcut));
+            return Clutter.EVENT_STOP;
+        }
         if (!this._entry.clutter_text.editable)
             return Clutter.EVENT_PROPAGATE;
+        if (this._onUndoKey(event) === Clutter.EVENT_STOP)
+            return Clutter.EVENT_STOP;
+        const pasted = this._pasteImage(event);
+        if (pasted) {
+            pasted.then(reference => reference && this.insertText(reference));
+            return Clutter.EVENT_STOP;
+        }
         const key = event.get_key_symbol();
         const state = event.get_state();
         const ctrl = (state & Clutter.ModifierType.CONTROL_MASK) !== 0;
         const shift = (state & Clutter.ModifierType.SHIFT_MASK) !== 0;
-        if (ctrl && (key === Clutter.KEY_z || key === Clutter.KEY_Z)) {
-            this._undoEdit(shift);
-            return Clutter.EVENT_STOP;
-        }
-        if (ctrl && (key === Clutter.KEY_y)) {
-            this._undoEdit(true);
-            return Clutter.EVENT_STOP;
-        }
-        if (key === Clutter.KEY_Tab || key === Clutter.KEY_ISO_Left_Tab) {
-            const chars = [...this._entry.clutter_text.text];
-            const text = this._entry.clutter_text;
-            const length = chars.length;
-            const cursor = text.cursor_position < 0 ? length : text.cursor_position;
-            const bound = text.selection_bound < 0 ? length : text.selection_bound;
-            const from = Math.min(cursor, bound);
-            const to = Math.max(cursor, bound);
-            chars.splice(from, to - from, '\t');
-            text.text = chars.join('');
-            text.set_selection(from + 1, from + 1);
+        // Shift+Tab and Ctrl+Tab still move the focus.
+        if (key === Clutter.KEY_Tab && !ctrl && !shift) {
+            this.insertText('\t');
             return Clutter.EVENT_STOP;
         }
         return Clutter.EVENT_PROPAGATE;
@@ -572,7 +717,7 @@ export class NotesView {
     _applyWrap() {
         const wrap = this._settings.get_boolean('notes-wrap');
         this._entry.clutter_text.line_wrap = wrap;
-        this._styler?.setWrap(wrap);
+        this._styler.setWrap(wrap);
         this._scroll.hscrollbar_policy = wrap ? St.PolicyType.NEVER : St.PolicyType.AUTOMATIC;
         this._syncNoWrapWidth();
         this._keepCursorVisible();
@@ -581,7 +726,16 @@ export class NotesView {
     _syncMarkdownMode() {
         const source = this._settings.get_boolean('notes-markdown-source');
         this._formatBar.setMarkdownSource(source);
-        this._styler?.setRendered(!source);
+        this._styler.setRendered(!source);
+        this._syncEditable();
+        this._syncFormatState();
+    }
+
+    // Edits go to the Markdown source of a note that can be saved; the
+    // rendered preview is for reading and copying.
+    _syncEditable() {
+        this._formatBar.setEditable(!this._service.readOnly &&
+            this._settings.get_boolean('notes-markdown-source'));
     }
 
     // A scrolled view sizes its content by its minimum width, and

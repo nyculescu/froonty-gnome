@@ -5,16 +5,16 @@
 
 import Gio from 'gi://Gio';
 
-export const ICON_NAMES = {
+const ICON_NAMES = {
     move: 'froonty-move-symbolic',
     stand: 'froonty-stand-symbolic',
     sit: 'froonty-sit-symbolic',
     rest: 'froonty-rest-symbolic',
 };
-export const EYES_ICON = 'view-reveal-symbolic';
+const EYES_ICON = 'view-reveal-symbolic';
 
 /** One of the bundled pictograms (move, stand, sit, rest). */
-export const bundledIcon = name => new Gio.FileIcon({
+const bundledIcon = name => new Gio.FileIcon({
     file: Gio.File.new_for_uri(import.meta.url).get_parent().resolve_relative_path(
         `icons/hicolor/scalable/actions/${ICON_NAMES[name]}.svg`),
 });
@@ -26,10 +26,8 @@ export function subjectIcon(subject) {
         return new Gio.ThemedIcon({name: EYES_ICON});
     case 'movement':
         return bundledIcon('move');
-    case 'standing':
     case 'stand':
         return bundledIcon('stand');
-    case 'sitting':
     case 'sit':
         return bundledIcon('sit');
     default:

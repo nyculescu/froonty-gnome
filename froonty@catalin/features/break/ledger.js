@@ -9,15 +9,15 @@
 
 import GLib from 'gi://GLib';
 
+import {BREAK_TYPES} from '../../shell/breakEngine.js';
+
 // A pause shorter than this is reading, not being away.
 export const AWAY_MIN_SECONDS = 120;
 // Away this long: the posture is "sitting" again on return.
-export const POSTURE_RESET_AWAY_SECONDS = 3600;
+const POSTURE_RESET_AWAY_SECONDS = 3600;
 // A WallClock tick whose wall-clock step beats the monotonic one by this
 // much was a suspend.
-export const SUSPEND_DRIFT_SECONDS = 60;
-
-export const BREAK_TYPES = ['eyesight', 'movement'];
+const SUSPEND_DRIFT_SECONDS = 60;
 
 const two = n => String(n).padStart(2, '0');
 
@@ -53,7 +53,7 @@ export function emptyDay(day) {
 }
 
 /** Whether a day has anything worth a history row. */
-export function hasActivity(day) {
+function hasActivity(day) {
     return day.activeSeconds >= 1 || day.longRests > 0 ||
         BREAK_TYPES.some(t => day[t].taken + day[t].delayed + day[t].skipped > 0);
 }
@@ -66,14 +66,13 @@ export function freshState(now, days = LOCAL_DAYS) {
             accountedUntil: now,
             stretchStart: now,
             screenSinceLongRest: 0,
-            lastLongRestEnd: null,
             // Set while an idle period is open (Mutter's idle watch fired
             // and no input since); saved, so a lock that follows it is
             // counted from when the user left.
             idleStart: null,
         },
         breaks: {eyesight: counters(), movement: counters()},
-        posture: {mode: 'sitting', modeActiveSeconds: 0, notNowAt: null},
+        posture: {mode: 'sitting', modeActiveSeconds: 0},
         plan: {lastStepDay: null, minimumDay: null},
         exercise: {next: 0},
         today: emptyDay(days.dayKey(now)),
@@ -138,14 +137,11 @@ export function addAway(s, from, to, {movementSeconds, longRestSeconds}, days = 
         if (days.dayKey(start) === s.today.day)
             s.today.longRests++;
         l.screenSinceLongRest = 0;
-        l.lastLongRestEnd = to;
     }
     if (seconds >= movementSeconds)
         l.stretchStart = to;
-    if (seconds >= AWAY_MIN_SECONDS) {
+    if (seconds >= AWAY_MIN_SECONDS)
         s.posture.modeActiveSeconds = 0;
-        s.posture.notNowAt = null;
-    }
     if (seconds >= POSTURE_RESET_AWAY_SECONDS)
         s.posture.mode = 'sitting';
     l.accountedUntil = Math.max(l.accountedUntil ?? to, to);

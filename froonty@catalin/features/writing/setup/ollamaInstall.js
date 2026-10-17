@@ -21,8 +21,9 @@ import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import Soup from 'gi://Soup?version=3.0';
 
+import {baseUrl, startOwn, systemctlPath} from '../engines/ollama.js';
 import {WritingError} from '../errors.js';
-import {networkFailure, newSession, parseJson, request, sleep} from '../http.js';
+import {networkFailure, newSession, parseJson, request} from '../http.js';
 import {defaultPaths, override, SYSTEM_OLLAMA, UNIT_NAME} from '../paths.js';
 import {runProcess} from '../process.js';
 import {deleteFile, deleteTree, ensurePrivateDir, exists, fileType, readText,
@@ -41,24 +42,23 @@ Gio._promisify(Gio.OutputStream.prototype, 'close_async');
 Gio._promisify(Gio.InputStream.prototype, 'read_bytes_async');
 Gio._promisify(Gio.InputStream.prototype, 'close_async');
 
-export const RELEASE_API = 'https://api.github.com/repos/ollama/ollama/releases/latest';
-export const DOWNLOAD_PREFIX = 'https://github.com/ollama/ollama/releases/download/';
-export const MAX_ARCHIVE = 4000000000;
+const RELEASE_API = 'https://api.github.com/repos/ollama/ollama/releases/latest';
+const DOWNLOAD_PREFIX = 'https://github.com/ollama/ollama/releases/download/';
+const MAX_ARCHIVE = 4000000000;
 export const UNIT_MARKER = '# Created by Froonty (Settings → Writing → Ollama); Froonty\'s Remove deletes it.';
 const TAR = '/usr/bin/tar';
 const ZSTD = '/usr/bin/zstd';
 const CHUNK = 1024 * 1024;
 const PROGRESS_EVERY_US = 250 * 1000;
-const START_WAIT_MS = 15 * 1000;
 
 const ARCHES = {x86_64: 'amd64', aarch64: 'arm64'};
 
 /** Ollama's name for the processor: amd64, arm64, or null (unsupported). */
-export function ollamaArch(machine) {
+function ollamaArch(machine) {
     return ARCHES[String(machine ?? '').trim()] ?? null;
 }
 
-export function releaseApi() {
+function releaseApi() {
     return override('FROONTY_OLLAMA_RELEASE_API') ?? RELEASE_API;
 }
 
@@ -66,7 +66,7 @@ export function releaseApi() {
  * Where downloads may come from: GitHub's release downloads, or (tests)
  * the origin of the overridden release API.
  */
-export function downloadPrefix(api = releaseApi()) {
+function downloadPrefix(api = releaseApi()) {
     if (api === RELEASE_API)
         return DOWNLOAD_PREFIX;
     const match = /^(https?:\/\/[^/]+\/)/.exec(api);
@@ -149,7 +149,7 @@ function normalName(name) {
 }
 
 /** Whether `name` (no leading ./) may be in Ollama's archive. */
-export function allowedName(name, type) {
+function allowedName(name, type) {
     if (!NAME_CHARS.test(name) || name.startsWith('/') ||
         name.split('/').some(s => s === '..' || s === '.'))
         return false;
@@ -224,7 +224,7 @@ async function freeBytes(path) {
 }
 
 /** Default dependencies; tests replace any of them. */
-export function defaultDeps() {
+function defaultDeps() {
     return {
         paths: defaultPaths(),
         run: runProcess,
@@ -237,15 +237,14 @@ export function defaultDeps() {
         zstd: ZSTD,
         systemBinaries: SYSTEM_OLLAMA,
         freeBytes,
-        startWaitMs: START_WAIT_MS,
     };
 }
 
 function resolve(deps) {
     const all = {...defaultDeps(), ...deps};
-    all.url ??= override('FROONTY_OLLAMA_URL') ?? 'http://127.0.0.1:11434';
+    all.url ??= baseUrl();
     all.api ??= releaseApi();
-    all.systemctl ??= override('FROONTY_SYSTEMCTL') ?? '/usr/bin/systemctl';
+    all.systemctl ??= systemctlPath();
     all.session ??= newSession(30);
     return all;
 }
@@ -395,7 +394,7 @@ export async function download({session, url, partPath, size, sha256, cancellabl
 const TAR_ENV = {unset: [], set: {LC_ALL: 'C'}};
 
 /** `tar -tv` of the archive, checked (checkListing). */
-export async function listArchive({run, tar, part, cancellable = null}) {
+async function listArchive({run, tar, part, cancellable = null}) {
     const result = await run({argv: [tar, '--zstd', '-tvf', part], ...TAR_ENV, cancellable,
         timeoutMs: 120000, label: 'tar (Writing)'});
     if (!result.exitOk)
@@ -404,7 +403,7 @@ export async function listArchive({run, tar, part, cancellable = null}) {
 }
 
 /** Walks an extracted tree (no links followed) with the archive's rules. */
-export async function checkTree(root, relative = '') {
+async function checkTree(root, relative = '') {
     const dir = Gio.File.new_for_path(relative ? GLib.build_filenamev([root, relative]) : root);
     const enumerator = await dir.enumerate_children_async(
         'standard::name,standard::type,standard::symlink-target',
@@ -439,7 +438,7 @@ export async function checkTree(root, relative = '') {
  * system, so the move into place is a rename), checks the result, and
  * moves it into place.
  */
-export async function extract({run, tar, part, staging, prefix, root, cancellable = null}) {
+async function extract({run, tar, part, staging, prefix, root, cancellable = null}) {
     await deleteTree(staging, root);
     await ensurePrivateDir(staging);
     const result = await run({argv: [tar, '--zstd', '-xf', part, '-C', staging,
@@ -461,7 +460,7 @@ export async function extract({run, tar, part, staging, prefix, root, cancellabl
 }
 
 /** Writes the unit, unless a file there is not Froonty's. */
-export async function writeUnit(paths) {
+async function writeUnit(paths) {
     const current = await readText(paths.unitFile);
     if (current !== null && !hasMarker(current)) {
         throw new WritingError('failed',
@@ -481,18 +480,11 @@ async function systemctl(d, args, cancellable) {
     }
 }
 
-/** Starts the user service and waits until Ollama answers. */
+/** Starts the user service and waits until Ollama answers (ollama.js startOwn). */
 export async function startService(deps = {}, cancellable = null) {
     const d = resolve(deps);
-    await systemctl(d, ['start', UNIT_NAME], cancellable);
-    for (let waited = 0; waited <= d.startWaitMs; waited += 500) {
-        // eslint-disable-next-line no-await-in-loop
-        if (await answers(d.session, d.url))
-            return;
-        // eslint-disable-next-line no-await-in-loop
-        await sleep(500, cancellable);
-    }
-    throw new WritingError('timeout', 'Ollama did not answer within 15 s of starting.');
+    await startOwn({url: d.url, session: d.session, cancellable, run: d.run,
+        systemctl: d.systemctl, waitMs: d.startWaitMs});
 }
 
 export async function stopService(deps = {}, cancellable = null) {

@@ -17,9 +17,9 @@
 #          --public  run the `make pack` build (what extensions.gnome.org gets)
 #                    instead of the working tree
 #          --system-bus  reach your real system bus, filtered to
-#                    SYSTEM_BUS_NAMES (asusd: the Fan tab's laptop profile and
-#                    curves). It acts on this computer: a profile switched
-#                    in the devkit is switched for real.
+#                    SYSTEM_BUS_NAMES (asusd: the Fan settings page's laptop
+#                    profile and curves). It acts on this computer: a profile
+#                    switched in the devkit is switched for real.
 #        tools/devkit.sh run COMMAND…   run a command inside the running
 #                    sandbox, e.g. tools/devkit.sh run notify-send Hello World
 
@@ -48,10 +48,13 @@ if [[ "${1:-}" == "--inner" ]]; then
     audio="$audio $!"
     nice -n 10 /usr/bin/pipewire-pulse >"$SANDBOX/pipewire-pulse.log" 2>&1 &
     audio="$audio $!"
-    shell=
-    # Ctrl+C or a kill: the devkit window first (the Shell's child), then
-    # the Shell and the sandbox's PipeWire.
-    trap '[[ -n "$shell" ]] && { pkill -P "$shell" -f mutter-devkit; kill "$shell"; wait "$shell"; } 2>/dev/null
+    shell= viewer=
+    # Ctrl+C, a kill or the Shell ending: the devkit window first (the
+    # Shell's child, found while it is one: once the Shell is gone it is
+    # not, and would stay on the desktop, frozen), then the Shell and the
+    # sandbox's PipeWire.
+    trap '[[ -n "$viewer" ]] && kill $viewer 2>/dev/null
+        [[ -n "$shell" ]] && { kill "$shell"; wait "$shell"; } 2>/dev/null
         kill $audio 2>/dev/null; rm -f "$SANDBOX/env"' EXIT
     trap 'exit 130' INT TERM
     trap 'exit 129' HUP
@@ -67,6 +70,7 @@ if [[ "${1:-}" == "--inner" ]]; then
         [[ -S "$XDG_RUNTIME_DIR/$NESTED_DISPLAY" ]] && break
         sleep 0.2
     done
+    viewer=$(pgrep -P "$shell" -f mutter-devkit)
     /usr/bin/dbus-update-activation-environment WAYLAND_DISPLAY="$NESTED_DISPLAY" GDK_BACKEND=wayland
     {
         echo "DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS"
@@ -196,16 +200,19 @@ fi
 # logind or GDM (it would register a session and follow the real locks).
 SYSTEM_BUS_NAMES=${SYSTEM_BUS_NAMES:-xyz.ljones.Asusd}
 rm -f "$SANDBOX/system_bus"
+# Ended with this script however it ends (the trap below misses a killed
+# terminal): a bus left behind holds inotify instances, which then run out.
+die_with_us=(/usr/bin/setpriv --pdeathsig TERM)
 if [[ -n "$SYSTEM_BUS" ]]; then
     talk=()
     for name in $SYSTEM_BUS_NAMES; do
         talk+=("--talk=$name")
     done
-    /usr/bin/xdg-dbus-proxy "${DBUS_SYSTEM_BUS_ADDRESS:-unix:path=/run/dbus/system_bus_socket}" \
+    "${die_with_us[@]}" /usr/bin/xdg-dbus-proxy "${DBUS_SYSTEM_BUS_ADDRESS:-unix:path=/run/dbus/system_bus_socket}" \
         "$SANDBOX/system_bus" --filter "${talk[@]}" >"$SANDBOX/system_bus.log" 2>&1 &
     echo "devkit: the real system bus, only for $SYSTEM_BUS_NAMES"
 else
-    /usr/bin/dbus-daemon --session --nofork --address="unix:path=$SANDBOX/system_bus" \
+    "${die_with_us[@]}" /usr/bin/dbus-daemon --session --nofork --address="unix:path=$SANDBOX/system_bus" \
         >"$SANDBOX/system_bus.log" 2>&1 &
 fi
 system_bus=$!

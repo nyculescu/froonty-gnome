@@ -30,19 +30,20 @@ import {OneShot, PEEK_MS, SwipeTracker, glibTimers, peekText, pillAccessibleText
 import {acquireMedia, releaseMedia} from './shared.js';
 
 const WING_GAP = 8;
+// MediaBars' default size: three 2.5 px bars, 2 px apart.
 const BARS_WIDTH = 3 * 2.5 + 2 * 2;
 
 export class MediaPillAccessory extends Emitter {
-    /**
-     * @param {object} ctx feature context {settings, memory}
-     * @param {object} island {pill}: the pill, for its colour behind the art
-     */
     /** Whether a click on the pill showing music opens the Media tab. */
     get opensTab() {
         return (this.showing || this.peekText !== null) &&
             this._settings.get_boolean('media-pill-opens-tab');
     }
 
+    /**
+     * @param {object} ctx feature context {settings, memory}
+     * @param {object} island {pill}: the pill, for its colour behind the art
+     */
     constructor(ctx, {pill}) {
         super();
         this._settings = ctx.settings;
@@ -68,7 +69,6 @@ export class MediaPillAccessory extends Emitter {
             },
         });
         this.leading = new St.Widget({
-            style_class: 'froonty-media-wing',
             layout_manager: new Clutter.BinLayout(),
             y_align: Clutter.ActorAlign.CENTER,
             visible: false,
@@ -76,10 +76,9 @@ export class MediaPillAccessory extends Emitter {
         });
         this._art.x_align = Clutter.ActorAlign.START;
         this.leading.add_child(this._art);
-        this._bars = new MediaBars({count: 3, barWidth: 2.5, height: 12, gap: 2});
+        this._bars = new MediaBars();
         this._bars.x_align = Clutter.ActorAlign.END;
         this.trailing = new St.Widget({
-            style_class: 'froonty-media-wing',
             layout_manager: new Clutter.BinLayout(),
             y_align: Clutter.ActorAlign.CENTER,
             visible: false,
@@ -178,9 +177,9 @@ export class MediaPillAccessory extends Emitter {
         }
         const wanted = this._wanted;
         this._bars.setEnabled(this._settings.get_boolean('media-animate-bars'));
-        this._bars.setPlaying(Boolean(playback?.playing) && wanted);
+        this._bars.setPlaying(wanted);
         this._bars.opacity = wanted ? 255 : 0;
-        this._setWings(wanted || Boolean(this.peekText), true);
+        this._setWings(wanted || Boolean(this.peekText));
         this._syncAccessible();
     }
 
@@ -204,11 +203,11 @@ export class MediaPillAccessory extends Emitter {
 
     // Appear: room first (the island eases the width on 'changed'), then
     // the wings fade in. Depart: fade out, then the room goes.
-    _setWings(on, animate) {
+    _setWings(on) {
         if (on === this._wings)
             return;
         this._wings = on;
-        const duration = animate ? this._settings.get_int('animation-duration') : 0;
+        const duration = this._settings.get_int('animation-duration');
         for (const wing of [this.leading, this.trailing])
             wing.remove_all_transitions();
         if (on) {
@@ -231,8 +230,6 @@ export class MediaPillAccessory extends Emitter {
             }
         } else {
             const done = () => {
-                if (this._wings)
-                    return;
                 for (const wing of [this.leading, this.trailing])
                     wing.hide();
                 this._setWantArt(false);

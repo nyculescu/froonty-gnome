@@ -74,7 +74,7 @@ class ExerciseCard extends St.BoxLayout {
                 x_align: Clutter.ActorAlign.CENTER,
             }));
             row.add_child(column);
-            this.frames.push({icon, picture, frame});
+            this.frames.push({icon, picture});
         });
         this.add_child(row);
 

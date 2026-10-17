@@ -23,7 +23,7 @@ import {formatTrayRecord, parseTrayRecord, trayOffPlan, trayOnPlan, trayShortcut
 
 const GNOME_SCHEMA = 'org.gnome.shell.keybindings';
 const GNOME_KEY = 'toggle-message-tray';
-export const BACKUP_KEY = 'clipboard-switcher-tray-backup';
+const BACKUP_KEY = 'clipboard-switcher-tray-backup';
 export const SHORTCUT_KEY = 'clipboard-switcher-shortcut';
 
 /** GNOME's keybinding settings, or null when this GNOME has no such key. */
@@ -40,11 +40,6 @@ export class MessageTrayKey {
     constructor(settings, gnome = gnomeKeybindings()) {
         this._settings = settings;
         this._gnome = gnome;
-    }
-
-    /** Whether Froonty changed GNOME's key and has not given it back yet. */
-    get changed() {
-        return this._record() !== null;
     }
 
     /** The switcher is on (it may have been on already: then nothing changes). */

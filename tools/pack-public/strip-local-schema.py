@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Remove working-tree-only keys from a staged schema.
 
-Keys named zerotier-*, writing-*, formulas-* and timezone-planner-* go,
+Keys named zerotier-*, writing-*, formulas-*, timezone-planner-* and fan-* go,
 and so do comments starting with "local-only". Each feature's required key
 must be there, so a renamed key cannot slip into a public build unnoticed.
 """
@@ -9,10 +9,10 @@ must be there, so a renamed key cannot slip into a public build unnoticed.
 import sys
 import xml.etree.ElementTree as ET
 
-PREFIXES = ("zerotier-", "writing-", "formulas-", "timezone-planner-")
+PREFIXES = ("zerotier-", "writing-", "formulas-", "timezone-planner-", "fan-")
 REQUIRED = (
     "zerotier-enabled", "writing-enabled", "formulas-enabled",
-    "timezone-planner-cities", "timezone-planner-favorites",
+    "timezone-planner-cities", "timezone-planner-favorites", "fan-llano-path",
 )
 
 path = sys.argv[1]

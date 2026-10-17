@@ -26,18 +26,20 @@ const EXPECTED_SAFETY = [
 
 test('the argv is fixed: every safety flag, the model, the action\'s prompt', () => {
     eq(SAFETY_FLAGS, EXPECTED_SAFETY);
-    eq(claudeArgv(BIN, 'grammar', 'haiku'), [BIN, '-p', ...EXPECTED_SAFETY, '--model=haiku',
+    const grammar = {system: systemPrompt('grammar')};
+    eq(claudeArgv(BIN, grammar, 'haiku'), [BIN, '-p', ...EXPECTED_SAFETY, '--model=haiku',
         `--system-prompt=${systemPrompt('grammar')}`]);
-    eq(claudeArgv(BIN, 'formal', 'sonnet'), [BIN, '-p', ...EXPECTED_SAFETY, '--model=sonnet',
-        '--effort=low', `--system-prompt=${systemPrompt('formal')}`]);
-    for (const [action, model] of [['grammar', 'opus'], ['grammar', 'fable'], ['run', 'haiku']]) {
+    eq(claudeArgv(BIN, {system: systemPrompt('formal')}, 'sonnet'), [BIN, '-p', ...EXPECTED_SAFETY,
+        '--model=sonnet', '--effort=low', `--system-prompt=${systemPrompt('formal')}`]);
+    for (const [request, model, what] of [[grammar, 'opus', 'opus'], [grammar, 'fable', 'fable'],
+        [{}, 'haiku', 'no system prompt']]) {
         let threw = false;
         try {
-            claudeArgv(BIN, action, model);
+            claudeArgv(BIN, request, model);
         } catch (e) {
             threw = true;
         }
-        ok(threw, `${action} ${model} refused`);
+        ok(threw, `${what} refused`);
     }
 });
 
@@ -145,7 +147,7 @@ test('injection: 200 hostile texts never change the argv and only go on stdin', 
             cache, deps});
         eq(result.text, 'Fake rewrite.');
         const call = log[log.length - 1];
-        eq(call.argv, claudeArgv(BIN, 'formal', 'haiku'));
+        eq(call.argv, claudeArgv(BIN, {system: systemPrompt('formal')}, 'haiku'));
         for (const flag of SAFETY_FLAGS)
             eq(call.argv.filter(a => a === flag).length, 1, flag);
         ok(call.argv.every(a => !a.includes(text)), 'the text is not in argv');
@@ -216,7 +218,7 @@ test('a real run: argv, private folder, environment and stdin as planned', async
         GLib.unsetenv('ANTHROPIC_API_KEY');
     }
     // "$@": the arguments after the program itself.
-    eq(readFile(`${dir}/run.argv`).split('\0').slice(0, -1), claudeArgv(bin, 'formal', 'haiku').slice(1));
+    eq(readFile(`${dir}/run.argv`).split('\0').slice(0, -1), claudeArgv(bin, {system: systemPrompt('formal')}, 'haiku').slice(1));
     eq(readFile(`${dir}/run.cwd`).trim(), paths.runtimeDir);
     eq(fileMode(paths.runtimeDir), 0o700);
     const env = readFile(`${dir}/run.env`);

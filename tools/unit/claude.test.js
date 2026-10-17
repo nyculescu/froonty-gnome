@@ -5,7 +5,7 @@
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 
-import {test, eq, ok, done} from './test.js';
+import {test, eq, ok, done, sleep, waitFor} from './test.js';
 import * as Usage from '../../froonty@catalin/features/claude/usage.js';
 import * as Setup from '../../froonty@catalin/features/claude/statusLineSetup.js';
 import {ClaudeService} from '../../froonty@catalin/features/claude/service.js';
@@ -169,7 +169,6 @@ const statusFileData = ({writtenAtMs = WRITTEN, session = 41, weekly = 35} = {})
 
 test('statusLine: Session and Weekly from rate_limits, resets in ms', () => {
     const status = Usage.statusLineFromFile(statusFileData());
-    eq(status.writtenAt, WRITTEN);
     eq(status.windows.map(w => [w.id, w.percent, w.resetsAt, w.fetchedAt]), [
         ['session', 41, Date.parse(SESSION_RESET), WRITTEN],
         ['weekly', 35, Date.parse(WEEK_RESET), WRITTEN],
@@ -545,7 +544,8 @@ test('statusline.py: saves rate_limits for Froonty and prints the line', () => {
     eq(Object.keys(saved).sort(), ['rate_limits', 'writtenAtMs'], 'nothing but the usage is kept');
     const status = Usage.statusLineFromFile(saved);
     eq(status.windows.map(w => w.percent), [13.4, 33]);
-    ok(Math.abs(status.writtenAt - Date.now()) < 10000);
+    ok(status.windows.every(w => w.fetchedAt === saved.writtenAtMs));
+    ok(Math.abs(saved.writtenAtMs - Date.now()) < 10000);
 });
 
 test('statusline.py: an idle session\'s older numbers do not replace newer ones', () => {
@@ -595,21 +595,6 @@ test('minutesSince: whole minutes, never negative', () => {
 });
 
 // ---- service
-
-const sleep = ms => new Promise(resolve => GLib.timeout_add(GLib.PRIORITY_DEFAULT, ms,
-    () => {
-        resolve();
-        return GLib.SOURCE_REMOVE;
-    }));
-
-async function waitFor(predicate, timeoutMs = 3000) {
-    for (let waited = 0; waited < timeoutMs; waited += 20) {
-        if (predicate())
-            return true;
-        await sleep(20);
-    }
-    return predicate();
-}
 
 // Just what the service uses of Gio.NetworkMonitor.
 class FakeNetwork {

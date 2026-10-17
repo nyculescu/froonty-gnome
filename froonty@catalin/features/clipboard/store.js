@@ -12,13 +12,10 @@
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 
+import {deleteQuietly, makeDirectory, makePrivateDirectory, writePrivate} from '../../core/privateFile.js';
 import {validEntries} from './entries.js';
 
-for (const method of ['make_directory_async', 'load_contents_async', 'delete_async',
-    'enumerate_children_async'])
-    Gio._promisify(Gio.File.prototype, method);
-Gio._promisify(Gio.File.prototype, 'replace_contents_bytes_async', 'replace_contents_finish');
-Gio._promisify(Gio.File.prototype, 'set_attributes_async', 'set_attributes_finish');
+Gio._promisify(Gio.File.prototype, 'enumerate_children_async');
 Gio._promisify(Gio.FileEnumerator.prototype, 'next_files_async');
 Gio._promisify(Gio.FileEnumerator.prototype, 'close_async');
 
@@ -43,9 +40,9 @@ export class ClipboardStore {
     }
 
     /** The history, newest first; [] when there is none or it is unreadable. */
-    async load(cancellable = null) {
+    async load() {
         try {
-            const [bytes] = await this.folder.get_child(HISTORY).load_contents_async(cancellable);
+            const [bytes] = await this.folder.get_child(HISTORY).load_contents_async(null);
             return validEntries(JSON.parse(new TextDecoder().decode(bytes)));
         } catch (e) {
             return [];
@@ -55,7 +52,7 @@ export class ClipboardStore {
     save(entries) {
         const text = JSON.stringify({format: FORMAT, entries});
         return this._enqueue(async () => {
-            await this._ensureFolder();
+            await makePrivateDirectory(this.folder);
             await writePrivate(this.folder.get_child(HISTORY), new TextEncoder().encode(text));
         });
     }
@@ -67,15 +64,15 @@ export class ClipboardStore {
 
     writeImage(name, bytes) {
         return this._enqueue(async () => {
-            await this._ensureFolder();
+            await makePrivateDirectory(this.folder);
             await makeDirectory(this.folder.get_child(IMAGES));
             await writePrivate(this.imageFile(name), bytes);
         });
     }
 
     /** @returns {Promise<GLib.Bytes>} */
-    async readImage(name, cancellable = null) {
-        const [bytes] = await this.imageFile(name).load_contents_async(cancellable);
+    async readImage(name) {
+        const [bytes] = await this.imageFile(name).load_contents_async(null);
         return new GLib.Bytes(bytes);
     }
 
@@ -103,44 +100,6 @@ export class ClipboardStore {
         const run = this._queue.then(task);
         this._queue = run.catch(() => {});
         return run;
-    }
-
-    // Created on the first write, readable by the user only.
-    async _ensureFolder() {
-        await makeDirectory(this.folder);
-        const info = new Gio.FileInfo();
-        info.set_attribute_uint32('unix::mode', 0o700);
-        await this.folder.set_attributes_async(info, Gio.FileQueryInfoFlags.NOFOLLOW_SYMLINKS,
-            PRIORITY, null);
-    }
-}
-
-// g_file_replace writes a temporary file and renames it into place, so a
-// crash never leaves half a file; PRIVATE makes it 0600.
-async function writePrivate(file, data) {
-    const bytes = data instanceof GLib.Bytes ? data : new GLib.Bytes(data);
-    await file.replace_contents_bytes_async(bytes, null, false,
-        Gio.FileCreateFlags.PRIVATE | Gio.FileCreateFlags.REPLACE_DESTINATION, null);
-}
-
-async function makeDirectory(dir) {
-    try {
-        await dir.make_directory_async(PRIORITY, null);
-    } catch (e) {
-        if (e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.EXISTS))
-            return;
-        if (!e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.NOT_FOUND) || !dir.get_parent())
-            throw e;
-        await makeDirectory(dir.get_parent());
-        await dir.make_directory_async(PRIORITY, null);
-    }
-}
-
-async function deleteQuietly(file) {
-    try {
-        await file.delete_async(PRIORITY, null);
-    } catch (e) {
-        // Already gone.
     }
 }
 

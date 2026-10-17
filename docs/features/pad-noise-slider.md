@@ -11,10 +11,11 @@ laptop power or fan profile.
 ## Noise stages
 
 The slider runs from 300 to 2,800 RPM in the pad's own 50 RPM steps (its
-display: 300, 350, 400, ...): the knob snaps to them while dragging, and
-the keyboard and scroll wheel move one step. The noise stages are colored
-dots on the slider's track, where the knob sits for that speed; hovering
-one shows its name and RPM, and clicking it goes there. The stages come
+display: 300, 350, 400, ...): the knob snaps to them while dragging, the
+scroll wheel moves one step, and the arrow keys move five (250 RPM, GNOME's
+fixed keyboard step). The noise stages are colored dots on the slider's
+track, where the knob sits for that speed; hovering one shows its name and
+RPM, and clicking it goes there. The stages come
 from the measurements and RPM mapping in
 [llano-v12-linux/NOISE.md](../../third_party/llano-v12-linux/NOISE.md)
 (the dB column below is for reference; the slider does not show it). They
@@ -38,9 +39,11 @@ llano command failing.
 - Slider movement is briefly debounced; the latest target is sent while
   dragging, and an in-flight command is followed by the newest target.
 - Froonty reads the pad's current RPM when it is connected and does not
-  overwrite that speed on startup or reconnection.
-- The slider and estimates are independent of the manual controls in Fan
-  settings, the pad's roller, and any ASUS laptop profile.
+  overwrite that speed on startup or reconnection. It checks for the pad
+  and its speed when the slider is added and then every 5 seconds while
+  Quick Settings is open; it does not poll while the menu is closed.
+- The slider is independent of the manual controls in Fan settings, the
+  pad's roller, and any ASUS laptop profile; it follows a speed they set.
 - A lock or llano command failure is shown under the slider. Disconnecting
   the pad disables the slider until it is detected again.
 
@@ -48,6 +51,6 @@ llano command failing.
 
 - `froonty@catalin/features/padNoiseSlider/quickSlider.js`: Quick Settings
   slider, USB detection and RPM updates.
-- `froonty@catalin/features/padNoiseSlider/noiseStages.js`: RPM scale and
-  its 50 RPM steps, stage markers and display estimates.
+- `froonty@catalin/features/padNoiseSlider/noiseStages.js`: RPM scale,
+  its 50 RPM steps and the stage markers.
 - Setting: `cooling-slider-enabled`.

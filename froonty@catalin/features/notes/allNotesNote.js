@@ -2,21 +2,32 @@
 // The "All notes" page's note pane (settings window; GTK 4 + libadwaita, so
 // nothing from the Shell side): the open note's header (colour, name,
 // labels, a Labels menu and the fold button), the island's formatting bar
-// and a Markdown editor with undo, drawn rendered as in the island
-// (allNotesStyler.js): inline Markdown stays formatted while editing.
+// and the note, drawn rendered (allNotesStyler.js) to read and copy, or as
+// its Markdown source, to edit with undo (MD).
 //
 //   ● Plan                       q4 · work  [Labels ▾] [⤴]
-//   [B][I][S][H][•][1.][☑][</>][🔗][MD][↩]               formatting bar
+//   [B][I][S][H][•][1.][☑][</>][🔗][🖼][MD][↩]           formatting bar
 //   ┌────────────────────────────────────────────────────┐
 //   │ Q4 plan                                            │  matches of the
 //   │ Ship the café menu by **Friday**                   │  search marked
 //   └────────────────────────────────────────────────────┘
 //
-// The bar edits the buffer as one user action (one undo step), saved like
-// typing; its toggles follow the cursor. Wrap lines (notes-wrap) and the
-// fold button (notes-show-tools) are the island's settings, so both
-// editors look alike. A read-only note leaves the formatting buttons
-// insensitive.
+// The bar edits the source as one user action (one undo step), saved like
+// typing; its toggles follow the cursor. Wrap lines (notes-wrap), MD
+// (notes-markdown-source) and the fold button (notes-show-tools) are the
+// island's settings, so both editors look alike. The buttons that edit are
+// insensitive while rendered and on a read-only note; in the rendered view,
+// task checks toggle, a click edits a paragraph in place and Edit table a
+// table (allNotesStyler.js), each one user action too.
+//
+// Keyboard shortcuts (formatActions.js), as note.bold, …: the bar's edits
+// (Ctrl+B, …) in the source of an editable note and in a field open in the
+// rendered view; note.markdown (Ctrl+Shift+M) switches MD whenever a note
+// is shown.
+//
+// An image pasted (one on the clipboard with no text, as a browser's Copy
+// image puts it) into the source or a field is saved beside the note
+// ("pasted-2026-10-16-1405.png") and referenced at the cursor.
 //
 // Saving goes through a NoteWriter, as in the island: after a pause in
 // typing, never over a version changed elsewhere (ours is then kept as
@@ -31,22 +42,58 @@
 // in the new folder.
 
 import Adw from 'gi://Adw';
+import Gdk from 'gi://Gdk';
 import Gio from 'gi://Gio';
+import GLib from 'gi://GLib';
+import GObject from 'gi://GObject';
 import Gtk from 'gi://Gtk';
 import Pango from 'gi://Pango';
 
 import {gettext as _} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
 import {FormatBar} from './allNotesFormatBar.js';
-import {MarkdownStyler} from './allNotesStyler.js';
+import {bufferState, editBuffer, insertAtCursor, MarkdownStyler, replaceText} from './allNotesStyler.js';
+import {formatActions, formatShortcut} from './formatActions.js';
 import * as Labels from './labels.js';
 import {NoteWriter} from './noteWriter.js';
-import {chooseImage} from './renderer/image-picker.js';
+import {markdownImagePath} from './renderer/imageFile.js';
+import {chooseImage, copyImage, saveImageBytes} from './renderer/image-picker.js';
 import {charOffsets, toggleTask} from './render.js';
 import * as Md from './markdown.js';
-import {fold, sourceRange, terms} from './search.js';
+import {fold, rangesIn, terms} from './search.js';
+
+Gio._promisify(Gdk.Clipboard.prototype, 'read_async');
+Gio._promisify(Gdk.Clipboard.prototype, 'read_texture_async');
+Gio._promisify(Gio.OutputStream.prototype, 'splice_async');
 
 const isError = (e, code) => e?.matches?.(Gio.IOErrorEnum, code) ?? false;
+
+const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+const TEXT_TYPES = ['text/plain', 'text/plain;charset=utf-8', 'UTF8_STRING'];
+
+// The image on `clipboard` when it holds one and no text: a promise of
+// {bytes (GLib.Bytes), mime}, the bytes as copied when notes take their
+// type (PNG, JPEG, GIF, WebP), else the picture as PNG; null otherwise (a
+// text paste).
+function pastedImageData(clipboard) {
+    const formats = clipboard.get_formats();
+    if (formats.contain_gtype(GObject.TYPE_STRING) || TEXT_TYPES.some(type => formats.contain_mime_type(type)))
+        return null;
+    const mime = IMAGE_TYPES.find(type => formats.contain_mime_type(type));
+    if (mime) {
+        return clipboard.read_async([mime], GLib.PRIORITY_DEFAULT, null).then(async ([stream]) => {
+            const output = Gio.MemoryOutputStream.new_resizable();
+            await output.splice_async(stream, Gio.OutputStreamSpliceFlags.CLOSE_SOURCE |
+                Gio.OutputStreamSpliceFlags.CLOSE_TARGET, GLib.PRIORITY_DEFAULT, null);
+            return {bytes: output.steal_as_bytes(), mime};
+        });
+    }
+    if (formats.contain_gtype(Gdk.Texture.$gtype)) {
+        return clipboard.read_texture_async(null)
+            .then(texture => ({bytes: texture.save_to_png_bytes(), mime: 'image/png'}));
+    }
+    return null;
+}
 
 // ⤴ / ⤵: the island's bundled symbolic icons, by path.
 const foldIcon = name => new Gio.FileIcon({
@@ -63,13 +110,15 @@ export class NotePane {
      * @param {Function} callbacks.onRescued (name, copy) text that could not
      *   be saved in the previous folder was kept as `copy` in the new one
      * @param {Function} callbacks.onError (message)
+     * @param {Function} callbacks.onRename (name, text) the title was edited
      */
-    constructor(library, settings, {onConflict, onRescued, onError}) {
+    constructor(library, settings, {onConflict, onRescued, onError, onRename}) {
         this._library = library;
         this._settings = settings;
         this._onConflict = onConflict;
         this._onRescued = onRescued;
         this._onError = onError;
+        this._onRename = onRename;
         this._writer = null;
         this._writerStore = null;
         this._showing = 0;
@@ -104,12 +153,72 @@ export class NotePane {
         this._stack.visible_child_name = 'empty';
         this.widget = this._stack;
 
-        // The formatting buttons edit only an open, editable note.
-        const syncEditable = () => this._formatBar.setEditable(
-            this.name !== null && this._stack.visible_child_name === 'note' && this._view.editable);
+        // The formatting buttons edit only an open, editable note's source,
+        // and light only then.
+        const syncEditable = () => {
+            this._formatBar.setEditable(this._editing());
+            this._syncFormatState();
+        };
         this._stack.connect('notify::visible-child-name', syncEditable);
         this._view.connect('notify::editable', syncEditable);
+        this._formatBar.markdownButton.connect('notify::active', syncEditable);
         syncEditable();
+
+        // Undo and redo in both views (a task ticked in the rendered one is
+        // an edit too). The source view has Ctrl+Z and Ctrl+Shift+Z itself.
+        const actions = new Gio.SimpleActionGroup();
+        for (const name of ['undo', 'redo']) {
+            const action = new Gio.SimpleAction({name});
+            action.connect('activate', () => {
+                if (this.name !== null && this._view.editable)
+                    this._buffer[name]();
+            });
+            actions.add_action(action);
+        }
+        // The bar's edits: on an open field, else on the source (MD) of an
+        // editable note (_applyEdit). MD keeps the keys in the note.
+        for (const {id, edit} of formatActions(_)) {
+            const action = new Gio.SimpleAction({name: id});
+            action.connect('activate', () => {
+                if (!this._styler.editField(edit))
+                    this._applyEdit(edit);
+            });
+            actions.add_action(action);
+        }
+        const markdown = new Gio.SimpleAction({name: 'markdown'});
+        markdown.connect('activate', () => {
+            if (this.name === null)
+                return;
+            const source = this._formatBar.markdownButton;
+            source.active = !source.active;
+            if (source.active)
+                this._view.grab_focus();
+            else
+                this._styler.focusRendered();
+        });
+        actions.add_action(markdown);
+        this._stack.insert_action_group('note', actions);
+        const shortcuts = new Gtk.ShortcutController();
+        for (const [trigger, name] of [['<Control>z', 'undo'], ['<Control><Shift>z', 'redo'], ['<Control>y', 'redo']]) {
+            shortcuts.add_shortcut(new Gtk.Shortcut({
+                trigger: Gtk.ShortcutTrigger.parse_string(trigger),
+                action: Gtk.NamedAction.new(`note.${name}`),
+            }));
+        }
+        this._stack.add_controller(shortcuts);
+        // The formatting shortcuts, from the note's views and fields only
+        // (not the title or the Labels menu). A key controller, not
+        // shortcut triggers: a shifted digit (Ctrl+Shift+8) is matched by
+        // its key, whose keyval is the layout's symbol (formatShortcut).
+        const formatKeys = new Gtk.EventControllerKey();
+        formatKeys.connect('key-pressed', (_controller, keyval, keycode, state) => {
+            const shortcut = formatShortcut(keyval, keycode, state);
+            if (!shortcut)
+                return false;
+            this._styler.widget.activate_action(`note.${shortcut}`, null);
+            return true;
+        });
+        this._styler.widget.add_controller(formatKeys);
     }
 
     /** The writer for the library's current folder. */
@@ -117,8 +226,9 @@ export class NotePane {
         return this._writer;
     }
 
-    /** Saves unsaved edits now. @returns {Promise} */
+    /** Saves unsaved edits now, an open field's too. @returns {Promise} */
     flush() {
+        this._styler.endEditing(true);
         return this._writer?.flush() ?? Promise.resolve();
     }
 
@@ -284,7 +394,8 @@ export class NotePane {
     }
 
     /**
-     * Marks the matches of a search in the note.
+     * Marks the matches of a search in the note, in both views, and
+     * scrolls them to the first.
      *
      * @returns {?number} character offset of the first match
      */
@@ -292,16 +403,10 @@ export class NotePane {
         this._query = query ?? '';
         const buffer = this._buffer;
         buffer.remove_tag(this._matchTag, buffer.get_start_iter(), buffer.get_end_iter());
-        const words = terms(this._query);
-        if (!words.length || this.name === null)
-            return null;
+        const words = this.name === null ? [] : terms(this._query);
         const text = buffer.text;
-        const f = fold(text);
-        const ranges = [];
-        for (const word of words) {
-            for (let at = f.folded.indexOf(word); at >= 0; at = f.folded.indexOf(word, at + word.length))
-                ranges.push(sourceRange(f, at, at + word.length));
-        }
+        const ranges = rangesIn(fold(text), words);
+        this._styler.setMatches(ranges);
         if (!ranges.length)
             return null;
         const offsets = charOffsets(text, ranges.flat());
@@ -315,11 +420,18 @@ export class NotePane {
         return first;
     }
 
-    /** Enter in the search: into the note, at the first match or the end. */
+    /**
+     * Enter in the search: into the note, at the first match or the end.
+     * Rendered, into the rendered view, which highlight() scrolled.
+     */
     focusEditor() {
         if (this.name === null)
             return;
         const first = this.highlight(this._query);
+        if (!this._formatBar.markdownButton.active) {
+            this._styler.focusRendered();
+            return;
+        }
         const buffer = this._buffer;
         buffer.place_cursor(first === null ? buffer.get_end_iter() : buffer.get_iter_at_offset(first));
         this._view.grab_focus();
@@ -363,14 +475,53 @@ export class NotePane {
         buffer.place_cursor(buffer.get_iter_at_offset(Math.min(cursor, buffer.get_char_count())));
     }
 
+    _endRename(rename) {
+        if (this._titleStack.visible_child_name !== 'entry')
+            return;
+        this._titleStack.visible_child_name = 'title';
+        if (rename && this.name !== null && this._titleEntry.text !== this.name)
+            this._onRename(this.name, this._titleEntry.text);
+    }
+
     _buildHeader() {
         this._dot = new Gtk.Box({css_classes: ['froonty-dot'], valign: Gtk.Align.CENTER});
         this._title = new Gtk.Label({
             css_classes: ['title-4'],
             ellipsize: Pango.EllipsizeMode.END,
             xalign: 0,
-            hexpand: true,
+            tooltip_text: _('Double-click to rename'),
         });
+        // A double click renames, as on the island's tab: Enter or leaving
+        // the entry renames, Escape does not.
+        this._titleEntry = new Gtk.Entry();
+        this._titleStack = new Gtk.Stack({hexpand: true});
+        this._titleStack.add_named(this._title, 'title');
+        this._titleStack.add_named(this._titleEntry, 'entry');
+        const doubleClick = new Gtk.GestureClick();
+        doubleClick.connect('pressed', (_gesture, presses) => {
+            if (presses === 2 && this.name !== null && this._view.editable) {
+                this._titleEntry.text = this.name;
+                this._titleStack.visible_child_name = 'entry';
+                this._titleEntry.grab_focus();
+            }
+        });
+        this._title.add_controller(doubleClick);
+        this._titleEntry.connect('activate', () => this._endRename(true));
+        const leave = new Gtk.EventControllerFocus();
+        // Once the focus has moved (GTK must not lose the entry meanwhile).
+        leave.connect('leave', () => GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+            this._endRename(true);
+            return GLib.SOURCE_REMOVE;
+        }));
+        this._titleEntry.add_controller(leave);
+        const keys = new Gtk.EventControllerKey();
+        keys.connect('key-pressed', (_controller, keyval) => {
+            if (keyval !== Gdk.KEY_Escape)
+                return false;
+            this._endRename(false);
+            return true;
+        });
+        this._titleEntry.add_controller(keys);
         this._labelsCaption = new Gtk.Label({
             css_classes: ['dim-label', 'caption'],
             ellipsize: Pango.EllipsizeMode.END,
@@ -408,7 +559,7 @@ export class NotePane {
             margin_bottom: 8,
         });
         this._header.append(this._dot);
-        this._header.append(this._title);
+        this._header.append(this._titleStack);
         this._header.append(this._labelsCaption);
         this._header.append(this._labelsButton);
 
@@ -443,11 +594,7 @@ export class NotePane {
 
         const markdownSource = this._formatBar.markdownButton;
         this._settings.bind('notes-markdown-source', markdownSource, 'active', Gio.SettingsBindFlags.DEFAULT);
-        markdownSource.connect('notify::active', () => {
-            this._formatBar.setMarkdownSource(markdownSource.active);
-            this._styler.setRendered(!markdownSource.active);
-        });
-        this._formatBar.setMarkdownSource(markdownSource.active);
+        markdownSource.connect('notify::active', () => this._styler.setRendered(!markdownSource.active));
         this._styler.setRendered(!markdownSource.active);
 
         const up = foldIcon('up');
@@ -465,70 +612,98 @@ export class NotePane {
         syncFold();
     }
 
-    // The editor text and selection, as markdown.js takes them: character
-    // offsets (code points, as GtkTextIter counts), start = the selection's
-    // fixed end, end = the cursor.
-    _editorState() {
-        const buffer = this._buffer;
-        const offset = mark => buffer.get_iter_at_mark(mark).get_offset();
-        return {
-            text: buffer.text,
-            start: offset(buffer.get_selection_bound()),
-            end: offset(buffer.get_insert()),
-        };
+
+    // An open, editable note, shown as its source (MD).
+    _editing() {
+        return this.name !== null && this._stack.visible_child_name === 'note' &&
+            this._view.editable && this._formatBar.markdownButton.active;
     }
 
-    // Applies a markdown.js edit: only the part of the text that changed is
-    // replaced, as one user action (one undo step); the 'changed' handler
-    // saves it as it does typing. Then the edit's selection, and the focus
-    // back in the editor.
+    // Applies a markdown.js edit as one user action (one undo step; the
+    // 'changed' handler saves it as it does typing), then the edit's
+    // selection, and the focus back in the editor.
     _applyEdit(edit) {
-        if (this.name === null || !this._view.editable) {
+        if (!this._editing()) {
             this._syncFormatState();
             return;
         }
-        const buffer = this._buffer;
-        const result = edit(this._editorState());
-        const before = [...buffer.text];
-        const after = [...result.text];
-        let head = 0;
-        while (head < before.length && head < after.length && before[head] === after[head])
-            head++;
-        let tail = 0;
-        while (tail < before.length - head && tail < after.length - head &&
-            before[before.length - 1 - tail] === after[after.length - 1 - tail])
-            tail++;
-        if (before.length !== after.length || head < before.length) {
-            buffer.begin_user_action();
-            buffer.delete(buffer.get_iter_at_offset(head),
-                buffer.get_iter_at_offset(before.length - tail));
-            buffer.insert(buffer.get_iter_at_offset(head),
-                after.slice(head, after.length - tail).join(''), -1);
-            buffer.end_user_action();
-        }
-        buffer.select_range(buffer.get_iter_at_offset(result.end),
-            buffer.get_iter_at_offset(result.start));
+        editBuffer(this._buffer, edit);
         this._view.grab_focus();
         this._syncFormatState();
     }
 
-    async _chooseImage() {
+    // Toggles the task whose box is at character `offset`, if any; the
+    // cursor stays. @returns {boolean} whether one was toggled
+    _toggleTask(offset) {
+        const replacement = toggleTask(this._buffer.text, offset);
+        if (replacement === null || this.name === null || !this._view.editable)
+            return false;
+        const cursor = this._buffer.cursor_position;
+        replaceText(this._buffer, replacement);
+        this._buffer.place_cursor(this._buffer.get_iter_at_offset(Math.min(cursor,
+            this._buffer.get_char_count())));
+        return true;
+    }
+
+    // A direct edit in the rendered view: `text` over the source's [start,
+    // end) (UTF-16 offsets), one user action; the cursor stays.
+    _editRange(start, end, text) {
         if (this.name === null || !this._view.editable)
             return;
+        const source = this._buffer.text;
+        const cursor = this._buffer.cursor_position;
+        replaceText(this._buffer, source.slice(0, start) + text + source.slice(end));
+        this._buffer.place_cursor(this._buffer.get_iter_at_offset(Math.min(cursor,
+            this._buffer.get_char_count())));
+    }
+
+    // The image on `clipboard` saved into the note's folder: a promise of
+    // its Markdown reference (null when the note changed meanwhile or saving
+    // failed); null when the clipboard holds no image.
+    _pastedImage(clipboard) {
+        const image = pastedImageData(clipboard);
+        if (!image)
+            return null;
+        const note = this.name;
+        const store = this._library.store;
+        return (async () => {
+            try {
+                const {bytes, mime} = await image;
+                if (this.name !== note || this._library.store !== store)
+                    return null;
+                const name = await saveImageBytes(bytes, mime, store.folder);
+                return this.name === note ? `![](${markdownImagePath(name)})` : null;
+            } catch (e) {
+                this._onError(e.message);
+                return null;
+            }
+        })();
+    }
+
+    async _chooseImage() {
+        if (!this._editing())
+            return;
+        const note = this.name;
+        const store = this._library.store;
         try {
-            const name = await chooseImage(this._library.store.folder);
-            if (name && this.name !== null)
+            // Copied only if it is still to go into the same note.
+            const path = await chooseImage();
+            if (!path || this.name !== note || this._library.store !== store || !this._editing())
+                return;
+            const name = await copyImage(path, store.folder);
+            if (this.name === note && this._editing())
                 this._applyEdit(state => Md.insertImage(state, name));
         } catch (e) {
             this._onError(e.message);
         }
     }
 
-    // Lights the formatting toggles for the cursor. Skipped while the bar is
-    // folded away; unfolding calls it again.
+    // Lights the formatting toggles for the cursor; none while the bar
+    // cannot edit (rendered, read-only). Skipped while the bar is folded
+    // away; unfolding calls it again.
     _syncFormatState() {
         if (this._tools?.visible)
-            this._formatBar.update(this._editorState());
+            this._formatBar.update(this._editing() ? bufferState(this._buffer) : {text: '', start: 0, end: 0});
     }
 
     // One check button per label: this note's first, then the others. The
@@ -611,39 +786,24 @@ export class NotePane {
             top_margin: 12,
             bottom_margin: 12,
         });
-        this._styler = new MarkdownStyler(this._view,
-            () => this._library.store?.folder ?? this._library.folder);
-        const taskClick = new Gtk.GestureClick();
-        taskClick.set_propagation_phase(Gtk.PropagationPhase.CAPTURE);
-        taskClick.connect('released', (gesture, _presses, x, y) => {
-            const [found, iter] = this._view.get_iter_at_location(Math.round(x), Math.round(y));
-            if (!found)
+        // An image pasted into the source goes in at the cursor.
+        this._view.connect('paste-clipboard', view => {
+            const markdown = this._editing() ? this._pastedImage(view.get_clipboard()) : null;
+            if (!markdown)
                 return;
-            const replacement = toggleTask(this._buffer.text, iter.get_offset());
-            if (replacement === null || !this._view.editable)
-                return;
-            gesture.set_state(Gtk.EventSequenceState.CLAIMED);
-            const before = [...this._buffer.text];
-            const after = [...replacement];
-            let head = 0;
-            while (head < before.length && before[head] === after[head])
-                head++;
-            let tail = 0;
-            while (tail < before.length - head &&
-                before[before.length - 1 - tail] === after[after.length - 1 - tail])
-                tail++;
-            const cursor = this._buffer.cursor_position;
-            this._buffer.begin_user_action();
-            this._buffer.delete(this._buffer.get_iter_at_offset(head),
-                this._buffer.get_iter_at_offset(before.length - tail));
-            this._buffer.insert(this._buffer.get_iter_at_offset(head),
-                after.slice(head, after.length - tail).join(''), -1);
-            this._buffer.place_cursor(this._buffer.get_iter_at_offset(Math.min(cursor,
-                this._buffer.get_char_count())));
-            this._buffer.end_user_action();
+            view.stop_emission_by_name('paste-clipboard');
+            markdown.then(reference => {
+                if (reference && this._editing())
+                    insertAtCursor(this._buffer, reference);
+            });
         });
-        this._view.add_controller(taskClick);
-        // Added after the styler's tags, so a search match shows over them.
+        this._styler = new MarkdownStyler(this._view,
+            () => this._library.store?.folder ?? this._library.folder,
+            () => this.name, {
+                onToggleTask: offset => this._toggleTask(offset),
+                onEdit: (start, end, text) => this._editRange(start, end, text),
+                onPasteImage: clipboard => this._pastedImage(clipboard),
+            });
         this._matchTag = new Gtk.TextTag({
             name: 'froonty-match',
             background: '#f6d32d',

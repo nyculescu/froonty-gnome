@@ -14,7 +14,7 @@ import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import Gtk from 'gi://Gtk?version=4.0';
 
-import {test, eq, ok, done} from './test.js';
+import {test, eq, ok, done, EXTENSION_DIR, makeSettings, sleep} from './test.js';
 
 if (!GLib.getenv('FROONTY_UNIT_ISOLATED')) {
     printerr('Run this through tools/unit/run.sh (isolated TMPDIR/XDG_DATA_HOME, a private display).');
@@ -22,21 +22,11 @@ if (!GLib.getenv('FROONTY_UNIT_ISOLATED')) {
 }
 
 const PREFS_IMPORT = 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
-const EXTENSION_DIR = GLib.build_filenamev([
-    GLib.path_get_dirname(GLib.path_get_dirname(GLib.path_get_dirname(
-        GLib.filename_from_uri(import.meta.url)[0]))),
-    'froonty@catalin']);
-
 Adw.init();
 if (!Gdk.Display.get_default()) {
     printerr('No display: run this through tools/unit/run.sh (it starts a Broadway server).');
     imports.system.exit(1);
 }
-
-const sleep = ms => new Promise(resolve => GLib.timeout_add(GLib.PRIORITY_DEFAULT, ms, () => {
-    resolve();
-    return GLib.SOURCE_REMOVE;
-}));
 
 function copyModules() {
     const root = Gio.File.new_for_path(GLib.dir_make_tmp('froonty-ext-XXXXXX'));
@@ -68,15 +58,6 @@ const STAND_INS = Array.from({length: 10}, (_, i) => ({
 }));
 Catalog.PANIC_BUTTONS.push(...STAND_INS);
 const IDS = STAND_INS.map(b => b.id);
-
-function makeSettings() {
-    const source = Gio.SettingsSchemaSource.new_from_directory(
-        GLib.build_filenamev([EXTENSION_DIR, 'schemas']), null, false);
-    return new Gio.Settings({
-        settings_schema: source.lookup('org.gnome.shell.extensions.froonty', false),
-        backend: Gio.memory_settings_backend_new(),
-    });
-}
 
 function* descendants(widget) {
     for (let child = widget.get_first_child(); child; child = child.get_next_sibling()) {

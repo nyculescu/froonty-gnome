@@ -28,7 +28,6 @@ export class ColorPicker {
      */
     constructor({onPick, onOpenChanged}) {
         this._onOpenChanged = onOpenChanged;
-        this._color = DEFAULT_COLOR;
 
         this.button = new St.Button({
             style_class: 'froonty-icon-button froonty-color-button',
@@ -59,7 +58,6 @@ export class ColorPicker {
 
     /** Shows the current note's colour on the button and swatches. */
     setColor(color) {
-        this._color = color;
         this.button.child.style_class = `froonty-color-dot froonty-note-color-${color}`;
         for (const [i, id] of COLOR_IDS.entries())
             this.swatches.get_child_at_index(i).checked = id === color;

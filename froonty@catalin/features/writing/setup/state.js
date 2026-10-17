@@ -17,10 +17,10 @@
 
 import {ensurePrivateDir, readText, writeAtomic} from './fs.js';
 
-export const STATE_VERSION = 1;
-export const INSTALL_STEPS = ['downloading', 'verifying', 'extracting', 'unit', 'starting', 'done'];
-export const MODEL_STEPS = ['pulling', 'done'];
-export const MODEL_NAME = /^[a-z0-9][a-z0-9._-]*(\/[a-z0-9._-]+)?(:[A-Za-z0-9._-]+)?$/;
+const STATE_VERSION = 1;
+const INSTALL_STEPS = ['downloading', 'verifying', 'extracting', 'unit', 'starting', 'done'];
+const MODEL_STEPS = ['pulling', 'done'];
+const MODEL_NAME = /^[a-z0-9][a-z0-9._-]*(\/[a-z0-9._-]+)?(:[A-Za-z0-9._-]+)?$/;
 const DIGEST = /^(sha256:)?[0-9a-f]{64}$/;
 const SHA256 = /^[0-9a-f]{64}$/;
 

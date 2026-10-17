@@ -1,6 +1,7 @@
 # Feature: Btop (system monitor)
 
-Status: **second iteration, implemented.** Public (in `make pack` output).
+Status: **second iteration, implemented for local builds; not included in
+`make pack`.**
 
 A compact, live view of this computer: CPU, graphics cards, memory, disks
 and network. It is Phase 7 ("Metrics") of [DESIGN.md](../DESIGN.md) §10.
@@ -61,11 +62,12 @@ The optional CPU/GPU/RAM load and thermometer panic buttons share a sampler
 while the island is open, at the configured refresh interval. They
 stop sampling when the island collapses. The load button reads only the
 selected source; RAM usage is used as a percentage. The thermometer can show
-the mean of available CPU core temperatures, the hottest available CPU core,
-or the hottest reported GPU. When set to follow the load button, it shows
-average CPU temperature for CPU or RAM load (RAM has no general-purpose
-sensor) and GPU temperature for GPU load, always in °C. CPU package temperature is used when no per-core reading
-is available. Settings → Btop → Panic buttons chooses these sources.
+the mean of the physical cores' temperatures (a core's threads count once),
+the hottest available CPU core, or the hottest reported GPU. When set to
+follow the load button, it shows average CPU temperature for CPU or RAM
+load (RAM has no general-purpose sensor) and GPU temperature for GPU load,
+always in °C. CPU package temperature is used when no per-core reading is
+available. Settings → Btop → Panic buttons chooses these sources.
 
 ## What it shows, and where it comes from
 
@@ -168,6 +170,8 @@ would double it. `lo` is not counted.
 | `sysmon-show-cpu`, `-gpu`, `-memory`, `-disks`, `-network` | true | Sections; one that is off is not read |
 | `sysmon-cores-expanded` | false | The threads fold-out is open |
 | `sysmon-width`, `sysmon-height` | 460, 480 | The island's size while the tab is shown ("Default size" resets both) |
+| `sysmon-panic-load-source` | `'cpu'` | What the load panic button shows: `cpu`, `gpu` or `memory` |
+| `sysmon-panic-temp-source` | `'load-source'` | What the thermometer panic button shows: `average-cpu`, `max-cpu`, `gpu`, or `load-source` (follows the load button) |
 
 ## Code
 
@@ -177,9 +181,10 @@ would double it. `lo` is not counted.
 | `features/sysmon/io.js` | Async Gio file reads, listings, links, file-system usage, and the subprocess with its timeout |
 | `features/sysmon/sampler.js` | Hardware discovery and one snapshot per call, over an `io` object (faked in tests) |
 | `features/sysmon/service.js` | The timer, tied to the tab being on screen, and the settings |
+| `features/sysmon/panicMetrics.js` | The load and thermometer panic buttons' shared sampler and their values |
 | `features/sysmon/level.js` | The five-cell level: glyphs and CSS classes for a share |
 | `features/sysmon/view.js` | St view: actors made once, text updated per sample |
-| `features/sysmon/icon.js`, `icons/` | btop's "B" as a symbolic icon (the tab and the settings page) |
+| `features/sysmon/icon.js`, `icons/` | btop's "B" as a symbolic icon (the tab and the settings page), and the CPU, GPU, memory and thermometer icons of the panic buttons |
 | `features/sysmon/prefs.js` | Settings page |
 
 Tests: `tools/unit/sysmon.test.js` covers the parsers, the levels, the

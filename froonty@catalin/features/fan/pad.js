@@ -5,34 +5,27 @@
 // after it, ending in the raw 8-byte status report, which is what is read
 // here. Also the user's systemd units that drive the pad by themselves
 // (llanod, llano-guard), which would undo the slider within seconds, and
-// llano.py's state in $XDG_STATE_HOME/llano: the panic lock (while it is
-// there, every write through llano.py is refused) and the log of who
-// drove the pad last (control.log; Froonty's own writes say "Froonty").
-// No St.
+// llano.py's panic lock in $XDG_STATE_HOME/llano (while it is there,
+// every write through llano.py is refused). No St.
 
-import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 
+import {runCaptured as run} from '../sysmon/io.js';
 import {override} from '../writing/paths.js';
-
-Gio._promisify(Gio.Subprocess.prototype, 'communicate_utf8_async');
 
 // Absolute: other toolchains (e.g. SUMO) shadow the system's python3 on PATH.
 const PYTHON = '/usr/bin/python3';
 // The headless tests point it at a fake (writing/paths.js override).
 const systemctl = () => override('FROONTY_SYSTEMCTL') ?? '/usr/bin/systemctl';
-const SIGKILL = 9;
-// A command takes about 0.15 s; one stuck on a hung device is stopped.
-const RUN_TIMEOUT_S = 5;
 
 /** Units that set the pad's speed on their own, in the order shown. */
-export const CONTROLLER_UNITS = ['llano-guard.service', 'llanod.service'];
+const CONTROLLER_UNITS = ['llano-guard.service', 'llanod.service'];
 
 /**
  * The pad's state from llano.py's output ("speed 20% (software control)
  * lights off  raw 80 14 00 82 04 00 ff e6"), or null.
  *
- * @returns {?{speed: number, control: string, off: boolean, lightsOff: boolean, raw: string}}
+ * @returns {?{speed: number, control: string, off: boolean, lightsOff: boolean}}
  *   control is 'software' (status byte 0x80) or 'pad' (0x88); off when
  *   byte 2 (on_off) switched the whole pad off, fan and lights (llano.py
  *   speed 0 or lock: at 0 % with the pad on, the fan still turns)
@@ -49,11 +42,10 @@ export function parseStatus(text) {
         control: bytes[0] === 0x80 ? 'software' : 'pad',
         off: bytes[2] === 1,
         lightsOff: bytes[2] === 1 || (bytes[3] & 0x80) !== 0,
-        raw: match[1],
     };
 }
 
-/** Where llano.py keeps its lock and control log. */
+/** Where llano.py keeps its lock. */
 export const stateDir = () => `${GLib.get_user_state_dir()}/llano`;
 
 /**
@@ -67,17 +59,6 @@ export function parseLock(text) {
         return JSON.parse(text) ?? {};
     } catch (e) {
         return {};
-    }
-}
-
-/** The latest control.log entry ({time, by, pid, action, speed}), or null. */
-export function parseLastControl(text) {
-    const last = (text ?? '').trim().split('\n').pop();
-    try {
-        const entry = JSON.parse(last);
-        return entry && typeof entry.by === 'string' ? entry : null;
-    } catch (e) {
-        return null;
     }
 }
 
@@ -117,49 +98,14 @@ export function activeUnits(stdout) {
 }
 
 /**
- * Runs `argv` (no shell): {ok, stdout, stderr}; ok is false on a failure or
- * timeout. `env`: variables to set for it.
- */
-async function run(argv, cancellable = null, env = {}) {
-    let proc;
-    try {
-        const launcher = new Gio.SubprocessLauncher({
-            flags: Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE,
-        });
-        for (const [name, value] of Object.entries(env))
-            launcher.setenv(name, value, true);
-        proc = launcher.spawnv(argv);
-    } catch (e) {
-        return {ok: false, stdout: '', stderr: e.message};
-    }
-    const cancelId = cancellable?.connect(() => proc.send_signal(SIGKILL)) ?? 0;
-    let timeoutId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, RUN_TIMEOUT_S, () => {
-        timeoutId = 0;
-        proc.send_signal(SIGKILL);
-        return GLib.SOURCE_REMOVE;
-    });
-    try {
-        const [stdout, stderr] = await proc.communicate_utf8_async(null, null);
-        return {ok: proc.get_successful(), stdout: stdout ?? '', stderr: stderr ?? ''};
-    } catch (e) {
-        return {ok: false, stdout: '', stderr: e.message};
-    } finally {
-        if (timeoutId)
-            GLib.source_remove(timeoutId);
-        if (cancelId)
-            cancellable.disconnect(cancelId);
-    }
-}
-
-/**
  * Runs llano.py with `args` (['status'], ['speed', '40'], ['rpm', '600'],
  * ['release'], ['lock'], ['unlock']); its control log names Froonty.
  *
  * @returns {Promise<{status: ?object, noise: ?object, error: ?string, message: string}>}
  *   status as parseStatus, noise as parseNoise; error null or a failureKind
  */
-export async function llano(script, args, cancellable = null) {
-    const {ok, stdout, stderr} = await run([PYTHON, script, ...args], cancellable,
+export async function llano(script, args) {
+    const {ok, stdout, stderr} = await run([PYTHON, script, ...args], null,
         {LLANO_CLIENT: 'Froonty'});
     const status = ok ? parseStatus(stdout) : null;
     if (status)
@@ -178,7 +124,5 @@ export async function controllers(cancellable = null) {
 
 /** Stops one of CONTROLLER_UNITS (each hands the pad back on SIGTERM). */
 export async function stopUnit(unit) {
-    if (!CONTROLLER_UNITS.includes(unit))
-        return false;
-    return (await run([systemctl(), '--user', 'stop', unit])).ok;
+    await run([systemctl(), '--user', 'stop', unit]);
 }

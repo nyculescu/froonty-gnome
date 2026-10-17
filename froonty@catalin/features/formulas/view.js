@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Formulas tab (docs/features/formulas.md §2):
+// Formulas tab (docs/features/formulas.md §1):
 //
 //   ┌ LaTeX editor ─────────────────────────────────┐
 //   └───────────────────────────────────────────────┘
@@ -31,14 +31,14 @@ import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js'
 
 import {keepCursorVisible} from '../../core/textScroll.js';
 import {Tooltip} from '../../core/tooltip.js';
-import {copyText, errorText, insertSnippet, isFavourite, SLOT} from './edit.js';
+import {copyText, errorText, insertSnippet, SLOT} from './edit.js';
 import {GUIDE} from './guide.js';
 import {FAVOURITES_KEY, RECENT_KEY} from './service.js';
 import {searchSymbols, SECTIONS} from './symbols.js';
 import {TEMPLATES} from './templates.js';
 import {WrapLayout} from './wrapLayout.js';
 
-export const PREVIEW_DELAY_MS = 250;
+const PREVIEW_DELAY_MS = 250;
 // The preview's 1em, relative to the renderer's 16 px.
 const PREVIEW_SCALE = 1.25;
 const DISPLAY_KEY = 'formulas-display';
@@ -81,14 +81,13 @@ function flow() {
 
 // A vertical scroll view; its child goes in a box (St.ScrollView needs a
 // scrollable child).
-function scrolled(child, styleClass = '') {
+function scrolled(child) {
     if (!(child instanceof St.BoxLayout)) {
         const box = new St.BoxLayout({orientation: Clutter.Orientation.VERTICAL, x_expand: true});
         box.add_child(child);
         child = box;
     }
     return new St.ScrollView({
-        style_class: `froonty-formulas-scroll ${styleClass}`,
         hscrollbar_policy: St.PolicyType.NEVER,
         vscrollbar_policy: St.PolicyType.AUTOMATIC,
         overlay_scrollbars: true,
@@ -136,13 +135,13 @@ export class FormulasView {
 
         this._settingsIds = [
             this._settings.connect(`changed::${DISPLAY_KEY}`, () => this._schedulePreview(0)),
-            this._settings.connect(`changed::${RECENT_KEY}`, () => this._listsChanged('recent')),
-            this._settings.connect(`changed::${FAVOURITES_KEY}`, () => this._listsChanged('favourites')),
+            this._settings.connect(`changed::${RECENT_KEY}`, () => this._listsChanged()),
+            this._settings.connect(`changed::${FAVOURITES_KEY}`, () => this._listsChanged()),
         ];
         this._settings.bind(DISPLAY_KEY, this._displayButton, 'checked', Gio.SettingsBindFlags.DEFAULT);
 
         // A draft survives the island being rebuilt (ctx.memory).
-        this._memory = ctx.memory ? (ctx.memory.formulas ??= {draft: ''}) : {draft: ''};
+        this._memory = (ctx.memory.formulas ??= {draft: ''});
         this._editor.text = this._memory.draft;
         this._selectPanel('symbols');
         this._syncTools();
@@ -245,7 +244,6 @@ export class FormulasView {
 
     _buildPreview() {
         this._image = new St.Widget({
-            style_class: 'froonty-formulas-image',
             x_align: Clutter.ActorAlign.CENTER,
             y_align: Clutter.ActorAlign.CENTER,
             visible: false,
@@ -318,20 +316,17 @@ export class FormulasView {
         const color = this._previewBox.get_stage()
             ? hex(this._previewBox.get_theme_node().get_foreground_color()) : '#ffffff';
         const request = {tex, display, color, scale: PREVIEW_SCALE * scaleFactor};
-        const key = JSON.stringify(request);
-        this._previewKey = key;
         let result;
         try {
             result = await this._service.render(request, {channel: 'preview'});
         } catch (e) {
-            if (this._destroyed || this._previewKey !== key || e.kind === 'superseded' ||
-                e.kind === 'stopped' || !e.kind)
+            if (this._destroyed || this._previewKey !== token || e.kind === 'superseded')
                 return;
             this._showMessage(_(errorText(e.kind, e.message)), 'error');
             return;
         }
         // Text typed since: a newer request is on its way.
-        if (this._destroyed || this._previewKey !== key)
+        if (this._destroyed || this._previewKey !== token)
             return;
         this._showImage(result);
         this._rendered = tex;
@@ -388,7 +383,7 @@ export class FormulasView {
             ['display', '$$…$$', _('Copy as $$…$$, for a line of its own')],
             ['raw', _('Raw'), _('Copy the LaTeX as it is')],
         ].map(([format, label, tip]) => {
-            const copy = button('froonty-formulas-copy', label, tip);
+            const copy = button('', label, tip);
             copy.connect('clicked', () => this._copy(format));
             this._tooltip.attach(copy, () => tip);
             row.add_child(copy);
@@ -409,7 +404,7 @@ export class FormulasView {
         const tex = this._editor.text.trim();
         for (const b of [...this._copyButtons, this._noteButton, this._starButton])
             b.reactive = Boolean(tex);
-        const starred = Boolean(tex) && isFavourite(this._service.favourites, tex);
+        const starred = Boolean(tex) && this._service.favourites.includes(tex);
         this._starButton.child.icon_name = starred ? 'starred-symbolic' : 'non-starred-symbolic';
         this._starButton.accessible_name = starred ? _('Unstar this formula') : _('Star this formula');
         this._starButton.checked = starred;
@@ -445,7 +440,7 @@ export class FormulasView {
             this._setStatus(_('The Notes tab is off. Turn it on in Settings → Notes.'), true);
             return;
         }
-        const name = this._ctx.featureView?.('notes')?.insertText?.(copyText(tex, 'inline')) ?? null;
+        const name = this._ctx.featureView('notes')?.insertText(copyText(tex, 'inline')) ?? null;
         if (name === null) {
             this._setStatus(_('No note is open. Open one in the Notes tab, then try again.'), true);
             return;
@@ -617,12 +612,12 @@ export class FormulasView {
         return scrolled(list);
     }
 
-    _listsChanged(id) {
+    // Either list changed: the star icons of both may be stale, so the
+    // shown one is filled again (a hidden one is filled when it shows).
+    _listsChanged() {
         this._syncTools();
-        if (this._panel === id)
-            this._fillList(id);
-        else
-            this._lists.get(id)?.destroy_all_children();
+        if (this._panel === 'recent' || this._panel === 'favourites')
+            this._fillList(this._panel);
     }
 
     _fillList(id) {
@@ -680,7 +675,6 @@ export class FormulasView {
     _buildGuide() {
         const box = new St.BoxLayout({
             orientation: Clutter.Orientation.VERTICAL,
-            style_class: 'froonty-formulas-guide',
             x_expand: true,
         });
         for (const topic of GUIDE) {

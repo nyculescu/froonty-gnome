@@ -52,17 +52,17 @@ test('rate limiter: 10 texts or 60 KB a minute', () => {
     let now = 0;
     const limiter = new RateLimiter({now: () => now});
     for (let i = 0; i < 10; i++) {
-        eq(limiter.wait(100), 0);
+        eq(limiter.check(100).seconds, 0);
         limiter.record(100);
         now += 1000;
     }
-    eq(limiter.wait(100), 50, 'at 10 s, the first one leaves the window at 60 s');
+    eq(limiter.check(100).seconds, 50, 'at 10 s, the first one leaves the window at 60 s');
     now = 61000;
-    eq(limiter.wait(100), 0);
+    eq(limiter.check(100).seconds, 0);
     const bytes = new RateLimiter({now: () => now});
     bytes.record(50000);
-    eq(bytes.wait(20000) > 0, true, 'over 60 KB in a minute');
-    eq(bytes.wait(10000), 0);
+    eq(bytes.check(20000).seconds > 0, true, 'over 60 KB in a minute');
+    eq(bytes.check(10000).seconds, 0);
 });
 
 test('rate limiter: its message names the limit that holds the text back', () => {
@@ -138,8 +138,6 @@ test('nothing listening: offline; offline network: nothing sent; cancel', async 
         const running = lt(server, makeSettings(), {cancellable});
         cancellable.cancel();
         await rejectsWith(running, 'cancelled');
-        await rejectsWith(run({action: 'formal', text: 'x', settings: makeSettings(),
-            network: new FakeNetwork(), deps: {url: `${server.url}/v2/check`}}), 'failed');
     } finally {
         server.close();
     }

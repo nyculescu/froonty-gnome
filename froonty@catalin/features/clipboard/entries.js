@@ -7,7 +7,7 @@
 // (KDE's hint, used by KeePassXC and others; the macOS convention some
 // cross-platform apps also set on Linux). Such a copy is a password: it is
 // never saved, only shown hidden for a while (recorder.js).
-export const SECRET_HINTS = ['x-kde-passwordManagerHint', 'org.nspasteboard.ConcealedType'];
+const SECRET_HINTS = ['x-kde-passwordManagerHint', 'org.nspasteboard.ConcealedType'];
 
 // Files (GNOME Files, and most GTK file managers): "copy" or "cut", then
 // one file:// URI per line.
@@ -71,9 +71,9 @@ export function classify(mimetypes, {names = [], ignored = []} = {}) {
     }
     if (mimetypes.includes(COPIED_FILES))
         return {action: 'files', mime: COPIED_FILES};
-    if (mimetypes.includes(URI_LIST) && !mimetypes.some(type => TEXT_TYPES.includes(type)))
+    if (mimetypes.includes(URI_LIST) && !hasText)
         return {action: 'files', mime: URI_LIST};
-    if (mimetypes.some(type => TEXT_TYPES.includes(type)))
+    if (hasText)
         return {action: 'text'};
     const image = mimetypes.includes('image/png') ? 'image/png'
         : mimetypes.find(type => type.startsWith('image/') && type !== 'image/svg+xml');

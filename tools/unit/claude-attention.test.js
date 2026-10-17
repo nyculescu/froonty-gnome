@@ -11,13 +11,14 @@
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 
-import {test, eq, ok, done} from './test.js';
+import {test, eq, ok, done, makeSettings, sleep, waitFor} from './test.js';
 import * as A from '../../froonty@catalin/features/claude/attention.js';
+import {hookScriptPath} from '../../froonty@catalin/features/claude/attentionHook.js';
 import * as Setup from '../../froonty@catalin/features/claude/attentionSetup.js';
 import * as StatusLine from '../../froonty@catalin/features/claude/statusLineSetup.js';
 
 const GJS = GLib.getenv('GJS') || '/usr/bin/gjs';
-const HOOK = Setup.hookScriptPath();
+const HOOK = hookScriptPath();
 const CLAUDE_VARS = ['CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_PID', 'CLAUDE_CODE_SESSION_ID',
     'CLAUDE_PROJECT_DIR', 'CHROME_DESKTOP', 'XDG_RUNTIME_DIR', 'XDG_CACHE_HOME'];
 
@@ -691,32 +692,6 @@ test('clear command: deletes only that session\'s file, quietly, with exit 0', (
 });
 
 // ---- the service, with fakes for the Shell side
-
-const EXTENSION_DIR = Gio.File.new_for_path(HOOK).get_parent().get_parent().get_parent();
-
-// Froonty's real schema, with an in-memory backend: nothing touches dconf.
-function makeSettings() {
-    const source = Gio.SettingsSchemaSource.new_from_directory(
-        EXTENSION_DIR.get_child('schemas').get_path(), null, false);
-    return new Gio.Settings({
-        settings_schema: source.lookup('org.gnome.shell.extensions.froonty', false),
-        backend: Gio.memory_settings_backend_new(),
-    });
-}
-
-const sleep = ms => new Promise(resolve => GLib.timeout_add(GLib.PRIORITY_DEFAULT, ms, () => {
-    resolve();
-    return GLib.SOURCE_REMOVE;
-}));
-
-async function waitFor(predicate, timeoutMs = 3000) {
-    for (let waited = 0; waited < timeoutMs; waited += 20) {
-        if (predicate())
-            return true;
-        await sleep(20);
-    }
-    return predicate();
-}
 
 const {Emitter} = await import('../../froonty@catalin/core/emitter.js');
 const {AttentionService} = await import('../../froonty@catalin/features/claude/attentionService.js');

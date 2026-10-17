@@ -40,16 +40,18 @@ export class AudioMuteButton {
         });
         this.actor.connect('clicked', () => this._toggle());
 
+        // Tied to the actor: also gone when the Shell destroys it (as it
+        // shuts down) without destroy().
         this._control.connectObject(
             'state-changed', () => this._syncStream(),
             this._kind.changedSignal, () => this._syncStream(),
-            this);
+            this.actor);
         this._syncStream();
     }
 
     destroy() {
-        this._control.disconnectObject(this);
-        this._stream?.disconnectObject(this);
+        this._control.disconnectObject(this.actor);
+        this._stream?.disconnectObject(this.actor);
         this.actor.destroy();
     }
 
@@ -59,9 +61,9 @@ export class AudioMuteButton {
         const ready = this._control.get_state() === Gvc.MixerControlState.READY;
         const stream = ready ? this._kind.defaultStream(this._control) : null;
         if (stream !== this._stream) {
-            this._stream?.disconnectObject(this);
+            this._stream?.disconnectObject(this.actor);
             this._stream = stream;
-            this._stream?.connectObject('notify::is-muted', () => this._syncState(), this);
+            this._stream?.connectObject('notify::is-muted', () => this._syncState(), this.actor);
         }
         this._syncState();
     }

@@ -27,8 +27,8 @@ import {KILL_PATHS, killArgv} from './kill.js';
 import {SORTS} from './rules.js';
 import {ProcessSampler} from './sampler.js';
 
-export const INTERVAL_KEY = 'killprocess-interval';
-export const SORT_KEY = 'killprocess-sort';
+const INTERVAL_KEY = 'killprocess-interval';
+const SORT_KEY = 'killprocess-sort';
 // CPU shares need two samples: the second of a visit comes this soon.
 const FOLLOW_UP_MS = 500;
 // After a signal, the list shows its effect this soon...
@@ -65,6 +65,8 @@ export class KillProcessService extends Emitter {
         this._followUpId = 0;
         this._cancellable = null;
         this._sampling = false;
+        // An early reading was refused while another ran: it runs when that ends.
+        this._tickAgain = false;
         // The latest reading: when it ended and how long it took (seconds).
         this._sampled = {end: -Infinity, took: 0};
         this._warned = false;
@@ -107,10 +109,13 @@ export class KillProcessService extends Emitter {
             if (this._followUpId)
                 GLib.source_remove(this._followUpId);
             this._followUpId = 0;
+            this._tickAgain = false;
             this._unschedule();
             this._cancellable.cancel();
             this._cancellable = null;
-            // A new visit starts with no kill in progress and no old news.
+            // A new visit starts with no list, no kill in progress and no
+            // old news.
+            this.processes = null;
             this._kills.clear();
             this.lastResult = null;
         }
@@ -147,9 +152,8 @@ export class KillProcessService extends Emitter {
     }
 
     _readSettings() {
-        const sort = this._settings.get_string(SORT_KEY);
         /** 'cpu', 'memory' or 'threads' (rules.js SORTS): what the list is sorted by. */
-        this.sort = SORTS.includes(sort) ? sort : SORTS[0];
+        this.sort = this._settings.get_string(SORT_KEY);
         this._interval = this._settings.get_int(INTERVAL_KEY);
     }
 
@@ -189,9 +193,13 @@ export class KillProcessService extends Emitter {
 
     /** @param {boolean} [timer] the interval's reading (paced), not an early one */
     _tick(timer = false) {
-        // A slow read never piles up behind itself.
-        if (this._sampling)
+        // A slow read never piles up behind itself; an early one runs once
+        // it is done.
+        if (this._sampling) {
+            if (!timer)
+                this._tickAgain = true;
             return;
+        }
         const start = this._now();
         if (timer && start - this._sampled.end < PACE * this._sampled.took)
             return;
@@ -221,6 +229,10 @@ export class KillProcessService extends Emitter {
             this._warned = true;
         }).finally(() => {
             this._sampling = false;
+            if (this._tickAgain && this._active) {
+                this._tickAgain = false;
+                this._followUp(0);
+            }
         });
     }
 
@@ -242,8 +254,6 @@ export class KillProcessService extends Emitter {
     }
 
     async _signal(process, signal) {
-        if (!process)
-            return;
         const {key, pid, name} = process;
         const current = this._kills.get(key);
         // SIGTERM once, and SIGKILL only after SIGTERM did not do.

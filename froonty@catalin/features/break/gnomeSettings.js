@@ -10,15 +10,16 @@
 
 import Gio from 'gi://Gio';
 
-export const BREAK_SCHEMA = 'org.gnome.desktop.break-reminders';
-export const BREAK_TYPES = ['eyesight', 'movement'];
-export const SELECTED = 'selected-breaks';
+import {BREAK_TYPES} from '../../shell/breakEngine.js';
+
+const BREAK_SCHEMA = 'org.gnome.desktop.break-reminders';
+const SELECTED = 'selected-breaks';
 // The Wellbeing panel's notifications (GNOME's break and screen-time
 // notifications come from it).
 export const WELLBEING_SCHEMA = 'org.gnome.desktop.notifications.application';
 export const WELLBEING_PATH = '/org/gnome/desktop/notifications/application/gnome-wellbeing-panel/';
-export const LIMITS_SCHEMA = 'org.gnome.desktop.screen-time-limits';
-export const DAILY_LIMIT = 'daily-limit-enabled';
+const LIMITS_SCHEMA = 'org.gnome.desktop.screen-time-limits';
+const DAILY_LIMIT = 'daily-limit-enabled';
 
 const TYPE_KEYS = {
     interval: 'interval-seconds',
@@ -26,8 +27,6 @@ const TYPE_KEYS = {
     delay: 'delay-seconds',
     fade: 'fade-screen',
     lock: 'lock-screen',
-    sound: 'play-sound',
-    countdown: 'countdown',
 };
 
 export class GnomeBreakSettings {
@@ -116,8 +115,6 @@ export class GnomeBreakSettings {
             delay: s.get_uint(TYPE_KEYS.delay),
             fade: s.get_boolean(TYPE_KEYS.fade),
             lock: s.get_boolean(TYPE_KEYS.lock),
-            sound: s.get_boolean(TYPE_KEYS.sound),
-            countdown: s.get_boolean(TYPE_KEYS.countdown),
         };
     }
 

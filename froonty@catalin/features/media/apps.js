@@ -6,7 +6,7 @@
 //
 // SHELL API (exported GI, GNOME Shell 50): Shell.AppSystem.lookup_app,
 // Shell.WindowTracker.get_app_from_pid, Shell.App.activate / get_name /
-// get_icon / get_app_info.
+// get_app_info.
 
 import Shell from 'gi://Shell';
 
@@ -21,7 +21,6 @@ export const shellApps = {
         return app ?? null;
     },
     name: app => app.get_name() ?? null,
-    icon: app => app.get_icon() ?? null,
     categories: app => (app.get_app_info()?.get_categories() ?? '').split(';').filter(Boolean),
     // GNOME's own media card prefers this to the player's Raise, which
     // focus-stealing prevention may refuse.

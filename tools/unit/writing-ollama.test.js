@@ -29,11 +29,14 @@ test('only models on this computer are offered', () => {
     eq(localModels(null), []);
 });
 
-test('the context window grows with the text, within 4096-16384', () => {
-    eq(numCtx(0), 4096);
-    eq(numCtx(1000), 4096);
-    eq(numCtx(12000), 11264);
-    eq(numCtx(40000), 16384);
+test('the context window holds the prompts and the reply, within 4096-16384', () => {
+    const [step] = stepsFor('grammar');
+    const ctx = (chars, options) => numCtx(buildRequest(step, 'x'.repeat(chars), options), chars);
+    eq([ctx(0), ctx(1000)], [4096, 4096]);
+    ok(ctx(3000) > 4096 && ctx(6000) > ctx(3000), 'it grows with the text');
+    ok([ctx(3000), ctx(6000)].every(n => n % 1024 === 0), 'whole KiB tokens');
+    ok(ctx(3000, {earlier: ['y'.repeat(6000)]}) > ctx(3000), 'earlier versions count');
+    eq(ctx(40000), 16384);
 });
 
 test('the chat body: the step\'s prompts, streaming; a thinking model thinks apart', () => {
@@ -117,7 +120,7 @@ function ollamaRun(server, extra = {}) {
         deps: {url: server.url, paths: fakePaths(), system: NO_OLLAMA}, ...extra});
 }
 
-test('a rewrite: streamed pieces joined, markers dropped', async () => {
+test('a rewrite: streamed pieces joined', async () => {
     const server = ollamaServer();
     try {
         eq((await ollamaRun(server)).text, 'The cat sat.');

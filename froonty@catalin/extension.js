@@ -88,17 +88,17 @@ export default class FroontyExtension extends Extension {
         return this._settings.get_boolean(RUNNING_KEY);
     }
 
-    // Running: the island, the features' parts (Super+V, the break
-    // takeover) and their background work (clipboard recording, break
-    // tracking, usage checks). Stopped (Settings → General → Stop, for a
-    // computer that needs all its power): none of it, only the top bar
-    // icon that starts it again and the shortcut.
+    // Running: the island, the features' parts and their background work.
+    // Stopped (Settings → General → Stop, for a computer that needs all its
+    // power): none of it, only the top bar icon that starts it again and
+    // the shortcut.
     _syncRunning() {
         if (this._running && !this._parts.length) {
             this._parts = FEATURES.filter(f => f.createExtensionPart)
                 .map(f => f.createExtensionPart(this._settings));
             // local:begin local-features
-            // Parts that are not a tab's (Software brightness).
+            // Parts that are not tabs (LOCAL_PARTS: Software brightness, the
+            // pad speed slider, the time zone planner).
             this._parts.push(...LOCAL_PARTS.map(create => create(
                 this._settings,
                 page => {
@@ -197,7 +197,7 @@ export default class FroontyExtension extends Extension {
         this._island = new Island(this._settings, this._clock, this._panelClock, {
             openSettings: view => this._settingsWindow.open(view),
             memory: this._memory,
-            version: this.metadata['version-name'] ?? null,
+            version: this.metadata['version-name'],
         });
 
         this._syncPanelClock();

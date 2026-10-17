@@ -18,11 +18,9 @@ export function acquireRenderer() {
 }
 
 export function releaseRenderer() {
-    if (users === 0)
-        return;
     users--;
     if (users === 0) {
-        client?.destroy();
+        client.destroy();
         client = null;
     }
 }

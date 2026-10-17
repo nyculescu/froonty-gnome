@@ -5,25 +5,19 @@
 // they are written only when a row here is changed.
 
 import Adw from 'gi://Adw';
-import Gdk from 'gi://Gdk';
 import Gio from 'gi://Gio';
 import Gtk from 'gi://Gtk';
 
 import {gettext as _} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
+import {addIconPath as addIconFolder, sizeGroup, spinRow, switchRow} from '../../prefs/rows.js';
 import {GnomeBreakSettings, parseSaved, takeoverStatus, WELLBEING_PATH} from './gnomeSettings.js';
 
-const SIZE_KEYS = ['break-width', 'break-height'];
 const CUE_MODES = ['off', 'icon', 'icon-and-time'];
 const RESET_COMMAND = `gsettings reset org.gnome.desktop.notifications.application:${WELLBEING_PATH} enable`;
 
 /** The tab's pictograms (the sit/stand panic button shows one in Settings). */
-export function addIconPath() {
-    const display = Gdk.Display.get_default();
-    const icons = Gio.File.new_for_uri(import.meta.url).get_parent().get_child('icons');
-    if (display)
-        Gtk.IconTheme.get_for_display(display).add_search_path(icons.get_path());
-}
+export const addIconPath = () => addIconFolder(import.meta.url);
 
 export function breakPage(settings) {
     const page = new Adw.PreferencesPage({
@@ -40,7 +34,8 @@ export function breakPage(settings) {
     page.add(exercisesGroup(settings));
     page.add(postureGroup(settings));
     page.add(historyGroup(settings));
-    page.add(sizeGroup(settings));
+    page.add(sizeGroup(settings, ['break-width', 'break-height'],
+        _('Of the island while the Break tab is shown, in logical pixels. Or drag the open island’s bottom-right corner.')));
     return page;
 }
 
@@ -223,42 +218,6 @@ function historyGroup(settings) {
     });
     group.add(spinRow(settings, 'break-history-days', _('Keep (days)')));
     return group;
-}
-
-// Island size while the Break tab is shown; applies live. As Btop's.
-function sizeGroup(settings) {
-    const reset = new Gtk.Button({label: _('Default size'), valign: Gtk.Align.CENTER, css_classes: ['flat']});
-    const group = new Adw.PreferencesGroup({
-        title: _('Size'),
-        description: _('Of the island while the Break tab is shown, in logical pixels. Or drag the open island’s bottom-right corner.'),
-        header_suffix: reset,
-    });
-    group.add(spinRow(settings, 'break-width', _('Width')));
-    group.add(spinRow(settings, 'break-height', _('Height')));
-    const sync = () => {
-        reset.tooltip_text = SIZE_KEYS.map(key => settings.get_default_value(key).unpack()).join(' × ');
-        reset.sensitive = SIZE_KEYS.some(key => settings.get_user_value(key) !== null);
-    };
-    sync();
-    for (const key of SIZE_KEYS)
-        settings.connect(`changed::${key}`, sync);
-    reset.connect('clicked', () => SIZE_KEYS.forEach(key => settings.reset(key)));
-    return group;
-}
-
-function switchRow(settings, key, title, subtitle = '') {
-    const row = new Adw.SwitchRow({title, subtitle});
-    settings.bind(key, row, 'active', Gio.SettingsBindFlags.DEFAULT);
-    return row;
-}
-
-// Spin bounds are read from the schema's <range>, as in prefs.js.
-function spinRow(settings, key, title, step = 1) {
-    const [, [lower, upper]] = settings.settings_schema.get_key(key).get_range().recursiveUnpack();
-    const row = Adw.SpinRow.new_with_range(lower, upper, step);
-    row.title = title;
-    settings.bind(key, row, 'value', Gio.SettingsBindFlags.DEFAULT);
-    return row;
 }
 
 // One of GNOME's second counts, shown in `unit` seconds. Written only when

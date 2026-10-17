@@ -8,8 +8,8 @@
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 
-export const RUNTIME_SUBDIR = 'froonty';
-export const STATE_DIR_NAME = 'claude-attention';
+const RUNTIME_SUBDIR = 'froonty';
+const STATE_DIR_NAME = 'claude-attention';
 /** The hook script's argument (argv[0]), one per Claude Code event. */
 export const HOOK_EVENTS = ['notification', 'stop', 'stop-failure'];
 /** Priority order: index 0 is shown first. */
@@ -23,11 +23,11 @@ export const ENTRYPOINTS = ['', 'cli', 'claude-vscode', 'claude-desktop', 'claud
 /** Sessions hosted by the Claude app (its Code tab). */
 export const APP_ENTRYPOINTS = ['claude-desktop', 'claude-desktop-3p', 'local-agent'];
 /** Sessions in a terminal (`claude` started by hand; '' when unset). */
-export const TERMINAL_ENTRYPOINTS = ['', 'cli'];
+const TERMINAL_ENTRYPOINTS = ['', 'cli'];
 /** A reply's end: finished, or stopped by an error. */
 export const FINISHED_KINDS = ['finished', 'error'];
 /** Claude waits for an answer: a permission, or a question. */
-export const ANSWER_KINDS = ['permission', 'input'];
+const ANSWER_KINDS = ['permission', 'input'];
 export const CLAUDE_APP_ID = 'com.anthropic.Claude.desktop';
 export const SESSION_RE = /^[0-9A-Za-z-]{1,128}$/;
 export const FILE_RE = /^([0-9A-Za-z-]{1,128})\.json$/;
@@ -35,7 +35,7 @@ export const DESKTOP_RE = /^[A-Za-z0-9._-]{1,128}\.desktop$/;
 export const MAX_FILE = 4096;
 export const MAX_ENTRIES = 64;
 export const MAX_PIDS = 16;
-export const MAX_PROJECT = 128;
+const MAX_PROJECT = 128;
 export const MAX_INPUT = 16 << 20;
 
 /**
@@ -63,6 +63,12 @@ const NOTIFICATION_KINDS = {
 const NOTIFICATION_CLEARS = ['elicitation_complete', 'elicitation_response'];
 
 const nonEmptyArray = value => Array.isArray(value) && value.length > 0;
+
+export const isPlainObject = value => typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/** A folder, not a symlink to one. */
+export const isRealDir = file => file.query_file_type(Gio.FileQueryInfoFlags.NOFOLLOW_SYMLINKS, null) ===
+    Gio.FileType.DIRECTORY;
 
 /**
  * What a Claude Code event means for its session.
@@ -180,7 +186,7 @@ export function parseEntry(text, stem) {
     } catch {
         return null;
     }
-    if (typeof data !== 'object' || data === null || Array.isArray(data))
+    if (!isPlainObject(data))
         return null;
     const {v, kind, at, session, entrypoint, project, pids, desktop} = data;
     if (v !== 1 || !KINDS.includes(kind) || typeof at !== 'number' || !Number.isFinite(at))
@@ -308,7 +314,7 @@ export function compareEntries(a, b) {
  * @param {string} entrypoint
  * @returns {string}
  */
-export function hostName(entrypoint) {
+function hostName(entrypoint) {
     if (entrypoint === 'claude-vscode')
         return 'VS Code';
     if (APP_ENTRYPOINTS.includes(entrypoint))

@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Manage saved cities and the two Quick Settings favourites.
+// Manage saved cities, the two Quick Settings favourites and the time format.
 
 import Adw from 'gi://Adw';
 import Gtk from 'gi://Gtk';
 
 import {gettext as _} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
-import {decodeCity, encodeCity, isTimezoneIdentifier, MAX_FAVORITES} from './clock.js';
+import {choiceRow} from '../../prefs/rows.js';
+import {
+    decodeCity, encodeCity, isTimezoneIdentifier, MAX_FAVORITES, TIME_FORMATS,
+} from './clock.js';
 
 const CITIES_KEY = 'timezone-planner-cities';
 const FAVORITES_KEY = 'timezone-planner-favorites';
@@ -18,12 +21,16 @@ function addCity(settings, name, timezone, showMessage) {
         showMessage(_('Enter a city name and an IANA timezone ID.'));
         return;
     }
-    if (name.includes('|') || !isTimezoneIdentifier(timezone)) {
+    if (name.includes('|')) {
+        showMessage(_('A city name cannot contain “|”.'));
+        return;
+    }
+    if (!isTimezoneIdentifier(timezone)) {
         showMessage(_('Use a valid IANA timezone ID, such as Europe/Dublin.'));
         return;
     }
     const cities = settings.get_strv(CITIES_KEY);
-    if (cities.some(record => decodeCity(record).timezone === timezone)) {
+    if (cities.some(record => decodeCity(record)?.timezone === timezone)) {
         showMessage(_('That timezone is already in your city list.'));
         return;
     }
@@ -74,7 +81,6 @@ export function timezonesPage(settings) {
     cityGroup.add(addRow);
 
     const messageRow = new Adw.ActionRow({visible: false});
-    page._timezonePlannerMessageRow = messageRow;
     cityGroup.add(messageRow);
 
     const list = new Gtk.Box({
@@ -94,7 +100,7 @@ export function timezonesPage(settings) {
             list.remove(child);
             child = next;
         }
-        const cities = settings.get_strv(CITIES_KEY).map(decodeCity);
+        const cities = settings.get_strv(CITIES_KEY).map(decodeCity).filter(Boolean);
         const favorites = settings.get_strv(FAVORITES_KEY);
         for (const city of cities) {
             const cityRow = new Adw.ActionRow({
@@ -152,7 +158,7 @@ export function timezonesPage(settings) {
                     return;
                 }
                 const remaining = settings.get_strv(CITIES_KEY)
-                    .filter(record => decodeCity(record).timezone !== city.timezone);
+                    .filter(record => decodeCity(record)?.timezone !== city.timezone);
                 if (!settings.set_strv(CITIES_KEY, remaining))
                     showMessage(_('The city could not be removed.'));
             });
@@ -175,5 +181,12 @@ export function timezonesPage(settings) {
     settings.connect(`changed::${CITIES_KEY}`, syncCities);
     settings.connect(`changed::${FAVORITES_KEY}`, syncCities);
     syncCities();
+
+    const timesGroup = new Adw.PreferencesGroup({title: _('Times')});
+    const formatRow = choiceRow(settings, 'timezone-planner-time-format', _('Time format'),
+        TIME_FORMATS, [_('Same as the clock'), _('24-hour'), _('12-hour')]);
+    formatRow.subtitle = _('In the planner and on the Quick Settings button');
+    timesGroup.add(formatRow);
+    page.add(timesGroup);
     return page;
 }

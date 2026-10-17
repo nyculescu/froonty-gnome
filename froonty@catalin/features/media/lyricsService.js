@@ -14,38 +14,13 @@ import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 
 import {Emitter} from '../../core/emitter.js';
-import {HttpError, isCancelled} from './fetch.js';
+import {HttpError, isCancelled, loadBytes, queryInfo} from './fetch.js';
 import {
     LRCLIB_URL, LyricsMemory, MAX_LYRICS_BYTES, lrclibMatch, lrclibUrl, lyricsFromText, sidecarPath,
 } from './lyrics.js';
 import {WEEK_S} from './model.js';
 
 export const ONLINE_KEY = 'media-lyrics-online';
-
-function queryInfo(file, cancellable) {
-    return new Promise((resolve, reject) => {
-        file.query_info_async('standard::size,standard::type', Gio.FileQueryInfoFlags.NONE,
-            GLib.PRIORITY_DEFAULT, cancellable, (_file, result) => {
-                try {
-                    resolve(file.query_info_finish(result));
-                } catch (e) {
-                    reject(e);
-                }
-            });
-    });
-}
-
-function loadContents(file, cancellable) {
-    return new Promise((resolve, reject) => {
-        file.load_contents_async(cancellable, (_file, result) => {
-            try {
-                resolve(file.load_contents_finish(result)[1]);
-            } catch (e) {
-                reject(e);
-            }
-        });
-    });
-}
 
 export class LyricsService extends Emitter {
     /**
@@ -207,7 +182,7 @@ export class LyricsService extends Emitter {
         }
         if (info.get_file_type() !== Gio.FileType.REGULAR || info.get_size() > MAX_LYRICS_BYTES)
             return null;
-        const bytes = await loadContents(file, cancellable);
+        const bytes = await loadBytes(file, cancellable);
         return lyricsFromText(new TextDecoder().decode(bytes), durationS);
     }
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Panic buttons of the features that are not in the public build yet
-// (features/localFeatures.js). tools/pack-public replaces this file with
-// an empty list. Pure data, as catalog.js.
+// (features/localFeatures.js). tools/pack-public strips its import and
+// leaves this file out. Pure data, as catalog.js.
 
 export const LOCAL_PANIC_BUTTONS = [
     // The camera button is switched off for now; its code stays in
@@ -35,7 +35,7 @@ export const LOCAL_PANIC_BUTTONS = [
         title: _ => _('System resource load'),
     },
     {
-        // Temperature or RAM usage at a glance; its source is selected in
+        // A CPU or GPU temperature at a glance; its source is selected in
         // Settings → Btop. The icon is bundled with the Btop icons.
         id: 'temperature',
         icon: 'froonty-thermometer-symbolic',

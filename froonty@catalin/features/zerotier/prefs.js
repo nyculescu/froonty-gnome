@@ -4,22 +4,18 @@
 // computer are set up in ZeroTier itself.
 
 import Adw from 'gi://Adw';
-import Gdk from 'gi://Gdk';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import Gtk from 'gi://Gtk';
 
 import {gettext as _} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
+import {addIconPath as addIconFolder} from '../../prefs/rows.js';
 import {actionArgv, findExecutable, NO_TOKEN, NODE_TOKEN, run, userTokenPath} from './cli.js';
 import {ZEROTIER_ICON_NAME} from './icon.js';
 
-export function addIconPath() {
-    const display = Gdk.Display.get_default();
-    const icons = Gio.File.new_for_uri(import.meta.url).get_parent().get_child('icons');
-    if (display)
-        Gtk.IconTheme.get_for_display(display).add_search_path(icons.get_path());
-}
+/** Makes the bundled ZeroTier icon an icon name. */
+export const addIconPath = () => addIconFolder(import.meta.url);
 
 /**
  * Whether zerotier-cli works for this user: 'not-installed', 'allowed',

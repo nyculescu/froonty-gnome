@@ -132,11 +132,6 @@
     spacing: 6px;
 }
 
-/* The active feature's buttons, at the header's right end (ui/hubHeader.js). */
-.froonty-hub-feature-actions {
-    spacing: 4px;
-}
-
 /* Below the header: the side column, then the content. */
 .froonty-hub-body {
     spacing: 6px;
@@ -173,7 +168,7 @@
     color: rgba(255, 255, 255, 0.25);
 }
 
-/* Icon buttons: hub tabs and ⚙️, feature actions, panic buttons */
+/* Icon buttons: hub tabs and ⚙️, panic buttons */
 
 .froonty-icon-button {
     border-radius: 9px;
@@ -227,7 +222,6 @@
 }
 
 .froonty-timezone-city,
-.froonty-timezone-range,
 .froonty-timezone-controls {
     spacing: 12px;
 }
@@ -248,7 +242,9 @@
 }
 
 .froonty-timezone-time {
-    min-width: 52px;
+    /* Wide enough for "12:05 PM". */
+    min-width: 80px;
+    text-align: right;
     font-weight: bold;
     font-feature-settings: "tnum";
 }
@@ -426,7 +422,7 @@
     spacing: 4px;
 }
 
-/* Tab names stay visible without a hover-only close button. */
+/* A note's tab: a small pill with its name. */
 .froonty-note-tab {
     border-radius: 999px;
     padding: 3px 9px;
@@ -478,6 +474,11 @@
 .froonty-format-button StLabel {
     font-size: 0.85em;
     font-weight: bold;
+}
+
+/* The editing buttons while the note shows rendered, or is read-only. */
+.froonty-format-button:insensitive {
+    color: rgba(255, 255, 255, 0.25);
 }
 
 .froonty-notes-scroll {
@@ -577,7 +578,7 @@
     caret-color: #1f1f1f;
     selection-background-color: rgba(0, 0, 0, 0.18);
     selected-color: #1f1f1f;
-    /* Rendered Markdown's markers, quotes and done items (notes/styler.js). */
+    /* Formulas in the source view waiting for their picture, or refused. */
     -froonty-markdown-muted: #8a8a8a;
 }
 
@@ -597,6 +598,118 @@
 
 .froonty-notes-scroll.froonty-note-color-charcoal .froonty-notes-editor StLabel.hint-text {
     color: rgba(255, 255, 255, 0.45);
+}
+
+/* The rendered note (renderer/preview.js): a block being drawn or not
+   drawn, the Markdown of one that failed, and what a partly drawn one
+   left out (its full list in a tooltip). */
+.froonty-notes-block-status {
+    margin: 4px 0 2px;
+    color: #888888;
+}
+
+.froonty-notes-block-source {
+    margin-bottom: 4px;
+    font-family: monospace;
+    font-size: 0.9em;
+}
+
+.froonty-notes-block-warning {
+    margin-bottom: 4px;
+    font-size: 0.8em;
+    color: #888888;
+}
+
+/* A part of the note edited in place, and the cells of a table being
+   edited: light fields on light notes, dark on charcoal. */
+.froonty-notes-scroll .froonty-notes-field,
+.froonty-notes-scroll .froonty-notes-field:focus,
+.froonty-notes-scroll .froonty-notes-field:hover,
+.froonty-notes-scroll .froonty-notes-cell,
+.froonty-notes-scroll .froonty-notes-cell:focus,
+.froonty-notes-scroll .froonty-notes-cell:hover {
+    min-height: auto;
+    padding: 3px 6px;
+    border: 1px solid rgba(0, 0, 0, 0.25);
+    border-radius: 6px;
+    box-shadow: none;
+    color: #1f1f1f;
+    caret-color: #1f1f1f;
+    background-color: rgba(255, 255, 255, 0.7);
+    selection-background-color: rgba(0, 0, 0, 0.18);
+    selected-color: #1f1f1f;
+}
+
+.froonty-notes-scroll .froonty-notes-field:focus,
+.froonty-notes-scroll .froonty-notes-cell:focus {
+    border-color: rgba(53, 132, 228, 0.9);
+}
+
+.froonty-notes-scroll .froonty-notes-cell,
+.froonty-notes-scroll .froonty-notes-cell:focus,
+.froonty-notes-scroll .froonty-notes-cell:hover {
+    /* Fixed: an entry would size itself to nothing; longer text scrolls. */
+    width: 7em;
+    border-radius: 0;
+}
+
+.froonty-notes-scroll .froonty-notes-cell-header,
+.froonty-notes-scroll .froonty-notes-cell-header:focus,
+.froonty-notes-scroll .froonty-notes-cell-header:hover {
+    font-weight: bold;
+    background-color: rgba(0, 0, 0, 0.08);
+}
+
+.froonty-notes-scroll.froonty-note-color-charcoal .froonty-notes-field,
+.froonty-notes-scroll.froonty-note-color-charcoal .froonty-notes-field:focus,
+.froonty-notes-scroll.froonty-note-color-charcoal .froonty-notes-field:hover,
+.froonty-notes-scroll.froonty-note-color-charcoal .froonty-notes-cell,
+.froonty-notes-scroll.froonty-note-color-charcoal .froonty-notes-cell:focus,
+.froonty-notes-scroll.froonty-note-color-charcoal .froonty-notes-cell:hover {
+    border-color: rgba(255, 255, 255, 0.3);
+    color: #ffffff;
+    caret-color: #ffffff;
+    background-color: rgba(0, 0, 0, 0.25);
+    selection-background-color: rgba(255, 255, 255, 0.25);
+    selected-color: #ffffff;
+}
+
+.froonty-notes-scroll.froonty-note-color-charcoal .froonty-notes-cell-header,
+.froonty-notes-scroll.froonty-note-color-charcoal .froonty-notes-cell-header:focus,
+.froonty-notes-scroll.froonty-note-color-charcoal .froonty-notes-cell-header:hover {
+    background-color: rgba(255, 255, 255, 0.12);
+}
+
+.froonty-notes-table-editor {
+    margin: 2px 0 4px;
+    spacing: 4px;
+}
+
+.froonty-notes-table-controls {
+    spacing: 4px;
+}
+
+.froonty-notes-scroll .froonty-notes-table-button {
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-size: 0.85em;
+    color: #1f1f1f;
+    background-color: rgba(0, 0, 0, 0.08);
+}
+
+.froonty-notes-scroll .froonty-notes-table-button:hover,
+.froonty-notes-scroll .froonty-notes-table-button:focus {
+    background-color: rgba(0, 0, 0, 0.16);
+}
+
+.froonty-notes-scroll.froonty-note-color-charcoal .froonty-notes-table-button {
+    color: #ffffff;
+    background-color: rgba(255, 255, 255, 0.12);
+}
+
+.froonty-notes-scroll.froonty-note-color-charcoal .froonty-notes-table-button:hover,
+.froonty-notes-scroll.froonty-note-color-charcoal .froonty-notes-table-button:focus {
+    background-color: rgba(255, 255, 255, 0.2);
 }
 
 .froonty-color-dot {
@@ -725,27 +838,47 @@
     text-align: center;
 }
 
-/* Panic button "Claude session usage": the number as large as the button
-   allows, in Claude's orange, over a faint grey Spark (a watermark). No
-   padding; the stack takes the size the other icon buttons have
-   (16px icon + 5px/7px padding), so the bar stays even. */
-.froonty-icon-button.froonty-claude-session {
+/* Panic buttons "Claude session usage", load and thermometer: a number
+   over a faint grey icon (a watermark). No padding; the stack takes the
+   size the other icon buttons have (16px icon + 5px/7px padding), so the
+   bar stays even. */
+.froonty-icon-button.froonty-claude-session,
+.froonty-icon-button.froonty-sysmon-cpu,
+.froonty-icon-button.froonty-sysmon-temp {
     padding: 0;
 }
-.froonty-claude-session-stack {
+.froonty-claude-session-stack,
+.froonty-sysmon-cpu-stack {
     width: 30px;
     height: 26px;
 }
-.froonty-claude-session .froonty-claude-session-icon {
+/* Two classes, to win over `.froonty-icon-button StIcon`. */
+.froonty-panic-button .froonty-claude-session-icon,
+.froonty-panic-button .froonty-sysmon-cpu-icon {
     icon-size: 22px;
     color: rgba(255, 255, 255, 0.28);
 }
+.froonty-claude-session-number,
+.froonty-sysmon-cpu-number,
+.froonty-sysmon-temp-number {
+    font-weight: 800;
+    font-feature-settings: "tnum";
+}
+/* Claude's: as large as the button allows, in Claude's orange, over the
+   Spark. */
 .froonty-claude-session-number {
     color: #d97757;
     font-size: 15px;
-    font-weight: 800;
     letter-spacing: -0.5px;
-    font-feature-settings: "tnum";
+}
+/* The load and thermometer's: with its unit ("37%", "76°C") over a
+   CPU/GPU/RAM or thermometer icon, smaller to fit "100%"; the load's in
+   the level colours below, the thermometer's coloured by
+   panic/temperature.js. */
+.froonty-sysmon-cpu-number,
+.froonty-sysmon-temp-number {
+    font-size: 11px;
+    letter-spacing: -0.4px;
 }
 
 /* Btop (system monitor) feature. Shares as a five-cell level
@@ -796,33 +929,6 @@
 .froonty-sysmon-cell-4 { color: #ff7800; }
 .froonty-sysmon-cell-5 { color: #e01b24; }
 .froonty-sysmon-cell-empty { color: #5e5c64; }
-/* The load and thermometer panic buttons: the number with its unit ("37%",
-   "76°C") in the level colours over a faint CPU/GPU/RAM or thermometer icon;
-   the unit needs the smaller size to fit "100%". */
-.froonty-icon-button.froonty-sysmon-cpu,
-.froonty-icon-button.froonty-sysmon-temp {
-    padding: 0;
-}
-.froonty-sysmon-cpu-stack {
-    width: 30px;
-    height: 26px;
-}
-.froonty-sysmon-cpu-icon {
-    icon-size: 22px;
-    color: rgba(255, 255, 255, 0.28);
-}
-.froonty-sysmon-cpu-number,
-.froonty-sysmon-temp-number {
-    font-size: 15px;
-    font-weight: 800;
-    letter-spacing: -0.5px;
-    font-feature-settings: "tnum";
-}
-.froonty-sysmon-cpu-number,
-.froonty-sysmon-temp-number {
-    font-size: 11px;
-    letter-spacing: -0.4px;
-}
 .froonty-sysmon-detail {
     font-size: 0.78em;
     font-feature-settings: "tnum";
@@ -868,7 +974,7 @@
     font-size: 0.78em;
 }
 
-/* local:begin fan (working-tree only; tools/pack-public strips it) */
+/* local:begin pad-noise-slider (working-tree only; tools/pack-public strips it) */
 /* The pad noise slider's stages: dots on the Quick Settings slider's track. */
 .froonty-pad-noise-dot {
     width: 8px;
@@ -876,7 +982,7 @@
     border-radius: 4px;
     border: 1px solid rgba(0, 0, 0, 0.55);
 }
-/* local:end fan */
+/* local:end pad-noise-slider */
 
 /* Clipboard feature: the history, newest first; the entry now on the
    clipboard is outlined. */
@@ -1448,11 +1554,6 @@
 .froonty-media-message-text {
     font-size: 13px;
     text-align: center;
-}
-.froonty-media-message-note {
-    font-size: 11px;
-    text-align: center;
-    color: rgba(255, 255, 255, 0.6);
 }
 .froonty-media-consent {
     border-radius: 8px;

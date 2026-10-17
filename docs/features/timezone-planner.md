@@ -15,6 +15,12 @@ instant through GLib's timezone database, so daylight-saving changes and
 crossing midnight are handled correctly. The **Now** button recenters the
 slider on the current time.
 
+**Time format** (Settings → Time zones → Times) sets how the planner and
+the Quick Settings button write times: **Same as the clock** (the default)
+follows the island's own Clock format setting, and through it GNOME's when
+that is "Follow system"; **24-hour** writes 14:05 and **12-hour** 2:05 PM.
+Open windows and the button update as soon as either setting changes.
+
 The feature performs no network requests. The Quick Settings time display
 follows GNOME's own wall clock and updates when the displayed minute or the
 favourites change.

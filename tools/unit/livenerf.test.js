@@ -52,8 +52,7 @@ test('livenerf: the last row with a Δ, Unicode minus and emphasis included', ()
     const {result} = Livenerf.benchmarkFromReadme(readme(
         '| 1 | days 11–20 | 7020 | 61.2% | **−2.1 ± 1.4** | 812 | +0.3 ± 1.9 | pinned | no change |\n' +
         '| 2 | days 21–30 | 7020 | 60.0% | −3.4 pts ± 1.5 | 790 | −0.2 ± 2.0 | pinned | pending |\n'));
-    eq(result, {window: 'days 21–30', delta: -3.4, se: 1.5, deltaText: '−3.4 pts ± 1.5',
-        decision: 'pending'});
+    eq(result, {window: 'days 21–30', deltaText: '−3.4 pts ± 1.5', decision: 'pending'});
 });
 
 test('livenerf: a positive Δ keeps its sign; columns found by name, not place', () => {
@@ -62,7 +61,7 @@ test('livenerf: a positive Δ keeps its sign; columns found by name, not place',
     const {result} = Livenerf.benchmarkFromReadme(text.replace(
         '| 0 | days 1–10 (from 2026-09-24) | - | - | baseline |',
         '| 1 | 7020 | days 11–20 | +0.8 ± 1.2 | 62.0% |'));
-    eq([result.window, result.delta, result.se, result.decision], ['days 11–20', 0.8, 1.2, 'baseline (collecting)']);
+    eq([result.window, result.deltaText, result.decision], ['days 11–20', '+0.8 ± 1.2', 'baseline (collecting)']);
 });
 
 test('livenerf: nothing recognisable is null, not a guess', () => {
@@ -106,8 +105,7 @@ test('livenerf chart: scores and intervals read back through the grid', () => {
     eq(chart.grid, [40, 80]);
     eq(chart.band.map(round), [0, 0.31]);
     eq(chart.ticks.map(t => [round(t.at), t.label]), [[0, 'Sep 24'], [0.5, 'Oct 08']]);
-    eq([chart.latest, chart.baselineMean, chart.collecting, chart.samples],
-        [55, 60, null, 546]);
+    eq([chart.latest, chart.baselineMean, chart.collecting], [55, 60, null]);
     eq(chart.updated, Date.parse('2026-09-30T19:44:00Z'));
 });
 
@@ -184,7 +182,7 @@ test('service: nothing is fetched before start; a fetch reads both files', async
     await service.refresh();
     eq(calls.length, 1);
     eq([service.benchmark.progress.collected, service.benchmark.chart.latest], [7, 55]);
-    eq([service.loaded, service.error, changes()], [true, null, 1]);
+    eq([service.loaded, changes()], [true, 1]);
     service.stop();
 });
 
@@ -200,16 +198,16 @@ test('service: within the hour, no second fetch; after it, one', async () => {
     service.stop();
 });
 
-test('service: failed first fetches are "unreadable" and retried next time', async () => {
+test('service: failed first fetches leave no benchmark and are retried next time', async () => {
     const {service, calls} = setup([{readme: new Error('HTTP 503'), chart: new Error('HTTP 503')},
         {readme: 'not the README', chart: 'not the chart'}, GOOD]);
     service.start();
     await service.refresh();
-    eq([service.error, service.benchmark], ['unreadable', null]);
+    eq([service.loaded, service.benchmark], [true, null]);
     await service.refresh();
-    eq(service.error, 'unreadable', 'pages without results are no better');
+    eq(service.benchmark, null, 'pages without results are no better');
     await service.refresh();
-    eq([calls.length, service.error, service.benchmark.progress.total], [3, null, 30]);
+    eq([calls.length, service.benchmark.progress.total], [3, 30]);
     service.stop();
 });
 
@@ -218,7 +216,7 @@ test('service: one file is enough; a failed one keeps its last reading and is re
         {readme: new Error('offline'), chart: CHART}, GOOD]);
     service.start();
     await service.refresh();
-    eq([service.error, service.benchmark.progress.collected, service.benchmark.chart], [null, 7, null]);
+    eq([service.benchmark.progress.collected, service.benchmark.chart], [7, null]);
     await service.refresh();
     eq([service.benchmark.progress.collected, service.benchmark.chart.latest], [7, 55],
         'the README\'s last reading kept, the chart added');
@@ -234,8 +232,7 @@ test('service: failed later fetches keep the last good reading', async () => {
     await service.refresh();
     service.fetchedAt -= MIN_FETCH_INTERVAL_MS;
     await service.refresh();
-    eq([service.error, service.benchmark.progress.collected, service.benchmark.chart.latest, changes()],
-        [null, 7, 55, 1]);
+    eq([service.benchmark.progress.collected, service.benchmark.chart.latest, changes()], [7, 55, 1]);
     service.stop();
 });
 

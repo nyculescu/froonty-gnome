@@ -76,6 +76,16 @@
       <summary>Timezone planner favourite cities</summary>
       <description>Timezone IDs shown in Quick Settings; at most two city favourites.</description>
     </key>
+    <key name="timezone-planner-time-format" type="s">
+      <choices>
+        <choice value="clock"/>
+        <choice value="24h"/>
+        <choice value="12h"/>
+      </choices>
+      <default>'clock'</default>
+      <summary>Timezone planner time format</summary>
+      <description>"clock" follows the island clock's clock-format.</description>
+    </key>
 
     <!-- Notes feature (docs/features/notes.md) -->
     <key name="notes-enabled" type="b">
@@ -254,7 +264,7 @@
       <summary>Btop: each thread unfolded</summary>
     </key>
 
-    <!-- Fan controls and telemetry in Settings (docs/features/fan.md) -->
+    <!-- local-only: Fan controls and telemetry in Settings (docs/features/fan.md); tools/pack-public strips the fan-* keys and this comment -->
     <key name="fan-interval" type="i">
       <range min="1" max="10"/>
       <default>2</default>
@@ -571,7 +581,7 @@
     <key name="cooling-slider-enabled" type="b">
       <default>true</default>
       <summary>Pad noise slider in Quick Settings</summary>
-      <description>Show a continuous llano pad RPM slider with noise-stage markers when Froonty runs.</description>
+      <description>Show a llano pad speed slider (50 RPM steps) with noise-stage markers when Froonty runs.</description>
     </key>
 
     <!-- Software display brightness (features/brightness, docs/features/brightness.md) -->

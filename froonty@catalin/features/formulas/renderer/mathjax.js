@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// MathJax in plain GJS (docs/features/formulas.md §4): TeX in, SVG out
+// MathJax in plain GJS (docs/features/formulas.md §3.2): TeX in, SVG out
 // through MathJax's own "lite" DOM, then a PNG drawn by librsvg. Loaded
 // only by the renderer helper (helper.js), never by GNOME Shell or the
 // settings window: loading takes ~150 ms and each formula a few ms, which
@@ -12,10 +12,12 @@
 import GLib from 'gi://GLib';
 import Rsvg from 'gi://Rsvg?version=2.0';
 
+import {defaultMathJaxDir} from './client.js';
+
 // The TeX packages loaded (tools/fetch-mathjax.py's TEX_PACKAGES): name
 // for TeX's `packages` option → its configuration module. Undefined
 // commands stay errors (no noundefined), so the editor can name them.
-export const TEX_PACKAGES = [
+const TEX_PACKAGES = [
     ['base', 'base/BaseConfiguration'],
     ['ams', 'ams/AmsConfiguration'],
     ['newcommand', 'newcommand/NewcommandConfiguration'],
@@ -34,20 +36,14 @@ export const TEX_PACKAGES = [
 ];
 
 // Logical px of 1em at scale 1 (MathJax's ex is half of it here).
-export const EM_PX = 16;
+const EM_PX = 16;
 // Transparent room around the drawing (in em): glyphs may reach slightly
 // past MathJax's bounding box (italic overhangs, accents).
 const PAD_EM = 0.08;
 // The longest formula accepted, and the most pixels on a side drawn.
-export const MAX_TEX_LENGTH = 4000;
+const MAX_TEX_LENGTH = 4000;
 const MAX_SIDE_PX = 4096;
 const COLOR = /^#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?$/;
-
-/** The folder fetch-mathjax.py fills: froonty@catalin/third_party/mathjax. */
-export function defaultMathJaxDir() {
-    const here = GLib.path_get_dirname(GLib.filename_from_uri(import.meta.url)[0]);
-    return GLib.build_filenamev([here, '..', '..', '..', 'third_party', 'mathjax']);
-}
 
 /** A formula MathJax refused; message is MathJax's own, first line. */
 export class FormulaError extends Error {}

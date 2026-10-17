@@ -32,7 +32,7 @@ text box choose one (the choice is kept in `writing-engine`).
 | **Ollama** | nowhere: a model on this computer (127.0.0.1) | all five | Ollama and a downloaded model |
 
 No paid API is used. Anthropic or OpenAI API keys are never asked for;
-an API-billing sign-in of Claude Code is refused (§4.5).
+an API-billing sign-in of Claude Code is refused (§4.3).
 
 The line above the text box always says where the text goes, for example
 "Sends to Anthropic, through your Claude Code (Haiku · your plan's usage)",
@@ -183,9 +183,9 @@ the Model. The line above the text box then names both.
 
 `actions.js`. The prompts are English and never translated: the models
 read them. One click makes one or more requests, one after the other
-(`stepsFor`); each has a fixed system prompt with no nonce and none of the
-text, so Claude Code's argv never carries the text (`claudeArgv` takes the
-step's request):
+(`stepsFor`); each has a fixed system prompt with none of the text, so
+Claude Code's argv never carries the text (`claudeArgv` takes the step's
+request):
 
 | Action | Requests | Shown |
 |---|---|---|
@@ -634,7 +634,8 @@ In order:
    it, then Remove again" and stay recorded.
 3. **Leftovers:** `ollama.new` and `~/.cache/froonty/writing/`.
 4. **Record:** `setup.json` forgets Ollama (keeping models whose delete
-   failed); `writing-ollama-enabled` and `writing-ollama-model` are reset.
+   failed); `writing-ollama-enabled`, `writing-ollama-model` and
+   `writing-ollama-translate-model` are reset.
 
 ### 5.5 Remove everything
 
@@ -698,7 +699,7 @@ through `..`, and links inside them are deleted, never followed.
 | File | |
 |---|---|
 | `features/writing/index.js` | Descriptor: `writing-enabled`, 460×540 (`writing-width`/`-height`) |
-| `actions.js` | Pure: actions, prompts, markers, limits, what may be sent |
+| `actions.js` | Pure: actions, prompts, limits, what may be sent |
 | `errors.js`, `paths.js` | Error codes; folders, and the test guard on every address |
 | `http.js`, `process.js` | Soup requests and NDJSON streams; subprocesses with timeout and SIGTERM |
 | `engines/claudeCode.js`, `languageTool.js`, `ollama.js` | The three engines |
@@ -728,14 +729,15 @@ recorder.
   `FROONTY_OLLAMA_SYSTEM_ROOT` (a folder standing in for `/usr`, `/etc`
   and `/lib` when looking for an Ollama of the user's own) and (for
   Writing) `FROONTY_CLAUDE_CODE` read, and a missing one throws. Anywhere
-  else they are ignored.
+  else they are ignored, except `FROONTY_CLAUDE_CODE`, which stays
+  honoured everywhere (§6).
 - `tools/unit/run.sh` gives each run private `XDG_DATA_HOME`,
   `XDG_CONFIG_HOME`, `XDG_CACHE_HOME` and `XDG_RUNTIME_DIR`, and then runs
   `tools/pack-public/test_pack_public.py`.
 - **Unit** (`tools/unit/writing-*.test.js`, helpers in
   `writing-helpers.js`): actions and prompts (Fix grammar's B2 and C1
   steps, Translate's two, the writer's language, "Another option"'s
-  earlier versions and their marker code, no step's system prompt ever
+  earlier versions, no step's system prompt ever
   holding the text, the reasoning qwen3:4b leaked dropped, the JSON
   message (a hostile text kept in its string), the JSON reply and a plain
   one, the string streamed so far with its escapes, `looksAnswered` and

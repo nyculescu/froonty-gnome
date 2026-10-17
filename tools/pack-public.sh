@@ -24,7 +24,7 @@ cp -a "$ROOT/$UUID" "$STAGED"
 # extension.js too: the parts that are not tabs), go;
 # prune.py then leaves those modules out with everything only they reach.
 for module in extension.js features/registry.js prefs.js panic/catalog.js panic/registry.js \
-    features/sysmon/prefs.js ui/panicBar.js; do
+    ui/panicBar.js; do
     python3 "$ROOT/tools/pack-public/strip_local.py" --several "$STAGED/$module" local-features
 done
 # Formulas in notes (features/formulas/notes): the Notes tab and its All
@@ -41,7 +41,7 @@ rmdir "$STAGED/third_party" 2>/dev/null || true
 python3 "$ROOT/tools/pack-public/strip-local-schema.py" \
     "$STAGED/schemas/org.gnome.shell.extensions.froonty.gschema.xml"
 python3 "$ROOT/tools/pack-public/strip_local.py" "$STAGED/stylesheet.css" \
-    zerotier writing formulas fan timezone-planner
+    zerotier writing formulas pad-noise-slider timezone-planner
 # Only what extension.js and prefs.js reach, and only their settings keys
 # and CSS; the description says what this build has.
 python3 "$ROOT/tools/pack-public/prune.py" "$STAGED"

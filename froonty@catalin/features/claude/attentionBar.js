@@ -6,7 +6,7 @@
 //    ├ main  St.Button: [Spark] "Claude needs your permission" place  +2
 //    └ close St.Button ×
 //
-// It only shows what it is given (Island._syncAttention); a click asks
+// It only shows what it is given (AttentionHost.sync); a click asks
 // the service to go there, × to drop it. Nothing runs per frame: the fade
 // is one ease().
 
@@ -101,15 +101,10 @@ export class AttentionBar {
         Main.ctrlAltTabManager.addGroup(this.actor, _('Claude needs you'), 'dialog-information-symbolic');
     }
 
+    // Destroying the actor also removes its Ctrl+Alt+Tab group.
     destroy() {
-        Main.ctrlAltTabManager.removeGroup(this.actor);
         this.actor.destroy();
         this.actor = null;
-    }
-
-    /** The id of the entry shown, or null. */
-    get shownId() {
-        return this.actor?.visible ? this._id : null;
     }
 
     /**

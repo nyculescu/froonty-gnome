@@ -4,7 +4,7 @@
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 
-import {test, eq, ok, done} from './test.js';
+import {test, eq, ok, done, makeSettings, sleep, waitFor} from './test.js';
 import {NotesStore} from '../../froonty@catalin/features/notes/store.js';
 import {NotesService} from '../../froonty@catalin/features/notes/service.js';
 
@@ -12,27 +12,6 @@ import {NotesService} from '../../froonty@catalin/features/notes/service.js';
 if (!GLib.getenv('FROONTY_UNIT_ISOLATED')) {
     printerr('Run this through tools/unit/run.sh (isolated TMPDIR/XDG_DATA_HOME).');
     imports.system.exit(2);
-}
-
-const EXTENSION_DIR = GLib.build_filenamev([
-    GLib.path_get_dirname(GLib.path_get_dirname(GLib.path_get_dirname(
-        GLib.filename_from_uri(import.meta.url)[0]))),
-    'froonty@catalin']);
-
-const sleep = ms => new Promise(resolve => GLib.timeout_add(GLib.PRIORITY_DEFAULT, ms,
-    () => {
-        resolve();
-        return GLib.SOURCE_REMOVE;
-    }));
-
-// Froonty's real schema, with an in-memory backend: nothing touches dconf.
-function makeSettings() {
-    const source = Gio.SettingsSchemaSource.new_from_directory(
-        GLib.build_filenamev([EXTENSION_DIR, 'schemas']), null, false);
-    return new Gio.Settings({
-        settings_schema: source.lookup('org.gnome.shell.extensions.froonty', false),
-        backend: Gio.memory_settings_backend_new(),
-    });
 }
 
 function tempDir() {
@@ -89,10 +68,11 @@ test('store: create and rename never overwrite another note', async () => {
 
 // ---- service
 
-async function startService(folder) {
+async function startService(folder, createStore) {
     const settings = makeSettings();
     settings.set_string('notes-folder', folder.get_path());
-    const service = new NotesService({settings, dataDir: tempDir()});
+    const service = new NotesService({settings, dataDir: tempDir(),
+        ...createStore ? {createStore} : {}});
     let changes = 0;
     service.connect('changed', () => changes++);
     service.start();
@@ -552,6 +532,66 @@ test('notes that appear elsewhere reach the view, even when the open note is unc
     eq(service.color, 'green');
     ok(changes() > after, 'a colour changed elsewhere reaches the view too');
     service.stop();
+});
+
+// ---- watching the folder
+
+test('service: with a folder monitor no timer runs; All notes\' marker is followed', async () => {
+    const {dir} = await notesIn(['a', 'b']);
+    const {service} = await startService(dir);
+    ok(!service.polling, 'no 2 s refresh while the monitor works');
+    eq(service.selected, 'b');
+    await service.flush(); // its own marker write first
+    dir.get_child('.froonty-current-note').replace_contents('a', null, false, 0, null);
+    ok(await waitFor(() => service.selected === 'a', 3000), `selected: ${service.selected}`);
+    service.stop();
+});
+
+// The per-user inotify limit used up: Gio cannot make a folder monitor.
+const unwatchable = how => folder => {
+    const store = new NotesStore(folder);
+    store.monitor = () => {
+        if (how === 'throws')
+            throw new Error('Unable to find default local file monitor type');
+        return null;
+    };
+    return store;
+};
+
+test('service: without a folder monitor it looks every 2 s and follows changes', async () => {
+    const {dir, store} = await notesIn(['a', 'b']);
+    const {service} = await startService(dir, unwatchable('throws'));
+    ok(service.polling, 'the fallback refresh runs');
+    eq(service.selected, 'b');
+    await service.flush(); // its own marker write first
+    dir.get_child('.froonty-current-note').replace_contents('a', null, false, 0, null);
+    ok(await waitFor(() => service.selected === 'a', 5000), `marker: ${service.selected}`);
+
+    await store.write('a', 'edited elsewhere');
+    await store.create('c');
+    dir.get_child('b.md').set_display_name('B2.md', null);
+    labelsFile(dir).replace_contents(JSON.stringify({version: 1, labels: {a: ['work']}}),
+        null, false, 0, null);
+    const seen = () => [service.text, [...service.notes].sort(), service.labelsOf('a')];
+    ok(await waitFor(() => JSON.stringify(seen()) ===
+        JSON.stringify(['edited elsewhere', ['B2', 'a', 'c'], ['work']]), 5000),
+    JSON.stringify(seen()));
+
+    dir.get_child('.froonty.json').replace_contents(JSON.stringify({version: 1,
+        order: service.notes, colors: {a: 'green'}}), null, false, 0, null);
+    ok(await waitFor(() => service.color === 'green', 5000), `colour: ${service.color}`);
+    service.stop();
+    ok(!service.polling, 'stopped with the service');
+});
+
+test('service: a monitor that is null polls too', async () => {
+    const {dir} = await notesIn(['a']);
+    const {service} = await startService(dir, unwatchable('null'));
+    ok(service.polling);
+    dir.get_child('new.md').replace_contents('x', null, false, 0, null);
+    ok(await waitFor(() => service.notes.includes('new'), 5000), JSON.stringify(service.notes));
+    service.stop();
+    ok(!service.polling);
 });
 
 await done();

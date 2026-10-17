@@ -121,6 +121,11 @@ test('link: wraps the selection and selects the URL', () => {
     eq(Md.insertLink(s('', 0)), s('[link](https://)', 7, 15));
 });
 
+test('image: the selection is the alt text, and the path is selected', () => {
+    eq(Md.insertImage(s('a b', 2, 3), 'x.png'), s('a ![b](x.png)', 7, 12));
+    eq(Md.insertImage(s('', 0), 'x.png'), s('![image](x.png)', 9, 14));
+});
+
 test('markdown: bold over several lines wraps each line, and unwraps them again', () => {
     const text = 'test line 1\ntest line 2';
     const bold = Md.toggleWrap({text, start: 0, end: text.length}, '**');

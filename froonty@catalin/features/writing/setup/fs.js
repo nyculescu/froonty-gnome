@@ -7,8 +7,10 @@
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 
-for (const method of ['make_directory_async', 'delete_async', 'enumerate_children_async',
-    'query_info_async', 'load_contents_async'])
+import {makeDirectory} from '../../../core/privateFile.js';
+
+for (const method of ['delete_async', 'enumerate_children_async', 'query_info_async',
+    'load_contents_async'])
     Gio._promisify(Gio.File.prototype, method);
 Gio._promisify(Gio.File.prototype, 'replace_contents_bytes_async', 'replace_contents_finish');
 Gio._promisify(Gio.File.prototype, 'set_attributes_async', 'set_attributes_finish');
@@ -17,23 +19,11 @@ Gio._promisify(Gio.FileEnumerator.prototype, 'close_async');
 
 const PRIORITY = GLib.PRIORITY_DEFAULT;
 const NOFOLLOW = Gio.FileQueryInfoFlags.NOFOLLOW_SYMLINKS;
+const MAX_TEXT = 1024 * 1024;
 
 /** This process's user id. */
-export function currentUid() {
+function currentUid() {
     return new Gio.Credentials().get_unix_user();
-}
-
-async function makeDirectory(dir) {
-    try {
-        await dir.make_directory_async(PRIORITY, null);
-    } catch (e) {
-        if (e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.EXISTS))
-            return;
-        if (!e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.NOT_FOUND) || !dir.get_parent())
-            throw e;
-        await makeDirectory(dir.get_parent());
-        await dir.make_directory_async(PRIORITY, null);
-    }
 }
 
 async function setMode(file, mode) {
@@ -61,8 +51,6 @@ export async function isPrivateDir(path) {
 /**
  * Creates `path` (and missing parents) and makes it 0700. A link or a
  * folder of someone else's at `path` is refused.
- *
- * @returns {Promise<string>} path
  */
 export async function ensurePrivateDir(path) {
     const dir = Gio.File.new_for_path(path);
@@ -72,7 +60,6 @@ export async function ensurePrivateDir(path) {
         info.get_attribute_uint32('unix::uid') !== currentUid())
         throw new Error(`${path} is not a folder of yours`);
     await setMode(dir, 0o700);
-    return path;
 }
 
 /**
@@ -89,11 +76,11 @@ export async function writeAtomic(path, text, mode = 0o600) {
     await setMode(file, mode);
 }
 
-/** A file's text, or null when it cannot be read. */
-export async function readText(path, maxBytes = 1024 * 1024) {
+/** A file's text, or null when it cannot be read or is over 1 MiB. */
+export async function readText(path) {
     try {
         const [bytes] = await Gio.File.new_for_path(path).load_contents_async(null);
-        if (bytes.length > maxBytes)
+        if (bytes.length > MAX_TEXT)
             return null;
         return new TextDecoder().decode(bytes);
     } catch (e) {
@@ -179,10 +166,8 @@ export async function deleteTree(path, root) {
 export async function deleteFile(path) {
     try {
         await Gio.File.new_for_path(path).delete_async(PRIORITY, null);
-        return true;
     } catch (e) {
-        if (e.matches?.(Gio.IOErrorEnum, Gio.IOErrorEnum.NOT_FOUND))
-            return false;
-        throw e;
+        if (!e.matches?.(Gio.IOErrorEnum, Gio.IOErrorEnum.NOT_FOUND))
+            throw e;
     }
 }

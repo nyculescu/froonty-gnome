@@ -41,6 +41,7 @@ export class QueueClient extends Emitter {
         this._idleId = 0;
         this._token = 0;
         this._goal = null;
+        this._current = null;
         this._verify = new OneShot(timers, () => {
             if (this._goal) {
                 this._goal = null;
@@ -74,6 +75,7 @@ export class QueueClient extends Emitter {
             this._verify.stop();
             this._goal = null;
             this.notice = null;
+            this.rows = [];
             this._token++;
             if (this._idleId)
                 this._timers.remove(this._idleId);
@@ -92,8 +94,11 @@ export class QueueClient extends Emitter {
 
     _onMediaChanged() {
         const player = this._supported() ? this._media.player : null;
-        const target = player ? `${player.owner}` : null;
+        const target = player?.owner ?? null;
         if (target !== this._subscribedTo) {
+            // Another player's rows (and their "Play now") go at once.
+            if (this.rows.length)
+                this._set('loading');
             this._unsubscribe();
             if (player)
                 this._subscribe(player);
@@ -147,6 +152,10 @@ export class QueueClient extends Emitter {
     async refresh() {
         if (!this._open)
             return;
+        // This read replaces a queued one.
+        if (this._idleId)
+            this._timers.remove(this._idleId);
+        this._idleId = 0;
         const token = ++this._token;
         const playback = this._media.playback;
         const player = this._supported() ? this._media.player : null;

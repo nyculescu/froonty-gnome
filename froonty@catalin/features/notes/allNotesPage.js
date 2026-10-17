@@ -4,7 +4,7 @@
 // edit them. A note tab's context menu opens it; so does Settings → Notes →
 // All notes. It is a subpage: the back arrow leads to the settings.
 //
-//   ┌ ← All notes · 12 notes ─────────────────────────────────────────┐
+//   ┌ ← [+]          All notes · 12 notes ────────────────────────────┐
 //   │ [Search notes          ] │ ● Plan            q4 · work [Labels]│
 //   │ (work 3) (q4 1) (home 2) │ ─────────────────────────────────── │
 //   │ [All|Any]        Clear   │ # Q4 plan                           │
@@ -24,7 +24,9 @@
 // when the user navigates, and back to "settings" when the window closes.
 //
 // The open note follows a small marker in the notes folder, in either
-// direction. `notes-last` is the fallback for folders without that marker.
+// direction, read again after every library refresh (the folder monitor,
+// or its 2 s fallback, sees it change). `notes-last` is the fallback for
+// folders without that marker.
 //
 // Create, rename and Trash stay in the island.
 
@@ -44,6 +46,8 @@ import {
 import {NotePane} from './allNotesNote.js';
 import * as Labels from './labels.js';
 import {NotesLibrary} from './library.js';
+import * as Names from './names.js';
+import {moveRenderSizes} from './renderSizes.js';
 import {markup, searchNotes} from './search.js';
 
 const VIEW_KEY = 'settings-window-view';
@@ -72,11 +76,15 @@ const CSS = `
     color: var(--accent-fg-color); }
 .froonty-format-button:checked:hover {
     background-color: color-mix(in srgb, var(--accent-bg-color) 85%, white); }
+checkbutton.froonty-task-check { padding: 0; }
 checkbutton.froonty-task-check > check {
     min-width: 14px; min-height: 14px; padding: 0;
     border: 2px solid #555; border-radius: 4px; background: #fffdf0; }
 checkbutton.froonty-task-check:checked > check {
     border-color: #b63a10; background: #d54b17; color: white; }
+button.froonty-render-resize {
+    min-width: 20px; min-height: 20px; padding: 0; border-radius: 4px;
+    background: alpha(#222, 0.72); color: white; font-size: 12px; }
 `;
 let cssAdded = false;
 
@@ -105,27 +113,21 @@ function formatDate(ms) {
  *
  * @param {Adw.PreferencesWindow} window
  * @param {Gio.Settings} settings
- * @param {Adw.NavigationView} [navigationView] custom settings navigation
+ * @param {Adw.NavigationView} navigationView the settings window's pages
  */
-export function attachAllNotes(window, settings, navigationView = window) {
+export function attachAllNotes(window, settings, navigationView) {
     let page = null;
     let pushed = false;
     const show = () => {
         if (pushed)
             return;
         page ??= new AllNotesPage(window, settings, () => (pushed = false));
-        if (navigationView === window)
-            window.push_subpage(page.navigationPage);
-        else
-            navigationView.push(page.navigationPage);
+        navigationView.push(page.navigationPage);
         pushed = true;
     };
     const hide = () => {
         if (pushed)
-            if (navigationView === window)
-                window.pop_subpage();
-            else
-                navigationView.pop();
+            navigationView.pop();
     };
     const sync = () => (settings.get_string(VIEW_KEY) === 'all-notes' ? show() : hide());
     const ids = [
@@ -166,7 +168,6 @@ class AllNotesPage {
         // Shared selected note, and a note to open once it is listed.
         this._islandNote = null;
         this._follow = null;
-        this._pollId = 0;
         this._selectionSerial = 0;
         this._selectionPending = false;
         this._selectionWrite = Promise.resolve();
@@ -191,12 +192,14 @@ class AllNotesPage {
                 this._open(copy);
             },
             onError: message => this._toast(message),
+            onRename: (name, text) => this._rename(name, text),
         });
         this._build();
 
         this._library.connect('changed', (_library, change) => this._onLibraryChanged(change));
         this._library.connect('renamed', (_library, from, to) => this._pane.renamed(from, to));
         this._library.connect('removed', (_library, name) => this._pane.removed(name));
+        this._library.connect('refreshed', () => this._followSharedSelection());
         this._lastId = settings.connect('changed::notes-last', () => {
             if (this._library.running)
                 this._followIsland();
@@ -207,7 +210,6 @@ class AllNotesPage {
             const ready = this._library.start();
             // Another folder since it was last shown: the old note goes.
             this._pane.followFolder();
-            this._startPolling();
             ready.finally(() => this._followPreferredSelection());
         });
         page.connect('shown', () => {
@@ -218,7 +220,6 @@ class AllNotesPage {
         page.connect('hiding', () => this.flush());
         page.connect('hidden', () => {
             this._library.stop();
-            this._stopPolling();
             onHidden();
             if (this._settings.get_string(VIEW_KEY) === 'all-notes')
                 this._settings.set_string(VIEW_KEY, 'settings');
@@ -233,7 +234,6 @@ class AllNotesPage {
         this.flush();
         this._pane.stop();
         this._library.stop();
-        this._stopPolling();
         this._settings.disconnect(this._lastId);
     }
 
@@ -253,25 +253,6 @@ class AllNotesPage {
             this._library.refresh().finally(() => this._followPreferredSelection());
         else
             this._followIsland(true);
-    }
-
-    _startPolling() {
-        if (this._pollId)
-            return;
-        this._pollId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 2, () => {
-            if (!this._library.running) {
-                this._pollId = 0;
-                return GLib.SOURCE_REMOVE;
-            }
-            this._library.refresh().finally(() => this._followSharedSelection());
-            return GLib.SOURCE_CONTINUE;
-        });
-    }
-
-    _stopPolling() {
-        if (this._pollId)
-            GLib.source_remove(this._pollId);
-        this._pollId = 0;
     }
 
     async _followSharedSelection() {
@@ -340,6 +321,86 @@ class AllNotesPage {
         }
     }
 
+    // A note named after the time, as the island's "+" makes, opened (the
+    // island follows) with the search and labels cleared so it is listed.
+    // The island's service adds it to its order when the folder changes.
+    async _create() {
+        const store = this._library.store;
+        if (!store)
+            return;
+        try {
+            const name = Names.uniqueName(Names.timestampName(GLib.DateTime.new_now_local()),
+                [...this._library.notes.keys()]);
+            await store.create(name);
+            this._search.text = '';
+            this._query = '';
+            this._clearLabels();
+            this._picked = true;
+            this._follow = name;
+            await this._library.refresh();
+            this._applyFollow();
+        } catch (e) {
+            this._toast(_('Could not create a note: %s').format(e.message));
+        }
+    }
+
+    // As the island's rename (service.js), from this process: the file, its
+    // labels, its pictures' sizes, and its place and colour. The island
+    // reads those again on each refresh, so the new name goes in first,
+    // beside the old one: the renamed file is never a note it does not
+    // know yet (which would lose its place). Its next save drops the old.
+    async _rename(from, text) {
+        const store = this._library.store;
+        const to = Names.cleanName(text);
+        if (!store || to === from)
+            return;
+        if (!to) {
+            this._toast(_('“%s” cannot be a note’s name').format(text.trim()));
+            return;
+        }
+        // Refused before anything changes (store.rename refuses it too).
+        if (to.toLowerCase() !== from.toLowerCase() &&
+            [...this._library.notes.keys()].some(name => name.toLowerCase() === to.toLowerCase())) {
+            this._toast(_('A note named “%s” already exists').format(to));
+            return;
+        }
+        try {
+            await this._pane.flush();
+            const meta = await store.readMeta();
+            if (meta.state !== 'unreadable') {
+                const {order, colors} = meta.meta;
+                const at = order.indexOf(from);
+                await store.writeMeta({...meta.meta,
+                    order: at < 0 ? [...order, to] : order.toSpliced(at + 1, 0, to),
+                    colors: Object.hasOwn(colors, from) ? {...colors, [to]: colors[from]} : colors});
+            }
+            // Before the file: the island, missing the old name, takes this.
+            await this._publishSelection(to);
+            try {
+                await store.rename(from, to);
+            } catch (e) {
+                await this._publishSelection(from);
+                throw e;
+            }
+            this._pane.renamed(from, to);
+            if (this._library.labelsState !== 'unreadable' &&
+                (this._library.labelsOf(from).length || this._library.labelsOf(to).length))
+                await store.updateLabels(data => Labels.withRename(data, from, to));
+            await moveRenderSizes(store.folder, from, to);
+            await this._library.refresh();
+            this._selectRow(to);
+        } catch (e) {
+            this._toast(_('Could not rename “%s”: %s').format(from, e.message));
+        }
+    }
+
+    _clearLabels() {
+        this._selected.clear();
+        this._chipsShown = null;
+        this._renderChips();
+        this._render();
+    }
+
     _publishSelection(name) {
         this._islandNote = name;
         if (this._settings.get_string(LAST_KEY) !== name)
@@ -375,6 +436,9 @@ class AllNotesPage {
         this._split.bind_property('collapsed', sidebarButton, 'visible',
             GObject.BindingFlags.SYNC_CREATE);
         header.pack_end(sidebarButton);
+        const newButton = new Gtk.Button({icon_name: 'list-add-symbolic', tooltip_text: _('New note')});
+        newButton.connect('clicked', () => this._create());
+        header.pack_start(newButton);
         this._banner = new Adw.Banner();
 
         const toolbar = new Adw.ToolbarView();
@@ -449,12 +513,7 @@ class AllNotesPage {
         this._settings.bind(MATCH_KEY, this._mode, 'active-name', Gio.SettingsBindFlags.DEFAULT);
         this._mode.connect('notify::active-name', () => this._render());
         this._clear = new Gtk.Button({label: _('Clear'), css_classes: ['flat'], visible: false});
-        this._clear.connect('clicked', () => {
-            this._selected.clear();
-            this._chipsShown = null;
-            this._renderChips();
-            this._render();
-        });
+        this._clear.connect('clicked', () => this._clearLabels());
         const modeRow = new Gtk.Box({spacing: 6});
         modeRow.append(this._mode);
         modeRow.append(new Gtk.Box({hexpand: true}));

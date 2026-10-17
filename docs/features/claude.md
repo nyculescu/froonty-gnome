@@ -130,12 +130,12 @@ Froonty reads a different one.
   Δ under it without scrolling (320 before the livenerf row, 260 before
   the credits row).
 - **Panic button** `claude-session` (added the same day, user request):
-  the session's usage in orange, as large as the button allows, over a
-  faint grey Spark, number only;
-  "?" when unknown; a click opens this tab. Add it in Settings → Panic
-  buttons. In Settings → Claude → Panic button, choose Current session or
-  Weekly session; the button follows the choice immediately and says which
-  window it shows in its accessible name. It has its own `ClaudeService`,
+  the session's (or, if chosen, the week's) usage in orange, as large as
+  the button allows, over a faint grey Spark, number only; "?" when
+  unknown; a click opens this tab. Add it in Settings → Panic buttons. In
+  Settings → Claude → Panic button, choose Session or Weekly; the button
+  follows the choice immediately and says which window it shows in its
+  accessible name. It has its own `ClaudeService`,
   active while the island is open.
   See [panic-buttons.md](panic-buttons.md).
 
@@ -143,8 +143,8 @@ Froonty reads a different one.
 
 For the usage rows, Froonty never asks Claude itself: no sign-in, no
 token. It reads Claude Code's cache, merged with its status line's file,
-and may run Claude Code's own `/usage` (3.2). (The livenerf row's one
-request is to GitHub; see 3.1.)
+and may run Claude Code's own `/usage` (3.2). (The livenerf row's two
+requests are to GitHub; see 3.1.)
 Claude Code checks the account's limits itself (its `/api/oauth/usage` endpoint)
 and caches the answer in its config file, `~/.claude.json`, under
 `cachedUsageUtilization`:
@@ -309,7 +309,10 @@ Settings → Claude → "Claude Code status line" adds
 to Claude Code's `settings.json` (`$CLAUDE_CONFIG_DIR` or `~/.claude`),
 keeping everything else, and removes it again. It does nothing when the
 file already has another status line, or cannot be parsed. Needs
-`python3` (on Ubuntu by default).
+`python3` (on Ubuntu by default). Its Remove button, like the hooks
+row's, is a light red (`froonty-remove` in `prefs.js`: libadwaita's
+`--destructive-color` text on a tint of it), softer than
+`destructive-action` (owner's decision, 2026-10-16).
 
 **Merging** (`usage.js` `mergeStatusLine`, `isNewerReading`): for
 Session and Weekly, the newer reading wins; each row keeps its own
@@ -325,8 +328,10 @@ status line alone (no cache) is enough for both rows.
 
 ```
 features/claude/
-├── index.js     descriptor: id, title, Spark icon, claude-enabled, 380×465
-├── icon.js      the Spark as a Gio.FileIcon (tab and panic button)
+├── index.js     descriptor: id, title, Spark icon, claude-enabled, 380×465;
+│                background (the refresher), pillBar (AttentionHost)
+├── icon.js      the Spark as a Gio.FileIcon (tab, panic button, attention
+│                bar)
 ├── usage.js     pure: parse the cache, reset arithmetic (unit-tested)
 ├── livenerf.js  pure: read livenerf's README and chart SVG (unit-tested)
 ├── livenerfService.js  fetches both (Soup), at most hourly
@@ -339,7 +344,8 @@ features/claude/
 ├── statusline.py  B: Claude Code status line, saves rate_limits
 ├── statusLineSetup.js  adds/removes it in Claude Code's settings.json
 ├── view.js      rows (name, %, bar, reset), offline line, empty hint, footer
-├── prefs.js     settings tab: show the tab, fresh usage, status line
+├── prefs.js     settings tab: show the tab, panic button window, fresh
+│                usage, status line, When Claude needs you (hooks)
 └── icons/hicolor/scalable/actions/froonty-claude-symbolic.svg
 ```
 

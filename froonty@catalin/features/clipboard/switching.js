@@ -7,7 +7,7 @@
 
 // GNOME's notification list keeps (or gets) this one while the switcher
 // has Super+V.
-export const TRAY_FALLBACK = '<Super>m';
+const TRAY_FALLBACK = '<Super>m';
 
 /**
  * The next item: older (index + 1) or, `backward`, newer. Wraps at both
@@ -21,7 +21,7 @@ export function stepIndex(index, count, backward = false) {
 
 // GTK's modifier names and their aliases, as GNOME's settings spell them.
 const MODIFIER_ALIASES = {
-    mod4: 'super', ctrl: 'control', primary: 'control', mod1: 'alt', meta: 'meta',
+    mod4: 'super', ctrl: 'control', primary: 'control', mod1: 'alt',
 };
 
 /**

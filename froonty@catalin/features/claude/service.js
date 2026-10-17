@@ -11,8 +11,8 @@
 // - Froonty's Claude Code status line (statusline.py) saves Session and
 //   Weekly after each Claude Code reply (B). Whichever is newer wins.
 // The tab's livenerf row is separate: given a `benchmark`
-// (LivenerfService), shown and online, it fetches livenerf's README from
-// GitHub.
+// (LivenerfService), shown and online, it fetches livenerf's README and
+// chart from GitHub.
 //
 // Nothing runs while the tab is not on screen. Each time it is shown, the
 // files are read again (user request: refresh on every visit, never poll);
@@ -41,7 +41,7 @@ const MAX_FILE_SIZE = 16 << 20;
  * .config.json in its config folder wins, then .claude.json in
  * $CLAUDE_CONFIG_DIR, or in the home folder.
  */
-export function configFile() {
+function configFile() {
     const dir = GLib.getenv('CLAUDE_CONFIG_DIR') || null;
     const home = GLib.get_home_dir();
     const legacy = Gio.File.new_for_path(GLib.build_filenamev(
@@ -52,7 +52,7 @@ export function configFile() {
 }
 
 /** Where statusline.py saves the status line's usage. */
-export function statusLineFile() {
+function statusLineFile() {
     return Gio.File.new_for_path(GLib.build_filenamev(
         [GLib.get_user_cache_dir(), 'froonty', 'claude-status-line.json']));
 }

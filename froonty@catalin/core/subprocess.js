@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Stopping a subprocess Froonty started: SIGTERM, so it can end cleanly,
 // then SIGKILL if it is still there a few seconds later, so a hung one
-// cannot keep anything waiting. Used by the Claude tab's /usage refresh
-// (features/claude/refresher.js) and, in working-tree builds, by others.
+// cannot keep anything waiting. Used by working-tree features: the Claude
+// tab's /usage refresh, the math renderer and the Writing tab.
 
 import GLib from 'gi://GLib';
 
 const SIGTERM = 15;
 const SIGKILL = 9;
 // How long a stopped process gets to end on SIGTERM before SIGKILL.
-export const KILL_GRACE_S = 5;
+const KILL_GRACE_S = 5;
 
 /**
  * @param {Gio.Subprocess} proc

@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Private files for feature stores: written atomically and readable by the
 // user only. Gio async only, never blocking the compositor; no St, so it
-// loads in plain gjs unit tests. (The same helpers as clipboard/store.js,
-// which keeps its own copy for now.)
+// loads in plain gjs unit tests.
 
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';

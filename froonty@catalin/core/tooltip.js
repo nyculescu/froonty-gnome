@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// A small note-style bubble shown while an actor is hovered. One reusable
-// label per owner, no timers. The owner puts `actor` into an overlay layer
-// (a plain St.Widget: fixed positions, click-through) above its content.
+// A small note-style bubble shown while an actor is hovered (attach()), or
+// on demand (show(), e.g. on a right-click). One reusable label per owner,
+// no timers. The owner puts `actor` into an overlay layer (a plain
+// St.Widget: fixed positions, click-through) above its content.
 
 import Pango from 'gi://Pango';
 import St from 'gi://St';

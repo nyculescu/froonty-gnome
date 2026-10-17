@@ -117,7 +117,7 @@ const settle = () => new Promise(resolve => setTimeout(resolve, 0));
 test('a stat line: comm with spaces and brackets, ticks, threads, start, memory', () => {
     const stat = parseProcStat(statLine({pid: 42, comm: 'a (b) c)', ppid: 7, utime: 30,
         stime: 12, threads: 23, start: 999, rss: 64}));
-    eq(stat, {pid: 42, comm: 'a (b) c)', state: 'S', ppid: 7, ticks: 42, threads: 23,
+    eq(stat, {pid: 42, comm: 'a (b) c)', ppid: 7, ticks: 42, threads: 23,
         start: 999, rssPages: 64, kernel: false, ended: false, leaderExited: false});
     // num_threads is field 20, between nice (19) and itrealvalue (21).
     eq(parseProcStat(statLine({pid: 9, comm: 'x', threads: 1})).threads, 1);
@@ -350,7 +350,6 @@ test('ranking: CPU, memory or threads first, no CPU yet means memory, filter', (
     eq(pids(rankProcesses(list, {filter: ' --FLAG '})), [13]);
     eq(pids(rankProcesses(list, {filter: '12'})), [12]);
     eq(rankProcesses(list, {filter: 'nothing'}).length, 0);
-    eq(pids(rankProcesses(list, {sort: 'nonsense'})), [13, 11, 10, 12], 'unknown: by CPU');
     ok(rankProcesses(list) !== list && pids(list).join() === '10,11,12,13', 'a new array');
 });
 

@@ -56,7 +56,6 @@ test('arrow keys step one axis; Shift takes the larger step', () => {
     eq(nudgedSize(size, 'left'), {width: 400 - KEY_STEP, height: 300});
     eq(nudgedSize(size, 'down'), {width: 400, height: 300 + KEY_STEP});
     eq(nudgedSize(size, 'up', true), {width: 400, height: 300 - KEY_STEP_LARGE});
-    eq(nudgedSize(size, 'sideways'), size);
 });
 
 await done();

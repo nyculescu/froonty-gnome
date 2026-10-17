@@ -19,7 +19,7 @@ import GLib from 'gi://GLib';
 import {Emitter} from '../../core/emitter.js';
 import {
     APP_ENTRYPOINTS, CLAUDE_APP_ID, FILE_RE, FINISHED_KINDS, MAX_ENTRIES, MAX_FILE,
-    appNotificationKind, clearedByAppFocus, compareEntries, mentionsClaudeAi, parseEntry,
+    appNotificationKind, clearedByAppFocus, compareEntries, isRealDir, mentionsClaudeAi, parseEntry,
     parseProcStat, quietWhileLooking, stateDir,
 } from './attention.js';
 
@@ -40,9 +40,6 @@ const warn = message => console.warn(`Froonty: Claude attention: ${message}`);
 const isNotFound = e => e?.matches?.(Gio.IOErrorEnum, Gio.IOErrorEnum.NOT_FOUND);
 const isCancelled = e => e?.matches?.(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED);
 
-const isRealDir = file => file.query_file_type(Gio.FileQueryInfoFlags.NOFOLLOW_SYMLINKS, null) ===
-    Gio.FileType.DIRECTORY;
-
 // A notification's time (GLib.DateTime, or ms in tests) in ms.
 function timeOf(time) {
     if (typeof time === 'number')
@@ -51,7 +48,8 @@ function timeOf(time) {
     return typeof usec === 'number' ? usec / 1000 : 0;
 }
 
-async function namesIn(dir, cancellable = null) {
+/** The names in a folder (refresher.js lists the editors' extensions with it). */
+export async function namesIn(dir, cancellable = null) {
     const names = [];
     const enumerator = await dir.enumerate_children_async('standard::name',
         Gio.FileQueryInfoFlags.NOFOLLOW_SYMLINKS, GLib.PRIORITY_DEFAULT, cancellable);
@@ -70,11 +68,14 @@ async function namesIn(dir, cancellable = null) {
 
 /**
  * Deletes the state folder: its state files, any temporary file the hook
- * script left in the parent folder, then the folder. Best effort.
+ * script left in the parent folder, then the folder. Best effort. A symlink
+ * in its place is left alone, as the hook script and the service do.
  *
  * @param {Gio.File} dir
  */
 export async function removeStateDir(dir = stateDir()) {
+    if (!isRealDir(dir))
+        return;
     try {
         for (const name of await namesIn(dir)) {
             if (name.endsWith('.json'))
@@ -136,10 +137,6 @@ export class AttentionService extends Emitter {
     /** Displayable entries, most urgent first (compareEntries). */
     get entries() {
         return this._entries;
-    }
-
-    get started() {
-        return this._started;
     }
 
     start() {
@@ -271,12 +268,10 @@ export class AttentionService extends Emitter {
         }
         if (cancellable.is_cancelled())
             return;
-        const sessions = new Set(names.map(name => FILE_RE.exec(name)?.[1]).filter(Boolean));
-        for (const session of [...this._hooks.keys()]) {
-            if (!sessions.has(session))
-                this._forget(session);
-        }
-        for (const session of sessions)
+        // Known sessions are read too: one whose file has gone reads as
+        // missing and goes, one that arrived after the listing stays.
+        const sessions = names.map(name => FILE_RE.exec(name)?.[1]).filter(Boolean);
+        for (const session of new Set([...sessions, ...this._hooks.keys()]))
             this._read(session);
     }
 
@@ -485,7 +480,6 @@ export class AttentionService extends Emitter {
         if (key === 'claude-attention-app')
             this._rescan();
         this._syncStore();
-        this._rebuildGnome();
     }
 
     // Every file read again (the app switch decides what is shown).
@@ -500,17 +494,17 @@ export class AttentionService extends Emitter {
         const app = this._settings.get_boolean('claude-attention-app');
         const browsers = this._settings.get_boolean('claude-attention-browsers');
         const key = `${app}/${browsers}`;
-        if (key === this._storeKey)
-            return;
-        this._dropStore();
-        this._storeKey = key;
-        if (this._notifications && (app || browsers)) {
-            this._store = this._notifications.createStore({
-                filter: this._desktop.notificationFilter({app, browsers}),
-            });
-            this._storeIds = ['changed', 'notification-changed'].map(signal =>
-                this._store.connect(signal, () => this._rebuildGnome()));
-            this._store.watch();
+        if (key !== this._storeKey) {
+            this._dropStore();
+            this._storeKey = key;
+            if (this._notifications && (app || browsers)) {
+                this._store = this._notifications.createStore({
+                    filter: this._desktop.notificationFilter({app, browsers}),
+                });
+                this._storeIds = ['changed', 'notification-changed'].map(signal =>
+                    this._store.connect(signal, () => this._rebuildGnome()));
+                this._store.watch();
+            }
         }
         this._rebuildGnome();
     }
@@ -526,7 +520,7 @@ export class AttentionService extends Emitter {
     }
 
     _plain(text, useMarkup) {
-        return this._notifications?.plainText?.(text, useMarkup) ?? text ?? '';
+        return this._notifications.plainText(text, useMarkup);
     }
 
     _idFor(notification) {

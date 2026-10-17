@@ -11,7 +11,9 @@
 // Every operation that reads or changes the folder (open, refresh, select,
 // create, rename, trash, labels) runs through one queue, strictly one after
 // the other. The folder monitor fires for our own writes too; without the
-// queue its refresh would race the operation that caused it.
+// queue its refresh would race the operation that caused it. Without a
+// monitor (Gio could not make one, e.g. no inotify watches left) the folder
+// is looked at every 2 s instead.
 //
 // The selected note is saved by a NoteWriter (noteWriter.js): it never
 // writes over a version changed elsewhere since it was loaded, and keeps
@@ -32,21 +34,25 @@ import * as Labels from './labels.js';
 import * as Meta from './meta.js';
 import * as Names from './names.js';
 import {NoteWriter} from './noteWriter.js';
+import {moveRenderSizes} from './renderSizes.js';
 import {NotesStore} from './store.js';
 
 const FOLDER_KEY = 'notes-folder';
 const LAST_KEY = 'notes-last';
+const POLL_SECONDS = 2;
 
 export class NotesService extends Emitter {
     /**
      * @param {object} ctx
      * @param {Gio.Settings} ctx.settings
      * @param {Gio.File} ctx.dataDir Froonty's data folder
+     * @param {Function} [ctx.createStore] (folder) → store, for tests
      */
-    constructor({settings, dataDir}) {
+    constructor({settings, dataDir, createStore = folder => new NotesStore(folder)}) {
         super();
         this._settings = settings;
         this._dataDir = dataDir;
+        this._createStore = createStore;
 
         this.notes = [];
         this._meta = Meta.emptyMeta();
@@ -83,19 +89,6 @@ export class NotesService extends Emitter {
         this._settingsId = this._settings.connect(`changed::${FOLDER_KEY}`,
             () => this._enqueue(() => this._openFolder()));
         this._opened = this._enqueue(() => this._openFolder());
-        // Gio file monitors are not available in some isolated sessions.
-        // Re-read external changes periodically in those environments too.
-        this._pollId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 2, () => {
-            if (!this._running) {
-                this._pollId = 0;
-                return GLib.SOURCE_REMOVE;
-            }
-            this._enqueue(async () => {
-                await this._refresh();
-                await this._followSharedSelection();
-            });
-            return GLib.SOURCE_CONTINUE;
-        });
     }
 
     /** Resolves when the folder has been opened (for tests). */
@@ -103,18 +96,19 @@ export class NotesService extends Emitter {
         return this._opened;
     }
 
+    /** Whether it looks every 2 s, having no folder monitor (for tests). */
+    get polling() {
+        return this._pollId !== 0;
+    }
+
     stop() {
         // The last write is started, not awaited: it completes on its own
         // (a conflict copy included) and touches nothing but files.
         this._writer?.stop();
         this._running = false;
-        if (this._pollId)
-            GLib.source_remove(this._pollId);
-        this._pollId = 0;
         this._cancellable.cancel();
         this._settings.disconnect(this._settingsId);
-        this._monitor?.cancel();
-        this._monitor = null;
+        this._unwatch();
     }
 
     /** The view is hidden: save now rather than in 0.8 s. */
@@ -211,9 +205,11 @@ export class NotesService extends Emitter {
             const now = GLib.DateTime.new_now_local();
             const name = Names.uniqueName(Names.timestampName(now), this.notes);
             await this._store.create(name);
-            // Labels left by an earlier note of that name are not this one's.
+            // Labels and picture sizes left by an earlier note of that name
+            // are not this one's.
             if (this.labelsOf(name).length)
                 await this._updateLabels(data => Labels.withoutNote(data, name), true);
+            await this._moveRenderSizes(name, null);
             this._meta = Meta.withNote(this._meta, name);
             this._setNotes([...this.notes, name]);
             await this._saveMeta();
@@ -240,6 +236,8 @@ export class NotesService extends Emitter {
                 this._meta = Meta.withRename(this._meta, old, name);
                 this._setNotes(this.notes.map(n => n === old ? name : n));
                 await this._saveMeta();
+                // So do its pictures' sizes (renderSizes.js).
+                await this._moveRenderSizes(old, name);
                 this._remember(name);
                 this._changed();
                 // Its labels go with it (an old entry for the new name goes).
@@ -297,14 +295,14 @@ export class NotesService extends Emitter {
         if (previous)
             await previous.stop();
         const unsaved = previous?.dirty ? {name: previous.name, text: previous.text} : null;
-        this._monitor?.cancel();
-        this._store = new NotesStore(this.folder);
+        this._unwatch();
+        this._store = this._createStore(this.folder);
         const writer = new NoteWriter(this._store);
         writer.connect('conflict', (_writer, conflict) => this._onConflict(writer, conflict));
         writer.connect('error', (_writer, e) => this._fail(e));
         this._writer = writer;
         await this._store.ensureFolder(this._cancellable);
-        this._monitor = this._store.monitor(() => this._queueRefresh());
+        this._watch();
         this.selected = null;
         let rescued = null;
         let failed = null;
@@ -351,14 +349,43 @@ export class NotesService extends Emitter {
         });
     }
 
+    // Every change in the folder (notes, .froonty.json, labels, All notes'
+    // selection marker) queues a refresh: through the folder monitor, or,
+    // when Gio cannot make one, every 2 s.
+    _watch() {
+        if (!this._running)
+            return; // stopped while the folder was being made
+        try {
+            this._monitor = this._store.monitor(() => this._queueRefresh());
+        } catch (e) {
+            console.warn(`Froonty notes: cannot watch the folder, looking every ${POLL_SECONDS} s: ${e.message}`);
+        }
+        if (!this._monitor) {
+            this._pollId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, POLL_SECONDS, () => {
+                this._queueRefresh();
+                return GLib.SOURCE_CONTINUE;
+            });
+        }
+    }
+
+    _unwatch() {
+        this._monitor?.cancel();
+        this._monitor = null;
+        if (this._pollId)
+            GLib.source_remove(this._pollId);
+        this._pollId = 0;
+    }
+
     // Folder events arrive in bursts; one pending refresh covers them all.
+    // A change of All notes' selection marker is one of them.
     _queueRefresh() {
         if (this._refreshQueued)
             return;
         this._refreshQueued = true;
-        this._enqueue(() => {
+        this._enqueue(async () => {
             this._refreshQueued = false;
-            return this._refresh();
+            await this._refresh();
+            await this._followSharedSelection();
         });
     }
 
@@ -410,6 +437,8 @@ export class NotesService extends Emitter {
         const store = this._store;
         if (!store)
             return;
+        // Our own marker writes first: an older one would undo a newer pick.
+        await this._selectionWrite;
         const name = await store.readCurrentNote();
         if (!this._running || store !== this._store || !name ||
             name === this.selected || !this.notes.includes(name))
@@ -444,12 +473,15 @@ export class NotesService extends Emitter {
 
         // Throws, rather than drop them, over unsaved changes.
         writer.open(name, text, etag, {readOnly: readOnly !== null});
+        const picked = name !== this.selected;
         this.selected = name;
         this.text = text;
         this.readOnly = readOnly;
         this.error = null;
         this.notice = null;
-        this._remember(name);
+        // Not on a reload: All notes may have picked another note since.
+        if (picked)
+            this._remember(name);
         this._changed();
         return true;
     }
@@ -508,6 +540,12 @@ export class NotesService extends Emitter {
         this.labelsState = state;
         if (changed && this._running)
             this.emit('labels-changed');
+    }
+
+    // Not saved: the pictures keep their default sizes.
+    _moveRenderSizes(from, to) {
+        return moveRenderSizes(this._store.folder, from, to)
+            .catch(e => console.warn(`Froonty notes: could not move rendered item sizes: ${e.message}`));
     }
 
     _remember(name) {

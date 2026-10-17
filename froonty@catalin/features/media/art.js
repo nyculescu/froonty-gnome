@@ -17,37 +17,13 @@ import GdkPixbuf from 'gi://GdkPixbuf';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 
+import {loadBytes, queryInfo} from './fetch.js';
 import {artSource, imageSize, tintFromPixels} from './model.js';
 
-export const MAX_FILE_BYTES = 12 * 1024 * 1024;
-export const MAX_REMOTE_BYTES = 4 * 1024 * 1024;
-export const MAX_PIXELS = 4096 * 4096;
+const MAX_FILE_BYTES = 12 * 1024 * 1024;
+const MAX_REMOTE_BYTES = 4 * 1024 * 1024;
+const MAX_PIXELS = 4096 * 4096;
 const LRU_SIZE = 8;
-
-function queryInfo(file, cancellable) {
-    return new Promise((resolve, reject) => {
-        file.query_info_async('standard::size,standard::type', Gio.FileQueryInfoFlags.NONE,
-            GLib.PRIORITY_DEFAULT, cancellable, (_file, result) => {
-                try {
-                    resolve(file.query_info_finish(result));
-                } catch (e) {
-                    reject(e);
-                }
-            });
-    });
-}
-
-function loadBytes(file, cancellable) {
-    return new Promise((resolve, reject) => {
-        file.load_contents_async(cancellable, (_file, result) => {
-            try {
-                resolve(file.load_contents_finish(result)[1]);
-            } catch (e) {
-                reject(e);
-            }
-        });
-    });
-}
 
 /**
  * Decodes `data` (Uint8Array) to fit `side` × `side`; null for a format

@@ -9,9 +9,10 @@ import Gtk from 'gi://Gtk';
 
 import {gettext as _} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
+import {sizeGroup, spinRow, switchRow} from '../../prefs/rows.js';
+
 const IGNORED_KEY = 'clipboard-ignored-apps';
 const SHORTCUT_KEY = 'clipboard-switcher-shortcut';
-const SIZE_KEYS = ['clipboard-width', 'clipboard-height'];
 
 export function clipboardPage(settings) {
     const page = new Adw.PreferencesPage({
@@ -30,7 +31,8 @@ export function clipboardPage(settings) {
 
     page.add(switcherGroup(settings));
     page.add(privacyGroup(settings));
-    page.add(sizeGroup(settings));
+    page.add(sizeGroup(settings, ['clipboard-width', 'clipboard-height'],
+        _('Of the island while the Clipboard tab is shown, in logical pixels. Or drag the open island’s bottom-right corner.')));
     return page;
 }
 
@@ -132,47 +134,4 @@ function privacyGroup(settings) {
     reset.connect('clicked', () => settings.reset(IGNORED_KEY));
     group.header_suffix = reset;
     return group;
-}
-
-// Island size while the Clipboard tab is shown; applies live. As Notes'.
-function sizeGroup(settings) {
-    const reset = new Gtk.Button({
-        label: _('Default size'),
-        valign: Gtk.Align.CENTER,
-        css_classes: ['flat'],
-    });
-    const group = new Adw.PreferencesGroup({
-        title: _('Size'),
-        description: _('Of the island while the Clipboard tab is shown, in logical pixels. Or drag the open island’s bottom-right corner.'),
-        header_suffix: reset,
-    });
-    group.add(spinRow(settings, 'clipboard-width', _('Width')));
-    group.add(spinRow(settings, 'clipboard-height', _('Height')));
-
-    const sync = () => {
-        const defaults = SIZE_KEYS.map(key => settings.get_default_value(key).unpack());
-        reset.tooltip_text = defaults.join(' × ');
-        reset.sensitive = SIZE_KEYS.some(key => settings.get_user_value(key) !== null);
-    };
-    sync();
-    for (const key of SIZE_KEYS)
-        settings.connect(`changed::${key}`, sync);
-    reset.connect('clicked', () => SIZE_KEYS.forEach(key => settings.reset(key)));
-    return group;
-}
-
-function switchRow(settings, key, title) {
-    const row = new Adw.SwitchRow({title});
-    settings.bind(key, row, 'active', Gio.SettingsBindFlags.DEFAULT);
-    return row;
-}
-
-// Spin bounds are read from the schema's <range>, as in prefs.js.
-function spinRow(settings, key, title) {
-    const [, [lower, upper]] = settings.settings_schema.get_key(key)
-        .get_range().recursiveUnpack();
-    const row = Adw.SpinRow.new_with_range(lower, upper, 1);
-    row.title = title;
-    settings.bind(key, row, 'value', Gio.SettingsBindFlags.DEFAULT);
-    return row;
 }

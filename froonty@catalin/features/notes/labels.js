@@ -18,7 +18,7 @@
 import {compareNames} from './names.js';
 
 export const LABELS_FILE = '.froonty-labels.json';
-export const MAX_LABEL_LENGTH = 40; // code points
+const MAX_LABEL_LENGTH = 40; // code points
 
 const VERSION = 1;
 // Control characters (Unicode Cc), after whitespace became spaces.

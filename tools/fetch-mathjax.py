@@ -105,7 +105,7 @@ def up_to_date(target):
         return False
 
 
-def download(name, version, integrity, folder):
+def download(name, version, integrity):
     """The verified tarball's bytes."""
     base = name.split("/")[-1]
     url = f"{REGISTRY}/{name}/-/{base}-{version}.tgz"
@@ -143,26 +143,23 @@ def resolve(rel, spec):
 
 
 def closure(read, have):
-    """Every module reachable from ROOTS and LAZY_DIRS, with its imports."""
+    """Every module reachable from ROOTS and LAZY_DIRS."""
     todo = list(ROOTS) + sorted(p for p in have if p.endswith(".js")
                                 and posixpath.dirname(p) in LAZY_DIRS)
-    seen = {}
+    seen = set()
     while todo:
         rel = todo.pop()
         if rel in seen:
             continue
         if rel not in have:
             raise SystemExit(f"fetch-mathjax: {rel} is imported but not in the packages")
-        text = read(rel)
-        imports = []
-        for match in IMPORT.finditer(text):
+        seen.add(rel)
+        for match in IMPORT.finditer(read(rel)):
             target = resolve(rel, match.group(2))
             if target is None:
                 raise SystemExit(f"fetch-mathjax: {rel} imports {match.group(2)!r}, "
                                  "which this renderer does not provide")
-            imports.append(target)
             todo.append(target)
-        seen[rel] = imports
     return seen
 
 
@@ -184,7 +181,7 @@ def build(work, target):
     for name, version, integrity, folder in PACKAGES:
         dest = os.path.join(work, "unpacked", folder)
         os.makedirs(dest)
-        unpacked[folder] = unpack(download(name, version, integrity, folder), dest)
+        unpacked[folder] = unpack(download(name, version, integrity), dest)
 
     have = set()
     for folder, root in unpacked.items():
