@@ -4,7 +4,7 @@ A small Dynamic-Island-style pill at the top center of the screen for
 **GNOME Shell 50** (Ubuntu 26.04, Wayland). The island is a compact entry point to
 facilities GNOME Shell already has. It does not reimplement them.
 
-Status: **0.11.0-rc0**, a release candidate. See [CHANGELOG.md](CHANGELOG.md).
+Status: **0.12.0**, a stable release. See [CHANGELOG.md](CHANGELOG.md).
 
 - Froonty is installed from this repository with `make install`. It is
   not published on extensions.gnome.org.

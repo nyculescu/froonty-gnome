@@ -879,6 +879,10 @@ column): **821/821** in the default session mode and **817/817** in
 Ubuntu's, plus 880 unit tests and 19 packing tests; the published
 package's own check, **18/18**.
 
+Release 0.12.0, the first stable release (no public build any more):
+**821/821** in the default session mode and **817/817** in Ubuntu's,
+plus 880 unit tests.
+
 Unreleased: the Notifications and Calendar tabs were removed. The date
 pill opens GNOME's own calendar and notification menu, which already
 lists GNOME's notifications (with Do Not Disturb and Clear) and the

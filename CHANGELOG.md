@@ -1,6 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.12.0 (2026-10-18)
+
+The first stable release, for GNOME Shell 50 on Ubuntu 26.04 (Wayland).
+It has everything in 0.11.0-rc0 (Break v2, LocalSend, the scrolling tab
+column, the "Keep Froonty on top" panic button). Froonty no longer makes
+release candidates: versions are stable releases, numbered as before.
 
 - Froonty is no longer published on extensions.gnome.org: it is
   installed from this repository with `make install`. The public build
