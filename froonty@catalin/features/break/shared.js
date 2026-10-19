@@ -11,6 +11,10 @@
 //   while working" state going idle changes nothing), so Froonty keeps a
 //   watch pair of its own (DESIGN.md §2.1);
 // - the top bar's WallClock (shell/dateMenu.js), for suspends without a lock;
+// - while "Notice when you are busy" is on, the busy signals
+//   (shell/busySignals.js);
+// - with break-garmin on, the Garmin helper, a process of its own
+//   (garminRun.js), on events only;
 // - one GLib one-shot timer at a time (service.js says when).
 
 import Gio from 'gi://Gio';
@@ -22,6 +26,8 @@ import {gettext as _, ngettext} from 'resource:///org/gnome/shell/extensions/ext
 import {Emitter} from '../../core/emitter.js';
 import {breakManager} from '../../shell/breakManager.js';
 import {BreakEngine} from '../../shell/breakEngine.js';
+import {BusySignals} from '../../shell/busySignals.js';
+import {readToday} from './garminRun.js';
 import {topBarWallClock} from '../../shell/dateMenu.js';
 import {GnomeBreakSettings} from './gnomeSettings.js';
 import {BreakService} from './service.js';
@@ -73,10 +79,10 @@ class PillCue extends Emitter {
         const {text, accessibleText} = w.cue(m.cue, mode);
         return {
             rank: m.cue.rank,
-            level: m.cue.kind === 'posture' ? 'posture' : m.cue.level,
+            level: m.cue.kind === 'break' ? m.cue.level : m.cue.kind,
             gicon: cueIcon(m.cue),
-            styleClass: m.cue.kind === 'posture'
-                ? 'froonty-pill-cue-posture' : `froonty-pill-cue-level-${m.cue.level}`,
+            styleClass: m.cue.kind === 'break'
+                ? `froonty-pill-cue-level-${m.cue.level}` : `froonty-pill-cue-${m.cue.kind}`,
             text,
             accessibleText,
             tab: 'break',
@@ -104,6 +110,14 @@ export function acquireBreakService(settings) {
             mono: () => GLib.get_monotonic_time(),
             store: new BreakStore(),
             pid: new Gio.Credentials().get_unix_pid(),
+            busy: () => new BusySignals(),
+            // The Garmin helper, in a process of its own (garminRun.js).
+            garmin: {
+                read: day => {
+                    const cancellable = new Gio.Cancellable();
+                    return {promise: readToday(day, {cancellable}), cancel: () => cancellable.cancel()};
+                },
+            },
         });
         cue = new PillCue(shared, settings);
         shared.start().catch(e => console.warn(`Froonty: break service: ${e.message}`));

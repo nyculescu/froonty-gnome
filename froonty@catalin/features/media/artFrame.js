@@ -5,6 +5,11 @@
 // corners in the colour behind the tile (the island's black, or the
 // pill's colour, which changes on hover).
 //
+// The tile takes the cover's shape inside its side × side slot: a wide
+// video thumbnail is as wide as the slot and shorter, with no bars and no
+// stretching. Shapes beyond 2:1 (or 1:2) are kept at that limit, the
+// picture fitted inside. The placeholder is square.
+//
 //   frame   St.Widget, BinLayout: halo (box-shadow) and the pause scale
 //    ├ placeholder  the app's icon (or a note) on a faint square
 //    ├ image        St.Widget with the cover as content
@@ -24,6 +29,8 @@ import {tintCss} from './model.js';
 
 const PAUSE_SCALE = 0.94;
 const PAUSE_MS = 300;
+// The widest (or tallest) shape the tile takes: long side / short side.
+const MAX_ASPECT = 2;
 
 /** The island's background behind the expanded tab: always black. */
 const BLACK = () => ({red: 0, green: 0, blue: 0, alpha: 255});
@@ -52,6 +59,7 @@ class ArtFrame extends St.Widget {
         this._halo = halo;
         this._side = 0;
         this._radius = 0;
+        this._aspect = 1; // width / height of the tile
         this._tint = null;
         this._paused = false;
         this.hasImage = false;
@@ -87,7 +95,7 @@ class ArtFrame extends St.Widget {
     }
 
     /**
-     * @param {number} side px
+     * @param {number} side px: the slot; the tile's longer side
      * @param {number} radius px
      */
     setSize(side, radius) {
@@ -95,9 +103,18 @@ class ArtFrame extends St.Widget {
             return;
         this._side = side;
         this._radius = radius;
-        this.set_size(side, side);
         this._placeholderIcon.icon_size = Math.max(8, Math.round(side * 0.5));
+        this._fit();
         this._style();
+    }
+
+    // Sizes the tile to the cover's shape within the slot.
+    _fit() {
+        const side = this._side;
+        const aspect = this._aspect;
+        const width = aspect >= 1 ? side : Math.round(side * aspect);
+        const height = aspect >= 1 ? Math.round(side / aspect) : side;
+        this.set_size(width, height);
         this._mask.queue_repaint();
     }
 
@@ -131,6 +148,13 @@ class ArtFrame extends St.Widget {
         this._image.visible = this.hasImage;
         this._placeholder.visible = !this.hasImage;
         this._setPlaceholderIcon(appIcon);
+        const aspect = pixbuf
+            ? Math.min(MAX_ASPECT, Math.max(1 / MAX_ASPECT, pixbuf.width / pixbuf.height)) : 1;
+        if (aspect !== this._aspect) {
+            this._aspect = aspect;
+            if (this._side)
+                this._fit();
+        }
     }
 
     _setPlaceholderIcon(appIcon) {

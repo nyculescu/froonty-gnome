@@ -39,5 +39,7 @@ export function subjectIcon(subject) {
 export function cueIcon(cue) {
     if (cue.kind === 'posture')
         return subjectIcon(cue.posture);
+    if (cue.kind === 'move')
+        return subjectIcon('movement');
     return subjectIcon(cue.reason === 'long-rest' ? 'long-rest' : cue.type);
 }

@@ -6,12 +6,15 @@
 
 import Adw from 'gi://Adw';
 import Gio from 'gi://Gio';
+import GLib from 'gi://GLib';
 import Gtk from 'gi://Gtk';
 
 import {gettext as _} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
-import {addIconPath as addIconFolder, sizeGroup, spinRow, switchRow} from '../../prefs/rows.js';
+import {addIconPath as addIconFolder, choiceRow, sizeGroup, spinRow, switchRow} from '../../prefs/rows.js';
+import {garminGroup} from './garminPrefs.js';
 import {GnomeBreakSettings, parseSaved, takeoverStatus, WELLBEING_PATH} from './gnomeSettings.js';
+import {WEEKDAYS} from './pause.js';
 
 const CUE_MODES = ['off', 'icon', 'icon-and-time'];
 const RESET_COMMAND = `gsettings reset org.gnome.desktop.notifications.application:${WELLBEING_PATH} enable`;
@@ -30,7 +33,11 @@ export function breakPage(settings) {
     page._gnome = gnome;
     page.add(breaksGroup(settings, gnome));
     page.add(gnomeGroup(gnome));
+    page.add(busyGroup(settings));
+    page.add(pauseGroup(settings));
     page.add(urgencyGroup(settings));
+    page.add(moveGroup(settings));
+    page.add(garminGroup(settings));
     page.add(exercisesGroup(settings));
     page.add(postureGroup(settings));
     page.add(historyGroup(settings));
@@ -83,6 +90,156 @@ function breaksGroup(settings, gnome) {
     });
     settings.connect('changed::break-pill-cue', syncCue);
     group.add(cue);
+    group.add(switchRow(settings, 'break-pause-media', _('Pause media on “Take now”'),
+        _('Pauses what is playing, and plays again only that when you come back')));
+    return group;
+}
+
+// Rows greyed out while `key` is off.
+function under(settings, key, ...rows) {
+    for (const row of rows)
+        settings.bind(key, row, 'sensitive', Gio.SettingsBindFlags.GET);
+    return rows;
+}
+
+function busyGroup(settings) {
+    const group = new Adw.PreferencesGroup({
+        title: _('Busy'),
+        description: _('GNOME counts a call or a video without typing as a break. Froonty can tell.'),
+    });
+    group.add(switchRow(settings, 'break-busy', _('Notice when you are busy'),
+        _('Time in a call, a video or a presentation counts as time at the computer; break cues wait until it ends')));
+    const signals = [
+        ['fullscreen', _('A full-screen window'), _('Holds the cue; counts as time at the computer')],
+        ['screen-share', _('Screen sharing or recording'), _('Holds the cue; counts as time at the computer. Only sharing that starts while Froonty runs is seen')],
+        ['microphone', _('Microphone in use (a call)'), _('As GNOME’s microphone indicator shows it. Holds the cue; counts as time at the computer')],
+        ['dnd', _('Do Not Disturb'), _('Holds the cue only (you may have left with it on). Off by default: with it on all day, no cue would show')],
+        ['watching', _('An app keeps the screen awake (a video)'), _('Counts as time at the computer only; the tab names the app')],
+    ];
+    const rows = signals.map(([signal, title, subtitle]) => strvSwitch(settings, 'break-busy-signals', signal, title, subtitle));
+    const grace = spinRow(settings, 'break-busy-grace-minutes', _('Show held cues again after (min)'));
+    const hold = switchRow(settings, 'break-busy-hold-gnome', _('Hold GNOME’s dimming and locking while busy'),
+        _('In a call, while sharing the screen, or watching full screen: GNOME’s “Dim the screen” and “Lock the screen” are off meanwhile, then back as they were'));
+    for (const row of under(settings, 'break-busy', ...rows, grace, hold))
+        group.add(row);
+    return group;
+}
+
+// A switch for one value in a string-list key.
+function strvSwitch(settings, key, value, title, subtitle) {
+    const row = new Adw.SwitchRow({title, subtitle});
+    let syncing = false;
+    const sync = () => {
+        syncing = true;
+        row.active = settings.get_strv(key).includes(value);
+        syncing = false;
+    };
+    sync();
+    row.connect('notify::active', () => {
+        if (syncing)
+            return;
+        const list = settings.get_strv(key).filter(v => v !== value);
+        if (row.active)
+            list.push(value);
+        settings.set_strv(key, list);
+    });
+    settings.connect(`changed::${key}`, sync);
+    return row;
+}
+
+function pauseGroup(settings) {
+    const group = new Adw.PreferencesGroup({
+        title: _('Pause and working hours'),
+        description: _('While paused, GNOME’s breaks are off and Froonty turns them back on at the end, as they were. Turning Froonty or the Break tab off ends a pause.'),
+    });
+    group.add(switchRow(settings, 'break-pause-button', _('Pause in the Break tab'),
+        _('30 minutes, 1 hour, 2 hours or until tomorrow')));
+    group.add(switchRow(settings, 'break-work-hours', _('Working hours'),
+        _('Outside them, breaks are paused and the island shows no break, posture or move cue. “Remind me anyway” in the tab lifts it until they start again')));
+    const days = new Adw.ActionRow({title: _('Working days')});
+    const box = new Gtk.Box({spacing: 4, valign: Gtk.Align.CENTER, css_classes: ['linked']});
+    // Monday 2024-01-01: the week's short names in this locale.
+    const monday = GLib.DateTime.new_local(2024, 1, 1, 12, 0, 0);
+    const toggles = WEEKDAYS.map((day, i) => {
+        const toggle = new Gtk.ToggleButton({label: monday.add_days(i).format('%a')});
+        toggle.connect('toggled', () => {
+            const list = settings.get_strv('break-work-days').filter(d => d !== day);
+            if (toggle.active)
+                list.push(day);
+            const sorted = WEEKDAYS.filter(d => list.includes(d));
+            if (sorted.join() !== settings.get_strv('break-work-days').join())
+                settings.set_strv('break-work-days', sorted);
+        });
+        box.append(toggle);
+        return [day, toggle];
+    });
+    const syncDays = () => {
+        const on = settings.get_strv('break-work-days');
+        for (const [day, toggle] of toggles)
+            toggle.active = on.includes(day);
+    };
+    syncDays();
+    settings.connect('changed::break-work-days', syncDays);
+    days.add_suffix(box);
+    const start = timeRow(settings, 'break-work-start', _('From'));
+    const end = timeRow(settings, 'break-work-end', _('To'));
+    for (const row of under(settings, 'break-work-hours', days, start, end))
+        group.add(row);
+    return group;
+}
+
+// A time of day (minutes after midnight) as hours and minutes.
+function timeRow(settings, key, title) {
+    const row = new Adw.ActionRow({title});
+    const hours = Gtk.SpinButton.new_with_range(0, 24, 1);
+    const minutes = Gtk.SpinButton.new_with_range(0, 55, 5);
+    for (const spin of [hours, minutes]) {
+        spin.valign = Gtk.Align.CENTER;
+        spin.numeric = true;
+    }
+    minutes.connect('output', () => {
+        minutes.text = String(minutes.value).padStart(2, '0');
+        return true;
+    });
+    let syncing = false;
+    const sync = () => {
+        syncing = true;
+        const value = settings.get_int(key);
+        hours.value = Math.floor(value / 60);
+        minutes.value = value % 60;
+        syncing = false;
+    };
+    const write = () => {
+        if (syncing)
+            return;
+        const [, [lower, upper]] = settings.settings_schema.get_key(key).get_range().recursiveUnpack();
+        const value = Math.max(lower, Math.min(upper, hours.value * 60 + minutes.value));
+        if (settings.get_int(key) !== value)
+            settings.set_int(key, value);
+    };
+    sync();
+    hours.connect('value-changed', write);
+    minutes.connect('value-changed', write);
+    settings.connect(`changed::${key}`, sync);
+    row.add_suffix(hours);
+    row.add_suffix(new Gtk.Label({label: ':', valign: Gtk.Align.CENTER}));
+    row.add_suffix(minutes);
+    return row;
+}
+
+function moveGroup(settings) {
+    const group = new Adw.PreferencesGroup({
+        title: _('Move bar and workouts'),
+        description: _('Like a fitness watch’s move bar (Garmin’s: after an hour, then a segment every 15 minutes). An away of 2 minutes or more clears it. A heuristic, not medical advice.'),
+    });
+    group.add(switchRow(settings, 'break-move-goal', _('Move bar'),
+        _('A cue after this long at the computer without moving; the Today section counts the hours you moved in')));
+    for (const row of under(settings, 'break-move-goal',
+        spinRow(settings, 'break-move-after-minutes', _('Move bar after (min)'), 5),
+        spinRow(settings, 'break-move-step-minutes', _('One segment more every (min)'), 5)))
+        group.add(row);
+    group.add(switchRow(settings, 'break-workout', _('Workout days'),
+        _('“I worked out” in the tab (it also asks after an away of 45 min or more). That day the standing target stays at the minimum and the workout counts toward it (up to 1 h); after it the move bar waits longer and movement breaks suggest a short walk. Eye breaks and the long rest stay as they are; nothing is eased after 10 h at the computer. Exercise lowers the long-term risk of sitting but does not undo it (Ekelund et al. 2016, 2020; WHO 2020)')));
     return group;
 }
 
@@ -158,6 +315,16 @@ function urgencyGroup(settings) {
     group.add(spinRow(settings, 'break-long-rest-minutes', _('Long rest length (min)')));
     group.add(switchRow(settings, 'break-make-up-time', _('Make up skipped movement time'),
         _('Suggests a longer movement break after a skipped one, at most twice GNOME’s length')));
+    const skipsMax = spinRow(settings, 'break-max-skips', _('Skips in a row, at most'));
+    skipsMax.subtitle = _('0: no limit. The tab hides Skip after this many skips in a row.');
+    group.add(skipsMax);
+    group.add(switchRow(settings, 'break-skip-reasons', _('Ask why after a skip or delay'),
+        _('One tap: a meeting, a deadline, in the flow, or other; counted per day')));
+    group.add(switchRow(settings, 'break-natural-pause', _('Show “due” at a pause in typing'),
+        _('A break that falls due while you type shows at your first pause of 2 seconds')));
+    for (const row of under(settings, 'break-natural-pause',
+        spinRow(settings, 'break-natural-pause-max-seconds', _('Wait for a pause at most (s)'), 5)))
+        group.add(row);
     return group;
 }
 
@@ -165,6 +332,23 @@ function exercisesGroup(settings) {
     const group = new Adw.PreferencesGroup({title: _('Exercises')});
     group.add(switchRow(settings, 'break-exercises', _('Show exercise cards'),
         _('A stretch when a movement break is near, eye exercises when an eye break is due')));
+    const rows = [
+        switchRow(settings, 'break-animate', _('Moving pictures'),
+            _('Only while the card is on screen and GNOME’s Animations switch is on')),
+        switchRow(settings, 'break-routines', _('Guided routines'),
+            _('A few moves one after another during a movement break or a long rest: standing ones when you stand, quiet ones during a call')),
+        switchRow(settings, 'break-eye-exercises', _('Eye exercises drawn by Froonty'),
+            _('Look far away; follow the dot, near and far, blinking, palming (comfort only)')),
+        switchRow(settings, 'break-breathing', _('Breathing exercise'),
+            _('A circle that grows as you breathe in and shrinks as you breathe out')),
+        choiceRow(settings, 'break-breathing-pattern', _('Breathing pattern'), ['box', 'slow'],
+            [_('Box: in 4 s, hold 4, out 4, hold 4'), _('Slow: in 5 s, out 5')]),
+        switchRow(settings, 'break-ideas', _('Break ideas'),
+            _('A one-line idea from Stretchly (BSD-2-Clause) and Safe Eyes (GPL-3.0-or-later)')),
+    ];
+    for (const row of under(settings, 'break-exercises', ...rows))
+        group.add(row);
+    group.add(artRow());
     group.add(linkRow(_('Pictures and texts: Workrave'), _('GPL-3.0-or-later; see the README next to them'),
         'https://github.com/rcaelers/workrave'));
     group.add(linkRow(_('Office stretches (CCOHS)'), _('How to stretch safely, from a public health body'),
@@ -217,7 +401,28 @@ function historyGroup(settings) {
         description: _('Only when you were at the computer or away, and daily totals, on this computer (~/.local/share/froonty/break). The tab’s "Forget history…" deletes it.'),
     });
     group.add(spinRow(settings, 'break-history-days', _('Keep (days)')));
+    group.add(switchRow(settings, 'break-chart', _('14-week chart'),
+        _('In the Today section: breaks taken, time at the computer, longest stretch, standing, or hours you moved in')));
     return group;
+}
+
+// Whether the better pictures are fetched (tools/fetch-break-art.py).
+function artRow() {
+    const row = new Adw.ActionRow({title: _('Pictures: WorkoutLabs'), use_markup: false});
+    const file = Gio.File.new_for_uri(import.meta.url).get_parent().get_parent().get_parent()
+        .get_child('third_party').get_child('break-art').get_child('index.json');
+    try {
+        const [, bytes] = file.load_contents(null);
+        const index = JSON.parse(new TextDecoder().decode(bytes));
+        const count = Object.keys(index.moves ?? {}).length;
+        row.subtitle = _('%d moves fetched to this computer on %s (all rights reserved by WorkoutLabs; not part of Froonty)')
+            .format(count, index.source?.fetched ?? '?');
+    } catch {
+        row.subtitle = _('Not fetched: run “make break-art” in Froonty’s folder, then “make install”. Until then: Workrave’s pictures');
+    }
+    row.add_suffix(new Gtk.LinkButton({label: _('Open'), uri: 'https://workoutlabs.com/exercise-guide/',
+        valign: Gtk.Align.CENTER}));
+    return row;
 }
 
 // One of GNOME's second counts, shown in `unit` seconds. Written only when

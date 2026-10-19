@@ -14,3 +14,14 @@ __pycache__/
 froonty@catalin/third_party/mathjax/
 froonty@catalin/third_party/mathjax.old/
 froonty@catalin/third_party/.mathjax-fetch.*
+
+# The Break tab's exercise pictures (WorkoutLabs', all rights reserved by
+# WorkoutLabs), fetched by tools/fetch-break-art.py (make break-art)
+froonty@catalin/third_party/break-art/
+froonty@catalin/third_party/.break-art.*
+
+# The Break tab's Garmin helper keeps its sign-in tokens and venv under
+# ~/.local/share/froonty/garmin, outside the repository; these lines only
+# make sure such files could never be committed from here by mistake.
+garmin_tokens*.json
+**/froonty/garmin/

@@ -107,7 +107,7 @@ run_one() {
 }
 
 TESTS=() PARTS=()
-for t in "$HERE"/*.test.js "$HERE/../pack-public/test_pack_public.py"; do
+for t in "$HERE"/*.test.js "$HERE"/test_*.py "$HERE/../pack-public/test_pack_public.py"; do
     n=1
     [[ "$t" == *.gtk.test.js ]] && n=$GTK_SHARDS
     for (( k = 0; k < n; k++ )); do

@@ -74,6 +74,7 @@ export async function setup({
     settings = froontySettings(),
     pid = 4242,
     wallClock = null,
+    garmin = null,
 } = {}) {
     const {module} = await gnome();
     configure(world, 'eyesight', eyesight);
@@ -82,7 +83,12 @@ export async function setup({
     const manager = world.manager ?? new module.BreakManager(world.clock, world.idle, world.settingsFactory);
     world.manager = manager;
     select(world, selected);
-    for (const [key, value] of Object.entries(froonty)) {
+    // The second iteration's timing rules off unless a test asks: the
+    // scenarios type every second (a due cue would wait for a pause), skip
+    // more than three times, and run long enough for the move bar.
+    const keys = {'break-natural-pause': false, 'break-max-skips': 0, 'break-move-goal': false,
+        'break-work-hours': false, ...froonty};
+    for (const [key, value] of Object.entries(keys)) {
         if (typeof value === 'boolean')
             settings.set_boolean(key, value);
         else if (typeof value === 'number')
@@ -90,12 +96,12 @@ export async function setup({
         else
             settings.set_string(key, value);
     }
-    const service = makeService({world, manager: wrap(manager), settings, store, pid, wallClock});
+    const service = makeService({world, manager: wrap(manager), settings, store, pid, wallClock, garmin});
     await service.start();
     return {world, manager, service, settings, store, module};
 }
 
-export function makeService({world, manager, settings, store, pid = 4242, wallClock = null}) {
+export function makeService({world, manager, settings, store, pid = 4242, wallClock = null, garmin = null}) {
     return new BreakService(settings, {
         engine: new BreakEngine(manager),
         gnome: onChanged => {
@@ -118,5 +124,6 @@ export function makeService({world, manager, settings, store, pid = 4242, wallCl
         mono: world.mono,
         store,
         pid,
+        garmin,
     });
 }

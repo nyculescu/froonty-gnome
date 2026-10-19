@@ -17,7 +17,7 @@ GNOME_EXTENSIONS ?= /usr/bin/gnome-extensions
 SOURCE_DIRS := $(filter-out schemas third_party,$(notdir $(patsubst %/,%,$(wildcard $(SRC)/*/))))
 MATHJAX := $(SRC)/third_party/mathjax/fetched.json
 
-.PHONY: schemas mathjax third-party install uninstall pack unit test log clean devkit devkit-public
+.PHONY: schemas mathjax break-art third-party install uninstall pack unit test log clean devkit devkit-public
 
 schemas: $(SRC)/schemas/gschemas.compiled
 
@@ -35,6 +35,19 @@ mathjax:
 $(MATHJAX):
 	python3 tools/fetch-mathjax.py $(SRC)
 
+# The Break tab's exercise pictures: WorkoutLabs' (all rights reserved by
+# WorkoutLabs), fetched to this computer into $(SRC)/third_party/break-art
+# (not in the repository, never packed) and cut into square frames. install
+# and devkit fetch them when missing; a failed fetch is not an error (the
+# tab then shows Workrave's pictures). Network only then, never at runtime.
+BREAK_ART := $(SRC)/third_party/break-art/index.json
+
+break-art:
+	python3 tools/fetch-break-art.py $(SRC)
+
+$(BREAK_ART):
+	-python3 tools/fetch-break-art.py $(SRC)
+
 # Submodules carrying local patches (third_party/patches/<name>/): applied
 # on a `froonty` branch over the commit the superproject records. The Fan
 # settings page's llano.py is third_party/llano-v12-linux/llano.py once
@@ -48,7 +61,7 @@ third-party:
 # use) is broken at that moment, so the extension silently does not start.
 # GNOME Shell only loads new code at startup: log out and in.
 # First install: gnome-extensions enable $(UUID)
-install: schemas $(MATHJAX) uninstall
+install: schemas $(MATHJAX) $(BREAK_ART) uninstall
 	mkdir -p $(dir $(INSTALL_DIR))
 	cp -r $(SRC) $(INSTALL_DIR)
 	mkdir -p $(dir $(DESKTOP_FILE))
@@ -69,7 +82,7 @@ pack: schemas
 
 # Plain-gjs unit tests (isolated TMPDIR and XDG folders, GTK pages on a
 # private Broadway display), then the public build's leak-guard tests.
-unit:
+unit: schemas
 	tools/unit/run.sh
 
 # Froonty in a nested GNOME Shell window, isolated from the session
@@ -77,7 +90,7 @@ unit:
 # SYSTEM_BUS=1 lets it reach the real asusd (tools/devkit.sh --system-bus):
 # the Fan settings page's laptop profile and curves then change this
 # computer's.
-devkit: schemas $(MATHJAX)
+devkit: schemas $(MATHJAX) $(BREAK_ART)
 	tools/devkit.sh $(if $(SYSTEM_BUS),--system-bus)
 
 devkit-public:

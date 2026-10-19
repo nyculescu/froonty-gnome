@@ -6,6 +6,31 @@
   copies a chosen file into the note folder. Common Mermaid flowcharts,
   state diagrams and sequence diagrams render offline. Task boxes are
   clickable in both editors, with Tab insertion and undo in the Notes island.
+- The island can be made shorter than its tab column: the tabs scroll
+  (edges fade where more are hidden), three always in sight, the open tab
+  kept in view.
+- Media shows a rectangular cover (a video thumbnail) in its own shape, in
+  the tab and on the pill, instead of letterboxed in a square.
+- Break (local builds), each part with its own switch in Settings → Break:
+  calls, videos, presentations and full-screen windows count as time at
+  the computer and hold the cue (and, if wanted, GNOME's dimming); Pause
+  for 30 min to "until tomorrow", and working hours; Take now pauses media
+  and plays it again on return; a move bar and workout days; "due" at a
+  pause in typing; a skip limit and one-tap reasons; moving exercise
+  pictures (WorkoutLabs', fetched to this computer by `make break-art`),
+  41 moves and guided routines; eye and breathing exercises drawn by
+  Froonty; break ideas from Stretchly and Safe Eyes; a 14-week chart;
+  optionally, workouts read from Garmin Connect by a helper in its own
+  Python environment and process (credentials kept on this computer only).
+- LocalSend tab (local builds, off by default): files and text between
+  this computer and the LocalSend app on a phone, over Wi-Fi or wired
+  networks and, optionally, ZeroTier. A new device enters a one-time PIN
+  shown by Froonty and is then trusted; trusted devices' transfers are
+  accepted without asking over ZeroTier or a trusted network (a switch
+  turns that off); away from trusted networks only ZeroTier is used.
+  Devices added by IP address (a phone on ZeroTier) are kept and see the
+  computer whenever LocalSend is open. The folder can be changed from the
+  tab. A helper process speaks the LocalSend protocol.
 
 ## 0.10.0-rc0 (2026-10-06)
 

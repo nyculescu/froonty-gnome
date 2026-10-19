@@ -144,6 +144,12 @@
     border-right: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+/* The tab column, when it scrolls (a short island): its edges fade where
+   more tabs are above or below. */
+.froonty-hub-tabs {
+    -st-vfade-offset: 24px;
+}
+
 /* Feature tabs and ⚙️: a fine dark-grey rounded outline. */
 .froonty-tab {
     margin-bottom: 2px;
@@ -409,6 +415,153 @@
     font-size: 0.75em;
 }
 /* local:end zerotier */
+
+/* local:begin localsend (working-tree only; tools/pack-public strips it) */
+.froonty-localsend {
+    spacing: 6px;
+}
+
+.froonty-localsend-header,
+.froonty-localsend-buttons,
+.froonty-localsend-add,
+.froonty-localsend-result {
+    spacing: 6px;
+}
+
+.froonty-localsend-title {
+    margin-left: 4px;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.froonty-localsend-status {
+    opacity: 0.7;
+    font-size: 0.85em;
+}
+
+.froonty-localsend-notices,
+.froonty-localsend-list {
+    spacing: 6px;
+}
+
+.froonty-localsend-notice {
+    color: #ffd27a;
+    font-size: 0.85em;
+}
+
+.froonty-localsend-error {
+    color: #ff8b8b;
+    font-size: 0.85em;
+}
+
+.froonty-localsend-ok {
+    color: #8fd88f;
+    font-size: 0.85em;
+}
+
+.froonty-localsend-action {
+    border-radius: 6px;
+    padding: 2px 8px;
+    font-size: 0.85em;
+    background-color: rgba(255, 255, 255, 0.08);
+}
+
+.froonty-localsend-action:hover,
+.froonty-localsend-action:focus {
+    background-color: rgba(255, 255, 255, 0.16);
+}
+
+.froonty-localsend-accept {
+    background-color: rgba(53, 132, 228, 0.55);
+}
+
+.froonty-localsend-accept:hover,
+.froonty-localsend-accept:focus {
+    background-color: rgba(53, 132, 228, 0.75);
+}
+
+.froonty-localsend-scroll {
+    min-height: 48px;
+}
+
+.froonty-localsend-section {
+    spacing: 3px;
+}
+
+.froonty-localsend-heading {
+    margin-top: 4px;
+    font-size: 0.8em;
+    font-weight: 600;
+    opacity: 0.7;
+}
+
+.froonty-localsend-offer {
+    spacing: 4px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    background-color: rgba(53, 132, 228, 0.18);
+}
+
+.froonty-localsend-offer-title {
+    font-weight: 600;
+}
+
+.froonty-localsend-pin {
+    font-family: monospace;
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: 2px;
+}
+
+.froonty-localsend-progress {
+    font-size: 0.85em;
+}
+
+.froonty-localsend-peer {
+    spacing: 8px;
+    padding: 4px 6px;
+    border-radius: 5px;
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.froonty-localsend-peer-name {
+    font-size: 0.9em;
+    font-weight: 600;
+}
+
+.froonty-localsend-meta {
+    opacity: 0.65;
+    font-size: 0.75em;
+}
+
+.froonty-localsend-file {
+    padding: 2px 6px;
+    border-radius: 5px;
+    font-size: 0.85em;
+}
+
+.froonty-localsend-file:hover,
+.froonty-localsend-file:focus {
+    background-color: rgba(255, 255, 255, 0.08);
+}
+
+.froonty-localsend-entry,
+.froonty-localsend-entry:focus,
+.froonty-localsend-entry:hover {
+    padding: 4px 8px;
+    border: none;
+    border-radius: 8px;
+    box-shadow: none;
+    font-size: 0.85em;
+    color: #ffffff;
+    caret-color: #ffffff;
+    background-color: rgba(255, 255, 255, 0.08);
+}
+
+.froonty-localsend-entry:focus {
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
+}
+/* local:end localsend */
 
 .froonty-notes-header {
     spacing: 6px;
@@ -1976,6 +2129,14 @@
 .froonty-pill-cue-posture {
     color: #ffffff;
 }
+/* The move bar: the icon and one block per segment, as a watch's bar. */
+.froonty-pill-cue-move {
+    color: #ffffff;
+}
+.froonty-pill-cue-move .froonty-pill-cue-text {
+    color: #ff7b63;
+    font-size: 0.7em;
+}
 .froonty-pill-cue-level-3 {
     background-color: #f6d32d;
     color: #000000;
@@ -2111,23 +2272,25 @@
     color: rgba(255, 255, 255, 0.55);
 }
 
-/* Exercise cards: Workrave's pictures, still, in one row. */
+/* Exercise cards (features/break/card.js): one move at a time, its
+   picture on a white tile (WorkoutLabs' or Workrave's), or drawn by
+   Froonty over the black. */
 .froonty-break-card {
     spacing: 5px;
 }
-.froonty-break-frames {
-    spacing: 4px;
+.froonty-break-picture-frame {
+    padding: 4px 0;
 }
-.froonty-break-frame-column {
-    spacing: 2px;
+.froonty-break-picture {
+    background-color: #ffffff;
+    border-radius: 12px;
 }
-.froonty-break-frame {
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    border-radius: 4px;
+.froonty-break-picture-none {
+    color: rgba(255, 255, 255, 0.55);
+    padding: 24px;
 }
-.froonty-break-caption {
-    font-size: 0.75em;
-    color: rgba(255, 255, 255, 0.65);
+.froonty-break-card-head {
+    spacing: 8px;
 }
 .froonty-break-card-title {
     font-weight: bold;
@@ -2137,6 +2300,105 @@
 }
 .froonty-break-card-foot {
     spacing: 8px;
+}
+.froonty-break-credit {
+    font-size: 0.72em;
+    color: rgba(255, 255, 255, 0.45);
+}
+.froonty-break-routine {
+    spacing: 6px;
+}
+.froonty-break-idea {
+    font-size: 0.85em;
+    font-style: italic;
+    color: rgba(255, 255, 255, 0.75);
+}
+
+/* Small one-tap buttons: pause lengths, reasons, workout lengths, metrics. */
+.froonty-break-chips {
+    padding: 2px 0;
+}
+.froonty-break-chip {
+    padding: 2px 9px;
+    border-radius: 99px;
+    font-size: 0.85em;
+    background-color: rgba(255, 255, 255, 0.1);
+    color: #ffffff;
+}
+.froonty-break-chip:hover,
+.froonty-break-chip:focus {
+    background-color: rgba(255, 255, 255, 0.2);
+}
+.froonty-break-chip:checked {
+    background-color: rgba(255, 255, 255, 0.85);
+    color: #000000;
+}
+
+/* The move bar: a long first segment, then four short ones, filled red
+   as a watch's (each also a segment, never colour alone). */
+.froonty-break-move-bar {
+    spacing: 3px;
+    min-width: 120px;
+}
+.froonty-break-move-first,
+.froonty-break-move-segment {
+    height: 6px;
+    border-radius: 3px;
+    background-color: rgba(255, 255, 255, 0.15);
+}
+.froonty-break-move-segment {
+    width: 14px;
+}
+.froonty-break-move-first:checked,
+.froonty-break-move-segment:checked {
+    background-color: #ff7b63;
+}
+
+/* Drawn exercises (features/break/drawn.js): white strokes over the
+   island's black, the moving parts in Adwaita's accent blue. Sizes come
+   from the code (inline width and height, shares of the picture). */
+.froonty-break-drawn-area {
+    color: #ffffff;
+}
+.froonty-break-drawn-caption {
+    font-size: 0.8em;
+    font-feature-settings: "tnum";
+    color: rgba(255, 255, 255, 0.75);
+}
+.froonty-break-drawn-dot,
+.froonty-break-drawn-fill,
+.froonty-break-drawn-target-dot {
+    border-radius: 999px;
+    background-color: #78aeed;
+}
+.froonty-break-drawn-track {
+    border-radius: 999px;
+    background-color: rgba(255, 255, 255, 0.15);
+}
+.froonty-break-drawn-target {
+    border-radius: 999px;
+    border: 3px solid #78aeed;
+}
+.froonty-break-drawn-breath {
+    border-radius: 999px;
+    border: 2px solid #78aeed;
+    background-color: rgba(120, 174, 237, 0.25);
+}
+
+/* The Break tab's 14-week chart (features/break/chart.js). `color` is the
+   cells' one hue (levels are alphas of it; no good/bad colours); labels,
+   empty days, the selection and the focus ring are white greys drawn by
+   the chart. The cells grow with the height up to a 24 px pitch: 180 px
+   gives a 20 px pitch (about 310 px wide with the weekday labels). */
+.froonty-break-chart {
+    height: 180px;
+    margin: 2px 0;
+    font-size: 0.68em;
+    font-feature-settings: "tnum";
+    color: #62a0ea;
+}
+.froonty-break-chart-box {
+    spacing: 4px;
 }
 
 /* The sit/stand panic button shows the posture; checked = standing. */

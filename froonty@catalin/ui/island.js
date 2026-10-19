@@ -206,13 +206,18 @@ export class Island {
         // must be reactive for GrabHelper to see Escape and outside clicks.
         // It is made reactive only while expanded; when collapsed the strip
         // must let clicks through to the top bar.
-        this._strip.reactive = true;
-        const grabbed = this._grabHelper.grab({
+        const pinned = this._settings.get_boolean('island-pinned');
+        this._strip.reactive = !pinned;
+        const grabbed = pinned || this._grabHelper.grab({
             actor: this._pill,
             focus: this._pill,
-            onUngrab: () => this._setExpanded(false),
+            onUngrab: () => {
+                if (!this._settings.get_boolean('island-pinned'))
+                    this._setExpanded(false);
+            },
         });
-        // Grabbing fails if another client holds an exclusive grab.
+        // A pinned island is a non-modal Shell overlay: outside clicks go
+        // to the window beneath while the island remains visible.
         if (!grabbed) {
             this._strip.reactive = false;
             return;
@@ -349,6 +354,7 @@ export class Island {
     }
 
     _connectSignals() {
+        this._settings.connectObject('changed::island-pinned', () => this._syncPinned(), this);
         this._pill.connect('clicked', () => this._onPillClicked());
         // Swipes on the collapsed pill go to its accessory.
         this._pill.connect('scroll-event', (_actor, event) =>
@@ -418,6 +424,17 @@ export class Island {
             () => this._syncGeometry(), this);
         this._themeContext.connectObject('notify::scale-factor',
             () => this._syncGeometry(), this);
+    }
+
+    _syncPinned() {
+        if (this._settings.get_boolean('island-pinned')) {
+            this._strip.reactive = false;
+            if (this._expanded && this._grabHelper.grabbed)
+                this._grabHelper.ungrab({actor: this._pill});
+        } else if (this._expanded) {
+            // Releasing the pin also dismisses the free-standing overlay.
+            this.collapse();
+        }
     }
 
     _updateContent() {
@@ -697,8 +714,7 @@ export class Island {
             return;
 
         this._expanded = expanded;
-        if (!expanded)
-            this._strip.reactive = false;
+        this._strip.reactive = expanded && !this._settings.get_boolean('island-pinned');
 
         // St does not navigate focus into a widget that is itself focusable,
         // so while expanded the pill stops being focusable and Tab reaches

@@ -34,7 +34,10 @@ NESTED_DISPLAY=wayland-froonty-devkit
 
 if [[ "${1:-}" == "run" ]]; then
     shift
-    [[ -f "$SANDBOX/env" ]] || { echo "the devkit is not running" >&2; exit 1; }
+    # The env file outlives a devkit closed without cleanup: check its PID.
+    running=$(sed -n 's/^FROONTY_DEVKIT_PID=//p' "$SANDBOX/env" 2>/dev/null || true)
+    [[ -n "$running" ]] && kill -0 "$running" 2>/dev/null ||
+        { echo "the devkit is not running (start it with make devkit)" >&2; exit 1; }
     # shellcheck disable=SC1091
     set -a; . "$SANDBOX/env"; set +a
     exec "$@"
@@ -100,6 +103,36 @@ if [[ -e "$SANDBOX/env" ]]; then
     fi
     rm -f "$SANDBOX/env"
 fi
+
+# What earlier runs left behind: services the sandbox's session bus started
+# (calendar and Evolution servers, gvfs, portals, a keyring) outlive it,
+# adopted by systemd --user, still holding inotify instances and, for the
+# document portal, a FUSE mount in the runtime folder that rm cannot
+# remove. Every process of yours whose XDG_RUNTIME_DIR is the sandbox's is
+# stopped (never one of your session's), then any mount left there is
+# released. Run before the folder is cleared and when the devkit ends.
+release_runtime() {
+    local runtime=$SANDBOX/runtime env pid mount
+    for env in /proc/[0-9]*/environ; do
+        pid=${env#/proc/}
+        pid=${pid%/environ}
+        [[ "$pid" == "$$" || ! -O "$env" ]] && continue
+        if grep -qzxF "XDG_RUNTIME_DIR=$runtime" "$env" 2>/dev/null; then
+            kill "$pid" 2>/dev/null || true
+        fi
+    done
+    # The document portal's own helper unmounts once the portal is gone.
+    for _ in $(seq 20); do
+        grep -qF " $runtime/" /proc/mounts || break
+        sleep 0.1
+    done
+    while read -r _ mount _; do
+        if [[ "$mount" == "$runtime"/* ]]; then
+            fusermount3 -uz "$mount" 2>/dev/null || fusermount -uz "$mount" 2>/dev/null || true
+        fi
+    done </proc/mounts
+}
+release_runtime
 
 RESET= PUBLIC= SYSTEM_BUS=
 for arg in "$@"; do
@@ -227,7 +260,7 @@ done
 /usr/bin/dbus-run-session -- "$0" --inner 2>>"$SANDBOX/session.log" &
 inner=$!
 trap 'kill "$inner" 2>/dev/null; wait "$inner" 2>/dev/null; kill "$system_bus" 2>/dev/null
-    rm -f "$SANDBOX/env" "$SANDBOX/system_bus"' EXIT
+    release_runtime; rm -f "$SANDBOX/env" "$SANDBOX/system_bus"' EXIT
 trap 'exit 130' INT TERM
 trap 'exit 129' HUP
 wait "$inner"

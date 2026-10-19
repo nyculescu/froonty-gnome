@@ -43,6 +43,10 @@ export function words({_, ngettext}) {
             if (lv.reason === 'long-rest') {
                 what = _('%s at the screen without a %s pause').format(
                     duration(longRest.since), duration(longRest.length));
+            } else if (lv.reason === 'paused') {
+                what = _('Breaks paused');
+            } else if (lv.reason === 'waiting') {
+                what = _('%s due at your next pause in typing').format(typeName(lv.type));
             } else if (!lv.type) {
                 what = _('No break reminders');
             } else if (lv.level === LEVEL.FINE) {
@@ -65,6 +69,8 @@ export function words({_, ngettext}) {
         suggested(s) {
             if (!s)
                 return '';
+            if (s.walk)
+                return _('Suggested: a %s walk (you worked out today; Froonty’s rule)').format(duration(s.seconds));
             if (s.longRest) {
                 return _('Suggested: %s away from the screen (Froonty’s rule, after the AOA’s 15 min after 2 h; expert opinion)')
                     .format(duration(s.seconds));
@@ -93,6 +99,13 @@ export function words({_, ngettext}) {
             return _('Step away now; it counts once you’ve been away %s.').format(length);
         },
 
+        skipHidden(h) {
+            if (!h)
+                return '';
+            return ngettext('No more skips: %d in a row is the most (Settings → Break).',
+                'No more skips: %d in a row is the most (Settings → Break).', h.max).format(h.max);
+        },
+
         delayHidden(h) {
             if (!h)
                 return '';
@@ -109,6 +122,12 @@ export function words({_, ngettext}) {
          * its accessible text.
          */
         cue(cue, mode) {
+            if (cue.kind === 'move') {
+                return {
+                    text: '\u25ae'.repeat(cue.segments),
+                    accessibleText: _('No movement for %s').format(duration(cue.seconds)),
+                };
+            }
             if (cue.kind === 'posture') {
                 return {
                     text: '',
@@ -124,6 +143,13 @@ export function words({_, ngettext}) {
                     accessibleText: _('Next break in %s').format(minutesWord(upMinutes(cue.seconds))),
                 };
             case LEVEL.SOON:
+                // Due, waiting for a pause in typing (Froonty's rule).
+                if (cue.reason === 'waiting') {
+                    return {
+                        text: timed ? _('now') : '',
+                        accessibleText: _('%s due at your next pause in typing').format(name),
+                    };
+                }
                 return {
                     text: timed ? _('%dm').format(upMinutes(cue.seconds)) : '',
                     accessibleText: _('%s in %s').format(name, minutesWord(upMinutes(cue.seconds))),
@@ -173,6 +199,88 @@ export function words({_, ngettext}) {
                 ? `${line} ${_('GNOME’s daily screen-time limit alerts are hidden too.')}`
                 : line;
         },
+
+        /** Why the cue is held, or the grace after: "In a call: …". */
+        busy(busy, graceUntil, fmt) {
+            const names = {
+                'fullscreen': _('a full-screen window'),
+                'screen-share': _('screen sharing'),
+                'microphone': _('a call (microphone in use)'),
+                'dnd': _('Do Not Disturb'),
+            };
+            const holding = busy.reasons.filter(r => r in names).map(r => names[r]);
+            if (holding.length)
+                return _('Busy (%s): break cues wait until it ends.').format(holding.join(', '));
+            if (graceUntil)
+                return _('Break cues are back at %s.').format(fmt(graceUntil));
+            return '';
+        },
+
+        /** Who keeps the screen awake: "Watching (brave): counts as time at the computer." */
+        watching(apps) {
+            if (!apps.length)
+                return '';
+            return _('Watching (%s): counts as time at the computer.').format(apps.join(', '));
+        },
+
+        /** "Paused until 15:30", "Outside working hours until Mon 09:00". */
+        paused(p, fmt) {
+            if (!p?.paused)
+                return '';
+            if (p.reason === 'hours') {
+                return p.until ? _('Outside working hours: breaks resume at %s.').format(fmt(p.until))
+                    : _('Outside working hours.');
+            }
+            return _('Breaks paused until %s.').format(fmt(p.until));
+        },
+
+        reason: r => ({
+            meeting: _('Meeting'),
+            deadline: _('Deadline'),
+            flow: _('In the flow'),
+            other: _('Other'),
+        }[r]),
+
+        /** The move bar's line in the tab. */
+        move(move, segments) {
+            if (!segments)
+                return _('Moved %s ago; the move bar starts after %s.').format(
+                    duration(move.sinceMove), duration(move.after));
+            return _('No movement for %s: a walk of a couple of minutes clears it.').format(
+                duration(move.sinceMove));
+        },
+
+        /** "Moved in 5 of 7 hours at the computer". */
+        movedHours(moved, hours) {
+            return ngettext('Moved in %d of %d hour at the computer', 'Moved in %d of %d hours at the computer',
+                hours).format(moved, hours);
+        },
+
+        workout(w) {
+            if (!w.minutes)
+                return '';
+            if (w.longDay)
+                return _('Worked out %s today; after 10 h at the computer nothing is eased.').format(duration(w.minutes * 60));
+            return _('Worked out %s today: the standing target stays at the minimum and counts it (up to 1 h); after it, short walks will do (Froonty’s rule).')
+                .format(duration(w.minutes * 60));
+        },
+
+        /** "Garmin: strength training 52 min, walking 31 min". */
+        garminActivities: list => _('Garmin: %s').format(list.map(a =>
+            `${a.type.replace(/_/g, ' ')} ${duration(a.minutes * 60)}`).join(', ')),
+
+        intensity: i => _('intensity minutes %d (vigorous count double: %d)').format(
+            i.moderate + i.vigorous, i.moderate + 2 * i.vigorous),
+
+        garminError: error => ({
+            auth: _('Garmin: sign in again in Settings → Break'),
+            blocked: _('Garmin refused the connection for now; retried in a few hours'),
+            network: _('Garmin could not be reached'),
+            setup: _('Garmin: set it up in Settings → Break'),
+        }[error] ?? _('Garmin could not be read')),
+
+        workoutAsk: (away, fmt) => _('Away %s (%s–%s). Was it a workout?').format(
+            duration((away.to - away.from) / 1000), fmt(away.from / 1000), fmt(away.to / 1000)),
 
         notMedicalAdvice: () =>
             _('Not medical advice: reminders only; the timings are guidance, mostly expert opinion.'),

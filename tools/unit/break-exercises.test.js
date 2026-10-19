@@ -67,7 +67,8 @@ test('exactly the 18 pictures they use: no .xcf, nothing unused, at most 250 KB'
     while ((name = top.read_name()) !== null)
         files.push(name);
     top.close();
-    eq(files.sort(), ['README.md', 'exercises.json', 'images']);
+    // Besides Workrave's: the catalog (Froonty's), the break ideas and their licences.
+    eq(files.sort(), ['IDEAS-LICENSE.md', 'README.md', 'catalog.json', 'exercises.json', 'ideas.json', 'images']);
 });
 
 test('the README credits Workrave: licence and commit', () => {

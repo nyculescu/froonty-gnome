@@ -18,7 +18,7 @@ import zipfile
 LOCAL_DIRS = (
     "features/writing/", "features/zerotier/", "features/media/", "features/claude/",
     "features/sysmon/", "features/clipboard/", "features/killprocess/", "features/break/",
-    "features/formulas/", "features/brightness/", "features/padNoiseSlider/", "features/fan/",
+    "features/formulas/", "features/localsend/", "features/brightness/", "features/padNoiseSlider/", "features/fan/",
     "features/timezonePlanner/",
     # The Formulas tab's MathJax (tools/fetch-mathjax.py).
     "third_party/",
@@ -47,6 +47,9 @@ BANNED = (
     b"FROONTY_OLLAMA",
     b"zerotier-enabled",
     b"froonty-zerotier",
+    b"features/localsend",
+    b"localsend-enabled",
+    b"froonty-localsend",
     b"features/media",
     b"features/claude",
     b"features/sysmon",
@@ -73,6 +76,9 @@ BANNED = (
     b"froonty-break",
     b"froonty-panic-posture",
     b"froonty-pill-cue-level",
+    b"froonty-pill-cue-move",
+    b"garmin",
+    b"Garmin",
     b"kill-process",
     b"Kill Process",
     b"Claude",

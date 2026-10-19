@@ -11,6 +11,7 @@
 // buttons never take focus on a click, so the editor keeps its selection.
 // Tooltips name the buttons' shortcuts (the pane has the keys).
 
+import Adw from 'gi://Adw';
 import Gtk from 'gi://Gtk';
 
 import {gettext as _} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
@@ -36,7 +37,13 @@ function button(Type, {icon, label, name, tooltip = name}) {
 export class FormatBar {
     /** @param {Function} onEdit called with an edit function */
     constructor(onEdit, onImage = () => {}) {
-        this.widget = new Gtk.Box({css_classes: ['froonty-format-bar'], spacing: 2});
+        // A wrapping action row keeps the full toolbar reachable in a narrow
+        // All notes pane; the Shell island has enough width for one line.
+        this.widget = new Adw.WrapBox({
+            css_classes: ['froonty-format-bar'],
+            child_spacing: 2,
+            line_spacing: 2,
+        });
         this._toggles = [];
         this._edits = [];
         for (const action of formatActions(_)) {

@@ -44,15 +44,16 @@ centred together, as one.
 - **Settings uses an add/remove list:**
   - "In the bar" shows up to 8, with up, down and remove buttons.
   - "Available" has an Add button per entry, disabled at 8.
-- **Defaults:** Mute microphone, then Mute sound.
+- **Defaults:** Keep Froonty on top, Mute microphone, then Mute sound.
 - **The tab column** is a `Clutter.GridLayout` filled column by column.
-  `TAB_COLUMNS` in `ui/hub.js` is 1 for now; raising it is the planned way
-  to fit more features (placeholder).
+  `TAB_COLUMNS` in `ui/hub.js` is 1; the column scrolls when the island is
+  shorter than its tabs (three stay in sight).
 
 ## 3. Buttons in v1
 
 | Id | Action | Shown checked (red) when |
 |---|---|---|
+| `pin-island` | Keeps the expanded island visible above other windows while allowing outside clicks through; unpinning closes it | Froonty is pinned |
 | `mute-microphone` | Toggles the mute of the default input | The microphone is muted |
 | `mute-sound` | Toggles the mute of the default output (all system sound) | The sound is muted |
 

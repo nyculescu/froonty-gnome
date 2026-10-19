@@ -95,6 +95,7 @@ export class BreakEngine extends Emitter {
         this._call('delay', () => this._manager.delayBreak());
     }
 
+
     skip() {
         this._call('skip', () => this._manager.skipBreak());
     }

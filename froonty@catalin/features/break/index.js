@@ -6,6 +6,8 @@ import Gio from 'gi://Gio';
 
 import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 
+import {GnomeBreakSettings} from './gnomeSettings.js';
+import {PauseKeeper} from './pause.js';
 import {acquireBreakService, releaseBreakService} from './shared.js';
 import {NotificationTakeover} from './takeover.js';
 import {BreakView} from './view.js';
@@ -57,11 +59,19 @@ export default {
     // "Remind me in the island": GNOME's break notifications are off while
     // the island shows the reminders (takeover.js). Under the lock screen
     // they stay off: they would show there and flicker on every unlock.
+    // A pause (pause.js) likewise ends when the tab or Froonty is turned
+    // off, but not under the lock screen.
     createExtensionPart: settings => {
-        const takeover = new NotificationTakeover(settings);
+        const gnome = new GnomeBreakSettings();
+        const takeover = new NotificationTakeover(settings, gnome);
+        const pause = new PauseKeeper(settings, gnome);
         return {
             sync: state => takeover.sync(state),
-            destroy: ({locked}) => takeover.destroy({restore: !locked}),
+            destroy: ({locked}) => {
+                takeover.destroy({restore: !locked});
+                pause.destroy({restore: !locked});
+                gnome.destroy();
+            },
         };
     },
 };

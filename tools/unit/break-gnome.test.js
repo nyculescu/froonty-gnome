@@ -50,7 +50,7 @@ test('S1: Delay and Skip with nothing due change nothing and are not counted', a
     service._engine.delay();
     service._engine.skip();
     eq([...manager._breakLastEnd], before);
-    eq(eyes(service), {taken: 0, delayed: 0, skipped: 0});
+    eq(eyes(service), {taken: 0, delayed: 0, skipped: 0, busy: 0});
     eq(service.model().actions.skip, false);
     service.stop();
 });
@@ -122,7 +122,7 @@ test('S3a: a 15 s idle with a 20 s break credits nothing, although both notifies
     world.input();
     ok(ends.length > 0 && dues.length > 0, 'GNOME notifies on every return');
     eq([...manager._breakLastEnd], before);
-    eq(eyes(service), {taken: 0, delayed: 0, skipped: 0});
+    eq(eyes(service), {taken: 0, delayed: 0, skipped: 0, busy: 0});
     service.stop();
 });
 
@@ -168,7 +168,7 @@ test('S9: turning a type on is not a break; an interval change moves the due tim
     select(world, ['eyesight']);
     world.work(2);
     for (const t of ['eyesight', 'movement'])
-        eq(service.state.today[t], {taken: 0, delayed: 0, skipped: 0}, t);
+        eq(service.state.today[t], {taken: 0, delayed: 0, skipped: 0, busy: 0}, t);
     service.stop();
 });
 
@@ -299,7 +299,7 @@ test('Stopped: no watch, timer or GNOME signal left', async () => {
     ok(service.resources.activeWatch, 'an active watch while idle');
     service.stop();
     eq(service.resources, {idleWatch: false, activeWatch: false, boundaryTimer: false,
-        wallClock: false, engineSignals: false});
+        wallClock: false, engineSignals: false, naturalWatch: false, busySignals: false});
 });
 
 await done();

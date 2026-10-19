@@ -30,6 +30,7 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 const PREFS_SERVICE = 'org.gnome.Shell.Extensions';
 const VIEW_KEY = 'settings-window-view';
+const NOTES_PINNED_KEY = 'all-notes-pinned';
 const PREFS_OBJECT_PATH = '/org/gnome/Shell/Extensions';
 // Stop waiting for the requested window after this long (it normally
 // appears within a second; the service may be starting up).
@@ -57,6 +58,20 @@ export class SettingsWindow {
         // The windows watched for 'shown' while waiting: _stopWaiting() lets
         // go of exactly these, also one unmanaged before it was ever shown.
         this._watched = new Set();
+        this._watchedAbove = new Map();
+        this._settings.connectObject(
+            `changed::${NOTES_PINNED_KEY}`, () => this._syncAllNotesAbove(),
+            `changed::${VIEW_KEY}`, () => this._syncAllNotesAbove(),
+            this);
+        global.display.connectObject('window-created', (_display, window) => {
+            const id = window.connect('shown', () => {
+                this._syncWindowAbove(window);
+                window.disconnect(id);
+                this._watchedAbove.delete(window);
+            });
+            this._watchedAbove.set(window, id);
+        }, this);
+        this._syncAllNotesAbove();
         this._resetViewWithoutWindow();
     }
 
@@ -87,6 +102,11 @@ export class SettingsWindow {
     destroy() {
         // A call still pending ends without a retry.
         this._destroyed = true;
+        this._settings.disconnectObject(this);
+        global.display.disconnectObject(this);
+        for (const [window, id] of this._watchedAbove)
+            window.disconnect(id);
+        this._watchedAbove.clear();
         this._stopWaiting();
         // A pending retry's promise is left unresolved: nothing more runs.
         if (this._retryId)
@@ -101,6 +121,22 @@ export class SettingsWindow {
     _isOurs(window) {
         return window.get_wm_class() === PREFS_SERVICE &&
             window.get_title() === this._title;
+    }
+
+    _syncAllNotesAbove() {
+        for (const window of global.display.list_all_windows())
+            this._syncWindowAbove(window);
+    }
+
+    _syncWindowAbove(window) {
+        if (!this._isOurs(window))
+            return;
+        const above = this._settings.get_string(VIEW_KEY) === 'all-notes' &&
+            this._settings.get_boolean(NOTES_PINNED_KEY);
+        if (above)
+            window.make_above();
+        else
+            window.unmake_above();
     }
 
     // Extension.openPreferences() makes the same call but drops the returned

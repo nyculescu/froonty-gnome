@@ -168,6 +168,11 @@ upcoming songs, and the song on the pill.
 - Rounded corners are painted: Clutter has no rounded clip, so a mask
   paints the corners in the colour behind the tile (black in the tab, the
   pill's colour on the pill).
+- **Shape:** the tile takes the cover's shape inside its square slot: a
+  wide video thumbnail is as wide as the slot and shorter (no black bars,
+  not stretched), a tall cover as tall and narrower. Shapes past 2:1 (or
+  1:2) stop there and the picture is fitted inside. The placeholder is
+  square.
 
 ## In the island (wings, peek, swipe)
 

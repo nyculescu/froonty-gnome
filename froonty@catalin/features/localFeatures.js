@@ -3,7 +3,7 @@
 // tools/pack-public strips the imports of this file and leaves it out, and
 // their settings pages come from localPrefs.js. Each moves to registry.js
 // once it is submitted to extensions.gnome.org (ZeroTier, Writing, Formulas
-// and Fan stay local). LOCAL_PARTS (Software brightness, pad noise slider,
+// and Fan stay local; LocalSend too, until it is reviewed). LOCAL_PARTS (Software brightness, pad noise slider,
 // time zone planner) are not tabs.
 
 // `break` is a reserved word.
@@ -14,6 +14,7 @@ import clipboard from './clipboard/index.js';
 import {PadNoiseSliderPart} from './padNoiseSlider/quickSlider.js';
 import formulas from './formulas/index.js';
 import killprocess from './killprocess/index.js';
+import localsend from './localsend/index.js';
 import media from './media/index.js';
 import sysmon from './sysmon/index.js';
 import {TimezonePlannerPart} from './timezonePlanner/quickSettings.js';
@@ -28,6 +29,7 @@ export const LOCAL_FEATURES = [
     killprocess,
     breakFeature,
     zerotier,
+    localsend,
     writing,
     formulas,
 ];

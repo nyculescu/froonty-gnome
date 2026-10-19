@@ -84,13 +84,24 @@ What changed for Froonty, and how it adapts:
    **Exception, written:** the Break tab's one-shot timer has no setting
    of its own. At most one runs, armed at the next moment the tab or the
    pill's cue changes by itself (2 min before a break, at it, 60 s and one
-   interval after it, the long-rest crossing, the posture reminder,
-   midnight) and re-armed only by events. GNOME's engine emits nothing at
-   those moments (its `break-due` only fires if the user is active then),
-   and the moments come from the user's own settings (GNOME's intervals,
-   the posture and long-rest minutes), so a separate interval would mean
-   nothing ([features/break.md](features/break.md)). Exercise pictures are
-   still, so there is no frame timer.
+   interval after it, the long-rest crossing, the posture reminder, the
+   move bar's next segment, a pause's or working hours' end, a held cue's
+   grace, the latest a due cue waits for a pause in typing, midnight) and
+   re-armed only by events. GNOME's engine emits nothing at those moments
+   (its `break-due` only fires if the user is active then), and the
+   moments come from the user's own settings (GNOME's intervals, the
+   posture, long-rest, move-bar, pause and working-hours settings), so a
+   separate interval would mean nothing
+   ([features/break.md](features/break.md)).
+   **Exception, written:** the Break tab's exercise animations have no
+   GLib timer and no interval setting: Clutter transitions only, each
+   chained from the last one's completion (a picture's frames, each its
+   own time; a routine's bar, each move's time, which starts the next
+   move) or repeating (the drawn eye and breathing exercises). They run
+   only while on screen, and the pictures and drawings only while
+   GNOME's Animations switch is on (`break-animate` turns them off). The
+   times are the pictures' and the catalog's, so a setting would mean
+   nothing.
    **Exception, written:** the clipboard switcher checks every 20 ms, at
    most 30 times, whether the app's text field has GNOME's input method
    focus back after the switcher's grab, only between the release of
@@ -123,6 +134,16 @@ What changed for Froonty, and how it adapts:
     nothing sent anywhere else. Its addresses are fixed (LanguageTool's
     public service, Ollama on 127.0.0.1); the variables that move them are
     read only under the tests.
+
+  - The Break tab's Garmin helper (local builds, off by default:
+    `break-garmin`): `python3 -I helper.py today <day>` in its own venv
+    under `~/.local/share/froonty/garmin`, a short fixed environment, a
+    60 s limit; only at login or unlock, back from an away of 20 min or
+    more, when the Break tab comes on screen, at most every 15 min. It
+    alone talks to Garmin (python-garminconnect); the set-up (`python3 -m
+    venv`, `pip install` of the pinned library) and the sign-in run only
+    in the settings window, on a click
+    ([features/break.md](features/break.md#garmin-optional-local-builds)).
 
   The Claude tab's livenerf row is the only direct network access by
   default: it GETs two public files from GitHub while the tab is on
@@ -217,7 +238,7 @@ hub     BinLayout, reactive (stops clicks from reaching the pill)
  ├ main     header across the whole hub, then [side column] [content] below it
  │            header   [panic 1–4] (date pill: "Sat Oct 3 14:05" + GNOME's unread dot) [panic 5–8]
  │                     (HeaderLayout: the date pill exactly over GNOME's clock; equal-width panic groups)
- │            side column  tab column (GridLayout, TAB_COLUMNS = 1; only with more than one tab on)
+ │            side column  tab column (GridLayout, TAB_COLUMNS = 1, in a ScrollView; only with more than one tab on)
  │                         at the top, ⚙️ at the bottom; always shown; the island grows to fit it
  │            content  the active tab's view, or, while no tab is on, a notice and "Open Settings"
  └ overlay  tooltips (click-through, fixed positions)
@@ -243,8 +264,14 @@ hub     BinLayout, reactive (stops clicks from reaching the pill)
   named "Settings" with its tooltip on its right, as the tabs'. Tabs and
   ⚙️ have a fine dark-grey rounded outline (1 px, #3d3d3d). The side
   column shows with one tab or none on (for ⚙️); `Hub.minHeight` is the
-  header's height, the hub's spacing and the side column's natural height
-  (every tab and ⚙️).
+  header's height, the hub's spacing and the side column with at most
+  `MIN_TABS` (3) tabs and ⚙️.
+- **The tab column scrolls** (2026-10-16, user request: an island shorter
+  than eleven tabs). In an `St.ScrollView` with no bar (`EXTERNAL`) and
+  St's edge fade (`-st-vfade-offset`) where more tabs are above or below;
+  the wheel or touchpad over it scrolls. The open tab is kept in sight
+  when it is selected and when the column's height changes, and a tab
+  reached with the keyboard scrolls into sight.
 - **Keyboard order** (St follows the actor tree): the header from left to
   right (panic 1–4, the date pill, panic 5–8), the tabs, ⚙️, then the
   view.
@@ -417,6 +444,12 @@ Consequences:
 | `Gio.Credentials` (`get_unix_pid()`) | Break tab: tells a screen unlock (same Shell process: GNOME kept counting) from a new login |
 | GNOME's `Gio.Settings` schemas `org.gnome.desktop.break-reminders` (+ `.eyesight`, `.movement`), `org.gnome.desktop.notifications.application` at `…/application/gnome-wellbeing-panel/` (`enable`), `org.gnome.desktop.screen-time-limits` (`daily-limit-enabled`, read only); each looked up before use | Break tab: GNOME's break settings; its notifications off and back ([features/break.md](features/break.md)) |
 | Clutter actor transforms (`set_pivot_point`, `scale_x = -1`) | Break tab: Workrave's mirrored exercise pictures; the standing bar's fill |
+| Clutter transitions (`ease` with a delay and `animationRequired`; `KeyframeTransition`, `add_marker_at_time` / `marker-reached`) | Break tab: moving exercise pictures, a routine's bar, the drawn eye and breathing exercises (DESIGN §2, principle 2's exception) |
+| `global.display` `in-fullscreen-changed`, `get_monitor_in_fullscreen()`; `global.backend.get_remote_access_controller()` `new-handle`, `Meta.RemoteAccessHandle` `stopped` (as `ui/status/remoteAccess.js`) | Break tab, "Notice when you are busy": a full-screen window, screen sharing or recording (`shell/busySignals.js`) |
+| `org.gnome.SessionManager` D-Bus: `GetInhibitors`, `Inhibitor.GetAppId` / `GetReason` / `GetFlags`, signals `InhibitorAdded` / `InhibitorRemoved` (async; flag 8 is idle) | Break tab: an app keeps the screen awake (a video), and which (`shell/busySignals.js`) |
+| GNOME's per-type `fade-screen` and `lock-screen` (`org.gnome.desktop.break-reminders.<type>`), written while busy and given back (recorded in `break-gnome-saved`) | Break tab: "Hold GNOME's dimming and locking while busy" (`features/break/pause.js`) |
+| `Gvc.MixerControl` `get_source_outputs()`, `stream-added` / `stream-removed` / `state-changed`, `MixerStream.get_application_id()` | Break tab: the microphone in use, with GNOME's own exceptions (`ui/status/volume.js` `_maybeShowInput`) |
+| `St.DrawingArea` with Cairo (`PangoCairo` labels), `Clutter.ClickGesture` | Break tab: the 14-week chart; the drawn exercises' still parts |
 | `Meta.MonitorManager.get_logical_monitors()`, `Meta.LogicalMonitor.get_monitors()` / `get_number()`, `Meta.Monitor.is_builtin()` (Mutter 18), through `global.backend.get_monitor_manager()` | Software brightness (local builds): which monitor is a laptop's built-in screen ([features/brightness.md](features/brightness.md)) |
 
 ### 6.2 Shell APIs commonly used by extensions (exported; not formally stable)
@@ -432,7 +465,7 @@ Consequences:
 | `Shell.util_translate_time_string` with GNOME Shell's `calendar heading` msgid | `ui/dateMenu.js:175-178` |
 | `global.focus_manager.navigate_from_event` (Tab navigation under a grab, as `PanelMenu.Button` does) | `ui/panelMenu.js` |
 | `Main.panel.addToStatusArea`, `PanelMenu.Button` (top bar icon while the island is hidden) | `ui/panel.js:935`, `ui/panelMenu.js` |
-| `getMixerControl()`: the shared Gvc mixer behind Quick Settings' volume sliders (through `shell/mixer.js`); also the Media tab's volume row | `ui/status/volume.js:24` |
+| `getMixerControl()`: the shared Gvc mixer behind Quick Settings' volume sliders (through `shell/mixer.js`); also the Media tab's volume row, and the Break tab's busy signal "microphone in use" | `ui/status/volume.js:24` |
 | `Slider` (signals `drag-begin`/`drag-end`, `value`) and `BarLevel` (style properties `-barlevel-*`, `-slider-handle-radius`): Media's timeline and volume | `ui/slider.js`, `ui/barLevel.js` (50) |
 | `Spinner` (Media: loading lyrics), `PopupMenu.Switch` (Media: "Find lyrics online") | `ui/animation.js`, `ui/popupMenu.js` (50) |
 | `org.gnome.Shell.Extensions.OpenExtensionPrefs` (public D-Bus API of the prefs service); `global.display` `window-created`, `Meta.Window` `shown` / `get_wm_class()`; `Main.activateWindow` | `Shell/Extensions/js/extensionsService.js`, `ui/main.js:878` |
@@ -594,7 +627,7 @@ Two St/Clutter rules also shaped the island:
 | Subprocesses / D-Bus proxies | Btop tab: one `nvidia-smi` per interval while the tab is on screen and an NVIDIA card is awake (about 40 ms). Kill Process tab: one `/usr/bin/kill` per confirmed kill or "Force quit" click, never otherwise. Writing tab (local builds): one `claude -p` per action click (a time limit of 90 s, plus 8 ms per character with Haiku or 15 ms with Sonnet; never started once the click is cancelled), `claude auth status` before the first one each time the tab is shown (10 s), and `systemctl --user start froonty-ollama.service` when Froonty's own Ollama is needed and stopped. Otherwise 0 of Froonty's own. Outside the Shell, after the user's Set up, Claude Code runs Froonty's GJS hook (about 38 ms, 33 MB) per qualifying Notification, Stop and StopFailure, and `sh` (about 1.2 ms) per prompt, model step and session end. The Claude tab reads GIO's process-wide `Gio.NetworkMonitor`, whose NetworkManager backend keeps GIO's own proxy for the life of the Shell | — |
 | Media service | One per Shell while held: by the pill (`media-enabled` and `media-show-in-pill` or `media-track-notice`; by default whenever the island exists), the Media tab while on screen, the "Pause all media" button while the island is open. It holds one `NameOwnerChanged` subscription, at most 16 players × 2 proxies (`g-properties-changed` ×2, `g-signal` ×1), one coalescing idle at most, and one-shots: discovery deadline 1 s, gap 1.5 s, chosen-player grace 5 s, cover grace 1.5 s, new-song debounce 0.5 s, pill notice 3 s, seek hold 1 s, stuck-position check 3 s, Up next check 1.5 s, the next lyric line. **Periodic:** the display tick, at most once a second, only while the tab is on screen and the song plays with a length and a position. Position reads only for the shown song while the tab is on screen. One decoded cover kept (plus up to 8 web covers). Volume row: 2 mixer and 2 stream connections while the tab is on screen. Bars: Clutter eases only while playing, shown, and animations are on | `releaseMedia()` → `MediaService.stop()` → `MprisWatcher.stop()`; the tab's `setActive(false)` |
 | Memory kept across `disable()` | `ctx.memory.media`: `{chosen, followed, latestPlayed}` (strings); only in builds with a `keepsMemory` feature (Media) | Shell exit; without such a feature, `disable()` |
-| Break tab (off by default) | While `break-enabled` is on, one shared service (`features/break/shared.js`): 6 signal connections on `Main.breakManager`; one `changed` connection on each of GNOME's 5 settings objects it reads (break reminders, eyes, movement, Wellbeing notifications, screen-time limits) and 20 `changed::` on Froonty's; +1 handler on the top bar's WallClock; one Mutter idle watch (10 s) and, while idle, one active watch; at most one one-shot timer (§2, principle 2); two files under `~/.local/share/froonty/break` (0700/0600), written after events, never periodically. The notification takeover (extension-wide): one `changed::selected-breaks` and 3 `changed::` on Froonty's settings. The pill's cue: one connection per cue source | `releaseBreakService()` (extension `disable()`, tab turned off; `BreakService.stop()`); `NotificationTakeover.destroy()` |
+| Break tab (off by default) | While `break-enabled` is on, one shared service (`features/break/shared.js`): 6 signal connections on `Main.breakManager`; one `changed` connection on each of GNOME's 5 settings objects it reads (break reminders, eyes, movement, Wellbeing notifications, screen-time limits) and 51 `changed::` on Froonty's; +1 handler on the top bar's WallClock; one Mutter idle watch (10 s) and, while idle, one active watch; while a due break waits for a pause in typing, one 2 s idle watch; at most one one-shot timer (§2, principle 2); two files under `~/.local/share/froonty/break` (0700/0600), written after events, never periodically. While "Notice when you are busy" is on, the busy signals (`shell/busySignals.js`): 1 on `global.display`, 1 on the remote access controller and 1 per live handle, 3 on the Shell's mixer, 1 on a `org.gnome.desktop.notifications` settings object, 2 D-Bus signal subscriptions, a `Gio.Cancellable` for the inhibitor reads. While the tab is shown: its exercise animations (§2, principle 2's exception) and, from a Take until you come back with "Pause media on Take now" on, a hold on the Media service. With `break-garmin` on (local builds): at most one Garmin helper process at a time (§3), on events only, with its `Gio.Cancellable` and a 60 s one-shot limit. The extension part (extension-wide): the notification takeover (one `changed::selected-breaks` and 3 `changed::` on Froonty's settings) and the pause keeper (one `changed::break-enabled`). The pill's cue: one connection per cue source | `releaseBreakService()` (extension `disable()`, tab turned off; `BreakService.stop()`, which stops the busy signals); `NotificationTakeover.destroy()`, `PauseKeeper.destroy()` (a pause ends unless the screen is locking); the view's `destroy()` (animations, the media hold) |
 
 ## 9. Testing
 
@@ -662,7 +695,8 @@ input through Clutter virtual devices and cover:
   ⚙️ at the bottom of the side column with a tab's size, its tooltip, its
   window by click, Enter and Space, the keyboard order (header first, then
   the tabs, last tab → ⚙️), the side column below the header, and the
-  island's minimum width and height (header plus side column). The settings page (a GTK unit test) takes 8
+  island's minimum width and height (header plus side column, three tabs
+  in sight), and the tab column scrolling on a short island. The settings page (a GTK unit test) takes 8
   buttons and refuses a 9th.
 - **Panic buttons:** real mute and unmute, following changes made elsewhere,
   and the settings rules. Block camera: click and keyboard toggle GNOME's

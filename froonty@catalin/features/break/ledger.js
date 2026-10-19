@@ -13,6 +13,9 @@ import {BREAK_TYPES} from '../../shell/breakEngine.js';
 
 // A pause shorter than this is reading, not being away.
 export const AWAY_MIN_SECONDS = 120;
+// Away this long during the day: "Was that a workout?"
+export const WORKOUT_ASK_SECONDS = 45 * 60;
+const WORKOUT_ASK_MAX_SECONDS = 4 * 3600;
 // Away this long: the posture is "sitting" again on return.
 const POSTURE_RESET_AWAY_SECONDS = 3600;
 // A WallClock tick whose wall-clock step beats the monotonic one by this
@@ -35,10 +38,33 @@ export function nextMidnight(ms) {
     return midnight.to_unix() * 1000;
 }
 
-export const LOCAL_DAYS = {dayKey, nextMidnight};
+/** The local hour (0-23) of `ms`. */
+export function hourOf(ms) {
+    return GLib.DateTime.new_from_unix_local(Math.floor(ms / 1000)).get_hour();
+}
+
+/** The first local whole hour after `ms`, in ms. */
+export function nextHour(ms) {
+    const t = GLib.DateTime.new_from_unix_local(Math.floor(ms / 1000));
+    return GLib.DateTime.new_local(t.get_year(), t.get_month(), t.get_day_of_month(), t.get_hour(), 0, 0)
+        .add_hours(1).to_unix() * 1000;
+}
+
+export const LOCAL_DAYS = {dayKey, nextMidnight, hourOf, nextHour};
+
+// Days without hour functions (the tests' fake days): hours from midnight.
+const HOUR_MS = 3600000;
+const dayStart = (days, ms) => days.nextMidnight(ms) - 24 * HOUR_MS;
+const hourIn = (days, ms) => days.hourOf?.(ms) ??
+    Math.min(23, Math.max(0, Math.floor((ms - dayStart(days, ms)) / HOUR_MS)));
+const hourEnd = (days, ms) => days.nextHour?.(ms) ??
+    Math.min(days.nextMidnight(ms), ms - ((ms - dayStart(days, ms)) % HOUR_MS) + HOUR_MS);
+
+export const REASONS = ['meeting', 'deadline', 'flow', 'other'];
 
 export function emptyDay(day) {
-    const counts = () => ({taken: 0, delayed: 0, skipped: 0});
+    // busy: credited by GNOME while you were busy (a call, a video).
+    const counts = () => ({taken: 0, delayed: 0, skipped: 0, busy: 0});
     return {
         day,
         activeSeconds: 0,
@@ -49,6 +75,21 @@ export function emptyDay(day) {
         standingSeconds: 0,
         targetSeconds: 0,
         minimumOnly: false,
+        // Time at the computer without input because you were busy.
+        busySeconds: 0,
+        // Why you skipped or delayed (one tap, optional).
+        reasons: Object.fromEntries(REASONS.map(r => [r, 0])),
+        // Seconds at the computer in each local hour, and whether you
+        // moved (were away AWAY_MIN_SECONDS or more) in it.
+        hourActive: new Array(24).fill(0),
+        hourMoved: new Array(24).fill(0),
+        // Workouts you logged today (minutes in all) and when the last ended.
+        workoutMinutes: 0,
+        workoutEnd: null,
+        // Garmin's activities today ({id, type, start, end, minutes}) and
+        // intensity minutes ({moderate, vigorous}), with break-garmin on.
+        garmin: [],
+        garminIntensity: null,
     };
 }
 
@@ -60,12 +101,14 @@ function hasActivity(day) {
 
 /** A fresh state at `now` (first start, or an unreadable file). */
 export function freshState(now, days = LOCAL_DAYS) {
-    const counters = () => ({consecutive: 0, delaysInRow: 0, owed: 0});
+    const counters = () => ({consecutive: 0, delaysInRow: 0, skipsInRow: 0, owed: 0});
     return {
         ledger: {
             accountedUntil: now,
             stretchStart: now,
             screenSinceLongRest: 0,
+            // At the computer since you last moved (the move bar).
+            screenSinceMove: 0,
             // Set while an idle period is open (Mutter's idle watch fired
             // and no input since); saved, so a lock that follows it is
             // counted from when the user left.
@@ -74,7 +117,17 @@ export function freshState(now, days = LOCAL_DAYS) {
         breaks: {eyesight: counters(), movement: counters()},
         posture: {mode: 'sitting', modeActiveSeconds: 0},
         plan: {lastStepDay: null, minimumDay: null},
-        exercise: {next: 0},
+        // The next stretch, the moves shown lately (not repeated soon),
+        // the next break idea.
+        exercise: {next: 0, recent: [], idea: 0},
+        // The last away long enough to ask whether it was a workout; null
+        // once answered.
+        lastLongAway: null,
+        // The pause last applied ("manual:<until>", "hours:<start>"): once
+        // each, so breaks turned back on meanwhile stay on.
+        pauseHandled: null,
+        // When Garmin was last asked, and its backoff (garminData.js).
+        garmin: {lastTry: 0, lastSync: 0, nextTry: 0, error: null},
         today: emptyDay(days.dayKey(now)),
     };
 }
@@ -101,10 +154,12 @@ export function addPresent(s, t, days = LOCAL_DAYS) {
     let a = l.accountedUntil ?? t;
     while (a < t) {
         rollTo(s, a, days, closed);
-        const b = Math.min(t, days.nextMidnight(a));
+        const b = Math.min(t, days.nextMidnight(a), hourEnd(days, a));
         const seconds = (b - a) / 1000;
         s.today.activeSeconds += seconds;
+        s.today.hourActive[hourIn(days, a)] += seconds;
         l.screenSinceLongRest += seconds;
+        l.screenSinceMove += seconds;
         s.posture.modeActiveSeconds += seconds;
         if (s.posture.mode === 'standing')
             s.today.standingSeconds += seconds;
@@ -140,12 +195,28 @@ export function addAway(s, from, to, {movementSeconds, longRestSeconds}, days = 
     }
     if (seconds >= movementSeconds)
         l.stretchStart = to;
-    if (seconds >= AWAY_MIN_SECONDS)
+    if (seconds >= AWAY_MIN_SECONDS) {
         s.posture.modeActiveSeconds = 0;
+        l.screenSinceMove = 0;
+        markMoved(s, start, to, days);
+    }
+    // Long enough to have been a workout, not a night: the tab asks
+    // (break-workout).
+    if (seconds >= WORKOUT_ASK_SECONDS && seconds <= WORKOUT_ASK_MAX_SECONDS &&
+        days.dayKey(start) === s.today.day)
+        s.lastLongAway = {from: start, to};
     if (seconds >= POSTURE_RESET_AWAY_SECONDS)
         s.posture.mode = 'sitting';
     l.accountedUntil = Math.max(l.accountedUntil ?? to, to);
     return closed;
+}
+
+// Every hour of today an away of AWAY_MIN_SECONDS or more touched.
+function markMoved(s, from, to, days) {
+    for (let a = Math.max(from, to - 24 * HOUR_MS); a < to; a = hourEnd(days, a)) {
+        if (days.dayKey(a) === s.today.day)
+            s.today.hourMoved[hourIn(days, a)] = 1;
+    }
 }
 
 /**

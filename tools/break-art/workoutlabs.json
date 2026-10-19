@@ -1,0 +1,282 @@
+{
+ "format": 1,
+ "about": "Where tools/fetch-break-art.py fetches each move's picture: WorkoutLabs (https://workoutlabs.com/exercise-guide/), all rights reserved by WorkoutLabs; fetched to the owner's computer only, never committed or packed. Links checked 2026-10-16. kind gif: an animation (repeated frames are merged into poses); kind svg: a still with `poses` poses side by side (cut apart).",
+ "source": "https://www.workoutlabs.com/exercise-guide/",
+ "checked": "2026-10-16",
+ "moves": {
+  "neck-side-tilt": {
+   "kind": "gif",
+   "url": "https://workoutlabs.com/train/wp-content/uploads/2025/06/seated-neck-stretch-S-F-3.gif",
+   "page": "https://workoutlabs.com/exercise-guide/seated-neck-stretch/",
+   "series": "2025-senior"
+  },
+  "neck-rotation": {
+   "kind": "gif",
+   "url": "https://workoutlabs.com/train/wp-content/uploads/2022/05/Neck-Turns_F-1.gif",
+   "page": "https://workoutlabs.com/exercise-guide/seated-neck-turns-head-rotations/",
+   "series": "2022-23-c"
+  },
+  "chin-tuck": {
+   "kind": "gif",
+   "url": "https://workoutlabs.com/train/wp-content/uploads/2023/05/Chin_Tucks_F-c-f-v2-a.gif",
+   "page": "https://workoutlabs.com/exercise-guide/chin-tucks-neck-extensions/",
+   "series": "2022-23-c"
+  },
+  "shoulder-rolls": {
+   "kind": "gif",
+   "url": "https://workoutlabs.com/train/wp-content/uploads/2025/06/seated-shoulder-rolls-S-F-3.gif",
+   "page": "https://workoutlabs.com/exercise-guide/seated-shoulder-rolls-shrugs/",
+   "series": "2025-senior"
+  },
+  "shoulder-shrugs": {
+   "kind": "gif",
+   "url": "https://workoutlabs.com/train/wp-content/uploads/2025/06/seated-shoulder-rolls-S-F-3.gif",
+   "page": "https://workoutlabs.com/exercise-guide/seated-shoulder-rolls-shrugs/",
+   "series": "2025-senior"
+  },
+  "cross-body-shoulder": {
+   "kind": "gif",
+   "url": "https://workoutlabs.com/train/wp-content/uploads/2024/01/Cross_Over_Stretch_anim_color_F.gif",
+   "page": "https://workoutlabs.com/exercise-guide/seated-cross-over-stretch/",
+   "series": "2024-color"
+  },
+  "cross-body-shoulder-still": {
+   "kind": "svg",
+   "url": "https://workoutlabs.com/train/wp-content/uploads/2025/06/seated-shoulder-stretch-S-F-2.svg",
+   "poses": 1,
+   "page": "https://workoutlabs.com/exercise-guide/seated-cross-body-shoulder-stretch/",
+   "series": "2025-senior"
+  },
+  "overhead-triceps": {
+   "kind": "gif",
+   "url": "https://workoutlabs.com/train/wp-content/uploads/2024/01/Tricep_Opener_anim_color_F.gif",
+   "page": "https://workoutlabs.com/exercise-guide/standing-tricep-stretch/",
+   "series": "2024-color"
+  },
+  "overhead-triceps-still": {
+   "kind": "svg",
+   "url": "https://workoutlabs.com/train/wp-content/uploads/2023/05/Overhead_Triceps_Stretch_F_WorkoutLabs-c.svg",
+   "poses": 1,
+   "page": "https://workoutlabs.com/exercise-guide/overhead-triceps-stretch/",
+   "series": "2023-workoutlabs-c"
+  },
+  "chest-opener": {
+   "kind": "gif",
+   "url": "https://workoutlabs.com/train/wp-content/uploads/2024/01/Chest_Opener_anim_color_F.gif",
+   "page": "https://workoutlabs.com/exercise-guide/standing-chest-stretch/",
+   "series": "2024-color"
+  },
+  "chest-opener-clasp": {
+   "kind": "svg",
+   "url": "https://workoutlabs.com/train/wp-content/uploads/2023/05/Reverse_Shoulder_Stretch_F-c.svg",
+   "poses": 1,
+   "page": "https://workoutlabs.com/exercise-guide/reverse-shoulder-stretch/",
+   "series": "2022-23-c"
+  },
+  "upper-back-stretch": {
+   "kind": "svg",
+   "url": "https://workoutlabs.com/train/wp-content/uploads/2024/01/Love_Yourself_Back_Stretch_color_F.svg",
+   "poses": 1,
+   "page": "https://workoutlabs.com/exercise-guide/love-yourself-back-stretch/",
+   "series": "2024-color"
+  },
+  "seated-spinal-twist": {
+   "kind": "gif",
+   "url": "https://workoutlabs.com/train/wp-content/uploads/2023/05/Seated_Lumbar_Rotations_F-c.gif",
+   "page": "https://workoutlabs.com/exercise-guide/seated-lumbar-rotations-chair-twists/",
+   "series": "2022-23-c"
+  },
+  "seated-side-bend": {
+   "kind": "gif",
+   "url": "https://workoutlabs.com/train/wp-content/uploads/2022/04/Seated_Side_Leans_F-2.gif",
+   "page": "https://workoutlabs.com/exercise-guide/seated-side-chair-leans/",
+   "series": "2022-23-c"
+  },
+  "seated-side-reach": {
+   "kind": "gif",
+   "url": "https://workoutlabs.com/train/wp-content/uploads/2023/05/Seated_Side_Leans_F-c.gif",
+   "page": "https://workoutlabs.com/exercise-guide/seated-side-bends-lat-stretch/",
+   "series": "2022-23-c"
+  },
+  "wrist-flexor": {
+   "kind": "svg",
+   "url": "https://workoutlabs.com/train/wp-content/uploads/2023/05/Palm_Up_Wrist_Stretch_F-c.svg",
+   "poses": 1,
+   "page": "https://workoutlabs.com/exercise-guide/standing-palm-up-wrist-stretch/",
+   "series": "2022-23-c"
+  },
+  "wrist-extensor": {
+   "kind": "svg",
+   "url": "https://workoutlabs.com/train/wp-content/uploads/2023/05/Palm_Down_Wrist_Stretch_F-c.svg",
+   "poses": 1,
+   "page": "https://workoutlabs.com/exercise-guide/standing-palm-down-wrist-stretch/",
+   "series": "2022-23-c"
+  },
+  "wrist-circles": {
+   "kind": "gif",
+   "url": "https://workoutlabs.com/train/wp-content/uploads/2023/05/Wrist_Circles_F-c-f-v2-a.gif",
+   "page": "https://workoutlabs.com/exercise-guide/wrist-circles-rotations/",
+   "series": "2022-23-c"
+  },
+  "prayer-stretch": {
+   "kind": "svg",
+   "url": "https://workoutlabs.com/train/wp-content/uploads/2022/05/Prayer_Stretch_F-1.svg",
+   "poses": 2,
+   "page": "https://workoutlabs.com/exercise-guide/seated-prayer-stretch/",
+   "series": "2022-23-c"
+  },
+  "standing-quad": {
+   "kind": "svg",
+   "url": "https://workoutlabs.com/train/wp-content/uploads/2024/01/Standing_Quadricep_Stretch_color_F.svg",
+   "poses": 1,
+   "page": "https://workoutlabs.com/exercise-guide/standing-quad-stretch/",
+   "series": "2024-color"
+  },
+  "hip-flexor": {
+   "kind": "svg",
+   "url": "https://workoutlabs.com/train/wp-content/uploads/2023/05/Samson_Stretch-1-c.svg",
+   "poses": 1,
+   "page": "https://workoutlabs.com/exercise-guide/samson-stretch-lunge-stretch/",
+   "series": "2023-workoutlabs-c"
+  },
+  "hip-flexor-kneeling": {
+   "kind": "gif",
+   "url": "https://workoutlabs.com/train/wp-content/uploads/2023/05/Kneeling_Hip_Flexor_Stretch_F_WorkoutLabs_anim-c.gif",
+   "page": "https://workoutlabs.com/exercise-guide/kneeling-hip-flexor-stretch/",
+   "series": "2023-workoutlabs-c"
+  },
+  "seated-hamstring": {
+   "kind": "svg",
+   "url": "https://workoutlabs.com/train/wp-content/uploads/2025/06/seated-hamstring-stretch-S-F-1.svg",
+   "poses": 1,
+   "page": "https://workoutlabs.com/exercise-guide/seated-hamstring-stretches/",
+   "series": "2025-senior"
+  },
+  "calf-raise": {
+   "kind": "gif",
+   "url": "https://workoutlabs.com/train/wp-content/uploads/2023/05/Seated_Calf_Raises_F-c-f-v2-a.gif",
+   "page": "https://workoutlabs.com/exercise-guide/seated-chair-calf-raises/",
+   "series": "2022-23-c"
+  },
+  "calf-raise-standing": {
+   "kind": "gif",
+   "url": "https://workoutlabs.com/train/wp-content/uploads/2024/01/Calf_Raises_anim_color_F.gif",
+   "page": "https://workoutlabs.com/exercise-guide/calf-raises/",
+   "series": "2024-color"
+  },
+  "ankle-circles": {
+   "kind": "gif",
+   "url": "https://workoutlabs.com/train/wp-content/uploads/2025/06/seated-ankle-circles-S-F-3.gif",
+   "page": "https://workoutlabs.com/exercise-guide/seated-ankle-circles-rotations-rolls/",
+   "series": "2025-senior"
+  },
+  "seated-ankle-stretch": {
+   "kind": "gif",
+   "url": "https://workoutlabs.com/train/wp-content/uploads/2025/06/seated-ankle-stretch-S-F-3.gif",
+   "page": "https://workoutlabs.com/exercise-guide/seated-ankle-stretches/",
+   "series": "2025-senior"
+  },
+  "chair-squat": {
+   "kind": "gif",
+   "url": "https://workoutlabs.com/train/wp-content/uploads/2023/05/chair_squat_F_WorkoutLabs_anim-c.gif",
+   "page": "https://workoutlabs.com/exercise-guide/chair-squats/",
+   "series": "2023-workoutlabs-c"
+  },
+  "march-in-place": {
+   "kind": "gif",
+   "url": "https://workoutlabs.com/train/wp-content/uploads/2025/01/walking-on-the-spot-S-F-3.gif",
+   "page": "https://workoutlabs.com/exercise-guide/walking-on-the-spot/",
+   "series": "2025-senior"
+  },
+  "seated-march": {
+   "kind": "svg",
+   "url": "https://workoutlabs.com/train/wp-content/uploads/2022/03/Seated_Knee_Lifts_F-1.svg",
+   "poses": 2,
+   "page": "https://workoutlabs.com/exercise-guide/seated-knee-lifts-elevations/",
+   "series": "2022-23-c"
+  },
+  "walking": {
+   "kind": "svg",
+   "url": "https://workoutlabs.com/train/wp-content/uploads/2023/05/Cardio-Walking-1-c.svg",
+   "poses": 1,
+   "page": "https://workoutlabs.com/exercise-guide/cardio-walking/",
+   "series": "2023-workoutlabs-c"
+  },
+  "arm-circles": {
+   "kind": "gif",
+   "url": "https://workoutlabs.com/train/wp-content/uploads/2023/05/Arm_Circles_F_WorkoutLabs_anim-c.gif",
+   "page": "https://workoutlabs.com/exercise-guide/standing-arm-circles/",
+   "series": "2023-workoutlabs-c"
+  },
+  "water-break": {
+   "kind": "svg",
+   "url": "https://workoutlabs.com/train/wp-content/uploads/2025/06/seated-rest-water-break-S-F-1.svg",
+   "poses": 1,
+   "page": "https://workoutlabs.com/exercise-guide/seated-rest-water-break/",
+   "series": "2025-senior"
+  },
+  "neck-roll": {
+   "kind": "gif",
+   "url": "https://workoutlabs.com/train/wp-content/uploads/2024/01/Neck_Roll_anim_color_F.gif",
+   "page": "https://workoutlabs.com/exercise-guide/seated-neck-roll/",
+   "series": "2024-color"
+  },
+  "seated-leg-extension": {
+   "kind": "gif",
+   "url": "https://workoutlabs.com/train/wp-content/uploads/2025/06/seated-knee-extensions-S-F-3.gif",
+   "page": "https://workoutlabs.com/exercise-guide/seated-chair-knee-leg-extensions/",
+   "series": "2025-senior"
+  },
+  "seated-figure-4": {
+   "kind": "gif",
+   "url": "https://workoutlabs.com/train/wp-content/uploads/2024/01/Hip_Opener_anim_color_F.gif",
+   "page": "https://workoutlabs.com/exercise-guide/seated-hip-openers/",
+   "series": "2024-color"
+  },
+  "seated-cat-cow": {
+   "kind": "svg",
+   "url": "https://workoutlabs.com/train/wp-content/uploads/2023/05/Cat_Cow_F-c.svg",
+   "poses": 2,
+   "page": "https://workoutlabs.com/exercise-guide/seated-cat-cow/",
+   "series": "2022-23-c"
+  },
+  "standing-knee-hug": {
+   "kind": "svg",
+   "url": "https://workoutlabs.com/train/wp-content/uploads/2023/05/Standing_Knee_Hugs-1-c.svg",
+   "poses": 1,
+   "page": "https://workoutlabs.com/exercise-guide/standing-knee-hugs/",
+   "series": "2023-workoutlabs-c"
+  },
+  "wall-push-up": {
+   "kind": "gif",
+   "url": "https://workoutlabs.com/train/wp-content/uploads/2023/05/Wall_Push-Ups_Pushups-1_anim-c.gif",
+   "page": "https://workoutlabs.com/exercise-guide/wall-push-ups-pushups/",
+   "series": "2023-workoutlabs-c"
+  },
+  "wall-angels": {
+   "kind": "gif",
+   "url": "https://workoutlabs.com/train/wp-content/uploads/2023/05/Wall_Angles-1_anim-c.gif",
+   "page": "https://workoutlabs.com/exercise-guide/wall-angles/",
+   "series": "2023-workoutlabs-c"
+  },
+  "standing-side-bend": {
+   "kind": "gif",
+   "url": "https://workoutlabs.com/train/wp-content/uploads/2025/01/Standing-side-bends-S-F-3.gif",
+   "page": "https://workoutlabs.com/exercise-guide/standing-side-leans-reaches-bends/",
+   "series": "2025-senior"
+  },
+  "seated-leg-hold": {
+   "kind": "gif",
+   "url": "https://workoutlabs.com/train/wp-content/uploads/2025/06/seated-single-one-leg-balance-holds-S-F-3.gif",
+   "page": "https://workoutlabs.com/exercise-guide/seated-single-one-leg-balance-holds/",
+   "series": "2025-senior"
+  },
+  "calf-stretch": {
+   "kind": "svg",
+   "url": "https://workoutlabs.com/train/wp-content/uploads/2023/05/Straight-Leg_Calf_Stretch_F_WorkoutLabs-c.svg",
+   "poses": 1,
+   "page": "https://workoutlabs.com/exercise-guide/straight-leg-calf-stretch/",
+   "series": "2023-workoutlabs-c"
+  }
+ }
+}

@@ -35,8 +35,10 @@ export function todayTarget(p, minimumToday) {
     return minimumToday || !p.buildup ? p.base : builtTarget(p);
 }
 
+// A workout day's workout counts toward its target (workoutCreditSeconds).
 export function met(day) {
-    return day.targetSeconds > 0 && day.standingSeconds >= day.targetSeconds;
+    return day.targetSeconds > 0 &&
+        day.standingSeconds + (day.workoutCreditSeconds ?? 0) >= day.targetSeconds;
 }
 
 // Days between two "YYYY-MM-DD" keys (calendar days, ignoring DST).

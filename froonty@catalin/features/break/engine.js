@@ -22,12 +22,20 @@
 //                                 sitAfter, standAfter, standingSeconds, targetSeconds}
 //   cueMode                      'off' | 'icon' | 'icon-and-time'
 //   midnight                     the next local midnight
+//   paused                       pause.pauseState(): {paused, reason, until, hours}
+//   cueHeld, busyGraceUntil      the cue is held while busy (busy.js), and
+//                                until then after it
+//   naturalWait                  {type: s} due types whose cue waits for a
+//                                pause in typing, until that time at most
+//   move                         {enabled, sinceMove, after, step}: the move bar
 
 import {OVERDUE_SECONDS, STATE, UPCOMING_SECONDS} from '../../shell/breakEngine.js';
 
 export const LEVEL = {FINE: 0, SOON: 1, DUE: 2, OVERDUE: 3, URGENT: 4};
-// Pill cue priority: urgent > overdue > due > posture > soon > fine.
-export const RANK = {0: 0, 1: 10, 2: 20, 3: 30, 4: 40, posture: 15};
+// Pill cue priority: urgent > overdue > due > posture > move > soon > fine.
+export const RANK = {0: 0, 1: 10, 2: 20, 3: 30, 4: 40, posture: 15, move: 14};
+// The move bar's segments, at most (a fitness watch's bar and four more).
+export const MOVE_SEGMENTS = 5;
 
 // Tolerances when matching GNOME's time changes (s).
 const NOW_TOLERANCE = 2;
@@ -60,14 +68,20 @@ function perType(m) {
  *   soonIn: ?number, froontyRule: boolean}}
  */
 export function levelOf(m) {
-    const types = perType(m);
-    const due = types.filter(t => t.overdue >= 0);
     const result = (level, reason, focus, froontyRule = false) => ({
         level, reason, froontyRule,
         type: focus?.type ?? null,
         overdue: focus ? Math.max(0, focus.overdue) : 0,
         soonIn: focus && focus.overdue < 0 ? -focus.overdue : null,
     });
+    // Paused, or outside working hours: GNOME's breaks are off meanwhile.
+    if (m.paused?.paused)
+        return result(LEVEL.FINE, 'paused', null);
+    const types = perType(m);
+    const allDue = types.filter(t => t.overdue >= 0);
+    // Due while you type: shown at your first pause (Froonty's rule).
+    const waiting = allDue.filter(t => m.naturalWait?.[t.type] !== undefined);
+    const due = allDue.filter(t => !waiting.includes(t));
 
     const byInterval = due.filter(t => t.overdue >= t.interval);
     if (byInterval.length)
@@ -83,6 +97,8 @@ export function levelOf(m) {
         return result(LEVEL.OVERDUE, 'skips', longest(escalated), true);
     if (due.length)
         return result(LEVEL.DUE, 'due', longest(due));
+    if (waiting.length)
+        return {...result(LEVEL.SOON, 'waiting', longest(waiting), true), soonIn: 0};
     if (!types.length)
         return result(LEVEL.FINE, 'none', null);
     const next = types.reduce((a, b) => (b.due < a.due ? b : a));
@@ -97,9 +113,9 @@ export function levelOf(m) {
  */
 export function actionsOf(m) {
     const none = {take: false, delay: false, skip: false, skipBoth: false, type: null,
-        delaySeconds: 0, delayHidden: null, interrupted: false};
+        delaySeconds: 0, delayHidden: null, skipHidden: null, interrupted: false};
     const due = perType(m).filter(t => t.overdue >= 0);
-    if (m.state === STATE.DISABLED || !due.length)
+    if (m.state === STATE.DISABLED || !due.length || m.paused?.paused)
         return none;
     const reported = longest(due);
     const tooLate = due.filter(t => t.overdue >= t.delay);
@@ -112,17 +128,21 @@ export function actionsOf(m) {
     } else if (capped) {
         delayHidden = {reason: 'capped', max: m.prefs.maxDelays};
     }
+    const skipHidden = m.prefs.maxSkips > 0 &&
+        due.some(t => (m.breaks[t.type]?.skipsInRow ?? 0) >= m.prefs.maxSkips)
+        ? {reason: 'capped', max: m.prefs.maxSkips} : null;
     return {
         // GNOME dims or locks only while BREAK_DUE: its current type is set
         // there (and right after due, it lags by up to a second).
         take: m.state === STATE.BREAK_DUE,
         delay: !delayHidden,
-        skip: true,
+        skip: !skipHidden,
         // GNOME skips (and delays) every due type at once.
         skipBoth: due.length > 1,
         type: reported.type,
         delaySeconds: reported.delay,
         delayHidden,
+        skipHidden,
         // Back early from a break, or working with one still owed.
         interrupted: m.state === STATE.IN_BREAK || m.state === STATE.IDLE,
         fade: m.types[reported.type]?.fade ?? false,
@@ -145,6 +165,11 @@ export function suggested(m, level = levelOf(m)) {
     if (!type || !m.types[type])
         return null;
     const duration = m.types[type].duration;
+    // After a workout today: a short walk is enough (workout days).
+    if (type === 'movement' && m.workout?.after) {
+        return {seconds: Math.min(duration, m.workout.walkSeconds), type, longRest: false,
+            insteadMovement: false, walk: true};
+    }
     if (type === 'movement') {
         const owed = m.prefs.makeUp ? Math.min(duration, m.breaks.movement?.owed ?? 0) : 0;
         return {seconds: duration + owed, type, longRest: false, insteadMovement: false};
@@ -165,9 +190,12 @@ export function suggested(m, level = levelOf(m)) {
  * @param {?string} ctx.ownAction 'delay' | 'skip' while Froonty's call runs
  * @param {object} ctx.types {type: {interval, duration, delay}}
  * @param {?number} ctx.returnLength s of the idle period ending now, if any
- * @returns {object[]} events: {type, kind: 'taken'|'skip'|'delay', source, length}
+ * @param {boolean} [ctx.busyPresent] you are busy at the computer without
+ *   typing (busy.js): a break GNOME credits now was a call or a video
+ * @returns {object[]} events: {type, kind: 'taken'|'skip'|'delay'|'busy',
+ *   source, length}
  */
-export function classify(before, after, {now, ownAction, types, returnLength = null}) {
+export function classify(before, after, {now, ownAction, types, returnLength = null, busyPresent = false}) {
     const events = [];
     if (!before || !after)
         return events;
@@ -189,6 +217,9 @@ export function classify(before, after, {now, ownAction, types, returnLength = n
             events.push({type, kind: 'delay', source: ownAction === 'delay' ? 'froonty' : 'gnome'});
         else if (nearNow && returnLength !== null && returnLength >= c.duration - 1)
             events.push({type, kind: 'taken', source: 'gnome', length: returnLength});
+        else if (nearNow && busyPresent)
+            // GNOME counts no input as a break; it was a call or a video.
+            events.push({type, kind: 'busy', source: 'gnome'});
         else if (nearNow && wasDue)
             // Closing GNOME's break notification skips the break.
             events.push({type, kind: 'skip', source: 'gnome'});
@@ -240,17 +271,39 @@ export function postureCue(p) {
     return null;
 }
 
+/** The move bar's segments now: 0 before `after`, then one more per `step`. */
+export function moveSegments(move) {
+    if (!move?.enabled || move.sinceMove < move.after)
+        return 0;
+    return Math.min(MOVE_SEGMENTS, 1 + Math.floor((move.sinceMove - move.after) / move.step));
+}
+
 /**
  * When anything shown can next change on its own (s): 2 min before each
  * break, at it, 60 s and one interval after it, the long-rest crossing,
- * the posture reminder, and midnight. GNOME emits nothing at those times.
+ * the posture reminder, the move bar's next segment, the end of a pause or
+ * of working hours, the end of a held cue's grace, the latest a due cue
+ * waits for a pause in typing, and midnight. GNOME emits nothing then.
  */
 export function nextBoundary(m) {
     const times = [];
+    if (m.paused?.until)
+        times.push(m.paused.until);
+    if (!m.paused?.paused && m.paused?.hours?.nextEnd)
+        times.push(m.paused.hours.nextEnd);
+    if (m.busyGraceUntil)
+        times.push(m.busyGraceUntil);
+    for (const until of Object.values(m.naturalWait ?? {}))
+        times.push(until);
     for (const t of perType(m))
         times.push(t.due - UPCOMING_SECONDS, t.due, t.due + OVERDUE_SECONDS, t.due + t.interval);
     if (m.present && m.prefs.longRest)
         times.push(m.now + m.prefs.longRestAfter - m.screenSinceLongRest);
+    const move = m.move;
+    if (m.present && move?.enabled && moveSegments(move) < MOVE_SEGMENTS) {
+        const segments = moveSegments(move);
+        times.push(m.now + move.after + segments * move.step - move.sinceMove);
+    }
     const p = m.posture;
     if (m.present && p?.enabled && p.reminders && !postureCue(p)) {
         if (p.mode === 'standing')
@@ -268,11 +321,13 @@ export function nextBoundary(m) {
  * The pill's cue: the most urgent of the break level and the posture
  * reminder, or null. Text and icons come from words.js and shared.js.
  *
- * @returns {?{rank: number, kind: 'break'|'posture', level: ?number,
- *   reason: ?string, type: ?string, seconds: number, posture: ?string}}
+ * @returns {?{rank: number, kind: 'break'|'posture'|'move', level: ?number,
+ *   reason: ?string, type: ?string, seconds: number, posture: ?string,
+ *   segments: ?number}}
  */
 export function cueModel(m, level = levelOf(m)) {
-    if (m.cueMode === 'off')
+    // Off, paused (or outside working hours), or held while you are busy.
+    if (m.cueMode === 'off' || m.paused?.paused || m.cueHeld)
         return null;
     let cue = null;
     const hasSubject = level.type || level.reason === 'long-rest';
@@ -282,6 +337,11 @@ export function cueModel(m, level = levelOf(m)) {
             seconds = m.screenSinceLongRest;
         cue = {rank: RANK[level.level], kind: 'break', level: level.level, reason: level.reason,
             type: level.type, seconds, length: m.prefs.longRestLength, posture: null};
+    }
+    const segments = m.present ? moveSegments(m.move) : 0;
+    if (segments && (!cue || RANK.move > cue.rank)) {
+        cue = {rank: RANK.move, kind: 'move', level: null, reason: 'move',
+            type: null, seconds: m.move.sinceMove, posture: null, segments};
     }
     const posture = postureCue(m.posture);
     if (posture && (!cue || RANK.posture > cue.rank)) {

@@ -24,6 +24,11 @@
       <summary>Hide the top bar clock</summary>
       <description>Makes GNOME's top bar clock transparent so the island replaces it visually. The clock stays in place so its calendar menu keeps working.</description>
     </key>
+    <key name="island-pinned" type="b">
+      <default>false</default>
+      <summary>Keep the expanded Froonty island open</summary>
+      <description>When true, the expanded island stays visible above windows and clicks outside it go to those windows.</description>
+    </key>
     <key name="hover-open-delay" type="i">
       <range min="0" max="2000"/>
       <default>350</default>
@@ -57,10 +62,15 @@
       <summary>Page the settings window shows (internal)</summary>
       <description>Set by the Shell before it opens the settings window, and kept in step by the window: "settings" for the settings tabs, "all-notes" for the All notes page.</description>
     </key>
+    <key name="all-notes-pinned" type="b">
+      <default>false</default>
+      <summary>Keep the All notes window above others</summary>
+      <description>When true, the settings window stays above other windows while the All notes page is open.</description>
+    </key>
 
     <!-- Panic buttons (docs/features/panic-buttons.md) -->
     <key name="panic-buttons" type="as">
-      <default>['mute-microphone', 'mute-sound']</default>
+      <default>['pin-island', 'mute-microphone', 'mute-sound']</default>
       <summary>Panic buttons, in bar order</summary>
       <description>At most 8 ids from panic/catalog.js (half on each side of the hub header's date pill, the right side one more when odd); unknown ids are ignored.</description>
     </key>
@@ -153,6 +163,68 @@
       <default>false</default>
       <summary>Internal: ZeroTier's installation was checked</summary>
       <description>Set on Froonty's first start, once it has turned the ZeroTier tab off if ZeroTier is not installed, so that check is not repeated.</description>
+    </key>
+    <!-- LocalSend feature (docs/features/localsend.md) -->
+    <key name="localsend-enabled" type="b">
+      <default>false</default>
+      <summary>Show the LocalSend tab</summary>
+      <description>Files and text between this computer and a phone running the LocalSend app, over the local network. While on (and localsend-visible), a helper process listens on localsend-port; every incoming transfer waits for the user to accept it.</description>
+    </key>
+    <key name="localsend-visible" type="b">
+      <default>true</default>
+      <summary>Visible to other LocalSend devices</summary>
+      <description>Off: the helper does not run, so nothing can be received or sent (the tab's Hide button).</description>
+    </key>
+    <key name="localsend-auto-accept" type="b">
+      <default>true</default>
+      <summary>Accept automatically from trusted devices</summary>
+      <description>A device becomes trusted when a transfer from it is accepted by hand (localsend-trusted). Its device ID is what it announces on the network, which another device on the same network could copy: turn this off on networks you do not trust.</description>
+    </key>
+    <key name="localsend-trusted" type="a{ss}">
+      <default>{}</default>
+      <summary>Trusted LocalSend devices</summary>
+      <description>Device ID (certificate fingerprint) to the name it had when trusted. Removed in Settings → LocalSend.</description>
+    </key>
+    <key name="localsend-pin-first" type="b">
+      <default>true</default>
+      <summary>Ask a new device for a PIN</summary>
+      <description>A device not trusted yet must enter a one-time PIN, shown by Froonty, in LocalSend before its first transfer; the PIN makes it trusted. Off: its first transfer asks for Accept instead.</description>
+    </key>
+    <key name="localsend-only-trusted-networks" type="b">
+      <default>true</default>
+      <summary>Visible only on trusted networks and ZeroTier</summary>
+      <description>On a Wi-Fi or wired network not in localsend-trusted-networks (a cafe), nothing listens there: only ZeroTier is used. Off: every network is used, but on an untrusted one even a trusted device's transfers ask for Accept.</description>
+    </key>
+    <key name="localsend-trusted-networks" type="a{ss}">
+      <default>{}</default>
+      <summary>Trusted networks</summary>
+      <description>NetworkManager connection UUID to its name. A wired profile such as "Wired connection 1" is the same on every cable, so trusting it trusts every wired network.</description>
+    </key>
+    <key name="localsend-devices" type="as">
+      <default>[]</default>
+      <summary>Devices added by address</summary>
+      <description>IPv4 addresses (a phone on ZeroTier, say) Froonty introduces itself to every few seconds, so this computer shows up there whenever LocalSend is open.</description>
+    </key>
+    <key name="localsend-alias" type="s">
+      <default>''</default>
+      <summary>Name other devices see</summary>
+      <description>Empty: "Froonty (host name)".</description>
+    </key>
+    <key name="localsend-folder" type="s">
+      <default>''</default>
+      <summary>Folder for received files</summary>
+      <description>Empty: LocalSend in the Downloads folder.</description>
+    </key>
+    <key name="localsend-zerotier" type="b">
+      <default>true</default>
+      <summary>Also listen on ZeroTier</summary>
+      <description>Wi-Fi and wired networks are always used; ZeroTier's (zt*) only when this is on. Docker, bridges and other VPNs never.</description>
+    </key>
+    <key name="localsend-port" type="i">
+      <range min="1024" max="65535"/>
+      <default>53317</default>
+      <summary>LocalSend port</summary>
+      <description>TCP for transfers and UDP for discovery. LocalSend apps use 53317.</description>
     </key>
     <key name="claude-ask-claude-code" type="b">
       <default>true</default>
@@ -575,6 +647,163 @@
       <range min="5" max="60"/>
       <default>15</default>
       <summary>Break: sit down after standing this long (min)</summary>
+    </key>
+    <key name="break-busy" type="b">
+      <default>true</default>
+      <summary>Break: notice when you are busy</summary>
+      <description>While a call, a video, a presentation or a full-screen window keeps you at the computer without typing, that time counts as time at the computer (not as away), and the island holds its break cue until break-busy-grace-minutes after it ends. Which signals count: break-busy-signals.</description>
+    </key>
+    <key name="break-busy-signals" type="as">
+      <default>['fullscreen', 'screen-share', 'microphone', 'watching']</default>
+      <summary>Break: what counts as busy</summary>
+      <description>"fullscreen": a full-screen window; "screen-share": screen sharing or recording (only those that start while Froonty runs); "microphone": an app is recording sound (as GNOME's microphone indicator shows); "dnd": Do Not Disturb (not by default: with it on all day, no cue would show); "watching": an app keeps the screen awake (a video, through GNOME's idle inhibitors). Do Not Disturb only holds the cue; watching only counts as time at the computer.</description>
+    </key>
+    <key name="break-busy-grace-minutes" type="i">
+      <range min="0" max="15"/>
+      <default>2</default>
+      <summary>Break: show a held cue this long after you stop being busy (min)</summary>
+    </key>
+    <key name="break-busy-hold-gnome" type="b">
+      <default>true</default>
+      <summary>Break: hold GNOME's dimming and locking while you are busy</summary>
+      <description>In a call (microphone in use), while sharing the screen, or full screen while an app keeps the screen awake (a video, a presentation), Froonty turns each break type's "Dim the screen" and "Lock the screen" off, and gives them back as they were when that ends (recorded in break-gnome-saved; turning the Break tab or Froonty off gives them back too). A setting changed meanwhile is left as it is.</description>
+    </key>
+    <key name="break-animate" type="b">
+      <default>true</default>
+      <summary>Break: animate exercise pictures</summary>
+      <description>Exercise pictures with several frames move while the card is on screen (and only while GNOME's Animations switch is on).</description>
+    </key>
+    <key name="break-routines" type="b">
+      <default>true</default>
+      <summary>Break: guided routines</summary>
+      <description>"Start a routine" in the Break tab during a movement break or a long rest: a few moves one after another, each with its time, chosen for sitting or standing, quiet ones during a call, without repeating the last ones.</description>
+    </key>
+    <key name="break-eye-exercises" type="b">
+      <default>true</default>
+      <summary>Break: eye exercises drawn by Froonty</summary>
+      <description>When an eye break is due: look far away for its length, then optional eye exercises (follow the dot, near and far, blinking, palming) drawn by Froonty (comfort only).</description>
+    </key>
+    <key name="break-breathing" type="b">
+      <default>true</default>
+      <summary>Break: breathing exercise</summary>
+      <description>A breathing exercise drawn by Froonty: a circle grows as you breathe in and shrinks as you breathe out. Offered on eye breaks and in routines.</description>
+    </key>
+    <key name="break-breathing-pattern" type="s">
+      <choices>
+        <choice value="box"/>
+        <choice value="slow"/>
+      </choices>
+      <default>'box'</default>
+      <summary>Break: breathing pattern</summary>
+      <description>"box": in 4 s, hold 4 s, out 4 s, hold 4 s; "slow": in 5 s, out 5 s.</description>
+    </key>
+    <key name="break-pause-button" type="b">
+      <default>true</default>
+      <summary>Break: show Pause in the Break tab</summary>
+      <description>Pause GNOME's breaks for 30 minutes, 1 hour, 2 hours or until tomorrow. Froonty turns GNOME's selected breaks off and back on at the end (recorded in break-gnome-saved, so turning Froonty off ends the pause).</description>
+    </key>
+    <key name="break-paused-until" type="x">
+      <default>0</default>
+      <summary>Internal: breaks paused until (Unix seconds)</summary>
+      <description>0: not paused.</description>
+    </key>
+    <key name="break-work-hours" type="b">
+      <default>false</default>
+      <summary>Break: working hours</summary>
+      <description>Outside break-work-days between break-work-start and break-work-end, GNOME's breaks are paused the same way, and the island shows no break, posture or move cue. "Remind me anyway" in the tab lifts it until the next working hours. Off by default: it needs your own hours.</description>
+    </key>
+    <key name="break-work-days" type="as">
+      <default>['mon', 'tue', 'wed', 'thu', 'fri']</default>
+      <summary>Break: working days</summary>
+      <description>Any of "mon", "tue", "wed", "thu", "fri", "sat", "sun".</description>
+    </key>
+    <key name="break-work-start" type="i">
+      <range min="0" max="1439"/>
+      <default>540</default>
+      <summary>Break: working hours start (minutes after midnight)</summary>
+    </key>
+    <key name="break-work-end" type="i">
+      <range min="1" max="1440"/>
+      <default>1080</default>
+      <summary>Break: working hours end (minutes after midnight)</summary>
+      <description>After break-work-start; working hours do not run past midnight.</description>
+    </key>
+    <key name="break-work-override-until" type="x">
+      <default>0</default>
+      <summary>Internal: "Remind me anyway" lasts until (Unix seconds)</summary>
+      <description>0: none. Set to the next start of working hours.</description>
+    </key>
+    <key name="break-pause-media" type="b">
+      <default>true</default>
+      <summary>Break: pause media on Take now</summary>
+      <description>"Take now" pauses every player that is playing (MPRIS) and plays again only those, if still paused, when you come back.</description>
+    </key>
+    <key name="break-move-goal" type="b">
+      <default>true</default>
+      <summary>Break: move bar</summary>
+      <description>Like a fitness watch's move bar: after break-move-after-minutes at the computer without moving (an away of 2 minutes or more), a cue; it grows every break-move-step-minutes. The Today section shows in how many hours at the computer you moved.</description>
+    </key>
+    <key name="break-move-after-minutes" type="i">
+      <range min="30" max="180"/>
+      <default>60</default>
+      <summary>Break: move bar after (min) without moving</summary>
+    </key>
+    <key name="break-move-step-minutes" type="i">
+      <range min="5" max="60"/>
+      <default>15</default>
+      <summary>Break: move bar grows every (min)</summary>
+    </key>
+    <key name="break-workout" type="b">
+      <default>true</default>
+      <summary>Break: workout days</summary>
+      <description>"I worked out" in the Break tab (or "Yes" when it asks after an away of 45 minutes or more). On such a day (a heuristic, not medical advice): the standing target stays at the minimum and the workout counts toward it, up to 60 minutes; after it, the move bar waits half as long again and movement breaks suggest a 2 to 3 minute walk. Eye breaks and the long rest stay as they are, and nothing is eased after 10 hours at the computer.</description>
+    </key>
+    <key name="break-garmin" type="b">
+      <default>false</default>
+      <summary>Break: read workouts from Garmin Connect</summary>
+      <description>Off by default; local builds only. Today's activities of 20 minutes or more count as workouts. Read by Froonty's Garmin helper (features/break/garmin/helper.py) with python-garminconnect, an unofficial library, in a Python environment and a process of its own under ~/.local/share/froonty/garmin (set up and signed in from Settings → Break, on a click), never inside GNOME Shell: when the Break tab opens, after an away of 20 minutes or more, and at login, at most every 15 minutes, and not for hours after Garmin refused it. Only Garmin's sign-in tokens are kept there (0600); the password is never stored.</description>
+    </key>
+    <key name="break-natural-pause" type="b">
+      <default>true</default>
+      <summary>Break: show "due" at a pause in typing</summary>
+      <description>When a break falls due while you type, the island shows it at your first pause of 2 seconds, or after break-natural-pause-max-seconds at the latest.</description>
+    </key>
+    <key name="break-natural-pause-max-seconds" type="i">
+      <range min="10" max="300"/>
+      <default>60</default>
+      <summary>Break: wait for a pause in typing at most (s)</summary>
+    </key>
+    <key name="break-max-skips" type="i">
+      <range min="0" max="10"/>
+      <default>3</default>
+      <summary>Break: skips in a row, at most</summary>
+      <description>The Break tab hides its Skip button after this many skips in a row of a type. 0: no limit.</description>
+    </key>
+    <key name="break-skip-reasons" type="b">
+      <default>true</default>
+      <summary>Break: ask why after a skip or delay</summary>
+      <description>One tap: a meeting, a deadline, in the flow, or other. Counted per day in the history; nothing else is recorded.</description>
+    </key>
+    <key name="break-chart" type="b">
+      <default>true</default>
+      <summary>Break: 14-week chart</summary>
+      <description>A calendar chart of the history in the Today section: breaks taken, time at the computer, longest stretch, standing, or hours you moved in.</description>
+    </key>
+    <key name="break-chart-metric" type="s">
+      <choices>
+        <choice value="kept"/>
+        <choice value="screen"/>
+        <choice value="stretch"/>
+        <choice value="standing"/>
+        <choice value="moves"/>
+      </choices>
+      <default>'kept'</default>
+      <summary>Break: what the chart shows</summary>
+    </key>
+    <key name="break-ideas" type="b">
+      <default>true</default>
+      <summary>Break: break ideas</summary>
+      <description>A one-line idea for the break (from Stretchly, BSD-2-Clause, and Safe Eyes, GPL-3.0-or-later), with "Another idea".</description>
     </key>
 
     <!-- Pad noise slider (features/padNoiseSlider, docs/features/pad-noise-slider.md) -->

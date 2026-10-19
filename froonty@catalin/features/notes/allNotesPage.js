@@ -51,6 +51,7 @@ import {moveRenderSizes} from './renderSizes.js';
 import {markup, searchNotes} from './search.js';
 
 const VIEW_KEY = 'settings-window-view';
+const PINNED_KEY = 'all-notes-pinned';
 const MATCH_KEY = 'notes-label-match';
 const LAST_KEY = 'notes-last';
 const MAX_ROWS = 300;
@@ -204,6 +205,7 @@ class AllNotesPage {
             if (this._library.running)
                 this._followIsland();
         });
+        this._pinnedId = settings.connect(`changed::${PINNED_KEY}`, () => this._syncPin());
 
         const page = this.navigationPage;
         page.connect('showing', () => {
@@ -235,6 +237,7 @@ class AllNotesPage {
         this._pane.stop();
         this._library.stop();
         this._settings.disconnect(this._lastId);
+        this._settings.disconnect(this._pinnedId);
     }
 
     /** Another notes folder: the page starts over there (now or when shown). */
@@ -427,15 +430,27 @@ class AllNotesPage {
 
         this._title = new Adw.WindowTitle({title: _('All notes')});
         const header = new Adw.HeaderBar({title_widget: this._title});
+        this._pinButton = new Gtk.ToggleButton({
+            icon_name: 'view-pin-symbolic',
+            tooltip_text: _('Keep All notes above other windows'),
+            css_classes: ['flat', 'froonty-all-notes-pin'],
+        });
+        this._pinButton.connect('toggled', () =>
+            this._settings.set_boolean(PINNED_KEY, this._pinButton.active));
+        this._syncPin();
         const sidebarButton = new Gtk.ToggleButton({
             icon_name: 'sidebar-show-symbolic',
             tooltip_text: _('Notes list'),
+            css_classes: ['flat', 'froonty-all-notes-list'],
         });
         this._split.bind_property('show-sidebar', sidebarButton, 'active',
             GObject.BindingFlags.BIDIRECTIONAL | GObject.BindingFlags.SYNC_CREATE);
-        this._split.bind_property('collapsed', sidebarButton, 'visible',
-            GObject.BindingFlags.SYNC_CREATE);
-        header.pack_end(sidebarButton);
+        // Keep both right-side controls together so the header allocates
+        // them as one persistent action group at narrow widths too.
+        const headerActions = new Gtk.Box({spacing: 6});
+        headerActions.append(sidebarButton);
+        headerActions.append(this._pinButton);
+        header.pack_end(headerActions);
         const newButton = new Gtk.Button({icon_name: 'list-add-symbolic', tooltip_text: _('New note')});
         newButton.connect('clicked', () => this._create());
         header.pack_start(newButton);
@@ -462,6 +477,16 @@ class AllNotesPage {
             }),
         }));
         bin.add_controller(shortcuts);
+    }
+
+    _syncPin() {
+        if (!this._pinButton)
+            return;
+        const pinned = this._settings.get_boolean(PINNED_KEY);
+        this._pinButton.active = pinned;
+        this._pinButton.tooltip_text = pinned
+            ? _('Stop keeping All notes above other windows')
+            : _('Keep All notes above other windows');
     }
 
     _buildSidebar() {
@@ -506,7 +531,11 @@ class AllNotesPage {
             margin_bottom: 4,
             visible: false,
         });
-        this._chips = new Adw.WrapBox({child_spacing: 6, line_spacing: 6});
+        this._chips = new Adw.WrapBox({
+            css_classes: ['froonty-note-label-chips'],
+            child_spacing: 6,
+            line_spacing: 6,
+        });
         this._mode = new Adw.ToggleGroup({visible: false});
         this._mode.add(new Adw.Toggle({name: 'all', label: _('All')}));
         this._mode.add(new Adw.Toggle({name: 'any', label: _('Any')}));

@@ -16,9 +16,9 @@
 //       island; the panic bar (max 8) on its two sides, half each (the
 //       right one more when odd), both sides equally wide
 //     side column, below the header: the tab column (one icon per feature;
-//       its name shows in a tooltip on hover), and ⚙️ at its bottom:
-//       Froonty's settings window, the same size as a tab but never the
-//       active one
+//       its name shows in a tooltip on hover; it scrolls when the island is
+//       shorter than every tab needs), and ⚙️ at its bottom: Froonty's
+//       settings window, the same size as a tab but never the active one
 //
 // Every tab can be turned off. With none on, the side column (⚙️) and the
 // header stay, and the content says so, with a button that opens Settings.
@@ -26,8 +26,8 @@
 //
 // The date pill never leaves GNOME's clock: the island is made wider
 // (minWidth) until both halves around it fit PANIC_GAP clear of the hub's
-// edges, and taller (minHeight) when the header and the side column below
-// it need it.
+// edges, and taller (minHeight) when the header, MIN_TABS tabs and ⚙️
+// need it. Any other tabs scroll, the open one kept in sight.
 //
 // Keyboard (Tab): the header row from left to right (panic 1–4, the date
 // pill, panic 5–8), the tabs, ⚙️, then the view.
@@ -39,6 +39,7 @@
 // key focus.
 
 import Clutter from 'gi://Clutter';
+import Meta from 'gi://Meta';
 import St from 'gi://St';
 
 import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
@@ -51,9 +52,11 @@ import {PanicBar} from './panicBar.js';
 
 const LAST_TAB_KEY = 'hub-last-tab';
 
-// Feature tabs fill a grid column by column. One column: the island grows
-// taller when the tabs need it (minHeight).
+// Feature tabs fill a grid column by column. One column, which scrolls
+// when the island is shorter than the tabs; the island grows taller only
+// to keep MIN_TABS of them in sight (minHeight).
 const TAB_COLUMNS = 1;
+const MIN_TABS = 3;
 
 /** Emits 'size-changed' when the active feature's preferred size changes. */
 export class Hub extends EventEmitter {
@@ -77,6 +80,7 @@ export class Hub extends EventEmitter {
         this._entries = new Map(); // id -> {feature, button, view, service}
         this._activeId = null;
         this._shown = false;
+        this._revealLater = 0;
 
         this._buildActors(openSettings, openCalendar);
 
@@ -86,6 +90,9 @@ export class Hub extends EventEmitter {
     }
 
     destroy() {
+        if (this._revealLater)
+            global.compositor.get_laters().remove(this._revealLater);
+        this._revealLater = 0;
         this._settings.disconnectObject(this);
         this._header.destroy();
         this._panicBar.destroy();
@@ -126,17 +133,28 @@ export class Hub extends EventEmitter {
 
     /**
      * The height the header and the side column below it need (physical
-     * pixels: every tab, and ⚙️ below them), so the island can grow to
-     * show them; 0 off stage.
+     * pixels: MIN_TABS tabs, or every tab when fewer, and ⚙️ below them),
+     * so the island can grow to show them; 0 off stage.
      */
     get minHeight() {
         // Kept in step on every path, as for minWidth.
         this._reportedMinHeight = this._side.get_stage()
             ? this._header.actor.get_preferred_height(-1)[1] +
                 this._main.get_theme_node().get_length('spacing') +
-                this._side.get_preferred_height(-1)[1]
+                this._sideMinHeight()
             : 0;
         return this._reportedMinHeight;
+    }
+
+    // The side column with at most MIN_TABS rows of tabs in sight (the
+    // others scroll) and ⚙️. The scroll view's own minimum is 0.
+    _sideMinHeight() {
+        const [, natural] = this._side.get_preferred_height(-1);
+        if (!this._tabScroll.visible)
+            return natural;
+        const [, column] = this._tabScroll.get_preferred_height(-1);
+        const [, row] = this._tabColumn.get_first_child()?.get_preferred_height(-1) ?? [0, 0];
+        return natural - column + Math.min(column, MIN_TABS * row);
     }
 
     /**
@@ -214,6 +232,7 @@ export class Hub extends EventEmitter {
 
         this._activeId = id;
         entry.button.checked = true;
+        this._queueRevealActiveTab();
         this._ensureView(entry);
         entry.view.actor.show();
         this.emit('size-changed');
@@ -275,8 +294,27 @@ export class Hub extends EventEmitter {
         this._tabColumn = new St.Widget({
             layout_manager: this._tabGrid,
         });
-        this._side.add_child(this._tabColumn);
-        this._side.add_child(new St.Widget({y_expand: true}));
+        // St.ScrollView needs a scrollable child.
+        const tabBox = new St.BoxLayout({orientation: Clutter.Orientation.VERTICAL});
+        tabBox.add_child(this._tabColumn);
+        this._tabScroll = new St.ScrollView({
+            // Scrollable without a bar (the column is one tab wide); the
+            // edge fade shows that there are more tabs above or below.
+            style_class: 'froonty-hub-tabs',
+            hscrollbar_policy: St.PolicyType.NEVER,
+            vscrollbar_policy: St.PolicyType.EXTERNAL,
+            y_expand: true,
+            child: tabBox,
+        });
+        // A new height (the island resized, tabs turned on or off) keeps
+        // the open tab in sight; scrolling (the value) does not.
+        for (const property of ['page-size', 'upper'])
+            this._tabScroll.vadjustment.connect(`notify::${property}`, () => this._queueRevealActiveTab());
+        this._side.add_child(this._tabScroll);
+        // Keeps ⚙️ at the bottom while the tab column is hidden (the
+        // column takes the room otherwise).
+        this._sideSpacer = new St.Widget({y_expand: true, visible: false});
+        this._side.add_child(this._sideSpacer);
         this.settingsButton = this._buildSettingsButton(openSettings);
         this._side.add_child(this.settingsButton);
         body.add_child(this._side);
@@ -375,6 +413,8 @@ export class Hub extends EventEmitter {
         // A single tab is not a choice; keep the column out of the way
         // (the side column stays, for ⚙️).
         this._tabColumn.visible = enabled.length > 1;
+        this._tabScroll.visible = this._tabColumn.visible;
+        this._sideSpacer.visible = !this._tabScroll.visible;
         // No tab on: the header stays, and the content says so.
         this._empty.visible = enabled.length === 0;
         // More or fewer tabs may need another island height (minHeight).
@@ -434,11 +474,36 @@ export class Hub extends EventEmitter {
             child: new St.Icon(iconParams),
         });
         button.connect('clicked', () => this.select(feature.id));
+        // Tab and the arrow keys may reach a tab scrolled out of sight.
+        button.connect('key-focus-in', () => this._revealTab(button));
         this._tooltip.attach(button, () => feature.title, 'right');
 
         const entry = {feature, button, view: null, service: null};
         this._entries.set(feature.id, entry);
         return entry;
+    }
+
+    // Scrolls the tab column just enough to show `button` whole; it must
+    // be laid out.
+    _revealTab(button) {
+        if (!button.has_allocation())
+            return;
+        const box = button.get_allocation_box();
+        this._tabScroll.vadjustment.clamp_page(box.y1, box.y2);
+    }
+
+    // The open tab, once laid out: its range may change in this layout
+    // pass (a new height), and is only known before the next redraw.
+    _queueRevealActiveTab() {
+        if (this._revealLater)
+            return;
+        this._revealLater = global.compositor.get_laters().add(Meta.LaterType.BEFORE_REDRAW, () => {
+            this._revealLater = 0;
+            const button = this._entries.get(this._activeId)?.button;
+            if (button)
+                this._revealTab(button);
+            return false;
+        });
     }
 
     _ensureView(entry) {

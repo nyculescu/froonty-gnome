@@ -16,6 +16,12 @@ export const MAX_PANIC_BUTTONS = 8;
 
 export const PANIC_BUTTONS = [
     {
+        id: 'pin-island',
+        icon: 'view-pin-symbolic',
+        title: _ => _('Keep Froonty on top'),
+        description: _ => _('Keeps the island above other windows until you unpin it.'),
+    },
+    {
         id: 'mute-microphone',
         icon: 'microphone-sensitivity-muted-symbolic',
         title: _ => _('Mute microphone'),

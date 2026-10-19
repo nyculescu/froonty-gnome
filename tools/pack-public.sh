@@ -33,7 +33,7 @@ for module in features/notes/render.js features/notes/styler.js features/notes/v
     features/notes/allNotesStyler.js; do
     python3 "$ROOT/tools/pack-public/strip_local.py" --several "$STAGED/$module" notes-math
 done
-rm -rf "$STAGED/features/zerotier" "$STAGED/features/writing" "$STAGED/features/formulas" \
+rm -rf "$STAGED/features/zerotier" "$STAGED/features/localsend" "$STAGED/features/writing" "$STAGED/features/formulas" \
     "$STAGED/features/fan"
 # The Formulas tab's renderer (tools/fetch-mathjax.py), when fetched.
 rm -rf "$STAGED/third_party/mathjax"
@@ -41,7 +41,7 @@ rmdir "$STAGED/third_party" 2>/dev/null || true
 python3 "$ROOT/tools/pack-public/strip-local-schema.py" \
     "$STAGED/schemas/org.gnome.shell.extensions.froonty.gschema.xml"
 python3 "$ROOT/tools/pack-public/strip_local.py" "$STAGED/stylesheet.css" \
-    zerotier writing formulas pad-noise-slider timezone-planner
+    zerotier localsend writing formulas pad-noise-slider timezone-planner
 # Only what extension.js and prefs.js reach, and only their settings keys
 # and CSS; the description says what this build has.
 python3 "$ROOT/tools/pack-public/prune.py" "$STAGED"

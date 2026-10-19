@@ -4,7 +4,8 @@
 import {done, eq, ok, test} from './test.js';
 import {STATE} from '../../froonty@catalin/shell/breakEngine.js';
 import {
-    LEVEL, RANK, actionsOf, classify, cueModel, levelOf, nextBoundary, postureCue, suggested,
+    LEVEL, MOVE_SEGMENTS, RANK, actionsOf, classify, cueModel, levelOf, moveSegments, nextBoundary,
+    postureCue, suggested,
 } from '../../froonty@catalin/features/break/engine.js';
 import {words} from '../../froonty@catalin/features/break/words.js';
 import {addAway, freshState} from '../../froonty@catalin/features/break/ledger.js';
@@ -12,6 +13,8 @@ import {addAway, freshState} from '../../froonty@catalin/features/break/ledger.j
 // GNOME Shell (and its preferences process) adds String.prototype.format;
 // plain gjs does not.
 String.prototype.format ??= imports.format.format;
+const _ = text => text;
+const ngettext = (singular, plural, count) => count === 1 ? singular : plural;
 
 const EYES = {interval: 1200, duration: 20, delay: 180, fade: true, lock: false};
 const MOVE = {interval: 1800, duration: 300, delay: 180, fade: true, lock: false};
@@ -199,6 +202,74 @@ test('words: cue texts and accessible names', () => {
         'The screen dims; the break counts once you’ve been away 5 min.');
     eq(w.delayHidden({reason: 'overdue', delay: 180, overdue: 720}),
         'Delay moves a break by 3 min; this one is 12 min overdue.');
+});
+
+// ------------------------------------------------------------ Break v2
+
+test('paused (or outside working hours): fine, no actions, no cue; the end is a boundary', () => {
+    const paused = {paused: true, reason: 'manual', until: 12000, hours: {inside: true}};
+    const m = at(10100, {paused});
+    eq(levelOf(m).reason, 'paused');
+    eq(actionsOf(m).skip, false);
+    eq(cueModel(m), null);
+    eq(nextBoundary(at(10100, {paused, lastEnd: null, nextType: null})), 12000);
+});
+
+test('working hours end is a boundary while not paused', () => {
+    const paused = {paused: false, reason: null, until: null, hours: {inside: true, nextEnd: 10500}};
+    eq(nextBoundary(at(10100, {paused, lastEnd: {eyesight: 9800}})), 10500);
+});
+
+test('a due break waits for a pause in typing: soon, not due, until released', () => {
+    const waiting = at(10010, {naturalWait: {eyesight: 10060}});
+    const lv = levelOf(waiting);
+    eq([lv.level, lv.reason, lv.type, lv.soonIn], [LEVEL.SOON, 'waiting', 'eyesight', 0]);
+    eq(nextBoundary(at(10010, {naturalWait: {eyesight: 10030}})), 10030);
+    eq(levelOf(at(10010)).level, LEVEL.DUE, 'released');
+});
+
+test('the skip limit hides Skip after N skips in a row of a due type', () => {
+    const breaks = {eyesight: {consecutive: 3, delaysInRow: 0, skipsInRow: 3, owed: 0},
+        movement: {consecutive: 0, delaysInRow: 0, skipsInRow: 0, owed: 0}};
+    const a = actionsOf(at(10010, {breaks, prefs: {...model().prefs, maxSkips: 3}}));
+    eq([a.skip, a.skipHidden], [false, {reason: 'capped', max: 3}]);
+    eq(actionsOf(at(10010, {breaks, prefs: {...model().prefs, maxSkips: 0}})).skip, true, '0: no limit');
+});
+
+test('a held cue (busy): no cue at all', () => {
+    eq(cueModel(at(10100, {cueHeld: true})), null);
+    ok(cueModel(at(10100)) !== null);
+});
+
+test('the move bar: a segment after an hour, one more per step, five at most; cue below posture', () => {
+    const move = {enabled: true, after: 3600, step: 900, sinceMove: 0};
+    eq(moveSegments({...move, sinceMove: 3599}), 0);
+    eq(moveSegments({...move, sinceMove: 3600}), 1);
+    eq(moveSegments({...move, sinceMove: 3600 + 899}), 1);
+    eq(moveSegments({...move, sinceMove: 3600 + 900}), 2);
+    eq(moveSegments({...move, sinceMove: 99999}), MOVE_SEGMENTS);
+    eq(moveSegments({...move, enabled: false, sinceMove: 99999}), 0);
+    const cue = cueModel(at(9000, {lastEnd: {eyesight: 8800}, move: {...move, sinceMove: 3700}}));
+    eq([cue.kind, cue.segments, cue.rank], ['move', 1, RANK.move]);
+    ok(RANK.move < RANK.posture && RANK.move > RANK[LEVEL.SOON]);
+    eq(nextBoundary(at(9000, {lastEnd: null, nextType: null, midnight: 0, move: {...move, sinceMove: 3700}})),
+        9000 + 800, 'the next segment');
+    eq(words({_, ngettext}).cue(cue, 'icon').text, '\u25ae');
+});
+
+test('GNOME credits a break while you are busy: "busy", not taken', () => {
+    const types = {eyesight: EYES, movement: MOVE};
+    eq(classify({eyesight: 8800}, {eyesight: 10000}, {now: 10000, ownAction: null, types, busyPresent: true}),
+        [{type: 'eyesight', kind: 'busy', source: 'gnome'}]);
+    eq(classify({eyesight: 8800}, {eyesight: 10000}, {now: 10000, ownAction: null, types, returnLength: 30,
+        busyPresent: true})[0].kind, 'taken', 'an away of its length is still a break');
+});
+
+test('after a workout a movement break suggests a short walk', () => {
+    const m = at(9000, {lastEnd: {movement: 7200}, workout: {after: true, walkSeconds: 180}});
+    const s = suggested(m, {reason: 'due', type: 'movement'});
+    eq([s.seconds, s.walk], [180, true]);
+    ok(/walk/.test(words({_, ngettext}).suggested(s)));
 });
 
 await done();

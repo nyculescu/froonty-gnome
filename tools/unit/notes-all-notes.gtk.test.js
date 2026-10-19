@@ -214,7 +214,8 @@ class Ui {
     }
 
     get chips() {
-        const box = find(this.page, w => w instanceof Adw.WrapBox);
+        const box = find(this.page, w => w instanceof Adw.WrapBox &&
+            w.has_css_class('froonty-note-label-chips'));
         const chips = [];
         for (let chip = box.get_first_child(); chip; chip = chip.get_next_sibling())
             chips.push(chip);
@@ -231,6 +232,20 @@ class Ui {
 
     get clear() {
         return find(this.page, w => w instanceof Gtk.Button && w.label === 'Clear');
+    }
+
+    get pinButton() {
+        return find(this.page, w => w instanceof Gtk.ToggleButton &&
+            w.has_css_class('froonty-all-notes-pin'));
+    }
+
+    get notesListButton() {
+        return find(this.page, w => w instanceof Gtk.ToggleButton &&
+            w.has_css_class('froonty-all-notes-list'));
+    }
+
+    get split() {
+        return find(this.page, w => w instanceof Adw.OverlaySplitView);
     }
 
     // The note as Markdown source (MD on), and as the rendered display copy
@@ -274,7 +289,7 @@ class Ui {
     }
 
     get formatBar() {
-        return find(this.page, w => w instanceof Gtk.Box && w.has_css_class('froonty-format-bar'));
+        return find(this.page, w => w.has_css_class?.('froonty-format-bar'));
     }
 
     // A button of the formatting bar, by its name (its tooltip, its
@@ -284,10 +299,8 @@ class Ui {
     }
 
     get formatButtons() {
-        const buttons = [];
-        for (let b = this.formatBar.get_first_child(); b; b = b.get_next_sibling())
-            buttons.push(b);
-        return buttons;
+        return [...walk(this.formatBar)].filter(w => w instanceof Gtk.Button &&
+            w.has_css_class('froonty-format-button'));
     }
 
     // MD: its tooltip names the other mode.
@@ -344,7 +357,7 @@ class Ui {
 
 // source: MD on, the Markdown source shown to edit (the rendered view is
 // to read and copy).
-async function openWindow(dir, {last = '', view = 'all-notes', source = false} = {}) {
+async function openWindow(dir, {last = '', view = 'all-notes', source = false, width = 760} = {}) {
     const settings = makeSettings(dir);
     settings.set_string('notes-last', last);
     settings.set_string('settings-window-view', view);
@@ -357,6 +370,7 @@ async function openWindow(dir, {last = '', view = 'all-notes', source = false} =
         child: new Gtk.Label({label: 'Settings'})}));
     window.set_content(navigationView);
     attachAllNotes(window, settings, navigationView);
+    window.set_default_size(width, 400);
     window.present();
     const ui = new Ui(window);
     if (view === 'all-notes')
@@ -382,6 +396,39 @@ async function showPage(settings, ui) {
 }
 
 // ---- search, labels and the filter
+
+test('window: pin stays beside Notes List when narrow and when the sidebar is open', async () => {
+    const dir = tempFolder({Plan: 'one', Other: 'two'});
+    const {window, settings, ui} = await openWindow(dir, {last: 'Plan', width: 420});
+    ok(await waitFor(() => ui.pinButton?.get_mapped() && ui.notesListButton?.get_mapped()),
+        'pin and Notes List are visible in the narrow layout');
+    ok(ui.pinButton.get_width() > 0 && ui.notesListButton.get_width() > 0,
+        'both right-side controls receive space');
+
+    ui.pinButton.active = true;
+    eq(settings.get_boolean('all-notes-pinned'), true, 'pin control updates the setting');
+    ui.pinButton.active = false;
+    eq(settings.get_boolean('all-notes-pinned'), false);
+
+    window.set_default_size(900, 640);
+    ok(await waitFor(() => !ui.split.collapsed), 'the wide layout opens the sidebar');
+    ok(await waitFor(() => ui.pinButton.get_mapped()),
+        `pin maps with the sidebar open (visible=${ui.pinButton.visible}, ` +
+        `width=${ui.pinButton.get_width()}, actions=${ui.pinButton.get_parent()?.get_mapped()})`);
+    ok(ui.notesListButton.get_mapped(), 'Notes List remains available with the sidebar open');
+    await closeWindow(window);
+});
+
+test('window: the formatting bar wraps its right-side actions in a narrow window', async () => {
+    const dir = tempFolder({Plan: 'one'});
+    const {window, ui} = await openWindow(dir, {last: 'Plan', width: 420});
+    ok(await waitFor(() => ui.formatButtons.length === 12 &&
+        ui.formatButtons.every(button => button.get_mapped() && button.get_width() > 0)),
+    'all formatting actions remain visible');
+    const rows = new Set(ui.formatButtons.map(button => button.get_allocation().y));
+    ok(rows.size > 1, 'the actions wrap onto multiple rows instead of clipping');
+    await closeWindow(window);
+});
 
 test('window: the search lists matching notes with the matches in bold', async () => {
     const dir = tempFolder({

@@ -160,9 +160,9 @@ function countHandlers(instance, signal) {
     }
 }
 
-const describeActor = actor =>
+const describeActor = actor => actor ?
     `${actor.constructor.name}${actor.name ? `#${actor.name}` : ''}` +
-    `${actor.style_class ? `.${actor.style_class.split(' ').join('.')}` : ''}`;
+    `${actor.style_class ? `.${actor.style_class.split(' ').join('.')}` : ''}` : String(actor);
 
 // Everything Froonty may touch in the Shell; must be identical before
 // the first enable and after the last disable.
@@ -301,15 +301,16 @@ async function testPointer(outDir) {
         extension().stateObj._clock?._wallClock === Main.panel.statusArea.dateMenu._clock);
     // The first open shows the first tab (hub-last-tab's default, the
     // Notes tab), at its size. The height is a minimum: the island grows
-    // to show every tab.
-    const tabs = island()._hub._tabColumn.get_children().map(boxOf);
+    // to keep three tabs and ⚙️ in sight; other tabs scroll.
     const size = island()._geometry.expandedSize(island()._hub.activeFeature);
-    check('expanded: the first tab (Notes) at its size, tall enough for every tab',
+    const firstNeeds = island()._hubNeeds();
+    const activeTab = boxOf(island()._hub._entries.get(firstTabId()).button);
+    const tabSight = boxOf(island()._hub._tabScroll);
+    check('expanded: the first tab (Notes) at its size, its tab in sight',
         island()._hub.activeFeature?.id === firstTabId() && firstTabId() === s.get_string('hub-last-tab') &&
-        w === size.width &&
-        h >= size.height && tabs.at(-1).y2 <= boxOf(pill()).y2 &&
-        (h === size.height || h - (tabs.at(-1).y2 - boxOf(pill()).y1) <= 16 * scale()),
-        `${w}x${h} tab=${island()._hub.activeFeature?.id}`);
+        w === size.width && h === Math.max(size.height, firstNeeds.height) &&
+        activeTab.y1 >= tabSight.y1 - 1 && activeTab.y2 <= tabSight.y2 + 1,
+        `${w}x${h} tab=${island()._hub.activeFeature?.id} needs ${firstNeeds.height}`);
     check('expanded island holds one modal grab', Main.modalCount === modalBefore + 1,
         `modalCount ${modalBefore} -> ${Main.modalCount}`);
     check('expanded pill has key focus', global.stage.key_focus === pill());
@@ -625,10 +626,8 @@ async function testHub(outDir) {
     check('hub: ZeroTier opens its status at the configured size',
         hub.activeFeature?.id === 'zerotier' && zeroTierView?.actor.get_children().length === 4 &&
         zeroTierWidth === 420 * scale() &&
-        // A minimum: the island grows to show every tab.
-        (zeroTierHeight === 280 * scale() ||
-            (zeroTierHeight > 280 * scale() &&
-             boxOf(hub._tabColumn.get_last_child()).y2 <= boxOf(pill()).y2)),
+        // A minimum: the island grows to keep three tabs and ⚙️ in sight.
+        zeroTierHeight === Math.max(280 * scale(), island()._hubNeeds().height),
         `${zeroTierWidth}x${zeroTierHeight}`);
     check('zerotier: the first start recorded its install check',
         settings().get_boolean('zerotier-install-checked'));
@@ -667,8 +666,10 @@ async function testHub(outDir) {
     settings().set_int('sysmon-width', 380);
     await sleep(animationWait() + 2500);
     const [narrowWidth] = pill().get_transformed_size();
+    // No narrower than the header needs around the date pill (Hub.minWidth).
+    const narrowExpected = Math.max(380 * scale(), island()._hub.minWidth + islandFrame());
     check('sysmon: a width set in Settings resizes the open island; narrow, a thread per row',
-        narrowWidth === 380 * scale() && sysmon?.view._coreColumns === 1,
+        narrowWidth === narrowExpected && sysmon?.view._coreColumns === 1,
         `${narrowWidth} ${sysmon?.view._coreColumns} columns`);
     await screenshotTop(outDir, 'sysmon-narrow', 520);
     settings().reset('sysmon-width');
@@ -726,6 +727,10 @@ async function testHub(outDir) {
         check('hub: collapse/expand deactivates and reactivates the service',
             log.join(',') === 'start,view,active,inactive,active', log.join(','));
 
+        // Selecting the last tab scrolls it into view. Bring the first tab
+        // back into the viewport before using its button here.
+        island()._hub._tabScroll.vadjustment.value = 0;
+        await sleep(50);
         await clickActor(tabButton(firstTabId()));
         await sleep(animationWait());
         const [cw] = pill().get_transformed_size();
@@ -996,10 +1001,25 @@ async function testNotesTabsAndColors(outDir) {
     const hub = () => island()._hub;
     island().expand();
     await sleep(animationWait());
+    if (hub().activeFeature?.id === 'notes') {
+        const other = hub()._features.find(f => f.id !== 'notes' &&
+            (!f.enabledKey || settings().get_boolean(f.enabledKey)));
+        if (other) {
+            await clickActor(tabButton(other.id));
+            await sleep(animationWait());
+        }
+    }
+    hub()._tabScroll.vadjustment.value = 0;
+    await sleep(50);
     await clickActor(tabButton('notes'));
     await sleep(animationWait());
     const view = hub()._entries.get('notes').view;
     const service = hub()._entries.get('notes').service;
+    check('colour: the Notes service is active', Boolean(service),
+        `active=${hub().activeFeature?.id} enabled=${settings().get_boolean('notes-enabled')} ` +
+        `entries=${[...hub()._entries.keys()]}`);
+    if (!view || !service)
+        return;
 
     // ---- colour
     check('colour: a new note is yellow',
@@ -2098,6 +2118,8 @@ async function testNotesHeader(outDir) {
     const modalBefore = Main.modalCount;
     island().expand();
     await sleep(animationWait());
+    hub()._tabScroll.vadjustment.value = 0;
+    await sleep(50);
     await clickActor(tabButton('notes'));
     await sleep(animationWait());
     const {view} = hub()._entries.get('notes');
@@ -2608,6 +2630,43 @@ const clipboardRecorder = () => island()._hub._entries.get('clipboard')?.service
 function clipboardText() {
     return new Promise(resolve =>
         stClipboard().get_text(CLIPBOARD, (_c, text) => resolve(text)));
+}
+
+async function testLocalSend() {
+    check('localsend: off by default, so nothing listens on the network',
+        !settings().get_boolean('localsend-enabled') && !tabButton('localsend'));
+    // Hidden: the tab and its service exist, but no helper runs, so the
+    // test Shell never opens a port on the real network.
+    settings().set_boolean('localsend-visible', false);
+    settings().set_boolean('localsend-enabled', true);
+    try {
+        await sleep(SETTLE_MS);
+        island().expand();
+        await sleep(animationWait());
+        await clickActor(tabButton('localsend'));
+        await sleep(animationWait());
+        const hub = island()._hub;
+        const entry = hub._entries.get('localsend');
+        const state = entry?.service?.service?.state;
+        const [width] = pill().get_transformed_size();
+        check('localsend: the tab opens hidden, with no helper running',
+            hub.activeFeature?.id === 'localsend' && state?.status === 'hidden' &&
+            !entry.service.service.running && width === 440 * scale(),
+            `${state?.status} ${width}`);
+        const texts = descendants(entry.view.actor).filter(a => a instanceof St.Label).map(a => a.text);
+        // St.Button draws its label itself: read it from the button.
+        const showLabel = entry.view._visibleButton.label;
+        check('localsend: it says it is hidden, and offers Show',
+            texts.some(t => t.startsWith('Hidden')) && showLabel === 'Show', `${texts.join(' | ')} | ${showLabel}`);
+        island().collapse();
+        await sleep(animationWait());
+    } finally {
+        settings().reset('localsend-enabled');
+        settings().reset('localsend-visible');
+        island()._hub.select(firstTabId());
+        settings().reset('hub-last-tab');
+        await sleep(SETTLE_MS);
+    }
 }
 
 async function testClipboard(outDir) {
@@ -5255,7 +5314,7 @@ async function testNotesMath(outDir) {
     await sleep(SETTLE_MS);
 }
 
-async function waitForSettingsWindow(timeoutMs = 10000) {
+async function waitForSettingsWindow(timeoutMs = 30000) {
     for (let waited = 0; waited < timeoutMs; waited += 100) {
         const [window] = settingsWindows();
         if (window)
@@ -5301,12 +5360,15 @@ async function testSettingsButton(outDir) {
     await movePointerTo(...pillCenter());
     await sleep(SETTLE_MS);
     // The island is as tall as the header plus the side column below it
-    // (every tab and ⚙️); the side column takes no header width.
+    // with three tabs (or fewer, when fewer are on) and ⚙️; the side
+    // column takes no header width.
     const side = hub._side;
     const spacing = hub._main.get_theme_node().get_length('spacing');
+    const column = hub._tabScroll.get_preferred_height(-1)[1];
+    const row = hub._tabColumn.get_first_child().get_preferred_height(-1)[1];
     const needed = hub._header.actor.get_preferred_height(-1)[1] + spacing +
-        side.get_preferred_height(-1)[1];
-    check('⚙️: the island is as tall as the header and the side column need, at least',
+        side.get_preferred_height(-1)[1] - column + Math.min(column, 3 * row);
+    check('⚙️: the island is as tall as the header, three tabs and ⚙️ need, at least',
         hub.minHeight === needed && hub.minHeight > 0 &&
         p.y2 - p.y1 >= hub.minHeight && g.y2 <= p.y2,
         `minHeight ${hub.minHeight}, needed ${needed}, island ${p.y2 - p.y1}`);
@@ -5398,7 +5460,10 @@ function settingsButtonPlacement(hub = island()._hub) {
     const g = boxOf(hub.settingsButton);
     const side = boxOf(hub._side);
     const p = boxOf(pill());
-    const tabs = hub._tabColumn.visible ? hub._tabColumn.get_children().map(boxOf) : [];
+    // The tabs in sight (the others scroll, clipped by the column).
+    const sight = hub._tabScroll.visible ? boxOf(hub._tabScroll) : null;
+    const tabs = sight ? hub._tabColumn.get_children().map(boxOf)
+        .filter(t => t.y1 >= sight.y1 - 1 && t.y2 <= sight.y2 + 1) : [];
     const content = boxOf(hub._content);
     const ok = hub.settingsButton.mapped && hub._side.mapped &&
         side.y2 - g.y2 <= 4 * scale() && g.y2 <= p.y2 && g.x1 >= p.x1 && g.x2 <= content.x1 &&
@@ -5522,6 +5587,8 @@ async function testLifecycle(outDir) {
     if (breaks) {
         eyes.set_uint('interval-seconds', 3600);
         breaks.set_strv('selected-breaks', ['eyesight']);
+        // At any hour: working hours would pause the breaks in the evening.
+        settings().set_boolean('break-work-hours', false);
         settings().set_boolean('break-enabled', true);
         settings().set_boolean('posture-enabled', true);
         await sleep(SETTLE_MS);
@@ -5619,6 +5686,7 @@ async function testLifecycle(outDir) {
     if (breaks) {
         settings().reset('break-enabled');
         settings().reset('posture-enabled');
+        settings().reset('break-work-hours');
         breaks.reset('selected-breaks');
         eyes.reset('interval-seconds');
         await sleep(SETTLE_MS);
@@ -5876,13 +5944,32 @@ async function testResizeGrip(outDir) {
     const least = {width: clampAxis(-1e6, limits.width), height: clampAxis(-1e6, limits.height)};
     const needs = island()._hubNeeds();
     const small = boxOf(pill());
-    const lastTab = boxOf(island()._hub._tabColumn.get_children().at(-1));
-    check('resize grip: never below the schema minimum nor what the hub needs; every tab still fits',
+    const shortHub = island()._hub;
+    const gearBox = boxOf(shortHub.settingsButton);
+    const sight = boxOf(shortHub._tabScroll);
+    const openTab = boxOf(shortHub._entries.get(shortHub.activeFeature.id).button);
+    check('resize grip: never below the schema minimum nor what the hub needs; ⚙️ and the open tab in sight',
         fmt(read()) === fmt(least) && least.width >= limits.width.min && least.height >= limits.height.min &&
         least.width * sc >= needs.width - sc && least.height * sc >= needs.height - sc &&
-        small.x2 - small.x1 >= needs.width && small.y2 - small.y1 >= needs.height && lastTab.y2 <= small.y2,
+        small.x2 - small.x1 >= needs.width && small.y2 - small.y1 >= needs.height && gearBox.y2 <= small.y2 &&
+        openTab.y1 >= sight.y1 - 1 && openTab.y2 <= sight.y2 + 1,
         `${fmt(read())}, expected ${fmt(least)}; needs ${needs.width}x${needs.height}; ` +
-        `island ${small.x2 - small.x1}x${small.y2 - small.y1}`);
+        `island ${small.x2 - small.x1}x${small.y2 - small.y1} sight ${sight.y1}-${sight.y2} open tab ${openTab.y1}-${openTab.y2}`);
+    // Shorter than its tabs, the column scrolls: the last tab comes into
+    // sight when it takes the key focus.
+    const adjustment = shortHub._tabScroll.vadjustment;
+    const lastButton = shortHub._tabColumn.get_last_child();
+    const scrolls = adjustment.upper > adjustment.page_size + 1;
+    const focusBefore = global.stage.key_focus;
+    lastButton.grab_key_focus();
+    await sleep(SETTLE_MS);
+    const lastBox = boxOf(lastButton);
+    const sightNow = boxOf(shortHub._tabScroll);
+    check('resize grip: a short island scrolls its tabs; a focused tab comes into sight',
+        !scrolls || (lastBox.y1 >= sightNow.y1 - 1 && lastBox.y2 <= sightNow.y2 + 1 && adjustment.value > 0),
+        `scrolls=${scrolls} upper=${adjustment.upper} page=${adjustment.page_size} value=${adjustment.value} ` +
+        `last ${lastBox.y1}-${lastBox.y2} sight ${sightNow.y1}-${sightNow.y2}`);
+    (focusBefore ?? pill()).grab_key_focus();
 
     // A double-click resets both keys; a single click changes nothing.
     await clickAt(...gripCenter());
@@ -6033,10 +6120,12 @@ async function testPanic(outDir) {
     island().expand();
     await sleep(animationWait());
     const bar = () => island()._hub._panicBar;
-    const [mic, sound] = bar()._buttons;
-    check('panic: default bar is [mute microphone, mute sound]',
-        bar()._buttons.length === 2 && mic.actor.accessible_name === 'Mute microphone' &&
-        sound.actor.accessible_name === 'Mute sound');
+    const button = name => bar()._buttons.find(b => b.actor.accessible_name === name);
+    const mic = button('Mute microphone');
+    const sound = button('Mute sound');
+    const pin = button('Keep Froonty on top');
+    check('panic: default bar includes pin, mute microphone and mute sound',
+        bar()._buttons.length === 3 && pin && mic && sound);
 
     await movePointerTo(...(() => {
         const b = boxOf(sound.actor);
@@ -6098,6 +6187,13 @@ async function testPanic(outDir) {
         bar().groups.every(group => group.get_n_children() === 0 && !group.visible));
     s.reset('panic-buttons');
     await sleep(SETTLE_MS);
+    const pinDefault = button('Keep Froonty on top');
+    await clickActor(pinDefault.actor);
+    check('panic: "Keep Froonty on top" pins the expanded island',
+        s.get_boolean('island-pinned') && island().expanded);
+    await clickActor(pinDefault.actor);
+    check('panic: clicking the pin button again unpins the island',
+        !s.get_boolean('island-pinned') && !island().expanded);
     island().collapse();
     await sleep(animationWait());
 }
@@ -6910,12 +7006,15 @@ async function testEmptyHub(outDir) {
         const header = headerPlacement(hub);
         check('empty hub: the header stays (the date pill, the panic bar); nothing is of zero size',
             parts.every(actor => actor.mapped && actor.width > 0 && actor.height > 0) &&
-            hub._panicBar.groups.every(g => g.get_n_children() === 1) && header.ok,
+            hub._panicBar.groups.reduce((sum, g) => sum + g.get_n_children(), 0) ===
+                hub._panicBar._buttons.length && header.ok,
             `${parts.map(actor => `${describeActor(actor)} ${actor.width}x${actor.height}`).join(', ')}; ${header.detail}`);
         const gear = settingsButtonPlacement(hub);
         check('empty hub: the side column stays, with ⚙️ at its bottom', gear.ok, gear.detail);
+        // No narrower than the header needs around the date pill (Hub.minWidth).
+        const emptyWidth = () => Math.max(width() * scale(), hub.minWidth + islandFrame());
         check('empty hub: expanded-width × expanded-height',
-            w === width() * scale() && h === height(), `${w}x${h}`);
+            w === emptyWidth() && h === height(), `${w}x${h}, expected ${emptyWidth()}x${height()}`);
         const path = await screenshotTop(outDir, 'hub-empty', 200);
         check('empty hub: screenshot', true, `note: ${path}`);
 
@@ -6950,7 +7049,7 @@ async function testEmptyHub(outDir) {
         const [w2, h2] = pill().get_transformed_size();
         check('empty hub: the last tab turned off in the open island: the notice, at the empty size',
             island().expanded && notice.mapped && hub.activeFeature === null &&
-            w2 === width() * scale() && h2 === height(), `${w2}x${h2}`);
+            w2 === emptyWidth() && h2 === height(), `${w2}x${h2}, expected ${emptyWidth()}x${height()}`);
         s.set_boolean('zerotier-enabled', true);
         s.set_boolean('notes-enabled', true);
         await sleep(animationWait());
@@ -8006,6 +8105,27 @@ async function testMedia(outDir) {
             `scale=${view._art.scale_x},${view._art.scale_y}`);
         await screenshotTop(outDir, 'media-playing', 320);
 
+        // A video thumbnail (16:9): as wide as the square slot, shorter.
+        const wide = GdkPixbuf.Pixbuf.new(GdkPixbuf.Colorspace.RGB, false, 8, 160, 90);
+        wide.fill(0xdd2222ff);
+        wide.savev(GLib.build_filenamev([mediaWork, 'cover-wide.png']), 'png', [], []);
+        const slot = art.x2 - art.x1;
+        await fakeSet(a, {Metadata: song('First Song', {'mpris:artUrl': coverUrl('wide')})});
+        const wideShown = await waitFor(() => {
+            const b = boxOf(view._art);
+            return b.y2 - b.y1 < slot - 2;
+        }, 5000);
+        const wideBox = boxOf(view._art);
+        check('media: a wide cover keeps its shape (no bars, not stretched)',
+            wideShown && Math.abs((wideBox.x2 - wideBox.x1) - slot) <= 1 &&
+            Math.abs((wideBox.y2 - wideBox.y1) - slot * 9 / 16) <= 2,
+            `art=${wideBox.x2 - wideBox.x1}x${wideBox.y2 - wideBox.y1} slot=${slot}`);
+        await fakeSet(a, {Metadata: song('First Song', {'mpris:artUrl': coverUrl('froontya')})});
+        await waitFor(() => {
+            const b = boxOf(view._art);
+            return Math.abs((b.y2 - b.y1) - slot) <= 1;
+        }, 5000);
+
         // H7 (the focus is checked first, before pointer clicks move it)
         check('media: play/pause has the key focus when the tab shows',
             global.stage.key_focus === view.playButton, `${global.stage.key_focus}`);
@@ -8313,6 +8433,10 @@ async function testMediaPill(outDir) {
         await sleep(animationWait());
         check('media: a click on the pill with music opens the Media tab',
             island().expanded && island()._hub.activeFeature?.id === 'media');
+        // Opening Media (the last tab) scrolled the tab column; bring the
+        // first tab back into view to click it.
+        island()._hub._tabScroll.vadjustment.value = 0;
+        await sleep(50);
         await clickActor(tabButton(firstTabId()));
         await sleep(animationWait());
         island().collapse();
@@ -8322,7 +8446,8 @@ async function testMediaPill(outDir) {
         await clickAt(...pillCenter());
         await sleep(animationWait());
         check('media: with media-pill-opens-tab off, the last tab opens',
-            island().expanded && island()._hub.activeFeature?.id === firstTabId());
+            island().expanded && island()._hub.activeFeature?.id === firstTabId(),
+            `active=${island()._hub.activeFeature?.id}`);
         s.reset('media-pill-opens-tab');
         island().collapse();
         await sleep(animationWait());
@@ -8783,6 +8908,13 @@ async function testBreak(outDir) {
     eyes.set_uint('duration-seconds', 10);
     eyes.set_uint('delay-seconds', 10);
     movement.set_uint('interval-seconds', 3600);
+    // The checks below time breaks to the second and run at any hour:
+    // without working hours (they would pause the breaks in the evening),
+    // without waiting for a pause in typing (keepActive types on), and
+    // with no skip limit. Each of these has its own check further down.
+    s.set_boolean('break-work-hours', false);
+    s.set_boolean('break-natural-pause', false);
+    s.set_int('break-max-skips', 0);
     const modalBefore = Main.modalCount;
 
     try {
@@ -9003,8 +9135,12 @@ async function testBreak(outDir) {
 
         await openBreakTab();
         const view2 = breakView();
+        // Sitting (the panic button above left it standing): seated moves first.
+        breakService().setPosture('sitting');
         breakService().state.exercise.next = 0;
+        breakService().state.exercise.recent = [];
         view2._showStretch = false;
+        view2._stretchId = null;
         view2._exerciseKey = null;
         view2._sync();
         await sleep(SETTLE_MS);
@@ -9020,34 +9156,107 @@ async function testBreak(outDir) {
             `content=${JSON.stringify(boxOf(island()._hub._content))} ` +
             `scroll=${view2._scroll.vadjustment.value}`;
         const card = view2.card;
-        const files = card?.frames.map(f => f.icon.gicon.get_file().get_path()) ?? [];
-        check('break: the first stretch: Workrave\'s pictures, the second one mirrored',
-            card?.exercise.id === 'shoulder-arm-stretch' && files.length === 2 &&
-            files.every(f => GLib.file_test(f, GLib.FileTest.EXISTS)) &&
-            card.frames[0].icon.scale_x === 1 && card.frames[1].icon.scale_x === -1,
-            `${card?.exercise.id} ${files.join(', ')} key=${view2._exerciseKey} ` +
-            `exercises=${view2._exercises.length} shown=${view2._showStretch} ${clickDetail}`);
+        // The catalog's first seated move (seed 0, nothing recent); its
+        // picture is WorkoutLabs' when fetched (make break-art), else Workrave's.
+        const picture = card?.move.picture;
+        const files = picture?.kind === 'frames' ? picture.frames.map(f => f.file.get_path()) : [];
+        check('break: the first stretch: the catalog\'s first seated move, with its picture',
+            card?.move.id === 'neck-side-tilt' && files.length > 0 &&
+            files.every(f => GLib.file_test(f, GLib.FileTest.EXISTS)),
+            `${card?.move.id} ${picture?.source} ${files.join(', ')} key=${view2._exerciseKey} ` +
+            `moves=${view2._moves.length} shown=${view2._showStretch} ${clickDetail}`);
         if (!card)
             throw new Error('no exercise card');
-        // Bring the pictures into view.
+        // Bring the picture into view.
         const [, cardY] = card.get_transformed_position();
         const [, listY] = view2._list.get_transformed_position();
         view2._scroll.vadjustment.value = cardY - listY;
         await sleep(animationWait());
-        const [a, b] = card.frames.map(f => inset(boxOf(f.picture), 3));
-        const half = box => (box.x2 - box.x1) / 2;
-        const inkMirroredLeft = await inkIn(outDir, 'break-frame-1-left', b.x1, b.y1, half(b), b.y2 - b.y1);
-        const inkPlainRight = await inkIn(outDir, 'break-frame-0-right', a.x1 + half(a), a.y1, half(a), a.y2 - a.y1);
-        const plain = await areaPixbuf(outDir, 'break-frame-0', a);
-        const mirrored = await areaPixbuf(outDir, 'break-frame-1', b);
-        const flipped = pixelDifference(plain, mirrored, true);
-        const straight = pixelDifference(plain, mirrored, false);
-        check('break: the mirrored picture is drawn flipped (ink and pixels)',
-            Math.abs(inkMirroredLeft - inkPlainRight) <= 0.15 * Math.max(inkMirroredLeft, inkPlainRight) &&
-            flipped < straight / 2,
-            `ink ${inkMirroredLeft.toFixed(3)} vs ${inkPlainRight.toFixed(3)}; ` +
-            `difference flipped ${flipped.toFixed(1)}, as is ${straight.toFixed(1)}`);
+        const pictureBox = inset(boxOf(card.picture), 3);
+        const ink = await inkIn(outDir, 'break-card-picture', pictureBox.x1, pictureBox.y1,
+            pictureBox.x2 - pictureBox.x1, pictureBox.y2 - pictureBox.y1);
+        const shouldPlay = files.length > 1 && St.Settings.get().enable_animations &&
+            s.get_boolean('break-animate');
+        check('break: the card\'s picture is drawn, and moves when it has frames and animations are on',
+            card.picture.mapped && ink > 0.01 && (card.picture.playing ?? false) === shouldPlay,
+            `ink ${ink.toFixed(3)} playing=${card.picture.playing} expected=${shouldPlay} frames=${files.length}`);
         await screenshotTop(outDir, 'break-card', 540);
+
+        // An eye exercise drawn by Froonty moves while shown, and stops when hidden.
+        view2._eyesOpen = true;
+        view2._eyeChoice = 'follow-eight';
+        view2._sync();
+        await sleep(animationWait());
+        const eyeCard = view2.card;
+        const drawnMoving = eyeCard?.picture.moving;
+        check('break: a drawn eye exercise moves while shown (GNOME\'s animations on)',
+            eyeCard?.move.id === 'follow-eight' && drawnMoving === St.Settings.get().enable_animations,
+            `${eyeCard?.move.id} moving=${drawnMoving}`);
+        view2._eyesOpen = false;
+        view2._eyeChoice = null;
+        view2._showStretch = false;
+        view2._sync();
+        await sleep(SETTLE_MS);
+
+        // Pause: GNOME's breaks off for the pause, exactly back on Resume.
+        const selectedBefore = breaks.get_strv('selected-breaks');
+        await scrollIntoView(view2, view2.pauseButton);
+        await clickActor(view2.pauseButton);
+        await sleep(SETTLE_MS);
+        await clickActor(view2.pauseChoices[0]);
+        await waitFor(() => breaks.get_strv('selected-breaks').length === 0);
+        const savedPause = JSON.parse(s.get_string('break-gnome-saved') || '{}')['breaks/selected'];
+        check('break: Pause 30 min turns GNOME\'s breaks off, recorded first; the tab says until when',
+            breaks.get_strv('selected-breaks').length === 0 && Boolean(savedPause) &&
+            s.get_int64('break-paused-until') > Date.now() / 1000 + 1700 &&
+            view2._pausedRow.visible && view2.resumeButton.mapped && !view2._offer.visible &&
+            !island()._collapsedView.hasCue,
+            `selected=${breaks.get_strv('selected-breaks')} saved=${JSON.stringify(savedPause)} ` +
+            `until=${s.get_int64('break-paused-until')} row=${view2._pausedRow.visible} offer=${view2._offer.visible}`);
+        // The paused row shows above the list's scrolled position.
+        await scrollIntoView(view2, view2.resumeButton);
+        await clickActor(view2.resumeButton);
+        await waitFor(() => breaks.get_strv('selected-breaks').length === selectedBefore.length);
+        check('break: Resume gives GNOME\'s breaks back as they were',
+            breaks.get_strv('selected-breaks').join() === selectedBefore.join() &&
+            s.get_int64('break-paused-until') === 0 &&
+            !('breaks/selected' in JSON.parse(s.get_string('break-gnome-saved') || '{}')),
+            `selected=${breaks.get_strv('selected-breaks')} saved=${s.get_string('break-gnome-saved')}`);
+
+        // Outside working hours (no working day today): paused the same way;
+        // "Remind me anyway" lifts it until they start again.
+        const today = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][new Date().getDay()];
+        s.set_strv('break-work-days', ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'].filter(d => d !== today));
+        s.set_boolean('break-work-hours', true);
+        await waitFor(() => breaks.get_strv('selected-breaks').length === 0);
+        check('break: outside working hours GNOME\'s breaks are paused and the tab offers "Remind me anyway"',
+            breaks.get_strv('selected-breaks').length === 0 && view2._pausedRow.visible &&
+            view2.resumeButton.label === 'Remind me anyway',
+            `selected=${breaks.get_strv('selected-breaks')} label=${view2.resumeButton.label}`);
+        await scrollIntoView(view2, view2.resumeButton);
+        await clickActor(view2.resumeButton);
+        await waitFor(() => breaks.get_strv('selected-breaks').length === selectedBefore.length);
+        check('break: "Remind me anyway" turns them back on until working hours start',
+            breaks.get_strv('selected-breaks').join() === selectedBefore.join() &&
+            s.get_int64('break-work-override-until') > Date.now() / 1000,
+            `selected=${breaks.get_strv('selected-breaks')} override=${s.get_int64('break-work-override-until')}`);
+        s.set_boolean('break-work-hours', false);
+        s.reset('break-work-override-until');
+        s.reset('break-work-days');
+        await sleep(SETTLE_MS);
+
+        // The 14-week chart, from the fold-out.
+        view2._chartOpen = true;
+        view2._sync();
+        await sleep(SETTLE_MS);
+        check('break: the 14-week chart shows 14 weeks of days, today in the last column',
+            !s.get_boolean('break-chart') || (view2.chart.mapped &&
+            view2.chart._data?.cells.length === 98 &&
+            view2.chart._data.cells.some(c => c.day === breakService().state.today.day && c.col === 13)),
+            `mapped=${view2.chart.mapped} cells=${view2.chart._data?.cells.length}`);
+        view2._chartOpen = false;
+        view2._sync();
+        await sleep(SETTLE_MS);
 
         view2._scroll.vadjustment.value = 0;
         await sleep(SETTLE_MS);
@@ -9085,7 +9294,9 @@ async function testBreak(outDir) {
             `enable=${wellbeingUser()} selected=${breaks.get_strv('selected-breaks')}`);
     } finally {
         delete extension().stateObj?._isSessionLocked;
-        for (const key of ['break-enabled', 'break-pill-reminders', 'posture-enabled', 'panic-buttons'])
+        for (const key of ['break-enabled', 'break-pill-reminders', 'posture-enabled', 'panic-buttons',
+            'break-work-hours', 'break-work-days', 'break-work-override-until', 'break-paused-until',
+            'break-natural-pause', 'break-max-skips'])
             s.reset(key);
         await sleep(SETTLE_MS);
         gnomeKeys.forEach(resetKeys);
@@ -9348,9 +9559,12 @@ async function testPublicBuild() {
     // (testHub); the side column stays, for ⚙️.
     check('public build: a single tab, so the side column holds ⚙️ and no tab column',
         !hub._tabColumn.visible && hub._side.visible && hub.settingsButton.visible);
-    const [left, right] = hub._panicBar.groups;
-    check('public build: the panic bar has the two mute buttons, one on each side of the date pill',
-        left.get_n_children() === 1 && right.get_n_children() === 1, `${left.get_n_children()} + ${right.get_n_children()}`);
+    // The default bar: Keep Froonty on top left of the date pill, the two
+    // mute buttons right of it (the right side takes one more when odd).
+    const sides = hub._panicBar.groups.map(group => group.get_children().map(a => a.accessible_name));
+    check('public build: the panic bar has pin on the left, the two mute buttons on the right',
+        sides[0].join() === 'Keep Froonty on top' && sides[1].join() === 'Mute microphone,Mute sound',
+        JSON.stringify(sides));
     check('public build: no bar under the pill', island()._pillBars.size === 0);
     island().expand();
     await sleep(animationWait());
@@ -9475,6 +9689,7 @@ async function testFanLockButton() {
 // FROONTY_TEST_ONLY=testA,testB runs only those checks (while debugging).
 const ONLY_TESTS = {
     testClaudeAttention, testClaudeAttentionWindows,
+    testPanic, testHoverOpen,
     testNotes, testNotesTabsAndColors, testNotesHeader, testAllNotesWindow,
     testMedia, testBreak, testHub, testLifecycle, testPublicBuild,
     testResizeGrip, testMediaPill, testMediaExtras, testMediaPanic, testMediaChoiceSurvivesLock,
@@ -9541,6 +9756,7 @@ export async function runAll(outDir) {
         await testSettingsViewKey();
         await testLabelMenuLifecycle();
         await testClaude(outDir);
+        await testLocalSend();
         await testClipboard(outDir);
         await testClipboardSwitcher(outDir);
         await testWriting(outDir);

@@ -11,6 +11,7 @@ import {clipboardPage} from './clipboard/prefs.js';
 import {fanPage} from './fan/prefs.js';
 import {formulasPage} from './formulas/prefs.js';
 import {killProcessPage} from './killprocess/prefs.js';
+import {localSendPage} from './localsend/prefs.js';
 import {mediaPage} from './media/prefs.js';
 import {sysmonPage} from './sysmon/prefs.js';
 import {timezonesPage} from './timezonePlanner/prefs.js';
@@ -42,6 +43,7 @@ export function addLocalPrefs(window, settings, pageStack) {
         killProcessPage(settings),
         breakPage(settings),
         zeroTierPage(settings),
+        localSendPage(settings),
         writingPage(settings, window),
         formulasPage(settings),
         // Not hub tabs (localFeatures.js, LOCAL_PARTS).

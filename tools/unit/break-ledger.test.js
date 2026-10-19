@@ -8,7 +8,7 @@ import {setup} from './breakWorld.js';
 import {makeWorld} from './gnomeBreakManager.js';
 import {Emitter} from '../../froonty@catalin/core/emitter.js';
 import {
-    addAway, addPresent, dayKey, freshState, nextMidnight, pushHistory, suspendDrift,
+    WORKOUT_ASK_SECONDS, addAway, addPresent, dayKey, freshState, nextMidnight, pushHistory, suspendDrift,
 } from '../../froonty@catalin/features/break/ledger.js';
 
 const RULES = {movementSeconds: 300, longRestSeconds: 900};
@@ -149,6 +149,35 @@ test('service: standing counts only while at the computer', async () => {
     const standing = service.model().today.standingSeconds;
     ok(standing >= 118 && standing <= 122, `standing ${standing}`);
     service.stop();
+});
+
+test('time at the computer per hour, and the hours you moved in', () => {
+    const s = freshState(0, DAYS);
+    addPresent(s, 50 * MIN, DAYS);
+    addAway(s, 50 * MIN, 70 * MIN, RULES, DAYS);
+    addPresent(s, 130 * MIN, DAYS);
+    eq(s.today.hourActive.slice(0, 3).map(x => x / 60), [50, 50, 10]);
+    eq(s.today.hourMoved.slice(0, 3), [1, 1, 0]);
+    eq(s.ledger.screenSinceMove, 60 * 60, 'an hour since the last move');
+});
+
+test('a short pause does not clear the move bar; an away of 2 min does', () => {
+    const s = freshState(0, DAYS);
+    addPresent(s, 30 * MIN, DAYS);
+    addAway(s, 30 * MIN, 31 * MIN, RULES, DAYS);
+    eq(s.ledger.screenSinceMove, 30 * 60);
+    addAway(s, 31 * MIN, 33 * MIN, RULES, DAYS);
+    eq(s.ledger.screenSinceMove, 0);
+});
+
+test('an away of 45 min to 4 h in the day is asked about; a night is not', () => {
+    const s = freshState(0, DAYS);
+    addPresent(s, 8 * 60 * MIN, DAYS);
+    addAway(s, 8 * 60 * MIN, 8 * 60 * MIN + WORKOUT_ASK_SECONDS * 1000, RULES, DAYS);
+    ok(s.lastLongAway !== null);
+    const night = freshState(0, DAYS);
+    addAway(night, 60 * MIN, 9 * 60 * MIN, RULES, DAYS);
+    eq(night.lastLongAway, null);
 });
 
 await done();

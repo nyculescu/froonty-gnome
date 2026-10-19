@@ -203,6 +203,10 @@ feature has a design note in [docs/features/](docs/features/).
   network is doing, with Start/Stop. Networks are managed in ZeroTier
   itself. Turned off on the first start when ZeroTier is not installed;
   see [docs/features/zerotier.md](docs/features/zerotier.md).
+- **LocalSend** tab (working-tree installs only, off by default): files and
+  text between this computer and the LocalSend app on a phone, over Wi-Fi
+  or wired networks and optionally ZeroTier, each transfer accepted in a
+  notification; see [docs/features/localsend.md](docs/features/localsend.md).
 - **Writing** tab (working-tree installs only, off by default):
   Fix grammar (a B2 and a C1 version), Shorten, Formal, Humanize and
   Translate (with its idioms), with the engines you switch
@@ -350,6 +354,8 @@ froonty@catalin/             the extension (this directory is what gets installe
 │   │                        MathJax in a helper process and its client;
 │   │                        notes/: formulas drawn in both notes editors
 │   ├── zerotier/            ZeroTier tab: zerotier-cli, service, view, prefs
+│   ├── localsend/           LocalSend tab: protocol helper (Python), service,
+│   │                        notifications, view, prefs
 │   ├── writing/             Writing tab: engines, set-up, service, view, prefs
 │   ├── brightness/          Software brightness (not a tab): dim/tint layers,
 │   │                        its Quick Settings slider, levels, prefs
@@ -485,6 +491,10 @@ its tabs:
   settings, urgency rules, exercises, sit/stand target and build-up,
   history, size.
 - **ZeroTier:** enable, allow reading ZeroTier's status.
+- **LocalSend:** the tab, visible, the name others see, the folder for
+  received files, the PIN for a new device, trusted networks, trusted
+  devices and automatic accepting, devices added by address, also over
+  ZeroTier, the port.
 - **Writing:** the tab, your first language, each engine's switch, status
   and set-up steps, Ollama's model and its model for Translate, Set up…
   and Remove for Ollama, Remove everything, size.
@@ -525,6 +535,18 @@ The keys behind it:
 | `claude-enabled` | `true` | Show the Claude tab |
 | `zerotier-enabled` | `true` | Show the ZeroTier tab |
 | `zerotier-install-checked` | `false` | ZeroTier's installation was checked on the first start (internal) |
+| `localsend-enabled` | `false` | Show the LocalSend tab and run its helper (local builds) |
+| `localsend-visible` | `true` | Visible to other LocalSend devices (the tab's Hide/Show) |
+| `localsend-pin-first` | `true` | A new LocalSend device enters a one-time PIN shown by Froonty first |
+| `localsend-auto-accept` | `true` | Accept from trusted devices without asking, over trusted networks |
+| `localsend-only-trusted-networks` | `true` | LocalSend visible only on trusted networks and ZeroTier |
+| `localsend-trusted-networks` | `{}` | Trusted networks, NetworkManager UUID → name |
+| `localsend-devices` | `[]` | LocalSend devices added by address (introduced to every 5 s) |
+| `localsend-trusted` | `{}` | Trusted LocalSend devices, fingerprint → name |
+| `localsend-alias` | `''` | Name other devices see; empty: "Froonty (host name)" |
+| `localsend-folder` | `''` | Folder for received files; empty: Downloads/LocalSend |
+| `localsend-zerotier` | `true` | Also listen on ZeroTier interfaces |
+| `localsend-port` | `53317` | LocalSend's TCP and UDP port |
 | `writing-enabled` | `false` | Show the Writing tab (local builds) |
 | `writing-claude-code-enabled` / `writing-languagetool-enabled` / `writing-ollama-enabled` | `false` | Offer that engine in the Writing tab; off, it is not in the tab at all |
 | `writing-engine` | `claude-code` | Engine chosen last in the tab |

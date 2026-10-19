@@ -7,12 +7,14 @@
 import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 
 import {AudioMuteButton} from './audioMute.js';
+import {PinIslandButton} from './pinIsland.js';
 import {byId} from './catalog.js';
 // local:begin local-features (working-tree only; tools/pack-public strips it)
 import {LOCAL_FACTORIES} from './localFactories.js';
 // local:end local-features
 
 const FACTORIES = {
+    'pin-island': (title, actions) => new PinIslandButton(title, actions.settings),
     'mute-microphone': title => new AudioMuteButton('input', title),
     'mute-sound': title => new AudioMuteButton('output', title),
     // local:begin local-features

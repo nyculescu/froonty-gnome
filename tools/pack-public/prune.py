@@ -26,7 +26,7 @@ import xml.etree.ElementTree as ET
 # Settings keys of the features the public build leaves out.
 PREFIXES = (
     "media-", "claude-", "sysmon-", "clipboard-", "killprocess-",
-    "break-", "posture-", "zerotier-", "writing-", "formulas-", "brightness-", "cooling-slider",
+    "break-", "posture-", "zerotier-", "localsend-", "writing-", "formulas-", "brightness-", "cooling-slider",
 )
 # Their CSS classes: each name and every class it begins with a dash
 # (froonty-media matches .froonty-media and .froonty-media-title, not
@@ -35,13 +35,14 @@ PREFIXES = (
 CLASSES = (
     "froonty-media", "froonty-claude", "froonty-attention", "froonty-sysmon",
     "froonty-clipboard", "froonty-killprocess", "froonty-break", "froonty-posture",
-    "froonty-zerotier", "froonty-writing", "froonty-ollama", "froonty-formulas",
+    "froonty-zerotier", "froonty-localsend", "froonty-writing", "froonty-ollama", "froonty-formulas",
     "froonty-panic-posture", "froonty-pill-cue-level", "froonty-pill-cue-posture",
+    "froonty-pill-cue-move",
 )
 CLASS = re.compile(r"\.(" + "|".join(map(re.escape, CLASSES)) + r")(?![A-Za-z0-9_])")
 # Comments that mention them go too (a comment above a block of keys).
 MENTIONS = tuple(f"features/{name}" for name in (
-    "media", "claude", "sysmon", "clipboard", "killprocess", "break", "zerotier", "writing",
+    "media", "claude", "sysmon", "clipboard", "killprocess", "break", "zerotier", "localsend", "writing",
     "formulas", "brightness", "padNoiseSlider",
 )) + ("kill-process", "claude-attention", "local-only")
 ROOTS = ("extension.js", "prefs.js")
