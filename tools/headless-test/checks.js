@@ -3073,7 +3073,7 @@ async function testClipboardSwitcher(outDir) {
 
 // ---------------------------------------------------------------- writing
 
-// The Writing tab (working-tree only, docs/features/writing.md). run.sh's
+// The Writing tab (docs/features/writing.md). run.sh's
 // fake Claude Code records each run under $CLAUDE_CONFIG_DIR/writing; a
 // local Soup.Server in this Shell stands in for LanguageTool and Ollama.
 // Nothing reaches a real service.
@@ -7845,7 +7845,7 @@ const mediaView = () => mediaEntry()?.view ?? null;
 const accessory = () => island()?._accessory ?? null;
 let mediaWork = null;
 
-// null in a build without the Media tab (the published package).
+// null in a copy without the Media tab.
 async function mediaShared() {
     const file = Gio.File.new_for_path(`${extension().path}/features/media/shared.js`);
     return file.query_exists(null) ? await import(file.get_uri()) : null;
@@ -9541,98 +9541,6 @@ async function testTimezonePlanner() {
     s.reset('timezone-planner-favorites');
 }
 
-// The public build (FROONTY_EXTENSION_DIR=an unzipped `make pack`, run
-// with FROONTY_TEST_ONLY=testPublicBuild): its one tab, Notes, and two
-// panic buttons only, the header's date pill, ⚙️ in the side column, the
-// tab opens, and enable/disable leaves the Shell as it was.
-async function testPublicBuild() {
-    check('public build: no software brightness (local-only) in Quick Settings or on the stage',
-        !brightnessLayer() && brightnessSliders().length === 0 &&
-        !settings().settings_schema.has_key('brightness-enabled'));
-    const hub = island()._hub;
-    const names = [...hub._entries.values()].map(e => e.feature.title);
-    const gone = ['clock', 'calendar', 'notifications']
-        .filter(name => GLib.file_test(`${extension().path}/features/${name}`, GLib.FileTest.EXISTS));
-    check('public build: the one tab is Notes (no Clock, Calendar or Notifications tab)',
-        names.join(',') === 'Notes' && gone.length === 0, `${names.join(',')} ${gone.join(',')}`);
-    // With one tab on, the tab column in the side column is hidden
-    // (testHub); the side column stays, for ⚙️.
-    check('public build: a single tab, so the side column holds ⚙️ and no tab column',
-        !hub._tabColumn.visible && hub._side.visible && hub.settingsButton.visible);
-    // The default bar: Keep Froonty on top left of the date pill, the two
-    // mute buttons right of it (the right side takes one more when odd).
-    const sides = hub._panicBar.groups.map(group => group.get_children().map(a => a.accessible_name));
-    check('public build: the panic bar has pin on the left, the two mute buttons on the right',
-        sides[0].join() === 'Keep Froonty on top' && sides[1].join() === 'Mute microphone,Mute sound',
-        JSON.stringify(sides));
-    check('public build: no bar under the pill', island()._pillBars.size === 0);
-    island().expand();
-    await sleep(animationWait());
-    const now = island()._clock.snapshot();
-    check('public build: the header\'s date pill shows the date and the time',
-        hub.calendarButton?.mapped && hub._header._dateLabel.text === now.date &&
-        hub._header._timeLabel.text === now.time, `${hub._header._dateLabel?.text} ${hub._header._timeLabel?.text}`);
-    const header = headerPlacement(hub);
-    check('public build: the date pill exactly over GNOME\'s clock, a mute button on each side, equally wide',
-        header.ok, header.detail);
-    const gear = settingsButtonPlacement(hub);
-    check('public build: ⚙️ at the bottom of the side column', gear.ok, gear.detail);
-    hub.select('notes');
-    await sleep(SETTLE_MS);
-    check('public build: the Notes tab opens',
-        hub.activeFeature?.id === 'notes' && Boolean(hub._entries.get('notes')?.view?.actor.mapped),
-        hub.activeFeature?.id);
-    // The icons the kept tab loads from its own folder.
-    const notesView = hub._entries.get('notes')?.view;
-    const icons = [notesView?._foldUp, notesView?._foldDown]
-        .map(icon => icon?.get_file().get_path() ?? 'none');
-    const missing = icons.filter(path => !GLib.file_test(path, GLib.FileTest.EXISTS));
-    check('public build: the bundled icons are there', missing.length === 0, missing.join(', '));
-    island().collapse();
-    await sleep(animationWait());
-
-    check('public build: disable succeeds', await setExtensionEnabled(false), stateName());
-    // No feature keeps memory across disable() in this build.
-    check('public build: disable drops the in-memory data', extension().stateObj._memory === null,
-        JSON.stringify(extension().stateObj._memory));
-    // GNOME's app grid connects to the overview's 'hidden' once, from work
-    // it defers for up to 20 s after the session starts (appDisplay.js,
-    // Main.initializeDeferredWork): wait for it, or the cycles below
-    // would count it as Froonty's whenever they run past that moment.
-    const appDisplay = Main.overview._overview?._controls?._appDisplay;
-    await waitFor(() => !appDisplay || appDisplay._overviewHiddenId !== 0, 30000);
-    const baseline = shellFootprint();
-    const failures = [];
-    for (let i = 0; i < 10; i++) {
-        // eslint-disable-next-line no-await-in-loop
-        if (!await setExtensionEnabled(true))
-            failures.push(`enable #${i}: ${stateName()}`);
-        if (i % 2 === 0) {
-            island()?.expand();
-            // eslint-disable-next-line no-await-in-loop
-            await sleep(40);
-        }
-        // eslint-disable-next-line no-await-in-loop
-        if (!await setExtensionEnabled(false))
-            failures.push(`disable #${i}: ${stateName()}`);
-    }
-    check('public build: 10 enable/disable cycles', failures.length === 0, failures.join('; '));
-    const after = shellFootprint();
-    const isOurs = actor => /froonty/i.test(actor);
-    const scrub = footprint => ({
-        ...footprint,
-        uiGroupChildren: footprint.uiGroupChildren.filter(isOurs),
-        trackedChrome: footprint.trackedChrome.filter(isOurs),
-    });
-    const [x, y] = [scrub(baseline), scrub(after)];
-    check('public build: shell footprint identical after the cycles',
-        JSON.stringify(x) === JSON.stringify(y),
-        Object.keys(x).filter(k => JSON.stringify(x[k]) !== JSON.stringify(y[k]))
-            .map(k => `${k}: ${JSON.stringify(x[k])} -> ${JSON.stringify(y[k])}`).join('; '));
-    check('public build: re-enable succeeds', await setExtensionEnabled(true), stateName());
-}
-
-
 async function testFanSliderSettingsButton() {
     const s = settings();
     const hub = island()._hub;
@@ -9691,7 +9599,7 @@ const ONLY_TESTS = {
     testClaudeAttention, testClaudeAttentionWindows,
     testPanic, testHoverOpen,
     testNotes, testNotesTabsAndColors, testNotesHeader, testAllNotesWindow,
-    testMedia, testBreak, testHub, testLifecycle, testPublicBuild,
+    testMedia, testBreak, testHub, testLifecycle,
     testResizeGrip, testMediaPill, testMediaExtras, testMediaPanic, testMediaChoiceSurvivesLock,
     testPointer, testHubLayout, testDatePill, testCalendarMenu, testEmptyHub,
     testSettingsButton, testKillProcess, testCpuLoadButton, testTemperatureButton, testFormulas,
@@ -9736,7 +9644,7 @@ export async function runAll(outDir) {
         await testPanic(outDir);
         await testHubWithoutPanicButtons();
         await testResizeGrip(outDir);
-        // The camera panic button is switched off for now (panic/localCatalog.js).
+        // The camera panic button is switched off for now (panic/catalog.js).
         // await testPanicCamera(outDir);
         await testHoverOpen();
         await testLauncher();

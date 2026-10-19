@@ -9,9 +9,8 @@ Status: **first iteration, implemented**, 2026-10-02; **second iteration**
 (busy, pause and working hours, media, move bar and workout days, a
 pause in typing, skip limit and reasons, moving pictures, routines, drawn
 eye and breathing exercises, ideas, a 14-week chart), 2026-10-16, branch
-`break-v2`, not yet tried on a real session. Working-tree only (`make
-install`): not in `make pack` output yet. **Off by default.** GNOME Shell
-50 only.
+`break-v2`, not yet tried on a real session. **Off by default.** GNOME
+Shell 50 only.
 
 GNOME's own break reminders (Settings → Wellbeing), shown and driven from
 the island: a cue on the collapsed pill when a break is near or due, and a
@@ -248,7 +247,7 @@ waits), or after `break-natural-pause-max-seconds` (60) at the latest
   See Evidence.
 - **Garmin's workouts** can be read too (below, off by default).
 
-## Garmin (optional, local builds)
+## Garmin (optional)
 
 `break-garmin` (off): today's activities of 20 min or more from Garmin
 Connect count as workouts, with "I worked out" still there; Garmin's
@@ -312,8 +311,8 @@ time ("30 s", "40 s, each side").
 - **Pictures** (exercises/README.md), in this order:
   1. **WorkoutLabs'** colour line drawings, fetched to this computer by
      `tools/fetch-break-art.py` (`make break-art`; `make install` fetches
-     them when missing) into `third_party/break-art/` (git-ignored, never
-     packed; all rights reserved by WorkoutLabs). Animations become their
+     them when missing) into `third_party/break-art/` (git-ignored; all
+     rights reserved by WorkoutLabs). Animations become their
      2-3 poses (1.12 s each), stills with several poses are cut apart (3 s
      each); square PNGs on white. 30 of the 31 moves that have one; the
      drawings come from four series, so the person changes between moves.
@@ -437,7 +436,7 @@ advice, nothing not at hand, no text Stretchly took from other authors
 | `break-pause-media` | true | Pause media on Take now |
 | `break-move-goal`, `-after-minutes`, `-step-minutes` | true, 60, 15 | The move bar |
 | `break-workout` | true | Workout days |
-| `break-garmin` | false | Read workouts from Garmin Connect (local builds; the helper, set up and signed in from Settings) |
+| `break-garmin` | false | Read workouts from Garmin Connect (the helper, set up and signed in from Settings) |
 | `break-natural-pause`, `-max-seconds` | true, 60 | Due at a pause in typing |
 | `break-max-skips` | 3 | Skips in a row before the tab hides Skip (0 no limit) |
 | `break-skip-reasons` | true | Ask why after a skip or delay |
@@ -527,12 +526,12 @@ changed.
 | `features/break/ideas.js` | The break ideas |
 | `features/break/chart.js`, `chartData.js` | The 14-week chart; its cells (pure) |
 | `features/break/view.js`, `prefs.js`, `index.js`, `icons.js` | The tab, Settings → Break, the descriptor, the pictograms |
-| `tools/fetch-break-art.py`, `tools/break-art/workoutlabs.json` | Fetches WorkoutLabs' pictures (`make break-art`; not packed) |
-| `tools/import-break-ideas.py` | The one-off ideas converter (not packed) |
+| `tools/fetch-break-art.py`, `tools/break-art/workoutlabs.json` | Fetches WorkoutLabs' pictures (`make break-art`) |
+| `tools/import-break-ideas.py` | The one-off ideas converter |
 | `features/break/garmin/helper.py`, `garminRun.js`, `garminData.js`, `garminPrefs.js` | The Garmin helper (its own venv and process); running it; its readings in the day (pure); Settings → Break → Garmin |
 | `panic/sitStand.js` | The "Sitting or standing" panic button |
 | `ui/island.js`, `ui/collapsedView.js` | The pill's cue (any feature with a `pillCue`) |
-| `tools/import-workrave-exercises.py` | The one-off converter (not packed) |
+| `tools/import-workrave-exercises.py` | The one-off converter |
 
 ## Tests
 

@@ -1,7 +1,6 @@
 # Feature: Btop (system monitor)
 
-Status: **second iteration, implemented for local builds; not included in
-`make pack`.**
+Status: **second iteration, implemented.**
 
 A compact, live view of this computer: CPU, graphics cards, memory, disks
 and network. It is Phase 7 ("Metrics") of [DESIGN.md](../DESIGN.md) §10.
@@ -214,6 +213,6 @@ btop++ was considered as a source of data (a submodule under
 - Embedding it would mean a terminal widget inside GNOME Shell's Clutter
   scene.
 - A submodule would not be installed (`make install` copies only the
-  extension directory) or packed.
+  extension directory).
 
 The data it shows comes from the same `/proc` and `/sys` files read here.

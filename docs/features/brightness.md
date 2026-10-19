@@ -2,7 +2,6 @@
 
 Status: **implemented**, 2026-10-06, from a contributed patch
 (`Froonty_software_brightness.patch`, reworked before merging; §6).
-Working-tree only (`make install`): not in `make pack` output yet.
 **Off by default.**
 
 A second brightness slider in Quick Settings, under GNOME's, for monitors
@@ -56,7 +55,7 @@ display-wide color-temperature adjustment.
 ## 3. How it works
 
 `features/brightness/overlay.js`, an extension part (made by
-`extension.js` from `localFeatures.js`'s `LOCAL_PARTS`): it lives while
+`extension.js` from `registry.js`'s `PARTS`): it lives while
 Froonty runs and follows `brightness-enabled` itself.
 
 - **The layers:** one `St.Widget` on `global.stage` (not `uiGroup`), with
@@ -130,9 +129,6 @@ project, `Froonty_0.9.0_rc0_software_brightness.zip`, that differed from
   Froonty runs.
 - **The slider** spans the minimum to 100 %, instead of clamping a value
   dragged below the minimum (which left the knob where it was dropped).
-- **Local build only**, as every feature until it is submitted to
-  extensions.gnome.org, wired through `LOCAL_PARTS` and left out by
-  `tools/pack-public` (keys, modules; `check_zip.py` fails on any trace).
 - Levels in whole percent (`brightness-level`, `brightness-min`) instead
   of 0-1 doubles; the keys were never released, so nothing migrates.
 - Unit tests and a headless check, which the patch had none of.

@@ -1,7 +1,6 @@
 # Feature: ZeroTier
 
-Status: **implemented for working-tree installs** (`make install`). `make
-pack` leaves it out, with its settings, until it is published.
+Status: **implemented**.
 
 The tab says at a glance whether ZeroTier works on this computer and how
 each joined network is doing. It is informative: networks are joined and
@@ -58,23 +57,17 @@ system locations (never from `$PATH`), no shell:
 - Start/Stop: `pkexec systemctl start|stop zerotier-one.service` (tab).
 - Allow status access: the `install` command above (settings).
 
-## Publishing (extensions.gnome.org review guidelines)
+## GNOME's extension review guidelines
 
 Checked against <https://gjs.guide/extensions/review-guidelines/review-guidelines.html>
 on 2026-10-01:
 
 - Privileged subprocesses use `pkexec` with system binaries that a user
   process cannot modify. The guidelines say to avoid them "at all costs";
-  both are explicit user actions, which a reviewer may still question.
+  both are explicit user actions.
 - Nothing is created at import: the feature's icon is a getter.
 - No synchronous file I/O in the Shell: executables are looked up with
   `query_info_async`.
 - Subprocesses are cancelled (SIGTERM) when the tab's service stops, which
   `disable()` does through the hub.
 - The settings page imports no Clutter, Meta, St or Shell.
-- To publish: move its import from `features/localFeatures.js` to
-  `features/registry.js` (and its settings tab from `localPrefs.js` to
-  `prefs.js`), drop the ZeroTier lines from `tools/pack-public.sh` and
-  `tools/pack-public/` (`strip-local-schema.py`'s prefixes, `prune.py`'s
-  and `check_zip.py`'s lists), and the `local:begin zerotier` /
-  `local:end zerotier` markers around its rules in `stylesheet.css`.

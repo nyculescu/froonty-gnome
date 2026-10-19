@@ -1,6 +1,6 @@
 # Feature: Time zone planner
 
-Status: **working-tree only** (`make install`); not in the published package.
+Status: **implemented**.
 
 Settings → Time zones lets you save any number of cities by name and IANA
 timezone ID, and mark up to two as favourites. Dublin and Timisoara are the

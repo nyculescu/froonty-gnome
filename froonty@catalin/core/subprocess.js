@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Stopping a subprocess Froonty started: SIGTERM, so it can end cleanly,
 // then SIGKILL if it is still there a few seconds later, so a hung one
-// cannot keep anything waiting. Used by working-tree features: the Claude
-// tab's /usage refresh, the math renderer and the Writing tab.
+// cannot keep anything waiting. Used by features: the Claude tab's
+// /usage refresh, the math renderer and the Writing tab.
 
 import GLib from 'gi://GLib';
 

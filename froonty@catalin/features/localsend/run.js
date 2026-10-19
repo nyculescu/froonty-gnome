@@ -22,8 +22,6 @@ const MAX_LINE = 512 * 1024;
 
 const helperPath = () => Gio.File.new_for_uri(import.meta.url).get_parent()
     .get_child('helper.py').get_path();
-// Launched by path, not imported: pack-public/prune.py keeps it from this.
-// pack:asset ./helper.py
 
 /** Parses one line of the helper's output; null when it is not an event. */
 export function parseEvent(line) {
@@ -138,7 +136,6 @@ export async function chooseFolder(start) {
 async function runChooser(args) {
     const helper = Gio.File.new_for_uri(import.meta.url).get_parent()
         .get_child('pick-files-helper.js').get_path();
-    // pack:asset ./pick-files-helper.js
     const proc = Gio.Subprocess.new(['/usr/bin/gjs', '-m', helper, ...args],
         Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_SILENCE);
     const input = new Gio.DataInputStream({base_stream: proc.get_stdout_pipe()});

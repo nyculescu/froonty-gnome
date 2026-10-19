@@ -1,8 +1,6 @@
 # Feature: Media
 
-Status: **first iteration, implemented**, 2026-10-02. Working tree only
-for now (`features/localFeatures.js`; `make pack` leaves it out). **On by
-default.**
+Status: **first iteration, implemented**, 2026-10-02. **On by default.**
 
 What music and video players on this computer report over MPRIS, with
 play, pause, skip and seek: a tab in the island, the song on the collapsed
@@ -291,8 +289,7 @@ No key stores the chosen player.
 ## Network and privacy
 
 - **Nothing leaves the computer by default.** Two options use the
-  internet, both off by default and declared in the extension's
-  description:
+  internet, both off by default:
   - "Cover art from the internet": a cover a player gives as a web
     address is downloaded from that address (the player chose it: often
     a music service's image server). Up to 4 MiB, `image/*` only; up to 8

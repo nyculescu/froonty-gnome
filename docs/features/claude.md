@@ -95,7 +95,7 @@ Froonty reads a different one.
   or the server flags it (any `severity` but `normal`).
 - **The tab icon** is Claude's Spark, as the user supplied it, recoloured as
   a symbolic icon so it matches the other tabs. The Spark is Anthropic's
-  logo; check their trademark terms before publishing Froonty with it.
+  logo.
 - **On by default** (`claude-enabled`). Without Claude Code the tab shows a
   hint instead of rows.
 - **livenerf row** (added 2026-09-30, user request): "Opus 5.5 vs launch
@@ -242,8 +242,8 @@ updating the submodule (`git submodule update --remote third_party/livenerf`)
 checks the readers against the current upstream format.
 
 The **submodule** (`third_party/livenerf`) is there for that check and as
-a reference. It sits outside `froonty@catalin/`, so `make install` and
-`make pack` never ship it. livenerf's README says "License: Not yet
+a reference. It sits outside `froonty@catalin/`, so `make install` never
+ships it. livenerf's README says "License: Not yet
 chosen", so its files are not redistributed.
 
 What livenerf measures is its own claim, not Froonty's: Opus 5.5 as served

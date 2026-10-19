@@ -16,13 +16,6 @@ Gio._promisify(Gio.OutputStream.prototype, 'write_bytes_async');
 
 const HELPER = GLib.build_filenamev([
     GLib.path_get_dirname(GLib.filename_from_uri(import.meta.url)[0]), 'helper.js']);
-// Launched by path, not imported: pack-public/prune.py keeps it, and the
-// modules it imports, from this.
-// pack:asset ./helper.js
-// pack:asset ./diagram.js
-// pack:asset ./tableHtml.js
-// pack:asset ./imageFile.js
-// pack:asset ../table.js
 const MAX_SOURCE = 50000;
 const RENDER_TIMEOUT_MS = 30000;
 export class BlockRenderClient {

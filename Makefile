@@ -3,21 +3,16 @@ UUID := froonty@catalin
 SRC := $(UUID)
 INSTALL_DIR := $(HOME)/.local/share/gnome-shell/extensions/$(UUID)
 # Froonty in Show Apps: opens its settings; Start/Stop Froonty on right
-# click (tools/froonty.desktop). Local installs only: the public build
-# cannot add one.
+# click (tools/froonty.desktop).
 DESKTOP_FILE := $(HOME)/.local/share/applications/froonty.desktop
 
 # Absolute paths: on some machines other toolchains (e.g. SUMO) shadow the
 # system GLib tools on PATH. Override if needed.
 GLIB_COMPILE_SCHEMAS ?= /usr/bin/glib-compile-schemas
-GNOME_EXTENSIONS ?= /usr/bin/gnome-extensions
 
-# Every source folder of the extension (schemas are packed separately;
-# third_party holds the fetched MathJax, which the public build leaves out).
-SOURCE_DIRS := $(filter-out schemas third_party,$(notdir $(patsubst %/,%,$(wildcard $(SRC)/*/))))
 MATHJAX := $(SRC)/third_party/mathjax/fetched.json
 
-.PHONY: schemas mathjax break-art third-party install uninstall pack unit test log clean devkit devkit-public
+.PHONY: schemas mathjax break-art third-party install uninstall unit test log clean devkit
 
 schemas: $(SRC)/schemas/gschemas.compiled
 
@@ -37,7 +32,7 @@ $(MATHJAX):
 
 # The Break tab's exercise pictures: WorkoutLabs' (all rights reserved by
 # WorkoutLabs), fetched to this computer into $(SRC)/third_party/break-art
-# (not in the repository, never packed) and cut into square frames. install
+# (not in the repository) and cut into square frames. install
 # and devkit fetch them when missing; a failed fetch is not an error (the
 # tab then shows Workrave's pictures). Network only then, never at runtime.
 BREAK_ART := $(SRC)/third_party/break-art/index.json
@@ -73,28 +68,18 @@ uninstall:
 	rm -rf $(INSTALL_DIR)
 	rm -f $(DESKTOP_FILE)
 
-# gnome-extensions 46 segfaulted if --out-dir did not exist yet. The archive
-# is built from a staged public copy; `make install` keeps local-only features.
-pack: schemas
-	mkdir -p dist
-	GNOME_EXTENSIONS=$(GNOME_EXTENSIONS) GLIB_COMPILE_SCHEMAS=$(GLIB_COMPILE_SCHEMAS) \
-		bash tools/pack-public.sh $(SRC) $(SOURCE_DIRS)
-
 # Plain-gjs unit tests (isolated TMPDIR and XDG folders, GTK pages on a
-# private Broadway display), then the public build's leak-guard tests.
+# private Broadway display) and the Python helpers' tests.
 unit: schemas
 	tools/unit/run.sh
 
 # Froonty in a nested GNOME Shell window, isolated from the session
-# (needs mutter-dev-bin); devkit-public runs the make pack build.
+# (needs mutter-dev-bin).
 # SYSTEM_BUS=1 lets it reach the real asusd (tools/devkit.sh --system-bus):
 # the Fan settings page's laptop profile and curves then change this
 # computer's.
 devkit: schemas $(MATHJAX) $(BREAK_ART)
 	tools/devkit.sh $(if $(SYSTEM_BUS),--system-bus)
-
-devkit-public:
-	tools/devkit.sh --public
 
 # Isolated headless GNOME Shell 50 runs; do not touch the real session.
 # Both session modes: layout can depend on the theme (Ubuntu uses Yaru).
@@ -107,4 +92,3 @@ log:
 
 clean:
 	rm -f $(SRC)/schemas/gschemas.compiled
-	rm -rf dist

@@ -15,8 +15,6 @@ Gio._promisify(Gio.OutputStream.prototype, 'splice_async');
 
 const HELPER = GLib.build_filenamev([
     GLib.path_get_dirname(GLib.filename_from_uri(import.meta.url)[0]), 'image-picker-helper.js']);
-// Launched by path, not imported: pack-public/prune.py keeps it from this.
-// pack:asset ./image-picker-helper.js
 
 /**
  * Opens an image chooser and returns the picked file's path, or null.

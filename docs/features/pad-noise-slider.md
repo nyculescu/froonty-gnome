@@ -1,6 +1,6 @@
 # Feature: Pad noise slider
 
-Status: **implemented**, working-tree only. Enabled by default
+Status: **implemented**. Enabled by default
 (Settings → Fan → **Pad noise slider in Quick Settings**).
 
 The Quick Settings slider adjusts the llano V12 Ultra cooling pad directly.

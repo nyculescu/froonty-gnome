@@ -6,10 +6,8 @@
 
 import {IslandMarkdownBlocks} from './renderer/island.js';
 import {IslandMarkdownPreview} from './renderer/preview.js';
-// local:begin notes-math (working-tree only; tools/pack-public strips it)
 import {lineAt} from './render.js';
 import {IslandMath} from '../formulas/notes/island.js';
-// local:end notes-math
 
 export class MarkdownStyler {
     /**
@@ -24,7 +22,6 @@ export class MarkdownStyler {
         this._text = text;
         this._rendered = true;
         text.connect('text-changed', () => this.update());
-        // local:begin notes-math
         // As source, formulas are drawn as pictures, except on the edited
         // line (features/formulas/notes/island.js). The line styled last;
         // null while rendered (no formula attributes).
@@ -40,7 +37,6 @@ export class MarkdownStyler {
             if (entry.get_stage())
                 this._styleMath();
         });
-        // local:end notes-math
         this.blocks = new IslandMarkdownBlocks(entry, {restyle: () => this.update(), folder, note});
         this.preview = new IslandMarkdownPreview(entry, {
             ...options,
@@ -58,9 +54,7 @@ export class MarkdownStyler {
         const text = this._text;
         this.preview.widget.visible = this._rendered;
         this._entry.visible = !this._rendered;
-        // local:begin notes-math
         this._styleMath();
-        // local:end notes-math
         // While hidden, the preview is neither rebuilt nor asks for renders;
         // setRendered(true) brings it up to date.
         if (!this._rendered)
@@ -72,7 +66,6 @@ export class MarkdownStyler {
             Math.max(600, width(this._entry), width(this.preview.widget)));
         this.preview.update(text.text, pictures);
     }
-    // local:begin notes-math
 
     // The source editor's formulas; unless `force`, only when the edited
     // line changed (no key focus: none). Rendered, the formulas' attributes
@@ -98,7 +91,6 @@ export class MarkdownStyler {
         this._line = line;
         text.set_attributes(this.math.attributes(text.text, line));
     }
-    // local:end notes-math
 
     setRendered(rendered) {
         rendered = Boolean(rendered);

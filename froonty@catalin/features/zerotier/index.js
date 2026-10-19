@@ -14,7 +14,7 @@ export default {
         return _('ZeroTier');
     },
     // A getter: no GObject is created when the module loads, before
-    // enable() (extensions.gnome.org review guidelines).
+    // enable() (GNOME's extension guidelines).
     get icon() {
         return zeroTierIcon();
     },

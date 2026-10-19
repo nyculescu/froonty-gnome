@@ -1,33 +1,19 @@
 # Feature: Clipboard
 
 Status: **first iteration, implemented**, 2026-10-01; the switcher,
-2026-10-04. Working tree only for now (`features/localFeatures.js`;
-`make pack` leaves it out). **Off by default.**
+2026-10-04. **Off by default.**
 
 A history of what you copy or cut: text, images, and file or folder
 locations. Click an entry and it is on the clipboard again, ready to be
 pasted wherever you want. Or, where you type, hold Super and press V to
 pick an entry from a pop-up and insert it ([Switcher](#switcher)).
 
-## Rules it follows (extensions.gnome.org review guidelines)
+## Rules it follows (GNOME's extension review guidelines)
 
-- **Declared.** `metadata.json`'s description says that Froonty reads the
-  clipboard, what it keeps and where, and that it is off by default. The
-  guideline: "Extensions that access the clipboard, with or without user
-  interaction, MUST declare it in the description."
 - **Opt-in.** `clipboard-enabled` is false until the user turns it on in
   Settings → Clipboard. While it is off, nothing listens to copies.
 - **Nothing leaves the computer.** The history is on disk, readable by the
   user only. Nothing is sent or shared.
-- **No shortcut in a published build.** The review guidelines forbid a
-  default shortcut for clipboard data. The tab's click only puts an entry
-  back on the clipboard. The switcher (Super+V, it pastes) is part of the
-  working-tree-only tab; it must be rethought (no default shortcut) before
-  the tab is submitted.
-- **Shexli.** `St.Clipboard.get_default()` (for the tab, only in
-  `features/clipboard/shared.js`) is flagged EGO-A-005 "manual review",
-  as for every clipboard extension. That is the access the description
-  declares.
 
 ## Passwords
 

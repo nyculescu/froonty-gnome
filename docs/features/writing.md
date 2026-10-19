@@ -1,9 +1,7 @@
 # Feature: Writing
 
-Status: **implemented for working-tree installs** (`make install`),
-2026-10-02, with the review's fixes the same day (§11). **Off by
-default.** `make pack` leaves it out, with its settings and CSS, and fails
-if any of it reaches the zip (§8).
+Status: **implemented**, 2026-10-02, with the review's fixes the same
+day (§10). **Off by default.**
 
 The Writing tab helps with text: **Fix grammar**, **Shorten**,
 **Formal**, **Humanize** and **Translate**. The
@@ -710,11 +708,11 @@ through `..`, and links inside them are deleted, never followed.
 | `prefs.js` | Settings → Writing |
 | `setup/state.js`, `fs.js` | `setup.json`; private folders, atomic writes, safe deletes |
 | `setup/ollamaInstall.js`, `ollamaModels.js`, `remove.js` | Set up…, models, Remove and Remove everything |
-| `core/subprocess.js` (public) | `stopProcess`, shared with the Claude tab |
-| `core/textScroll.js` (public) | `keepCursorVisible`: the caret of the text box stays in view (shared with Notes) |
-| `core/tooltip.js` (public) | Tooltips; for Writing's long hints a `maxWidth` that wraps them, an `above` side, and a bubble kept inside the bottom edge too. Shared: moving straight from one anchor to another no longer lets the first one's leave hide the second one's bubble |
+| `core/subprocess.js` | `stopProcess`, shared with the Claude tab |
+| `core/textScroll.js` | `keepCursorVisible`: the caret of the text box stays in view (shared with Notes) |
+| `core/tooltip.js` | Tooltips; for Writing's long hints a `maxWidth` that wraps them, an `above` side, and a bubble kept inside the bottom edge too. Shared: moving straight from one anchor to another no longer lets the first one's leave hide the second one's bubble |
 
-Generic, public changes: `ui/island.js` gives features
+Generic changes: `ui/island.js` gives features
 `ctx.openSettings(page)` and `ctx.collapse()`; `prefs.js` shows the page
 named in `prefs-page` (also while the window is open) and empties the key;
 `features/clipboard/shared.js` has `peekRecorder()`, which never creates a
@@ -732,8 +730,7 @@ recorder.
   else they are ignored, except `FROONTY_CLAUDE_CODE`, which stays
   honoured everywhere (§6).
 - `tools/unit/run.sh` gives each run private `XDG_DATA_HOME`,
-  `XDG_CONFIG_HOME`, `XDG_CACHE_HOME` and `XDG_RUNTIME_DIR`, and then runs
-  `tools/pack-public/test_pack_public.py`.
+  `XDG_CONFIG_HOME`, `XDG_CACHE_HOME` and `XDG_RUNTIME_DIR`.
 - **Unit** (`tools/unit/writing-*.test.js`, helpers in
   `writing-helpers.js`): actions and prompts (Fix grammar's B2 and C1
   steps, Translate's two, the writer's language, "Another option"'s
@@ -777,11 +774,6 @@ recorder.
   Remove with your Ollama and with Froonty's, Remove everything (order,
   going on past a failure, `claude project purge`, every `writing-*` key
   reset and nothing else), and `deleteTree`'s refusals.
-- **Leak guard** (`tools/pack-public/test_pack_public.py`): `check_zip.py`
-  passes a clean zip and fails (and deletes the zip) on a local file, a
-  module that lists local features, LanguageTool's address in code,
-  Writing CSS, a key in a binary; `strip_local.py`; and a real
-  `pack-public.sh` run into a temporary folder.
 - **Headless** (`testWriting`): off by default; the empty state and its
   Settings button (the window opens on Writing and empties `prefs-page`);
   Claude Code alone; a rewrite with the exact argv, the private folder, no
@@ -839,44 +831,9 @@ tests nor the development of this feature did:
   click.
 - The 4 GB memory figure for a 3B model is an estimate.
 
-## 10. If it is ever published (extensions.gnome.org)
+## 10. Review fixes (2026-10-02)
 
-- **Remove it from the local-only list:** its import, from
-  `features/localFeatures.js` to `features/registry.js` (and its settings
-  tab from `localPrefs.js` to `prefs.js`); the Writing lines in
-  `tools/pack-public.sh`, `tools/pack-public/` (schema prefixes, CSS
-  block names, `prune.py`'s lists) and `check_zip.py`'s list.
-- **`metadata.json`:** add "Writing tab (off by default): when you click
-  Fix grammar, Shorten, Formal, Humanize or Translate, the text in
-  its box (typed, pasted, or the current Clipboard entry you picked) is sent
-  to the engine named above it: your own Claude Code (Anthropic),
-  LanguageTool's online service, or Ollama on this computer. Nothing is sent
-  otherwise; hidden passwords are never offered." Remove "Nothing is sent
-  anywhere".
-- **Review guidelines** (gjs.guide, read 2026-10-02): clipboard data reaches
-  a third party only on a button click; no default shortcut; no telemetry;
-  no privileged subprocess (Ollama is per user). Downloading Ollama would
-  probably be questioned: ship the instructions only, and leave
-  `setup/ollamaInstall.js` out of a public build.
-- **Anthropic's policy, unresolved.** The Agent SDK overview says: "Unless
-  previously approved, Anthropic does not allow third party developers to
-  offer claude.ai login or rate limits for their products, including agents
-  built on the Claude Agent SDK." (Claude Agent SDK overview, Claude Code docs,
-  read 2026-10-02.) Running your own
-  CLI with your own login on your own computer looks fine; a public build is
-  a gray area this note cannot settle. Check Anthropic's terms first.
-- **LanguageTool:** the visible link and the privacy link are there; "no
-  automated requests" is met by sending only on a click.
-- **Names:** Claude, LanguageTool and Ollama as plain names only; no logos.
-- **Shexli** (2026-10-02), run on a zip packed from the working tree with
-  Writing and ZeroTier included: the same single finding as the public
-  build (EGO-A-005, the Clipboard tab's declared clipboard access). Shexli
-  is automated; a human reviewer may still question the subprocesses and
-  the download above.
-
-## 11. Review fixes (2026-10-02)
-
-An independent review of the first local build confirmed these, all fixed
+An independent review of the first build confirmed these, all fixed
 the same day:
 
 - The hidden password, pasted with Ctrl+V, could reach a cloud engine when

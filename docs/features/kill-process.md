@@ -6,9 +6,8 @@ request); after its review, the keyboard and the pointer kept apart, a
 row out of sight never acted on, readings in batches, and processes
 whose main thread exited listed. 2026-10-03: the core desktop services
 protected too (GNOME's settings daemon, IBus, the accessibility bus,
-mutter's X11 frames; user's question, see the safety rules). Working
-tree only (`features/localFeatures.js`; `make pack` leaves it out).
-**Off by default.**
+mutter's X11 frames; user's question, see the safety rules). **Off by
+default.**
 
 All of your own processes, sorted by CPU load, memory or threads, with a
 button to kill each. It is for the moment an app hangs or something eats

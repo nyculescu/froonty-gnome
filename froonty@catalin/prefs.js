@@ -15,9 +15,7 @@ import {
 // features/registry.js: that loads Shell-side modules this process cannot.)
 import {attachAllNotes} from './features/notes/allNotesPage.js';
 import {notesPage} from './features/notes/prefs.js';
-// local:begin local-features (working-tree only; tools/pack-public strips it)
-import {addLocalIconPaths, addLocalPrefs} from './features/localPrefs.js';
-// local:end local-features
+import {addFeatureIconPaths, featurePages} from './features/pages.js';
 import {panicPage} from './panic/prefs.js';
 import {choiceRow, spinRow, switchRow} from './prefs/rows.js';
 
@@ -33,11 +31,9 @@ export default class FroontyPreferences extends ExtensionPreferences {
         const settings = this.getSettings();
         // Keep the settings object alive as long as the window.
         window._settings = settings;
-        // local:begin local-features
         // Bundled icons used in feature tabs and preferences (some also by
         // the Panic buttons page).
-        addLocalIconPaths();
-        // local:end local-features
+        addFeatureIconPaths();
 
         const pageStack = new Gtk.Stack({
             hexpand: true,
@@ -50,10 +46,8 @@ export default class FroontyPreferences extends ExtensionPreferences {
             panicPage(settings),
             // Feature pages in the hub's tab order (features/registry.js).
             notesPage(settings),
+            ...featurePages(window, settings, pageStack),
         ];
-        // local:begin local-features
-        pages.push(...addLocalPrefs(window, settings, pageStack));
-        // local:end local-features
 
         const pageRows = new Map();
         const sidebar = new Gtk.ListBox({

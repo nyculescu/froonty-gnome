@@ -1,7 +1,0 @@
-A compact Dynamic-Island-style entry point at the top center of the screen that reuses GNOME Shell's own clock, calendar and notifications. It takes the place of the top bar clock, which it makes transparent while the pill is shown (a setting turns this off).
-
-Click the pill, rest the pointer on it, or press the shortcut to open it. Its top row shows the date and the time in a small pill: a click on it closes the island and opens GNOME's own calendar and notification menu (the pill shows GNOME's dot for unread notifications). The same row has panic buttons that mute the microphone or the sound.
-
-Below them is the Notes tab: Markdown notes, kept as plain files in a folder you choose (~/.local/share/froonty/notes by default), with labels and a window to search them all. Tables, local images and Mermaid diagrams render offline when WebKitGTK is installed. It can be turned off in Settings.
-
-Froonty makes no network requests of its own.

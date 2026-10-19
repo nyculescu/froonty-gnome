@@ -58,9 +58,9 @@ read-only view):
 
 - **Two modes.** Rendered (the default) shows the note formatted, to read
   and copy; the file stays plain Markdown. The `MD` button switches to the
-  literal Markdown source (in the island of working-tree builds, with
-  formulas drawn: "Formulas" below), where the whole note is edited raw
-  (typing, the formatting buttons, Insert image). Rendered, a part of the
+  literal Markdown source (in the island, with formulas drawn: "Formulas"
+  below), where the whole note is edited raw (typing, the formatting
+  buttons, Insert image). Rendered, a part of the
   note can be edited in place and a table as a grid ("Editing in place"
   below). While rendered, the formatting buttons are insensitive (`MD` and
   Wrap still work) and the hidden source never takes the key focus. The choice is shared by both Notes editors
@@ -365,12 +365,11 @@ it is below.
 - **Pasting images** into the Markdown source or a part being edited, as
   above.
 
-## Formulas (2026-10-05, working-tree builds only)
+## Formulas (2026-10-05)
 
 Agreed with the user on 2026-10-03: the notes hold formulas for a PhD, and
 `$…$` and `$$…$$` should show as rendered math in both editors, as in
-Obsidian's live preview. Local builds only (MathJax is there already, for
-the Formulas tab); the published Notes tab is unchanged.
+Obsidian's live preview. MathJax is there already, for the Formulas tab.
 
 ### What shows
 
@@ -516,18 +515,6 @@ buffer were ruled out. Evaluated (Broadway prototype, 2026-10-05):
   restyle. A formula keeps its picture while the text around it changes.
 - Restyling is synchronous as before (the parse is a pass over the
   note); placing pictures waits for layout (a later, an idle).
-
-### Public build
-
-`render.js`, `styler.js`, `view.js` and `allNotesStyler.js` hold the math
-path in `local:begin notes-math` blocks, which `tools/pack-public.sh`
-strips (`strip_local.py --several`); `features/formulas` (with `notes/`)
-is deleted, and `check_zip.py` fails on `formulas/notes`, `mathSpans`,
-`mathMarkdownSpans`, `IslandMath`, `WindowMath` or `notes-math` in the
-zip. After stripping, `render.js`, `styler.js` and `view.js` have no
-formula code (the island's source editor has no attributes at all), and
-`allNotesStyler.js` keeps its `_spans()` method, which then returns
-`markdownSpans()`.
 
 ### Tests
 

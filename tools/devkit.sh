@@ -12,10 +12,8 @@
 # The sandbox lives in ~/.cache/froonty-devkit and is kept between runs
 # (your test notes, settings, …). Close the window to stop.
 #
-# Usage: tools/devkit.sh [--reset] [--public] [--system-bus]
+# Usage: tools/devkit.sh [--reset] [--system-bus]
 #          --reset   start from an empty sandbox
-#          --public  run the `make pack` build (what extensions.gnome.org gets)
-#                    instead of the working tree
 #          --system-bus  reach your real system bus, filtered to
 #                    SYSTEM_BUS_NAMES (asusd: the Fan settings page's laptop
 #                    profile and curves). It acts on this computer: a profile
@@ -134,11 +132,10 @@ release_runtime() {
 }
 release_runtime
 
-RESET= PUBLIC= SYSTEM_BUS=
+RESET= SYSTEM_BUS=
 for arg in "$@"; do
     case "$arg" in
     --reset) RESET=1 ;;
-    --public) PUBLIC=1 ;;
     --system-bus) SYSTEM_BUS=1 ;;
     *) echo "unknown option $arg" >&2; exit 2 ;;
     esac
@@ -203,17 +200,8 @@ CONF
 
 EXTENSION="$XDG_DATA_HOME/gnome-shell/extensions/$UUID"
 rm -rf "$EXTENSION"
-if [[ -n "$PUBLIC" ]]; then
-    PACK=$SANDBOX/pack
-    rm -rf "$PACK"
-    mkdir -p "$PACK/zip" "$EXTENSION"
-    PACK_OUT_DIR=$PACK/zip make -C "$REPO" --no-print-directory pack
-    (cd "$EXTENSION" && unzip -q "$PACK/zip/$UUID.shell-extension.zip")
-    /usr/bin/glib-compile-schemas --strict "$EXTENSION/schemas"
-else
-    make -C "$REPO" --no-print-directory schemas >/dev/null
-    ln -s "$REPO/$UUID" "$EXTENSION"
-fi
+make -C "$REPO" --no-print-directory schemas >/dev/null
+ln -s "$REPO/$UUID" "$EXTENSION"
 
 # First run only: Froonty on, GNOME's welcome tour off. Later runs keep
 # what you changed in the sandbox.

@@ -13,7 +13,7 @@ export default {
         return _('Btop');
     },
     // A getter: no GObject is created when the module loads, before
-    // enable() (extensions.gnome.org review guidelines).
+    // enable() (GNOME's extension guidelines).
     get icon() {
         return btopIcon();
     },

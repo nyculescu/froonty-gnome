@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// The settings pages of the local features (including Fan, which is not a
+// The features' settings pages after Notes (including Fan, which is not a
 // hub tab), in their navigation order, then Brightness and Time zones
-// (parts, not tabs). tools/pack-public strips the imports of this file and
-// leaves it out.
+// (parts, not tabs). Notes' page is made in prefs.js.
 
 import {addIconPath as addBreakIconPath, breakPage} from './break/prefs.js';
 import {brightnessPage} from './brightness/prefs.js';
@@ -19,21 +18,21 @@ import {writingPage} from './writing/prefs.js';
 import {addIconPath as addZeroTierIconPath, zeroTierPage} from './zerotier/prefs.js';
 
 /** Their bundled icons, also used by the Panic buttons page. */
-export function addLocalIconPaths() {
+export function addFeatureIconPaths() {
     addClaudeIconPath();
     addBreakIconPath();
     addZeroTierIconPath();
 }
 
 /**
- * Creates the local features' settings pages.
+ * Creates the features' settings pages.
  *
  * @param {Adw.PreferencesWindow} window
  * @param {Gio.Settings} settings
  * @param {Gtk.Stack} pageStack settings pages, used to track the active page
  * @returns {Adw.PreferencesPage[]}
  */
-export function addLocalPrefs(window, settings, pageStack) {
+export function featurePages(window, settings, pageStack) {
     const pages = [
         mediaPage(settings),
         claudePage(settings),
@@ -46,7 +45,7 @@ export function addLocalPrefs(window, settings, pageStack) {
         localSendPage(settings),
         writingPage(settings, window),
         formulasPage(settings),
-        // Not hub tabs (localFeatures.js, LOCAL_PARTS).
+        // Not hub tabs (PARTS in registry.js).
         brightnessPage(settings),
         timezonesPage(settings),
     ];

@@ -1,6 +1,6 @@
 # Feature: Fan settings
 
-Status: **implemented for local builds; not included in `make pack`.**
+Status: **implemented.**
 
 Fan controls and telemetry live on **Froonty → Settings → Fan**; there is no
 Fan button in the island's left rail. The fan icon beside the Quick Settings

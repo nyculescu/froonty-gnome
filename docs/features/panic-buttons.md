@@ -83,7 +83,7 @@ island opens, follows it while the island stays open, and does nothing while
 the island is collapsed. The bar tells its buttons when the hub is shown
 (`setActive`, optional on a button).
 
-Added 2026-10-04, off by default, local builds only:
+Added 2026-10-04, off by default:
 
 | Id | What it shows | A click |
 |---|---|---|
@@ -99,8 +99,8 @@ tooltip spell out the current reading and unit.
 ## 4. Block camera for apps that ask GNOME
 
 **Switched off for now (2026-10-02).** The entry is commented out in
-`panic/localCatalog.js`, so the button is not offered and a saved bar drops it;
-the code below is kept. The local-only hardware block (§4.4) lives on the
+`panic/catalog.js`, so the button is not offered and a saved bar drops it;
+the code below is kept. The hardware block (§4.4) lives on the
 branch `worktree-agent-a74e6dd1bcb4ed20e` and is not merged.
 
 
@@ -200,9 +200,6 @@ panic/catalog.js    pure: ids, icons, titles, descriptions, MAX 8,
                     date pill, the right one more when odd); shared by the Shell and the
                     settings window (unit-tested)
 panic/registry.js   Shell side: id → button factory
-panic/localCatalog.js, panic/localFactories.js
-                    the local builds' entries and factories (tools/pack-public
-                    strips their imports and leaves both out)
 panic/audioMute.js  the two mute buttons (input/output)
 panic/claudeSession.js  Claude session or weekly usage (reuses features/claude)
 panic/cpuLoad.js    System resource load: CPU, GPU or RAM
@@ -223,8 +220,7 @@ core/tooltip.js     hover bubble, shared by the hub tabs and Notes tabs
 ```
 
 **Adding a panic button:** add an entry in `catalog.js` and a factory in
-`registry.js` (for a local-only one, in `localCatalog.js` and
-`localFactories.js`). It then appears under "Available" in Settings.
+`registry.js`. It then appears under "Available" in Settings.
 
 ## 6. Tests
 

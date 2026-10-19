@@ -13,9 +13,7 @@ import St from 'gi://St';
 
 import {panicGroups, sanitize} from '../panic/catalog.js';
 import {createPanicButton} from '../panic/registry.js';
-// local:begin local-features (working-tree only; tools/pack-public strips it)
 import {PanicMetricsService} from '../features/sysmon/panicMetrics.js';
-// local:end local-features
 
 const KEY = 'panic-buttons';
 
@@ -88,10 +86,8 @@ export class PanicBar {
         this._buttons = [];
         this._shown = false;
         this._metrics = null;
-        // local:begin local-features
         this._metrics = new PanicMetricsService(settings);
         this._metrics.start();
-        // local:end local-features
         // Hidden while empty: no spacing for nothing.
         this.groups = [true, false].map(leading => new St.Widget({
             style_class: 'froonty-panic-bar',

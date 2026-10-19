@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Writing tab: fix grammar, shorten, make formal, humanize or translate
 // text, with Claude Code, LanguageTool or Ollama
-// (docs/features/writing.md). Working-tree builds only: `make pack` leaves
-// it out.
+// (docs/features/writing.md).
 
 import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 

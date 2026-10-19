@@ -1,9 +1,6 @@
 # Feature: Formulas
 
-Status: **implemented for working-tree installs** (`make install`),
-2026-10-04. On by default there. `make pack` leaves it out, with its
-settings, CSS and every MathJax file, and fails if any of it reaches the
-zip (§7).
+Status: **implemented**, 2026-10-04. On by default.
 
 The Formulas tab is for writing LaTeX formulas: an editor with a rendered
 preview, symbol palettes searchable by name, templates, recent and starred
@@ -93,7 +90,7 @@ cursor does.
 
 Labels, titles and guide texts are English in the data and translated by
 the view, as the Writing tab's actions are. A unit test renders every
-symbol, template and guide example with the real MathJax (§8), so a
+symbol, template and guide example with the real MathJax (§7), so a
 palette entry MathJax does not know fails the build. (`\div` is the
 physics package's divergence, so ÷ is not in the palettes.)
 
@@ -260,7 +257,7 @@ replaces the installed copy.
 | `notes/window.js` | Formulas in the All notes window's editor (tags, overlays) |
 | `tools/fetch-mathjax.py` | The fetch (§3.1) |
 
-Generic, public changes: `ui/hub.js` has `viewOf(id)` (an opened tab's
+Generic changes: `ui/hub.js` has `viewOf(id)` (an opened tab's
 view, never creating one); `ui/island.js` gives features
 `ctx.featureView(id)`; `features/notes/view.js` has `insertText(text)`,
 which puts text at the open note's cursor without taking the key focus.
@@ -272,26 +269,7 @@ Settings keys: `formulas-enabled` (true), `formulas-display` (true),
 Icon: the theme's `accessories-calculator-symbolic` (Adwaita's legacy set,
 Yaru).
 
-## 7. The public build
-
-- `features/localFeatures.js` and `features/localPrefs.js` list it.
-- `tools/pack-public.sh` deletes `features/formulas` and
-  `third_party/mathjax` from the staged copy and strips the
-  `local:begin formulas` CSS block; `strip-local-schema.py` removes the
-  `formulas-*` keys (and requires `formulas-enabled`); `prune.py` knows
-  the prefix, the `froonty-formulas` classes and the folder.
-- `check_zip.py` fails on any file under `features/formulas/` or
-  `third_party/`, and on `features/formulas`, `formulas-enabled`,
-  `froonty-formulas`, `MathJax` or `mathjax` anywhere in the zip.
-- The Makefile leaves `third_party` out of `--extra-source`.
-- Formulas in notes: the Notes modules' `local:begin notes-math` blocks
-  are stripped (docs/features/notes.md, "Public build"), and
-  `check_zip.py` fails on `formulas/notes`, `mathSpans`,
-  `mathMarkdownSpans`, `IslandMath`, `WindowMath` or `notes-math`.
-- `tools/unit/modules-parse.test.js` skips `third_party/` (vendored code;
-  importing it would run it).
-
-## 8. Tests
+## 7. Tests
 
 - `tools/unit/formulas-data.test.js`: palettes and search, templates,
   guide, insertion at the cursor, copy formats, the lists.
@@ -306,8 +284,8 @@ Yaru).
   loaded glyphs, every palette entry,
   template and guide example, the protocol through the client, the
   missing-tree reply, speed.
-- `tools/pack-public/test_pack_public.py`: the leak guard on MathJax and
-  Formulas files and strings, the CSS prune, the real pack.
+- `tools/unit/modules-parse.test.js` skips `third_party/` (vendored code;
+  importing it would run it).
 - Headless (`FROONTY_TEST_ONLY=testFormulas`): the tab opens at its size
   with the editor focused, no helper before the first formula, typing
   renders through one helper process, MathJax's errors, palette search
@@ -316,7 +294,7 @@ Yaru).
   message, and disable: the helper gone and the Shell's footprint as
   before. The 25-cycle lifecycle check runs with the tab on.
 
-## 9. Not verified
+## 8. Not verified
 
 - Fractional scaling: with the monitor framebuffer scaled, the Shell's
   scale factor is 1 and the preview is drawn at 1×, so it may look soft.

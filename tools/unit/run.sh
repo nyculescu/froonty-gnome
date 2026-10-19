@@ -7,8 +7,8 @@
 # trashed test files (Gio puts them in $XDG_DATA_HOME/Trash when on the
 # home file system) never reach the real ~/.local/share/Trash, and no test
 # can touch the real ~/.config/systemd/user or Froonty's real folders. The
-# root is deleted afterwards. Then the public build's leak-guard tests
-# (tools/pack-public/test_pack_public.py) run too.
+# root is deleted afterwards. The Python helpers' tests (test_*.py) run
+# too.
 #
 # GTK tests (*.gtk.test.js: pages of the settings window) get a display of
 # their own: a private Broadway server (GTK's HTML5 backend, from GTK's
@@ -107,7 +107,7 @@ run_one() {
 }
 
 TESTS=() PARTS=()
-for t in "$HERE"/*.test.js "$HERE"/test_*.py "$HERE/../pack-public/test_pack_public.py"; do
+for t in "$HERE"/*.test.js "$HERE"/test_*.py; do
     n=1
     [[ "$t" == *.gtk.test.js ]] && n=$GTK_SHARDS
     for (( k = 0; k < n; k++ )); do

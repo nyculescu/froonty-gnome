@@ -115,7 +115,7 @@ Claude Code runs `features/claude/attentionHook.js` with `gjs` in exec form
 /usr/bin/gjs -m <extension>/features/claude/attentionHook.js notification|stop|stop-failure
 ```
 
-It is GJS, as the extensions.gnome.org guidelines ask for scripts. It never
+It is GJS, as GNOME's extension review guidelines ask for scripts. It never
 prints to stdout (an async hook's JSON output would reach Claude) and always
 exits 0. In order:
 
@@ -387,8 +387,8 @@ The Claude app and browser entries come through the adapter and store
 the Notifications tab had (`shell/messageTray.js` `gnomeNotifications()`,
 `shell/notificationStore.js`), so the message tray's private objects stay
 in one place. The tab was removed (the date pill opens GNOME's own list);
-the bar is now the only user of both modules, which the public package
-leaves out, and the store keeps only what the bar uses:
+the bar is now the only user of both modules, and the store keeps only
+what the bar uses:
 
 - `createStore(options)` passes `{filter}` on to the store, and the store
   skips a source the filter turns down in `_addSource()`: such a source

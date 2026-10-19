@@ -6,11 +6,8 @@ facilities GNOME Shell already has. It does not reimplement them.
 
 Status: **0.11.0-rc0**, a release candidate. See [CHANGELOG.md](CHANGELOG.md).
 
-- The published extension package (`make pack`, extensions.gnome.org)
-  has the first submission's tab only, Notes, with the date pill and the
-  mute panic buttons. Media, Claude, Btop, Clipboard,
-  Kill Process, Break and Software brightness follow in later versions; ZeroTier, Writing and
-  Formulas stay working-tree only. `make install` includes them all.
+- Froonty is installed from this repository with `make install`. It is
+  not published on extensions.gnome.org.
 - The polling timers are the Btop (system monitor) and Kill Process
   tabs', each running only while its tab is on screen; the Media tab's
   display tick (it reads nothing) runs only while the tab is on screen
@@ -18,9 +15,9 @@ Status: **0.11.0-rc0**, a release candidate. See [CHANGELOG.md](CHANGELOG.md).
   default: the Claude tab's livenerf row fetches two public files from
   GitHub, at most once an hour while the tab is open. Two Media options,
   off by default, use the internet: covers a player gives as a web
-  address, and lyrics from lrclib.net. In local builds only, the Writing
-  tab (off by default) runs your Claude Code or calls LanguageTool or a
-  local Ollama when you click one of its actions.
+  address, and lyrics from lrclib.net. The Writing tab (off by default)
+  runs your Claude Code or calls LanguageTool or a local Ollama when you
+  click one of its actions.
 - GJS and GNOME APIs; WebKitGTK runs separately for offline Notes rendering.
 
 See [docs/DESIGN.md](docs/DESIGN.md) for the GNOME Shell API analysis (written for 46; see the note there), the list
@@ -111,10 +108,10 @@ feature has a design note in [docs/features/](docs/features/).
     window: search them all, filter by labels (all of them, or any), and
     read or edit them there, drawn rendered and with the same formatting
     bar as the island.
-  - Formulas (working-tree installs only): `$…$` and `$$…$$` show as
+  - Formulas: `$…$` and `$$…$$` show as
     rendered math in both editors, off the line being edited; that line
     shows the LaTeX. The files stay plain Markdown. See
-    [docs/features/notes.md](docs/features/notes.md#formulas-2026-10-05-working-tree-builds-only).
+    [docs/features/notes.md](docs/features/notes.md#formulas-2026-10-05).
 - **Claude** tab: your Claude plan's usage (Session, Weekly, Weekly Fable)
   and when each resets, as Claude Code last checked it.
   - It is read from Claude Code's own config file each time the tab opens.
@@ -198,26 +195,26 @@ feature has a design note in [docs/features/](docs/features/).
     "Just the minimum today"), and a reminder to switch.
   - **Today's totals and a history**, on this computer only. See
     [docs/features/break.md](docs/features/break.md).
-- **ZeroTier** tab (working-tree installs only): whether ZeroTier runs,
+- **ZeroTier** tab: whether ZeroTier runs,
   starts with the computer and reaches its network, and how each joined
   network is doing, with Start/Stop. Networks are managed in ZeroTier
   itself. Turned off on the first start when ZeroTier is not installed;
   see [docs/features/zerotier.md](docs/features/zerotier.md).
-- **LocalSend** tab (working-tree installs only, off by default): files and
+- **LocalSend** tab (off by default): files and
   text between this computer and the LocalSend app on a phone, over Wi-Fi
   or wired networks and optionally ZeroTier, each transfer accepted in a
   notification; see [docs/features/localsend.md](docs/features/localsend.md).
-- **Writing** tab (working-tree installs only, off by default):
+- **Writing** tab (off by default):
   Fix grammar (a B2 and a C1 version), Shorten, Formal, Humanize and
   Translate (with its idioms), with the engines you switch
   on, and Another option for other wording; see
-  [Working-tree only](#working-tree-only-make-install).
-- **Formulas** tab (working-tree installs only): LaTeX with a rendered
+  [ZeroTier, Writing and Formulas](#zerotier-writing-and-formulas).
+- **Formulas** tab: LaTeX with a rendered
   preview, symbols searchable by name (`alpha`, `approx`), templates,
   recent and starred formulas and a short guide; copy as `$…$` or `$$…$$`,
   or put it into the open note. Drawn on this computer by MathJax, in a
-  helper process; see [Working-tree only](#working-tree-only-make-install).
-- **Software brightness** (working-tree installs only, off by default;
+  helper process; see [ZeroTier, Writing and Formulas](#zerotier-writing-and-formulas).
+- **Software brightness** (off by default;
   Settings → Brightness): a second brightness slider in Quick Settings,
   under GNOME's, for monitors whose brightness GNOME cannot set (no
   DDC/CI, as some Samsung Smart Monitors). It darkens the chosen monitors
@@ -227,18 +224,18 @@ feature has a design note in [docs/features/](docs/features/).
   to open Brightness settings. Software dimming only: the backlight, and
   its power use, stay as they are. See
   [docs/features/brightness.md](docs/features/brightness.md).
-- **Pad noise slider** (working-tree installs only, on by default; Settings
+- **Pad noise slider** (on by default; Settings
   → Fan): continuously adjusts the connected llano pad from near-silent to
   its maximum speed, with colored noise-stage markers. See
   [docs/features/pad-noise-slider.md](docs/features/pad-noise-slider.md).
-- **Time zone planner** (working-tree installs only): add any number of
+- **Time zone planner**: add any number of
   cities in Settings → Time zones, and mark up to two favourites. Their
   current hours appear on the Quick Settings button. Click it for a
   Vancouver-based planner, whose slider compares your favourites across a
   24-hour window centered on now. Dublin and Timisoara are the defaults.
   See
   [docs/features/timezone-planner.md](docs/features/timezone-planner.md).
-- **Fan settings** (working-tree installs only): Settings → Fan has pad
+- **Fan settings**: Settings → Fan has pad
   controls, including Lock off, Release, Off and Recommended / Apply, plus
   ASUS laptop fan controls. The fan icon beside the Quick Settings slider
   opens those settings.
@@ -291,13 +288,10 @@ Each tab can be turned off on its own page in Settings.
   settings as you left them. GNOME extensions cannot run code on
   uninstall.
 
-The tabs that are not in the published package yet (Media, Claude, Btop,
-Clipboard, Kill Process, Break; ZeroTier, Writing and Formulas stay
-working-tree only) say what they need in Settings, and in their design
-notes under [docs/features/](docs/features/).
+The other tabs say what they need in Settings, and in their design notes
+under [docs/features/](docs/features/).
 
-Working-tree installs also need, for the Formulas tab's previews and the
-formulas in notes, MathJax:
+The Formulas tab's previews and the formulas in notes need MathJax:
 `make install` fetches it once when it is missing (`make mathjax` does it
 on demand), with `python3` and an internet connection, from the npm
 registry: four official Apache-2.0 packages (`@mathjax/src`, its
@@ -334,7 +328,10 @@ froonty@catalin/             the extension (this directory is what gets installe
 │   ├── panicBar.js          up to 8 panic buttons, in two groups
 │   ├── hoverOpen.js         opens the island after hovering it
 │   └── panelLauncher.js     top bar icon while the island is not shown
-├── features/                hub tabs, one folder each (registry.js lists them)
+├── features/                hub tabs, one folder each
+│   ├── registry.js          every feature (FEATURES) and the parts that are
+│   │                        not tabs (PARTS)
+│   ├── pages.js             the features' settings pages
 │   ├── media/               MPRIS players: watcher, service, tab, pill music,
 │   │                        lyrics, up next
 │   ├── notes/               Markdown notes: store, service, tabs, editor,
@@ -371,7 +368,7 @@ froonty@catalin/             the extension (this directory is what gets installe
 │                            privateFile.js, subprocess.js, textScroll.js
 ├── services/clock.js        clock ticks from the top bar's GnomeDesktop.WallClock
 ├── third_party/mathjax/     MathJax for the Formulas tab, fetched by
-│                            tools/fetch-mathjax.py (not in git, not packed)
+│                            tools/fetch-mathjax.py (not in git)
 └── shell/                   adapters over GNOME Shell APIs
     ├── dateMenu.js          the clock, GNOME's calendar and notification menu
     ├── messageTray.js       GNOME's notifications for the Claude attention bar
@@ -384,7 +381,7 @@ froonty@catalin/             the extension (this directory is what gets installe
     └── settingsWindow.js    opens or raises the settings window (or its
                              All notes page)
 third_party/livenerf/        git submodule: the benchmark behind the Claude
-                             tab's Opus 5.5 row (not installed or packed)
+                             tab's Opus 5.5 row (not installed)
 tools/headless-test/         isolated headless GNOME Shell test harness
 tools/unit/                  plain-gjs unit tests
 docs/DESIGN.md               GNOME Shell API analysis, private APIs, risks
@@ -398,15 +395,14 @@ docs/local/                  local notes and build rules (not in git)
 make install    # compiles schemas, fetches MathJax if missing, copies into
                 # ~/.local/share/gnome-shell/extensions
 make mathjax    # (re)fetches the Formulas tab's MathJax (tools/fetch-mathjax.py)
-make pack       # builds the public archive: the first submission's tab only
 ```
 
 To try Froonty without installing it or touching your session, `make
 devkit` opens a GNOME Shell 50 in a window on your desktop (needs `sudo
 apt install mutter-dev-bin`), isolated as the headless tests are: its own
 D-Bus, settings, data and a virtual speaker and microphone; your notes,
-calendars, extensions, drives and Claude account are not seen. `make
-devkit-public` runs the `make pack` build instead. The sandbox is kept in
+calendars, extensions, drives and Claude account are not seen. The
+sandbox is kept in
 `~/.cache/froonty-devkit` between runs (`tools/devkit.sh --reset` empties
 it); `tools/devkit.sh run notify-send Hello` sends it a notification.
 
@@ -416,27 +412,12 @@ after each change.
 
 GNOME Shell only discovers new extensions at startup: log out and back in.
 
-`make pack` stages a copy without the `// local:begin local-features`
-… `// local:end local-features` blocks (`tools/pack-public/strip_local.py`):
-the imports and uses of `features/localFeatures.js`,
-`features/localPrefs.js`, `panic/localCatalog.js` and
-`panic/localFactories.js`. It then keeps only the modules `extension.js`
-and `prefs.js` still reach (with the icons of the kept tabs), the
-remaining features' settings keys and CSS (`tools/pack-public/prune.py`),
-and the public description (`tools/pack-public/description.txt`). It
-checks the zip (`tools/pack-public/check_zip.py`): any trace of a
-left-out tab deletes the zip and fails the build. A feature goes public
-by moving its import from `localFeatures.js` to `features/registry.js`
-(and its settings tab from `localPrefs.js` to `prefs.js`), and out of
-the lists in `tools/pack-public/prune.py` and `check_zip.py`.
-
 Then run:
 
 ```sh
 gnome-extensions enable froonty@catalin
 gnome-extensions prefs froonty@catalin
 make log        # follow GNOME Shell's journal
-make pack       # build dist/froonty@catalin.shell-extension.zip
 ```
 
 ## Test
@@ -520,8 +501,8 @@ The keys behind it:
 | `corner-radius` | 14 | Clamped to half the height by St |
 | `animation-duration` | 250 ms | GNOME's enable-animations setting still applies |
 | `panic-buttons` | microphone, sound | Panic buttons in bar order, at most 8 (half on each side of the date pill, the right side one more when odd) |
-| `timezone-planner-cities` | Dublin, Timisoara | Saved city names and IANA timezone IDs (local builds) |
-| `timezone-planner-favorites` | Dublin, Timisoara | Up to two city timezones shown on the Quick Settings button (local builds) |
+| `timezone-planner-cities` | Dublin, Timisoara | Saved city names and IANA timezone IDs |
+| `timezone-planner-favorites` | Dublin, Timisoara | Up to two city timezones shown on the Quick Settings button |
 | `media-enabled` | `true` | Show the Media tab |
 | `media-show-in-pill` / `media-track-notice` | `true` | Cover and bars beside the time while music plays; a new song's title for 3 s |
 | `media-include-other-players` | `true` | Follow browsers and video players automatically (off: only when chosen) |
@@ -535,7 +516,7 @@ The keys behind it:
 | `claude-enabled` | `true` | Show the Claude tab |
 | `zerotier-enabled` | `true` | Show the ZeroTier tab |
 | `zerotier-install-checked` | `false` | ZeroTier's installation was checked on the first start (internal) |
-| `localsend-enabled` | `false` | Show the LocalSend tab and run its helper (local builds) |
+| `localsend-enabled` | `false` | Show the LocalSend tab and run its helper |
 | `localsend-visible` | `true` | Visible to other LocalSend devices (the tab's Hide/Show) |
 | `localsend-pin-first` | `true` | A new LocalSend device enters a one-time PIN shown by Froonty first |
 | `localsend-auto-accept` | `true` | Accept from trusted devices without asking, over trusted networks |
@@ -547,7 +528,7 @@ The keys behind it:
 | `localsend-folder` | `''` | Folder for received files; empty: Downloads/LocalSend |
 | `localsend-zerotier` | `true` | Also listen on ZeroTier interfaces |
 | `localsend-port` | `53317` | LocalSend's TCP and UDP port |
-| `writing-enabled` | `false` | Show the Writing tab (local builds) |
+| `writing-enabled` | `false` | Show the Writing tab |
 | `writing-claude-code-enabled` / `writing-languagetool-enabled` / `writing-ollama-enabled` | `false` | Offer that engine in the Writing tab; off, it is not in the tab at all |
 | `writing-engine` | `claude-code` | Engine chosen last in the tab |
 | `writing-claude-code-model` | `haiku` | `haiku` or `sonnet` (low effort) |
@@ -557,11 +538,11 @@ The keys behind it:
 | `writing-first-language` | `ro` | The writer's first language, named to the models (`en`: none) |
 | `writing-translate-from` / `writing-translate-to` | `ro` / `en` | Translate's languages, kept from the tab (`auto`: any language) |
 | `writing-width` / `writing-height` | 460 / 540 | The island's size on the Writing tab |
-| `formulas-enabled` | `true` | Show the Formulas tab (local builds) |
+| `formulas-enabled` | `true` | Show the Formulas tab |
 | `formulas-display` | `true` | Preview as a formula on its own line (`$$…$$`); off, as inside a line |
 | `formulas-recent` / `formulas-favorites` | `[]` | The last 20 formulas used; starred ones (at most 100) |
 | `formulas-width` / `formulas-height` | 500 / 560 | The island's size on the Formulas tab |
-| `brightness-enabled` | `false` | Software brightness: its slider in Quick Settings (local builds) |
+| `brightness-enabled` | `false` | Software brightness: its slider in Quick Settings |
 | `brightness-level` / `brightness-min` | 100 / 10 | Its level and the slider's left end, in percent |
 | `brightness-monitors` | `external` | `external` (all but a built-in screen), `built-in` or `all` |
 | `brightness-warmth` | `0` | Optional warm tint strength, 0-100 (maximum opacity 25%) |
@@ -579,9 +560,7 @@ The keys behind it:
 | `hub-last-tab` | `notes` | The tab the island opens on (internal); when it is gone or off, the first tab that is on |
 | `notes-last` | | Remembered selection (internal) |
 
-## Working-tree only (`make install`)
-
-Three tabs are in local builds only:
+## ZeroTier, Writing and Formulas
 
 - **ZeroTier**: see [docs/features/zerotier.md](docs/features/zerotier.md).
 - **Writing** (off by default): Fix grammar (B2 and C1
@@ -655,7 +634,7 @@ Apache-2.0, copyright The MathJax Consortium) and its New Computer Modern
 font and mhchem font extension, and **mhchemParser** (Apache-2.0, Martin
 Hensel), fetched from the npm registry by `tools/fetch-mathjax.py` into a
 folder outside git, with their licence files; they are not in the
-repository or the published package.
+repository.
 
 Copyright (C) 2026 Catalin Niculescu.
 

@@ -1,4 +1,5 @@
 froonty@catalin/schemas/gschemas.compiled
+# Packages built by the old public build (make pack), if any are left
 dist/
 
 # Ignore all files in the docs/local/ directory
@@ -7,7 +8,7 @@ docs/local/
 # Logo artwork (kept out of the repository)
 logo/
 
-# Python bytecode (tools/pack-public tests)
+# Python bytecode (the Python helpers' tests)
 __pycache__/
 
 # The Formulas tab's renderer, fetched by tools/fetch-mathjax.py (make mathjax)

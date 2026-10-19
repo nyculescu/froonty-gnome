@@ -7,7 +7,7 @@ Usage: fetch-break-art.py [EXTENSION_DIR]   (default: froonty@catalin)
 The pictures are WorkoutLabs' (https://workoutlabs.com/exercise-guide/),
 all rights reserved by WorkoutLabs: they are fetched to this computer only,
 into EXTENSION_DIR/third_party/break-art/ (git-ignored; `make install`
-copies it, `make pack` leaves it out), never committed or published.
+copies it), never committed.
 Without them the Break tab shows Workrave's pictures or none.
 
 What is fetched: for each move of features/break/exercises/catalog.json

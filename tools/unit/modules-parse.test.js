@@ -3,8 +3,7 @@
 // wrong, a stray line) fails here instead of as an "Extension Error"
 // window in the Shell. Imports that only resolve inside the Shell or the
 // settings process (resource:///…) are expected to fail to link here;
-// only a SyntaxError counts. FROONTY_PARSE_ROOT names another copy (the
-// public package, unzipped, in tools/pack-public/test_pack_public.py).
+// only a SyntaxError counts. FROONTY_PARSE_ROOT names another copy.
 // third_party/ (fetched code) is left out. The helper programs (helper.js,
 // *-helper.js: spawned with `gjs -m`, and one opens a file chooser as soon
 // as it runs) are only parsed (Reflect.parse), never run.

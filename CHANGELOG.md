@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Froonty is no longer published on extensions.gnome.org: it is
+  installed from this repository with `make install`. The public build
+  is gone (`make pack`, `make devkit-public`, tools/pack-public and its
+  checks), and so is the split between published and local features:
+  every tab, part and panic button is listed in one place
+  (features/registry.js, features/pages.js, panic/catalog.js and
+  panic/registry.js).
+
 ## 0.11.0-rc0 (2026-10-18)
 
 First release candidate of 0.11.0, for GNOME Shell 50 on Ubuntu 26.04

@@ -7,7 +7,7 @@ Usage: fetch-mathjax.py [EXTENSION_DIR]   (default: froonty@catalin)
 Downloads four official packages from the npm registry, pinned below by
 version and sha512 integrity (the registry's own `dist.integrity`), and
 unpacks what the renderer needs into EXTENSION_DIR/third_party/mathjax/
-(git-ignored; `make install` copies it, `make pack` leaves it out):
+(git-ignored; `make install` copies it):
 
     src/                          @mathjax/src: the TeX input, SVG output
     mathjax-newcm-font/           its default font, SVG parts only

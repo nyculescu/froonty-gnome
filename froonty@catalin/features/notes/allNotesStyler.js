@@ -53,9 +53,7 @@ import {copiedFilesText, imageFile, readImage, showInFileManager} from './render
 import {clipboardImage, fitRenderSize, keyedMarkdownBlocks, RenderSizes,
     resizeWithAspect} from './renderSizes.js';
 import {parseTable, serializeTable} from './table.js';
-// local:begin notes-math (working-tree only; tools/pack-public strips it)
 import {WindowMath} from '../formulas/notes/window.js';
-// local:end notes-math
 
 const MUTED = 'rgba(128, 128, 128, 1)';
 // GTK 4 draws a fully transparent foreground in the default colour.
@@ -330,10 +328,8 @@ export class MarkdownStyler {
         rightClick.set_propagation_phase(Gtk.PropagationPhase.CAPTURE);
         rightClick.connect('pressed', (gesture, _presses, x, y) => this._onRightClick(gesture, x, y));
         this._view.add_controller(rightClick);
-        // local:begin notes-math
         // Formulas drawn as pictures (features/formulas/notes/window.js).
         this.math = new WindowMath(this._view, () => this.update());
-        // local:end notes-math
         this.update();
     }
 
@@ -1058,10 +1054,8 @@ export class MarkdownStyler {
     }
 
     _spans(text) {
-        // local:begin notes-math
         if (this.math)
             return this.math.update(text);
-        // local:end notes-math
         return markdownSpans(text);
     }
 }

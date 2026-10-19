@@ -75,7 +75,7 @@
       <description>At most 8 ids from panic/catalog.js (half on each side of the hub header's date pill, the right side one more when odd); unknown ids are ignored.</description>
     </key>
 
-    <!-- local-only timezone planner -->
+    <!-- Time zone planner (docs/features/timezone-planner.md) -->
     <key name="timezone-planner-cities" type="as">
       <default>['Dublin|Europe/Dublin', 'Timisoara|Europe/Bucharest']</default>
       <summary>Timezone planner cities</summary>
@@ -336,7 +336,7 @@
       <summary>Btop: each thread unfolded</summary>
     </key>
 
-    <!-- local-only: Fan controls and telemetry in Settings (docs/features/fan.md); tools/pack-public strips the fan-* keys and this comment -->
+    <!-- Fan controls and telemetry in Settings (docs/features/fan.md) -->
     <key name="fan-interval" type="i">
       <range min="1" max="10"/>
       <default>2</default>
@@ -848,7 +848,7 @@
       <description>Optional amber tint applied separately from software dimming; 0 disables the tint.</description>
     </key>
 
-    <!-- local-only: the Writing tab (docs/features/writing.md); tools/pack-public strips the writing-* keys and this comment -->
+    <!-- The Writing tab (docs/features/writing.md) -->
     <key name="writing-enabled" type="b">
       <default>false</default>
       <summary>Show the Writing tab</summary>
@@ -931,7 +931,7 @@
       <description>In logical pixels, while the Writing tab is shown.</description>
     </key>
 
-    <!-- local-only: the Formulas tab (docs/features/formulas.md); tools/pack-public strips the formulas-* keys and this comment -->
+    <!-- The Formulas tab (docs/features/formulas.md) -->
     <key name="formulas-enabled" type="b">
       <default>true</default>
       <summary>Show the Formulas tab</summary>

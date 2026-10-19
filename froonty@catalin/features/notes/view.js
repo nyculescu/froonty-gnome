@@ -355,10 +355,8 @@ export class NotesView {
             reactive: true,
         });
         box.add_child(this._entry);
-        // local:begin notes-math (working-tree only; tools/pack-public strips it)
         // The formulas' pictures, drawn over the text (a layer of no size).
         box.add_child(this._styler.math.layer);
-        // local:end notes-math
         box.add_child(this._styler.preview.widget);
         box.connect('button-press-event', (_box, event) => {
             // Rendered: a click below the view gives it the keys, which

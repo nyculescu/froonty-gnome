@@ -12,10 +12,7 @@ import Shell from 'gi://Shell';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import {Extension, gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 
-import {FEATURES} from './features/registry.js';
-// local:begin local-features (working-tree only; tools/pack-public strips it)
-import {LOCAL_PARTS} from './features/localFeatures.js';
-// local:end local-features
+import {FEATURES, PARTS} from './features/registry.js';
 import {ClockService} from './services/clock.js';
 import {PanelClock} from './shell/dateMenu.js';
 import {SettingsWindow} from './shell/settingsWindow.js';
@@ -96,16 +93,14 @@ export default class FroontyExtension extends Extension {
         if (this._running && !this._parts.length) {
             this._parts = FEATURES.filter(f => f.createExtensionPart)
                 .map(f => f.createExtensionPart(this._settings));
-            // local:begin local-features
-            // Parts that are not tabs (LOCAL_PARTS: Software brightness, the
-            // pad speed slider, the time zone planner).
-            this._parts.push(...LOCAL_PARTS.map(create => create(
+            // Parts that are not tabs (PARTS: Software brightness, the pad
+            // speed slider, the time zone planner).
+            this._parts.push(...PARTS.map(create => create(
                 this._settings,
                 page => {
                     this._settings.set_string('prefs-page', page);
                     this._settingsWindow.open();
                 })));
-            // local:end local-features
         } else if (!this._running) {
             for (const part of this._parts)
                 part.destroy({locked: false});

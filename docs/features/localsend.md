@@ -1,8 +1,7 @@
 # Feature: LocalSend
 
-Status: **implemented for working-tree installs** (`make install`), off by
-default (Settings → LocalSend → Show the LocalSend tab). `make pack`
-leaves it out, with its settings, until it is published.
+Status: **implemented**, off by default (Settings → LocalSend → Show the
+LocalSend tab).
 
 Files and text between this computer and a phone (an iPhone, say) or
 another computer running the [LocalSend](https://localsend.org) app, over

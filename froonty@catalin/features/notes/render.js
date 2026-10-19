@@ -270,8 +270,6 @@ function inlineSpans(line, from, {marker, span}) {
     }
     return claimed;
 }
-
-// local:begin notes-math
 // Formulas (features/formulas/notes, working-tree builds only): $…$ inside
 // a line and $$…$$ on a line or over several, read as Pandoc reads them.
 // An opening $ has a non-space character right after it, a closing $ one
@@ -412,7 +410,6 @@ export function mathMarkdownSpans(text, activeLine = -1) {
     }
     return {spans, formulas};
 }
-// local:end notes-math
 
 /** The line (from 0) holding character position `position` (code points). */
 export function lineAt(text, position) {
