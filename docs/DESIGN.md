@@ -879,6 +879,12 @@ Quick Settings slider that dims monitors without DDC/CI): **746/746** in
 the default session mode and **742/742** in Ubuntu's, plus 684 unit tests
 and 19 packing tests; the published package's own check, **18/18**.
 
+Release candidate 0.11.0-rc0 (Break v2 and the LocalSend tab, working-tree
+only; the "Keep Froonty on top" panic button and the scrolling tab
+column): **821/821** in the default session mode and **817/817** in
+Ubuntu's, plus 880 unit tests and 19 packing tests; the published
+package's own check, **18/18**.
+
 Unreleased: the Notifications and Calendar tabs were removed. The date
 pill opens GNOME's own calendar and notification menu, which already
 lists GNOME's notifications (with Do Not Disturb and Clear) and the

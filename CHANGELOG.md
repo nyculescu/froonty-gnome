@@ -1,6 +1,13 @@
 # Changelog
 
-## Unreleased
+## 0.11.0-rc0 (2026-10-18)
+
+First release candidate of 0.11.0, for GNOME Shell 50 on Ubuntu 26.04
+(Wayland). It builds on 0.10.0-rc0. The published package (extensions.
+gnome.org) gets the Notes rendering and editing work, the scrolling tab
+column and the "Keep Froonty on top" panic button. `make install` builds
+add Break v2 and the LocalSend tab, which stay working-tree only until
+they are submitted.
 
 - Notes render pipe tables and note-relative images offline; the image button
   copies a chosen file into the note folder. Common Mermaid flowcharts,
@@ -22,6 +29,8 @@
   Froonty; break ideas from Stretchly and Safe Eyes; a 14-week chart;
   optionally, workouts read from Garmin Connect by a helper in its own
   Python environment and process (credentials kept on this computer only).
+- "Keep Froonty on top" panic button: pins the island open above other
+  windows until it is clicked again.
 - LocalSend tab (local builds, off by default): files and text between
   this computer and the LocalSend app on a phone, over Wi-Fi or wired
   networks and, optionally, ZeroTier. A new device enters a one-time PIN
