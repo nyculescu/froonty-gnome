@@ -48,6 +48,8 @@ function failureText(result) {
         return _('Sending cancelled.');
     case 'gone':
         return _('That device is not around any more.');
+    case 'empty-text':
+        return _('The clipboard has no text to send.');
     default:
         return _('Sending to %s failed.').format(result.to);
     }
@@ -316,8 +318,8 @@ export class LocalSendView {
         this._offerList.remove_all_children();
         for (const offer of state.offers) {
             const box = this._vbox('froonty-localsend-offer');
-            box.add_child(this._wrapping('froonty-localsend-offer-title', offer.message !== null
-                ? _('%s sends a message').format(offer.sender)
+            box.add_child(this._wrapping('froonty-localsend-offer-title', offer.text
+                ? _('%s sends text').format(offer.sender)
                 : _('%s wants to send %s').format(offer.sender, offerSummary(offer))));
             if (offer.message !== null)
                 box.add_child(this._wrapping('froonty-localsend-meta', offer.message.slice(0, 300)));
@@ -387,6 +389,12 @@ export class LocalSendView {
             });
             send.reactive = !state.sending;
             row.add_child(send);
+            const paste = this._button(_('Send clipboard'), () =>
+                St.Clipboard.get_default().get_text(St.ClipboardType.CLIPBOARD, (_clipboard, text) =>
+                    this._service.sendText(peer.fingerprint, text ?? '')));
+            paste.accessible_name = _('Send the clipboard’s text to %s').format(peer.alias);
+            paste.reactive = !state.sending;
+            row.add_child(paste);
             this._peerList.add_child(row);
         }
     }

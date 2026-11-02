@@ -22,6 +22,7 @@ then commands:
     {"cmd": "update", ...}             any configuration field but alias,
                                        port and zerotier
     {"cmd": "send", "to": FINGERPRINT, "paths": [...]}
+    {"cmd": "send-text", "to": FINGERPRINT, "text": "..."}   a message there
     {"cmd": "cancel-send"}
 
 stdout, one JSON event a line: ready, peers, pin, pin-gone, offer,
@@ -51,6 +52,7 @@ live in ~/.local/share/froonty/localsend (0700, key 0600).
 import errno
 import fcntl
 import hashlib
+import io
 import http.client
 import ipaddress
 import json
@@ -94,6 +96,15 @@ NM_REFRESH_S = 60
 # A PIN lasts this long, and this many wrong tries make a new one.
 PIN_TTL_S = 300
 PIN_TRIES = 5
+# Text shared as a small .txt file (from another app's share sheet, not
+# typed into LocalSend) is received as text, not saved, up to this size.
+TEXT_MAX = 64 * 1024
+
+
+def is_text(f):
+    kind = f["type"].lower()
+    return kind.startswith("text/plain") or (
+        kind in ("", "text", "application/octet-stream") and f["name"].lower().endswith(".txt"))
 # Interfaces never used: containers, bridges, other VPNs, loopback.
 SKIPPED_PREFIXES = ("lo", "docker", "br-", "veth", "virbr", "vnet", "tun", "tap", "wg",
                     "tailscale", "vboxnet", "vmnet", "lxc", "lxd", "podman", "cni", "flannel")
@@ -256,12 +267,16 @@ def ensure_certificate(folder):
     return cert, key, hashlib.sha256(der).hexdigest().upper()
 
 
-def client_context():
-    # LocalSend peers use self-signed certificates: the protocol has no
-    # authority to check them against.
+def client_context(cert=None):
+    """TLS to another LocalSend device. Its certificate is self-signed, so
+    there is no authority to check it against. Ours is presented: current
+    LocalSend apps require a client certificate and take its SHA-256 as the
+    sender's fingerprint (they refuse with "certificate required")."""
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     context.check_hostname = False
     context.verify_mode = ssl.CERT_NONE
+    if cert:
+        context.load_cert_chain(str(cert[0]), str(cert[1]))
     return context
 
 
@@ -295,6 +310,7 @@ class Peer:
         else:
             self.protocol = "http"
             self.fingerprint = secrets.token_hex(16).upper()
+        self.client_tls = client_context(self.cert)
         self.multicast = None
         self.server = None
         self.update(config)
@@ -519,7 +535,7 @@ class Peer:
         if protocol == "http":
             conn = http.client.HTTPConnection(host.strip("[]"), port, timeout=timeout)
         else:
-            conn = http.client.HTTPSConnection(host.strip("[]"), port, timeout=timeout, context=client_context())
+            conn = http.client.HTTPSConnection(host.strip("[]"), port, timeout=timeout, context=self.client_tls)
         try:
             data = json.dumps(body).encode() if body is not None else b""
             conn.request("POST", API + route + query, body=data,
@@ -581,7 +597,7 @@ class Peer:
             time.sleep(INTRODUCE_EVERY_S)
 
     # ------------------------------------------------------------ send
-    def send(self, fingerprint, paths):
+    def send(self, fingerprint, paths, text=None):
         with self.lock:
             peer = dict(self.peers.get(fingerprint) or {})
             if self.sending:
@@ -592,13 +608,20 @@ class Peer:
             if not peer:
                 emit("send-failed", reason="gone")
                 return
-            self._send(peer, paths)
+            self._send(peer, paths, text)
         finally:
             with self.lock:
                 self.sending = None
 
-    def _send(self, peer, paths):
+    def _send(self, peer, paths, text=None):
         files, sources = {}, {}
+        if text:
+            # LocalSend shows a text/plain file with a preview as a message.
+            data = text.encode("utf-8")
+            file_id = secrets.token_hex(8)
+            files[file_id] = {"id": file_id, "fileName": f"{file_id}.txt", "size": len(data),
+                              "fileType": "text/plain", "sha256": None, "preview": text}
+            sources[file_id] = data
         for path in paths:
             p = Path(path)
             if not p.is_file():
@@ -614,7 +637,7 @@ class Peer:
             }
             sources[file_id] = p
         if not files:
-            emit("send-failed", reason="no-files")
+            emit("send-failed", reason="empty-text" if text is not None else "no-files")
             return
         total = sum(f["size"] for f in files.values())
         emit("send-progress", to=peer["alias"], sent=0, total=total, waiting=True)
@@ -661,14 +684,14 @@ class Peer:
         if peer["protocol"] == "http":
             conn = http.client.HTTPConnection(ip, port, timeout=60)
         else:
-            conn = http.client.HTTPSConnection(ip, port, timeout=60, context=client_context())
+            conn = http.client.HTTPSConnection(ip, port, timeout=60, context=self.client_tls)
         try:
-            size = source.stat().st_size
+            size = len(source) if isinstance(source, bytes) else source.stat().st_size
             conn.putrequest("POST", API + "upload" + query)
             conn.putheader("Content-Type", "application/octet-stream")
             conn.putheader("Content-Length", str(size))
             conn.endheaders()
-            with open(source, "rb") as f:
+            with (io.BytesIO(source) if isinstance(source, bytes) else open(source, "rb")) as f:
                 while True:
                     with self.lock:
                         if self.sending and self.sending["cancelled"]:
@@ -724,7 +747,10 @@ class Peer:
                 except OSError:
                     pass
         saved = [f["saved"] for f in session["files"].values() if f.get("saved")]
-        if reason == "done":
+        texts = [f["text"] for f in session["files"].values() if "text" in f]
+        if reason == "done" and texts:
+            emit("message", id=session["offer"], sender=session["sender"], text=texts[0])
+        elif reason == "done":
             emit("received", id=session["id"], sender=session["sender"], paths=saved)
         else:
             emit("cancelled", id=session["id"], sender=session["sender"], reason=reason, paths=saved)
@@ -926,9 +952,14 @@ class _Handler(BaseHTTPRequestHandler):
                 self.reply(401)
                 return
             pin_verified = True
-        # A text message (the share sheet's text or link): shown, never saved.
-        texts = [f for f in clean.values() if f["type"].startswith("text/plain") and f["preview"] is not None]
-        message = len(texts) == len(clean) == 1
+        # Text: typed or pasted into LocalSend it comes as a preview (a
+        # message, nothing to upload); shared from another app as a small
+        # .txt file, it is uploaded, then passed on as text, never saved.
+        only = list(clean.values())
+        text_file = len(only) == 1 and is_text(only[0])
+        message = text_file and only[0]["preview"] is not None
+        uploaded_text = text_file and not message and only[0]["size"] <= TEXT_MAX
+        texts = only if message else []
         with owner.lock:
             if owner.session or (owner.offers and not message):
                 busy = True
@@ -943,7 +974,7 @@ class _Handler(BaseHTTPRequestHandler):
         emit("offer", id=offer_id, sender=sender, ip=ip, deviceModel=str(info.get("deviceModel") or "")[:64],
              fingerprint=fingerprint, pinVerified=pin_verified, interface=interface,
              trustedNetwork=network_trusted,
-             message=texts[0]["preview"][:100000] if message else None,
+             message=texts[0]["preview"][:100000] if message else None, text=message or uploaded_text,
              files=[{"name": f["name"], "size": f["size"], "type": f["type"]} for f in clean.values()])
         # The sender may give up while the user decides: it hangs up, or
         # calls /cancel (cancel() below). Either withdraws the offer.
@@ -987,6 +1018,7 @@ class _Handler(BaseHTTPRequestHandler):
                 "id": secrets.token_hex(12),
                 "folder": owner.folder,
                 "offer": offer_id,
+                "text": uploaded_text,
                 "ip": ip,
                 "sender": sender,
                 "files": clean,
@@ -1070,8 +1102,18 @@ class _Handler(BaseHTTPRequestHandler):
             self.reply(422)
             owner.end_session("failed")
             return
+        text = None
+        if session.get("text"):
+            try:
+                text = Path(part).read_bytes().decode("utf-8")
+            except (OSError, UnicodeDecodeError):
+                text = None  # not UTF-8 text after all: saved as the file it is
         try:
-            f["saved"] = str(place(part, session["folder"], f["name"]))
+            if text is not None:
+                self.drop_part(part)
+                f["text"] = text[:100000]
+            else:
+                f["saved"] = str(place(part, session["folder"], f["name"]))
         except OSError as e:
             self.drop_part(part)
             emit("warning", message=f"cannot save {f['name']}: {e}")
@@ -1166,6 +1208,9 @@ def commands(peer):
             peer.update(command)
         elif name == "add":
             threading.Thread(target=peer.add, args=(str(command.get("address", "")),), daemon=True).start()
+        elif name == "send-text":
+            threading.Thread(target=peer.send, args=(str(command.get("to")), [], str(command.get("text") or "")),
+                             daemon=True).start()
         elif name == "send":
             threading.Thread(target=peer.send, args=(str(command.get("to")), list(command.get("paths") or [])),
                              daemon=True).start()

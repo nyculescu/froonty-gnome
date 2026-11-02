@@ -24,8 +24,12 @@ break with iOS updates. LocalSend works on any network with any card.
   `~/Downloads/LocalSend` (the tab's "Change…" by Open folder, or Settings
   → LocalSend → Save received files in; the next transfer goes there, the
   helper keeps running).
-  A shared text or link arrives as a notification with Copy (and Open link
-  for a link); it is not saved. Cancelled on the iPhone before (or as) it
+  Text goes straight to the clipboard, ready to paste, with a notification
+  (Open link for a link); it is not saved. That holds for text typed or
+  pasted into LocalSend (it comes as a message) and for text shared from
+  another app, which LocalSend sends as a small `.txt` file: one text file
+  up to 64 kB is received as text. A longer one, or one that is not UTF-8,
+  is saved as a file. Cancelled on the iPhone before (or as) it
   is accepted, the question goes away with "… cancelled the transfer".
 - **A new device: PIN** (`localsend-pin-first`, on). The first transfer
   from a device not trusted yet is answered "PIN required" (LocalSend's
@@ -56,7 +60,8 @@ break with iOS updates. LocalSend works on any network with any card.
   every wired network. Without `nmcli`, no network is trusted.
 - **Computer → iPhone:** open LocalSend on the iPhone (iOS only lets it
   receive while it is open), then in the tab, "Send files…" next to the
-  iPhone, pick the files; the iPhone asks to accept.
+  iPhone, pick the files; the iPhone asks to accept. "Send clipboard"
+  sends the clipboard's text, which LocalSend shows as a message there.
 - **Away from home (ZeroTier):** with ZeroTier on the phone too and
   "Also over ZeroTier" on, the computer listens on its ZeroTier address.
   Discovery (multicast) does not cross ZeroTier from iOS (tried
@@ -97,7 +102,10 @@ break with iOS updates. LocalSend works on any network with any card.
 - HTTPS with a self-signed certificate made once with `/usr/bin/openssl`
   (`~/.local/share/froonty/localsend`, 0700, key 0600); the fingerprint is
   the certificate's SHA-256. Without openssl it falls back to HTTP, which
-  the protocol allows.
+  the protocol allows. The same certificate is presented when Froonty
+  connects to a device: LocalSend 2.2 requires a client certificate and
+  refuses a sender without one ("certificate required"); it takes the
+  certificate's SHA-256 as the sender's fingerprint.
 - Discovery: UDP multicast 224.0.0.167:53317 (announce, and answers by
   `POST /register` or multicast), plus `/register` from either side.
 - Networks: Wi-Fi and wired interfaces, and ZeroTier's (`zt*`) when
@@ -122,8 +130,10 @@ break with iOS updates. LocalSend works on any network with any card.
   hidden `.froonty-part` files, then moved under their own name (only its
   last part, control characters dropped) without overwriting: "photo
   (2).heic". A session idle for 90 s is dropped.
-- Sending: files only (no folders), one transfer at a time, sizes without
-  SHA-256 (optional in the protocol).
+- Sending: files (no folders) or the clipboard's text, one transfer at a
+  time, sizes without SHA-256 (optional in the protocol). Text goes as one
+  `text/plain` file with the text as its preview, which LocalSend shows as
+  a message.
 
 ## Settings
 
@@ -159,7 +169,7 @@ A firewall must allow the port: `sudo ufw allow 53317/tcp` and
 
 ## Not done
 
-- Sending folders or text, the reverse (browser download) API.
+- Sending folders, the reverse (browser download) API.
 - A device's identity is what it announces (LocalSend has no client
   certificate check here): the PIN and trusted networks limit who can
   claim one.

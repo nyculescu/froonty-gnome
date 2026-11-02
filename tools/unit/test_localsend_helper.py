@@ -5,6 +5,7 @@ protocol to each other on 127.0.0.1 (loopback is allowed here only, by
 the test). Run by tools/unit/run.sh (python3 -m unittest)."""
 
 import contextlib
+import hashlib
 import importlib.util
 import io
 import ipaddress
@@ -302,6 +303,81 @@ class Protocol(unittest.TestCase):
         threading.Thread(target=a.send, args=(b.fingerprint, [str(src)]), daemon=True).start()
         b.decide(self.events.wait("offer")["id"], True)
         self.assertEqual(Path(self.events.wait("received")["paths"][0]).parent, new)
+
+    def test_text_shared_as_a_file_arrives_as_text(self):
+        b = self.start("B")
+        key = b"ssh-ed25519 AAAA key\n"
+        body = {"info": {"alias": "phone"}, "files": {"1": {"id": "1", "fileName": "text.txt",
+                                                            "size": len(key), "fileType": "text/plain"}}}
+        done = []
+        threading.Thread(target=lambda: done.append(self.post(b, "prepare-upload", body)), daemon=True).start()
+        offer = self.events.wait("offer")
+        self.assertTrue(offer["text"])
+        self.assertIsNone(offer["message"])
+        b.decide(offer["id"], True)
+        while not done:
+            time.sleep(0.02)
+        status, answer = done[0]
+        self.assertEqual(status, 200)
+        query = f"?sessionId={answer['sessionId']}&fileId=1&token={answer['files']['1']}"
+        self.assertEqual(self.post(b, "upload", key, query)[0], 200)
+        self.assertEqual(self.events.wait("message")["text"], key.decode())
+        self.assertEqual(os.listdir(b.folder), [], "not saved as a file")
+        self.assertEqual([e for e in self.events.items if e["event"] == "received"], [])
+
+    def test_a_big_text_file_is_still_a_file(self):
+        b = self.start("B")
+        body = {"info": {"alias": "phone"}, "files": {"1": {"id": "1", "fileName": "book.txt",
+                                                            "size": helper.TEXT_MAX + 1, "fileType": "text/plain"}}}
+        threading.Thread(target=lambda: self.post(b, "prepare-upload", body), daemon=True).start()
+        self.assertFalse(self.events.wait("offer")["text"])
+
+    def test_sending_text_is_a_message_there(self):
+        a, b = self.start("A"), self.start("B")
+        self.post(a, "register", {**b.info(), "port": b.port})
+        threading.Thread(target=a.send, args=(b.fingerprint, [], "copied on the laptop"), daemon=True).start()
+        offer = self.events.wait("offer")
+        self.assertEqual((offer["message"], offer["text"]), ("copied on the laptop", True))
+        b.decide(offer["id"], True)
+        self.assertEqual(self.events.wait("message")["text"], "copied on the laptop")
+        self.events.wait("send-done")
+        mark = len(self.events.items)
+        a.send(b.fingerprint, [], "")
+        self.assertEqual(self.events.wait("send-failed", after=mark)["reason"], "empty-text")
+
+    def test_presents_its_certificate_to_a_device_that_requires_one(self):
+        a = self.start("A")
+        server_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        server_ctx.load_cert_chain(str(a.cert[0]), str(a.cert[1]))
+        server_ctx.verify_mode = ssl.CERT_REQUIRED  # as LocalSend 2.2 does
+        server_ctx.load_verify_locations(str(a.cert[0]))
+        listener = socket.socket()
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(2)
+        port = listener.getsockname()[1]
+        seen = []
+
+        def serve():
+            for _ in range(2):
+                conn, _addr = listener.accept()
+                try:
+                    with server_ctx.wrap_socket(conn, server_side=True) as tls:
+                        seen.append(hashlib.sha256(tls.getpeercert(binary_form=True)).hexdigest().upper())
+                except (ssl.SSLError, OSError):
+                    seen.append(None)
+
+        threading.Thread(target=serve, daemon=True).start()
+        with self.assertRaises(ssl.SSLError):
+            with helper.client_context().wrap_socket(socket.create_connection(("127.0.0.1", port))) as tls:
+                tls.recv(1)
+        with a.client_tls.wrap_socket(socket.create_connection(("127.0.0.1", port))) as tls:
+            tls.do_handshake()
+        for _ in range(100):
+            if len(seen) == 2:
+                break
+            time.sleep(0.02)
+        listener.close()
+        self.assertEqual(seen, [None, a.fingerprint], "its fingerprint is its certificate's SHA-256")
 
     def test_outside_the_networks_is_refused(self):
         b = self.start("B")

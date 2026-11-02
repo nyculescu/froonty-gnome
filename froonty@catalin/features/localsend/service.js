@@ -256,6 +256,22 @@ export class LocalSendService extends Emitter {
         this._helper.send({cmd: 'send', to: fingerprint, paths});
     }
 
+    /** Sends text (the clipboard's), which LocalSend shows as a message. */
+    sendText(fingerprint, text) {
+        if (!this._helper || this.state.sending)
+            return;
+        const peer = this.state.peers.find(p => p.fingerprint === fingerprint);
+        if (!text) {
+            this.state = {...this.state, sendResult: {ok: false, to: peer?.alias ?? '', reason: 'empty-text'}};
+            this.emit('changed');
+            return;
+        }
+        this.state = {...this.state, sendResult: null,
+            sending: {to: peer?.alias ?? '', sent: 0, total: 0, waiting: true}};
+        this.emit('changed');
+        this._helper.send({cmd: 'send-text', to: fingerprint, text});
+    }
+
     cancelSend() {
         this._helper?.send({cmd: 'cancel-send'});
     }
@@ -298,6 +314,7 @@ export class LocalSendService extends Emitter {
                 ip: String(event.ip ?? ''),
                 fingerprint: String(event.fingerprint ?? ''),
                 message: typeof event.message === 'string' ? event.message : null,
+                text: Boolean(event.text),
                 files: Array.isArray(event.files) ? event.files : [],
             };
             // The PIN shown here was entered there: the user is at both

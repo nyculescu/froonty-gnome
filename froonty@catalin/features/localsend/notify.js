@@ -72,10 +72,11 @@ export class LocalSendNotifier {
      * @param {boolean} [trusts] whether Accept makes the device trusted
      */
     offer(offer, {accept, decline}, trusts = false) {
-        const title = offer.message !== null
-            ? _('%s sends a message').format(offer.sender)
+        const title = offer.text
+            ? _('%s sends text').format(offer.sender)
             : _('%s wants to send you files').format(offer.sender);
-        let body = offer.message !== null ? offer.message.slice(0, 300) : offerSummary(offer);
+        let body = offer.message !== null ? offer.message.slice(0, 300)
+            : offer.text ? _('Accepted, it goes to the clipboard.') : offerSummary(offer);
         if (trusts)
             body += `\n${_('Accepting trusts this device: later transfers from it are accepted automatically.')}`;
         const notification = this._notify({
@@ -146,11 +147,14 @@ export class LocalSendNotifier {
         this._notify({title, body});
     }
 
+    /** Text from a device: on the clipboard at once, ready to paste. */
     message(sender, text) {
-        const actions = [[_('Copy'), () => St.Clipboard.get_default().set_text(St.ClipboardType.CLIPBOARD, text)]];
+        St.Clipboard.get_default().set_text(St.ClipboardType.CLIPBOARD, text);
+        const actions = [];
         if (/^https?:\/\/\S+$/i.test(text.trim()))
             actions.push([_('Open link'), () => openUri(text.trim())]);
-        this._notify({title: _('Message from %s').format(sender), body: text.slice(0, 1000)}, actions);
+        this._notify({title: _('Text from %s copied to the clipboard').format(sender),
+            body: text.slice(0, 1000)}, actions);
     }
 
     destroy() {

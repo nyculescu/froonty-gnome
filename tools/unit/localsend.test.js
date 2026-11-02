@@ -253,6 +253,21 @@ test('networks, devices by address and the folder are kept in the settings', () 
     settings.reset('localsend-folder');
 });
 
+test('text: offers say so; the clipboard is sent as text, an empty one is not', () => {
+    const {service, helper} = makeService();
+    service.start();
+    const run = helper.runs[0];
+    run.onEvent({event: 'offer', id: 'o1', sender: 'iPhone', text: true, message: null,
+        files: [{name: 'text.txt', size: 20}]});
+    eq(service.state.offers[0].text, true);
+    run.onEvent({event: 'peers', peers: [{fingerprint: 'P', alias: 'iPhone'}]});
+    service.sendText('P', '');
+    eq([service.state.sendResult, run.sent.length], [{ok: false, to: 'iPhone', reason: 'empty-text'}, 0]);
+    service.sendText('P', 'hello');
+    eq(run.sent.at(-1), {cmd: 'send-text', to: 'P', text: 'hello'});
+    eq(service.state.sending.waiting, true);
+});
+
 test('stop: the helper and its pending offers go; events from it are ignored', () => {
     const {service, helper, notifier} = makeService();
     service.start();
