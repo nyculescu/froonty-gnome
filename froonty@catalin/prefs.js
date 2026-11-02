@@ -18,6 +18,7 @@ import {notesPage} from './features/notes/prefs.js';
 import {addFeatureIconPaths, featurePages} from './features/pages.js';
 import {panicPage} from './panic/prefs.js';
 import {choiceRow, spinRow, switchRow} from './prefs/rows.js';
+import {readoutsPage} from './readouts/prefs.js';
 
 const CLOCK_FORMATS = ['system', '24h', '12h'];
 
@@ -44,6 +45,7 @@ export default class FroontyPreferences extends ExtensionPreferences {
             this._generalPage(settings),
             this._appearancePage(settings),
             panicPage(settings),
+            readoutsPage(settings),
             // Feature pages in the hub's tab order (features/registry.js).
             notesPage(settings),
             ...featurePages(window, settings, pageStack),

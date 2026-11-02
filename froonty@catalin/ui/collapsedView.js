@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Content of the collapsed pill: the time, optionally preceded by a short
-// date, and the unread-notifications dot of GNOME's clock, which the pill
-// covers. A feature's pill accessory adds a wing on each side, and may
+// date, and the unread-notifications dot. A feature's pill accessory adds a
+// wing on each side, and may
 // briefly show a notice in place of the time (a peek); a feature's cue
-// shows after the dot:
+// shows after the dot. The readouts (readoutBar.js) are outermost:
 //
-//   [leading] [cue pad][dot pad][date time | peek][dot][cue] [trailing]
+//   [readouts] [leading] [cue pad][dot pad][date time | peek][dot][cue] [trailing] [readouts]
 //
 // Each pad is an invisible twin of what is on the other side, so the time
 // stays centred (GNOME's clock balances its dot the same way).
@@ -52,6 +52,7 @@ export class CollapsedView {
 
         this._unreadDot = this._addDot(this.actor);
         this._accessory = null;
+        this._readouts = null;
         this._peekText = null;
         this._cue = this._addCue(this.actor);
         this._cueText = '';
@@ -65,10 +66,21 @@ export class CollapsedView {
         this._dateLabel.visible = clock.showDate;
     }
 
-    /** @param {boolean} unread whether GNOME's clock would show its dot */
+    /** @param {boolean} unread CalendarMenu.hasUnread */
     setUnread(unread) {
         this._unreadDot.visible = unread;
         this._unreadPad.visible = unread;
+    }
+
+    /**
+     * Puts the readouts' two groups at the row's ends, once.
+     *
+     * @param {ReadoutBar} readouts
+     */
+    setReadouts(readouts) {
+        this._readouts = readouts;
+        this.actor.insert_child_at_index(readouts.groups[0], 0);
+        this.actor.add_child(readouts.groups[1]);
     }
 
     /**
@@ -82,10 +94,11 @@ export class CollapsedView {
                 this.actor.remove_child(wing);
         }
         this._accessory = accessory;
+        // Inside the readouts, next to the time.
         if (accessory?.leading)
-            this.actor.insert_child_at_index(accessory.leading, 0);
+            this.actor.insert_child_above(accessory.leading, this._readouts.groups[0]);
         if (accessory?.trailing)
-            this.actor.add_child(accessory.trailing);
+            this.actor.insert_child_below(accessory.trailing, this._readouts.groups[1]);
         if (!accessory)
             this.setPeek(null);
     }
@@ -138,6 +151,11 @@ export class CollapsedView {
         return resized;
     }
 
+    /** Whether the dot is shown (the pill may need to widen). */
+    get hasUnread() {
+        return this._unreadDot.visible;
+    }
+
     /** Whether a cue is shown (the pill may need to widen). */
     get hasCue() {
         return this._cue.visible;
@@ -150,6 +168,9 @@ export class CollapsedView {
         const extra = this._accessory?.accessibleText;
         if (extra)
             text = `${text}, ${extra}`;
+        const readouts = this._readouts?.accessibleText;
+        if (readouts)
+            text = `${text}, ${readouts}`;
         if (this._unreadDot.visible)
             text = `${text}, ${_('unread notifications')}`;
         return this._cueText ? `${text}, ${this._cueText}` : text;

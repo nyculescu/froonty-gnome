@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // GNOME's notifications, as GNOME's message tray holds them, for the
-// Claude attention bar (docs/features/claude-attention.md).
+// Claude attention bar (docs/features/claude-attention.md) and the unread
+// dot (docs/features/calendar.md).
 //
 // PRIVATE / INTERNAL API. This is the only code in
 // Froonty that reads or writes GNOME's notification objects (ui/
 // messageTray.js, verified against GNOME Shell 50.1):
 //
-//   tray      Main.messageTray: getSources(), 'source-added',
-//             'source-removed' (also when an app is switched off in
-//             Settings, without a destroy)
-//   Source    notifications (oldest first), title, app,
-//             'notification-added', 'notification-removed' (emitted from
-//             inside the notification's own 'destroy')
-//   Notification  title, body, use-body-markup, datetime, urgency, notify;
-//             activate(), destroy(reason)
+//   tray: Main.messageTray: getSources(), 'source-added', 'source-removed'
+//     (also when an app is switched off in Settings, without a destroy)
+//   Source: notifications (oldest first), title, app, 'notification-added',
+//     'notification-removed' (emitted from inside the notification's own
+//     'destroy')
+//   Notification: title, body, use-body-markup, datetime, urgency,
+//     is-transient, notify; activate(), destroy(reason)
 //
 // It keeps no copy: the list is GNOME's objects, sorted. It watches them
 // only between watch() and unwatch(), and writes only when asked to by an
@@ -72,7 +72,7 @@ export class NotificationStore extends Emitter {
         this._trayIds = [];
         /** @type {Map<object, number[]>} source → its handler ids */
         this._sources = new Map();
-        /** @type {Map<object, object>} notification → {source, seq, urgent, time, ids} */
+        /** @type {Map<object, object>} notification → {source, seq, urgent, time, transient, ids} */
         this._entries = new Map();
         this._seq = 0;
         this._sorted = null;
@@ -134,6 +134,18 @@ export class NotificationStore extends Emitter {
                 .map(([notification]) => notification));
         }
         return this._sorted;
+    }
+
+    /**
+     * Whether a notification that stays in GNOME's list is newer than a
+     * time. GNOME renews a notification's datetime when it is updated.
+     *
+     * @param {number} usec Unix time in microseconds
+     * @returns {boolean}
+     */
+    hasNewerThan(usec) {
+        return [...this._entries.values()].some(entry =>
+            !entry.transient && entry.time !== null && entry.time > usec);
     }
 
     /** Whether it is listed (watched and not destroyed). */
@@ -228,7 +240,7 @@ export class NotificationStore extends Emitter {
     _addNotification(notification, source) {
         if (this._entries.has(notification))
             return;
-        const entry = {source, seq: ++this._seq, urgent: false, time: null, ids: []};
+        const entry = {source, seq: ++this._seq, urgent: false, time: null, transient: false, ids: []};
         this._read(notification, entry);
         entry.ids = [
             notification.connect('notify', (_n, pspec) => this._onNotify(notification, entry, pspec.name)),
@@ -250,6 +262,7 @@ export class NotificationStore extends Emitter {
     _read(notification, entry) {
         entry.urgent = notification.urgency === this._critical;
         entry.time = notification.datetime?.to_unix_usec() ?? null;
+        entry.transient = !!notification.isTransient;
     }
 
     _onNotify(notification, entry, name) {

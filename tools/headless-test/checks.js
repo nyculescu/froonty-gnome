@@ -189,8 +189,8 @@ function shellFootprint() {
             : 'not loaded',
         statusArea: Object.keys(Main.panel.statusArea).sort().join(','),
         // The Claude attention bar's notification store, only while it
-        // watches GNOME's notifications: not higher merely because Froonty
-        // is enabled, hence not under `handlers`.
+        // watches GNOME's notifications, and the unread dot's while Froonty
+        // is enabled: compared across disable, not under `handlers`.
         trayHandlers: {
             sourceAdded: countHandlers(Main.messageTray, 'source-added'),
             sourceRemoved: countHandlers(Main.messageTray, 'source-removed'),
@@ -4812,6 +4812,9 @@ async function testCpuLoadButton() {
         `${button._number.text} ${button._number.style_class} ${button.actor.accessible_name}`);
     check('cpu button: displays the selected CPU icon',
         button._icon.gicon !== null, `${button._icon.gicon}`);
+    const [iconBox, numberBox] = [button._icon, button._number].map(boxOf);
+    check('cpu button: the icon stands in front of the value, not behind it',
+        iconBox.x2 <= numberBox.x1, `icon ends ${iconBox.x2}, value starts ${numberBox.x1}`);
     island().collapse();
     await sleep(animationWait());
     check('cpu button: collapsed, its shared sampler stops',
@@ -4993,10 +4996,10 @@ async function testClaude(outDir) {
     const numberBox = boxOf(button._number);
     const buttonBox = boxOf(button.actor);
     const [mic] = island()._hub._panicBar._buttons;
-    check('claude button: "100" fits inside the button, which is as big as the others',
+    check('claude button: "100" fits inside the button, which is as tall as the others',
         numberBox.x1 >= buttonBox.x1 && numberBox.x2 <= buttonBox.x2 &&
         numberBox.y1 >= buttonBox.y1 && numberBox.y2 <= buttonBox.y2 &&
-        button.actor.width === mic.actor.width && button.actor.height === mic.actor.height,
+        button.actor.height === mic.actor.height,
         `number=[${numberBox.x1},${numberBox.y1},${numberBox.x2},${numberBox.y2}] ` +
         `button=[${buttonBox.x1},${buttonBox.y1},${buttonBox.x2},${buttonBox.y2}] ` +
         `mic=${mic.actor.width}x${mic.actor.height}`);
@@ -6813,6 +6816,25 @@ async function testCalendarMenu(outDir) {
         tray.visible && tray._notification === banner && banner.acknowledged,
         `trayVisible=${tray.visible} shown=${tray._notification?.title} seen=${banner.acknowledged}`);
     await screenshotTop(outDir, 'banner-after-collapse', 200);
+    const roomy = pillCoversClock();
+    check('calendar: GNOME counts a shown banner as seen, the pill\'s dot stays, with room for it',
+        !gnomeUnreadDot() && pillUnreadDot() && view._unreadPad.visible &&
+        pill().accessible_name.endsWith(', unread notifications') &&
+        roomy.ok && !isEllipsized(view._timeLabel),
+        `gnome=${gnomeUnreadDot()} pill=${pillUnreadDot()} name="${pill().accessible_name}" ${roomy.detail}`);
+    island()._calendarMenu.open();
+    await sleep(animationWait());
+    check('calendar: showing the list takes that dot away too; the notification stays',
+        !pillUnreadDot() && !island()._hub._header.unreadBadge.visible && source.notifications.includes(banner));
+    await closeCalendarMenu();
+    check('calendar: it does not come back when the list closes', !pillUnreadDot());
+
+    // Gone with its banner: nothing to find in the list.
+    source.addNotification(new MessageTray.Notification({
+        source, title: 'Transient', body: 'Froonty headless test', isTransient: true,
+    }));
+    await sleep(animationWait() + MessageTray.ANIMATION_TIME);
+    check('calendar: a transient notification leaves no dot', !pillUnreadDot(), state());
 
     // Only the test removes its own notifications.
     source.destroy();
@@ -6893,12 +6915,12 @@ async function testDatePill(outDir) {
         `${shown()} top bar "${wallClock.clock}"`);
     const name = () => {
         const now = clock.snapshot();
-        const unread = gnomeUnreadDot() ? ', unread notifications' : '';
+        const unread = island()._calendarMenu.hasUnread ? ', unread notifications' : '';
         return `Calendar and notifications, ${now.weekday}, ${now.longDate}, ${now.time}${unread}`;
     };
-    check('date pill: named "Calendar and notifications, <weekday>, <date>, <time>" (and the dot, if GNOME shows one)',
+    check('date pill: named "Calendar and notifications, <weekday>, <date>, <time>" (and the dot, if it shows)',
         await waitFor(() => button.accessible_name === name(), 2000) &&
-        header.unreadBadge.visible === gnomeUnreadDot(), `${shown()} expected "${name()}"`);
+        header.unreadBadge.visible === island()._calendarMenu.hasUnread, `${shown()} expected "${name()}"`);
     const path = await screenshotTop(outDir, 'hub-header-pill', 120);
     check('date pill: screenshot of the header', true, `note: ${path}`);
 
@@ -8966,6 +8988,11 @@ async function testBreak(outDir) {
     if (!isolated)
         return;
 
+    // Earlier tests' notifications would still be unread on the pill.
+    island()._calendarMenu.open();
+    await sleep(animationWait());
+    await closeCalendarMenu();
+
     const s = settings();
     const breaks = new Gio.Settings({schema_id: BREAK_SCHEMA});
     const eyes = new Gio.Settings({schema_id: `${BREAK_SCHEMA}.eyesight`});
@@ -9666,15 +9693,85 @@ async function testFanLockButton() {
     await sleep(SETTLE_MS);
 }
 
+// Read-only values on the collapsed pill: off by default, around a centred
+// time, never reactive, and sampled only while the collapsed pill shows.
+async function testReadouts() {
+    const s = settings();
+    island().collapse();
+    await sleep(animationWait());
+    const bar = island()._readouts;
+    const [baseWidth] = pill().get_transformed_size();
+    check('readouts: none by default, nothing read for them',
+        s.get_strv('readouts').length === 0 && bar.count === 0 && !bar.groups[0].visible &&
+        bar._metrics._timeoutId === 0, `count=${bar.count} timer=${bar._metrics._timeoutId}`);
+
+    s.set_int('readouts-interval', 1);
+    s.set_strv('readouts', ['ram-usage', 'cpu-load', 'disk-used']);
+    await waitFor(() => bar._readouts.every(r => r._label.text !== '–'), 5000);
+    await sleep(animationWait());
+    const texts = bar._readouts.map(r => r._label.text);
+    check('readouts: they print their values', texts.every(t => /^\d+%$/.test(t)), texts.join(' '));
+    const [left, right] = bar.groups.map(group => group.get_n_children());
+    check('readouts: equal widths split as a tie, the right side has more', left === 1 && right === 2,
+        `${left} + ${right}`);
+    const time = boxOf(island()._collapsedView._timeLabel);
+    const p = boxOf(pill());
+    check('readouts: the time stays centred (±1 px)',
+        Math.abs((time.x1 + time.x2) / 2 - (p.x1 + p.x2) / 2) <= 1,
+        `time=${(time.x1 + time.x2) / 2} pill=${(p.x1 + p.x2) / 2}`);
+    const groups = bar.groups.map(boxOf);
+    check('readouts: both groups are equally wide',
+        groups[0].x2 - groups[0].x1 === groups[1].x2 - groups[1].x1,
+        groups.map(g => g.x2 - g.x1).join(' / '));
+    const inner = bar.groups[0].get_theme_node().get_padding(St.Side.RIGHT);
+    const lone = boxOf(bar.groups[0].get_first_child());
+    check('readouts: the narrower side stays next to the time',
+        Math.abs(groups[0].x2 - inner - lone.x2) <= 1,
+        `readout ends ${lone.x2}, group ${groups[0].x2}, padding ${inner}`);
+    check('readouts: they fit on the pill, which grew for them',
+        groups[0].x1 >= p.x1 && groups[1].x2 <= p.x2 && p.x2 - p.x1 > baseWidth,
+        `pill=${p.x1}-${p.x2} base=${baseWidth} groups=${groups[0].x1}-${groups[1].x2}`);
+    check('readouts: only print, nothing to press',
+        bar._readouts.every(r => !r.actor.reactive && !r.actor.can_focus));
+    check('readouts: the pill\'s accessible name reads them',
+        pill().accessible_name.includes(`RAM usage: ${texts[0]}`), pill().accessible_name);
+    const covers = pillCoversClock();
+    check('readouts: the pill still covers the top bar clock', covers.ok, covers.detail);
+
+    island().expand();
+    await sleep(animationWait());
+    check('readouts: open, the sampler stops', bar._metrics._timeoutId === 0 && !bar._metrics._active,
+        `timer=${bar._metrics._timeoutId}`);
+    island().collapse();
+    await sleep(animationWait());
+    await waitFor(() => bar._metrics.samples >= 2, 5000);
+    check('readouts: collapsed again, it reads again', bar._metrics.samples >= 2 && bar._metrics._active);
+
+    const ids = ['cpu-load', 'gpu-load', 'ram-usage', 'cpu-temp', 'cpu-temp-max', 'gpu-temp',
+        'net-down', 'net-up', 'disk-used'];
+    s.set_strv('readouts', ['nope', ...ids]);
+    await sleep(SETTLE_MS);
+    check('readouts: at most 8, unknown ids ignored', bar.count === 8, `count=${bar.count}`);
+
+    s.reset('readouts');
+    s.reset('readouts-interval');
+    await sleep(animationWait());
+    check('readouts: removed, the pill goes back and nothing is read',
+        pill().get_transformed_size()[0] === baseWidth && bar._metrics._timeoutId === 0 &&
+        !bar.groups[1].visible, `width=${pill().get_transformed_size()[0]} base=${baseWidth}`);
+}
+
 // FROONTY_TEST_ONLY=testA,testB runs only those checks (while debugging).
 const ONLY_TESTS = {
     testClaudeAttention, testClaudeAttentionWindows,
     testPanic, testHoverOpen,
     testNotes, testNotesTabsAndColors, testNotesHeader, testAllNotesWindow,
+    testNotesNativeWindowMenu,
     testMedia, testBreak, testHub, testLifecycle,
     testResizeGrip, testMediaPill, testMediaExtras, testMediaPanic, testMediaChoiceSurvivesLock,
     testPointer, testHubLayout, testDatePill, testCalendarMenu, testEmptyHub,
-    testSettingsButton, testKillProcess, testCpuLoadButton, testTemperatureButton, testFormulas,
+    testSettingsButton, testKillProcess, testCpuLoadButton, testTemperatureButton, testReadouts,
+    testFormulas,
     testClaude, testClipboard, testClipboardSwitcher, testNotesMath,
     testWriting, testWritingFixes, testStartup, testBrightness, testPadNoiseSlider,
     testTimezonePlanner,
@@ -9746,6 +9843,7 @@ export async function runAll(outDir) {
         await testFanLockButton();
         await testCpuLoadButton();
         await testTemperatureButton();
+        await testReadouts();
         await testFormulas(outDir);
         await testNotesMath(outDir);
         await testBreak(outDir);

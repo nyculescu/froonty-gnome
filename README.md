@@ -69,18 +69,24 @@ feature has a design note in [docs/features/](docs/features/).
   Available now:
   - **Mute microphone** and **Mute sound**, through GNOME's own audio
     mixer.
-  - **Claude session usage** shows the session's percentage, large, over a
-    faint Claude Spark. A click opens the Claude tab.
+  - **Claude session usage** shows the session's percentage after the
+    Claude Spark. A click opens the Claude tab.
   - **System resource load** shows the CPU load, GPU load or RAM usage
-    (chosen in Settings → Btop) with "%", over a faint CPU, GPU or RAM
-    icon, coloured green to red as the Btop tab's levels. Its tooltip names
+    (chosen in Settings → Btop) with "%", after a CPU, GPU or RAM icon,
+    coloured green to red as the Btop tab's levels. Its tooltip names
     the source ("GPU load: 40%"). It reads only while the island is open.
     A click opens the Btop tab.
-  - **Temperature** shows the CPU or GPU temperature in °C over a
+  - **Temperature** shows the CPU or GPU temperature in °C after a
     thermometer, green to red. A click opens the Btop tab.
   - The camera button (**Block camera for apps that ask GNOME**) is switched
     off for now; its code is kept
     ([details](docs/features/panic-buttons.md#4-block-camera-for-apps-that-ask-gnome)).
+- **Readouts.** Up to 8 values printed on the collapsed pill, split around
+  the time so that both sides come out about as wide, chosen in Settings: CPU, GPU and RAM load, temperatures,
+  network speed, disk used, Claude usage, favourite time zones. They only
+  show; a click still opens the island. None by default, and with none
+  nothing is read
+  ([details](docs/features/readouts.md)).
 - **Media** tab: what music and video players report (MPRIS), with play,
   pause, skip and seek, the cover (tinting the island's accent), and a
   choice of player ("Automatic" picks the playing one).
@@ -326,6 +332,7 @@ froonty@catalin/             the extension (this directory is what gets installe
 │   ├── hubResize.js         the sizes the grip may give the open tab
 │   ├── contextMenu.js       GNOME popup menus for features (note labels)
 │   ├── panicBar.js          up to 8 panic buttons, in two groups
+│   ├── readoutBar.js        up to 8 values on the collapsed pill, in two groups
 │   ├── hoverOpen.js         opens the island after hovering it
 │   └── panelLauncher.js     top bar icon while the island is not shown
 ├── features/                hub tabs, one folder each
@@ -363,6 +370,7 @@ froonty@catalin/             the extension (this directory is what gets installe
 ├── panic/                   panic button catalog, factories, buttons (mute,
 │                            Claude session, block camera, pause media,
 │                            sit/stand), prefs
+├── readouts/                readout catalog, what each prints, factories, prefs
 ├── prefs/rows.js            settings rows the settings tabs share
 ├── core/                    shared by features: emitter.js, tooltip.js,
 │                            privateFile.js, subprocess.js, textScroll.js
@@ -463,6 +471,8 @@ its tabs:
 - **Appearance:** size (the expanded size is for when no tab is on),
   animation.
 - **Panic buttons:** which buttons, and their order.
+- **Readouts:** which values the collapsed pill prints, their order, how
+  often they refresh.
 - **Media:** enable, music on the island, players followed, lyrics, up
   next, cover art from the internet, size.
 - **Notes:** enable, folder, size, All notes.
@@ -501,6 +511,8 @@ The keys behind it:
 | `corner-radius` | 14 | Clamped to half the height by St |
 | `animation-duration` | 250 ms | GNOME's enable-animations setting still applies |
 | `panic-buttons` | microphone, sound | Panic buttons in bar order, at most 8 (half on each side of the date pill, the right side one more when odd) |
+| `readouts` | none | Values on the collapsed pill, in order, at most 8 (split around the time so that both sides come out about as wide) |
+| `readouts-interval` | 5 s | How often the system readouts read the computer, 1-60 |
 | `timezone-planner-cities` | Dublin, Timisoara | Saved city names and IANA timezone IDs |
 | `timezone-planner-favorites` | Dublin, Timisoara | Up to two city timezones shown on the Quick Settings button |
 | `media-enabled` | `true` | Show the Media tab |

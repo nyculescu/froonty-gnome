@@ -21,7 +21,7 @@ const KEY = 'panic-buttons';
 // Given more room (the other group is wider), the gaps between the buttons
 // grow; a lone button goes to the group's outer end, away from the date
 // pill, so the two groups' outer edges mirror each other.
-const PanicGroupLayout = GObject.registerClass(
+export const PanicGroupLayout = GObject.registerClass(
 class PanicGroupLayout extends Clutter.LayoutManager {
     /** @param {boolean} leading the group before the date pill */
     _init(leading) {
@@ -49,6 +49,14 @@ class PanicGroupLayout extends Clutter.LayoutManager {
         return [min, natural];
     }
 
+    // Room to spare, among count actors: where the first goes and what each
+    // gap gains.
+    _placement(extra, count) {
+        if (count > 1)
+            return {start: 0, grow: extra / (count - 1)};
+        return {start: this._leading ? 0 : extra, grow: 0};
+    }
+
     vfunc_allocate(container, box) {
         const shown = container.get_children().filter(a => a.visible);
         const widths = shown.map(a => a.get_preferred_width(-1)[1]);
@@ -56,12 +64,9 @@ class PanicGroupLayout extends Clutter.LayoutManager {
         const natural = widths.reduce((sum, w) => sum + w, 0) + spacing * Math.max(0, shown.length - 1);
         const extra = Math.max(0, box.get_width() - natural);
         const rtl = container.get_text_direction() === Clutter.TextDirection.RTL;
-        let gap = spacing;
-        let x = 0; // from the group's leading edge
-        if (shown.length > 1)
-            gap += extra / (shown.length - 1);
-        else if (!this._leading)
-            x = extra;
+        const {start, grow} = this._placement(extra, shown.length);
+        const gap = spacing + grow;
+        let x = start; // from the group's leading edge
         shown.forEach((actor, i) => {
             const w = widths[i];
             const [, h] = actor.get_preferred_height(w);

@@ -36,6 +36,9 @@ are now in the pill, which opens GNOME's calendar menu.)
 Without a date pill (a Shell without GNOME's date menu) the two groups are
 centred together, as one.
 
+For values that show while the island is collapsed and press nothing, see
+[readouts.md](readouts.md).
+
 ## 2. Decisions (agreed 2026-09-28)
 
 - **Unused slots are hidden**; only configured buttons appear.
@@ -72,7 +75,7 @@ Added 2026-09-29 (user request), off by default:
 
 | Id | What it shows | A click |
 |---|---|---|
-| `claude-session` | The session's or the week's usage (0–100, no "%") in Claude's orange (#d97757), as large as the button allows, over a faint grey Spark; "?" when unknown | Opens the Claude tab |
+| `claude-session` | The session's or the week's usage (0–100, no "%") in Claude's orange (#d97757), after the Spark in the same orange; "?" when unknown | Opens the Claude tab |
 
 It is an indicator, not an action. Settings → Claude → **Usage to show**
 chooses Session or Weekly (`claude-panic-usage-window`). Its name, which is
@@ -87,8 +90,8 @@ Added 2026-10-04, off by default:
 
 | Id | What it shows | A click |
 |---|---|---|
-| `cpu-load` ("System resource load") | One selected metric—CPU load, GPU load or RAM usage, 0–100 with "%" ("37%"), over its CPU/GPU/RAM icon; the number in the Btop tab's level colours; "?" before the first reading | Opens the Btop tab |
-| `temperature` | Average CPU temperature, maximum CPU temperature, GPU temperature, or the one linked to the load button, in °C ("76°C") overlaid on a thermometer, green-to-yellow-to-red (green through 50 °C, red at 100 °C). Linked to RAM load it shows the average CPU temperature: general-purpose RAM temperature is not available | Opens the Btop tab |
+| `cpu-load` ("System resource load") | One selected metric—CPU load, GPU load or RAM usage, 0–100 with "%" ("37%"), after its CPU/GPU/RAM icon, solid white; the number in the Btop tab's level colours; "?" before the first reading | Opens the Btop tab |
+| `temperature` | Average CPU temperature, maximum CPU temperature, GPU temperature, or the one linked to the load button, in °C ("76°C") after a solid white thermometer, green-to-yellow-to-red (green through 50 °C, red at 100 °C). Linked to RAM load it shows the average CPU temperature: general-purpose RAM temperature is not available | Opens the Btop tab |
 
 Their choices are in Settings → Btop → Panic buttons. Both share one
 sampler, active only while the island is open and at the Btop refresh

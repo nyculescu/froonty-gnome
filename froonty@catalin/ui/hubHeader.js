@@ -5,7 +5,7 @@
 //
 //   (date time)  a small pill with the date in the top bar clock's format
 //        (the one under the island), the time as Froonty shows it, and
-//        GNOME's unread dot after the time; a press closes the island and
+//        the unread dot after the time; a press closes the island and
 //        opens GNOME's own calendar and notification menu (absent when
 //        this Shell has no date menu). Its middle is always exactly over
 //        GNOME's top bar clock, concealed under the island (Hub's
@@ -165,7 +165,7 @@ export class HubHeader {
         return [(start ? start + spacing : 0) + pill / 2, pill / 2 + (end ? spacing + end : 0)];
     }
 
-    /** @param {boolean} unread whether GNOME's clock would show its dot */
+    /** @param {boolean} unread CalendarMenu.hasUnread */
     setUnread(unread) {
         this._unread = unread;
         if (!this.calendarButton)
@@ -178,7 +178,7 @@ export class HubHeader {
     // clock writes it (weekday, month and day: ClockService.snapshot().date),
     // always (there is room here; "Show date when collapsed" is the
     // collapsed pill's), the time as the collapsed pill shows it (12/24-hour
-    // as set in Froonty), and GNOME's unread dot after the time. A press
+    // as set in Froonty), and the unread dot after the time. A press
     // opens GNOME's own calendar and notification menu, which the island
     // covers; the island closes as it opens (Island._openCalendar).
     _buildCalendarButton() {

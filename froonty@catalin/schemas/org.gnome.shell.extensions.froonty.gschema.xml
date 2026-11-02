@@ -80,6 +80,19 @@
       <description>At most 8 ids from panic/catalog.js (half on each side of the hub header's date pill, the right side one more when odd); unknown ids are ignored.</description>
     </key>
 
+    <!-- Readouts (docs/features/readouts.md) -->
+    <key name="readouts" type="as">
+      <default>[]</default>
+      <summary>Readouts on the collapsed pill, in order</summary>
+      <description>At most 8 ids from readouts/catalog.js, read-only values on the collapsed pill, split around the time so that both sides come out about as wide. Unknown ids are ignored.</description>
+    </key>
+    <key name="readouts-interval" type="i">
+      <range min="1" max="60"/>
+      <default>5</default>
+      <summary>Readouts refresh interval (s)</summary>
+      <description>How often the readouts of the CPU, graphics cards, memory, disk and network read the computer while the collapsed pill is on screen.</description>
+    </key>
+
     <!-- Time zone planner (docs/features/timezone-planner.md) -->
     <key name="timezone-planner-cities" type="as">
       <default>['Dublin|Europe/Dublin', 'Timisoara|Europe/Bucharest']</default>

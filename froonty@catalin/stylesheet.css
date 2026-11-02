@@ -57,6 +57,45 @@
     font-weight: bold;
 }
 
+/* Readouts: values on the collapsed pill, on both sides of the time. The
+   value's minimum width keeps the pill still as the digits change. */
+.froonty-readouts {
+    spacing: 10px;
+    padding: 0 6px;
+}
+
+.froonty-readout {
+    spacing: 3px;
+}
+
+.froonty-readout StIcon {
+    icon-size: 13px;
+    color: #ffffff;
+}
+
+.froonty-readout-value {
+    font-size: 0.85em;
+    font-weight: bold;
+    font-feature-settings: "tnum";
+}
+
+.froonty-readout-percent .froonty-readout-value {
+    min-width: 30px;
+}
+
+.froonty-readout-degrees .froonty-readout-value {
+    min-width: 34px;
+}
+
+.froonty-readout-speed .froonty-readout-value {
+    min-width: 34px;
+}
+
+.froonty-readout-claude StIcon,
+.froonty-readout-claude .froonty-readout-value {
+    color: #d97757;
+}
+
 /* The Claude attention bar under the collapsed pill
    (docs/features/claude-attention.md): the pill's black and hairline,
    one line, the Spark in Claude's clay. */
@@ -982,47 +1021,45 @@
     text-align: center;
 }
 
-/* Panic buttons "Claude session usage", load and thermometer: a number
-   over a faint grey icon (a watermark). No padding; the stack takes the
-   size the other icon buttons have (16px icon + 5px/7px padding), so the
-   bar stays even. */
+/* Panic buttons "Claude session usage", load and thermometer: an icon and
+   a number, as the readouts. As tall as the other icon buttons (16px icon +
+   5px padding), so the bar stays even. The number's minimum width keeps the
+   button still as the digits change. */
 .froonty-icon-button.froonty-claude-session,
 .froonty-icon-button.froonty-sysmon-cpu,
 .froonty-icon-button.froonty-sysmon-temp {
-    padding: 0;
+    padding: 0 6px;
 }
-.froonty-claude-session-stack,
-.froonty-sysmon-cpu-stack {
-    width: 30px;
+.froonty-panic-value {
+    spacing: 3px;
     height: 26px;
 }
 /* Two classes, to win over `.froonty-icon-button StIcon`. */
-.froonty-panic-button .froonty-claude-session-icon,
-.froonty-panic-button .froonty-sysmon-cpu-icon {
-    icon-size: 22px;
-    color: rgba(255, 255, 255, 0.28);
+.froonty-panic-button .froonty-panic-value-icon {
+    icon-size: 13px;
+    color: #ffffff;
 }
 .froonty-claude-session-number,
 .froonty-sysmon-cpu-number,
 .froonty-sysmon-temp-number {
-    font-weight: 800;
+    font-size: 0.85em;
+    font-weight: bold;
     font-feature-settings: "tnum";
 }
-/* Claude's: as large as the button allows, in Claude's orange, over the
-   Spark. */
+.froonty-claude-session .froonty-panic-value-icon,
 .froonty-claude-session-number {
     color: #d97757;
-    font-size: 15px;
-    letter-spacing: -0.5px;
 }
-/* The load and thermometer's: with its unit ("37%", "76°C") over a
-   CPU/GPU/RAM or thermometer icon, smaller to fit "100%"; the load's in
-   the level colours below, the thermometer's coloured by
+.froonty-claude-session-number {
+    min-width: 22px;
+}
+/* The load's in the level colours below, the thermometer's coloured by
    panic/temperature.js. */
-.froonty-sysmon-cpu-number,
+.froonty-sysmon-cpu-number {
+    min-width: 30px;
+}
 .froonty-sysmon-temp-number {
-    font-size: 11px;
-    letter-spacing: -0.4px;
+    min-width: 34px;
 }
 
 /* Btop (system monitor) feature. Shares as a five-cell level

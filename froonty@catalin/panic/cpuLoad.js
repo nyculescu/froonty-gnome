@@ -1,15 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// The selected CPU, GPU or RAM load, over its matching system icon. A click
+// The selected CPU, GPU or RAM load, after its matching system icon. A click
 // opens Btop; PanicMetricsService owns sampling while the panic bar is shown.
-
-import Clutter from 'gi://Clutter';
-import St from 'gi://St';
 
 import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 
 import {cpuIcon, gpuIcon, memoryIcon} from '../features/sysmon/icon.js';
 import {panicLoad} from '../features/sysmon/panicMetrics.js';
 import {levelClass} from '../features/sysmon/level.js';
+import {valueButton} from './valueButton.js';
 
 const ICONS = {cpu: cpuIcon, gpu: gpuIcon, memory: memoryIcon};
 
@@ -26,37 +24,14 @@ function sourceName(source) {
 
 export class CpuLoadButton {
     // The name comes from the selected source (sourceName), not the title.
-    constructor(_title, {selectTab, metrics}) {
+    constructor(title, {selectTab, metrics}) {
         this._metrics = metrics;
         this.usesMetrics = true;
 
-        this._number = new St.Label({
-            style_class: 'froonty-sysmon-cpu-number',
-            x_expand: true,
-            y_expand: true,
-            x_align: Clutter.ActorAlign.CENTER,
-            y_align: Clutter.ActorAlign.CENTER,
-        });
-        this._icon = new St.Icon({
-            style_class: 'froonty-sysmon-cpu-icon',
-            x_expand: true,
-            y_expand: true,
-            x_align: Clutter.ActorAlign.CENTER,
-            y_align: Clutter.ActorAlign.CENTER,
-        });
-        const stack = new St.Widget({
-            style_class: 'froonty-sysmon-cpu-stack',
-            layout_manager: new Clutter.BinLayout(),
-        });
-        stack.add_child(this._icon);
-        stack.add_child(this._number);
-
-        this.actor = new St.Button({
-            style_class: 'froonty-icon-button froonty-panic-button froonty-sysmon-cpu',
-            can_focus: true,
-            track_hover: true,
-            child: stack,
-        });
+        const {actor, icon, number} = valueButton(title, 'froonty-sysmon-cpu', 'froonty-sysmon-cpu-number');
+        this.actor = actor;
+        this._icon = icon;
+        this._number = number;
         this.actor.connect('clicked', () => selectTab('sysmon'));
         this._metricsId = metrics.connect('changed', () => this._sync());
         this._sync();

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// The panic bar's CPU/GPU/RAM load and temperature readings. One sampler is
-// shared by both indicators and runs only while the bar is on screen.
+// The CPU/GPU/RAM load and temperature readings of the panic bar and of the
+// Readouts. Each has one sampler, running only while it is on screen.
 
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
@@ -12,6 +12,7 @@ import {FOLLOW_UP_MS, INTERVAL_KEY} from './service.js';
 
 export const PANIC_LOAD_KEY = 'sysmon-panic-load-source';
 export const PANIC_TEMP_KEY = 'sysmon-panic-temp-source';
+export const READOUTS_INTERVAL_KEY = 'readouts-interval';
 const LOAD_SOURCES = ['cpu', 'gpu', 'memory'];
 const TEMP_SOURCES = ['average-cpu', 'max-cpu', 'gpu', 'load-source'];
 
@@ -84,19 +85,87 @@ export function temperatureColor(value) {
     return `rgb(${rgb.join(', ')})`;
 }
 
-export class PanicMetricsService extends Emitter {
-    constructor(settings, {io = SYSTEM_IO, now = () => GLib.get_monotonic_time() / 1e6} = {}) {
+// One sampling loop: a reading at once, a quick second one (load and speeds
+// are the change between two readings), then one each `interval` seconds,
+// only while active. Subclasses set sections, cores and interval.
+export class SystemSampling extends Emitter {
+    constructor({io = SYSTEM_IO, now = () => GLib.get_monotonic_time() / 1e6} = {}) {
         super();
-        this._settings = settings;
         this._io = io;
         this._now = now;
         this._sampler = new Sampler(io);
         this._active = false;
         this._timeoutId = 0;
         this._cancellable = null;
-        this._settingsIds = [];
         this._warned = false;
         this.snapshot = null;
+        /** Readings since the loop started; load needs two. */
+        this.samples = 0;
+        this.sections = new Set();
+        this.cores = false;
+        this.interval = 2;
+    }
+
+    setActive(active) {
+        if (active === this._active)
+            return;
+        this._active = active;
+        this._restart();
+    }
+
+    _restart() {
+        if (this._timeoutId)
+            GLib.source_remove(this._timeoutId);
+        this._timeoutId = 0;
+        this._cancellable?.cancel();
+        this._cancellable = null;
+        this.snapshot = null;
+        this.samples = 0;
+        this._sampler.reset();
+        this.emit('changed');
+        if (!this._active || this.sections.size === 0)
+            return;
+        this._cancellable = new Gio.Cancellable();
+        this._tick(true);
+    }
+
+    // _restart cancels the tick under way and removes the next one.
+    async _tick(first) {
+        const cancellable = this._cancellable;
+        try {
+            const snapshot = await this._sampler.sample([...this.sections], {
+                cores: this.cores,
+                now: this._now(),
+                cancellable,
+            });
+            if (!cancellable.is_cancelled() && snapshot) {
+                this.snapshot = snapshot;
+                this.samples++;
+                this.emit('changed');
+            }
+        } catch (error) {
+            if (!cancellable.is_cancelled() && !this._warned) {
+                console.warn(`Froonty: system metrics sample failed: ${error.message}`);
+                this._warned = true;
+            }
+        } finally {
+            if (!cancellable.is_cancelled()) {
+                const delay = first ? FOLLOW_UP_MS : this.interval * 1000;
+                this._timeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, delay, () => {
+                    this._timeoutId = 0;
+                    this._tick(false);
+                    return GLib.SOURCE_REMOVE;
+                });
+            }
+        }
+    }
+}
+
+export class PanicMetricsService extends SystemSampling {
+    constructor(settings, options = {}) {
+        super(options);
+        this._settings = settings;
+        this._settingsIds = [];
         this._readSettings();
     }
 
@@ -116,69 +185,45 @@ export class PanicMetricsService extends Emitter {
         this._settingsIds = [];
     }
 
-    setActive(active) {
-        if (active === this._active)
-            return;
-        this._active = active;
-        this._restart();
-    }
-
     _readSettings() {
         const load = this._settings.get_string(PANIC_LOAD_KEY);
         const temperature = this._settings.get_string(PANIC_TEMP_KEY);
         this.loadSource = LOAD_SOURCES.includes(load) ? load : 'cpu';
         this.temperatureSource = TEMP_SOURCES.includes(temperature) ? temperature : 'load-source';
         this.interval = this._settings.get_int(INTERVAL_KEY);
-        this.sections = new Set();
+        const selected = temperatureSource(this.temperatureSource, this.loadSource);
+        this.sections = new Set([this.loadSource, selected === 'gpu' ? 'gpu' : 'cpu']);
+        // Per-core temperatures only for a CPU temperature shown.
+        this.cores = selected !== 'gpu';
+    }
+}
 
-        this.sections.add(this.loadSource);
-        this.sections.add(
-            temperatureSource(this.temperatureSource, this.loadSource) === 'gpu' ? 'gpu' : 'cpu');
+// The Readouts' loop (ui/readoutBar.js): only the sections the chosen ones
+// need, at an interval of their own, since it also runs while the island is
+// collapsed.
+export class ReadoutMetricsService extends SystemSampling {
+    constructor(settings, options = {}) {
+        super(options);
+        this._settings = settings;
+        this.interval = settings.get_int(READOUTS_INTERVAL_KEY);
+        this._settingsId = settings.connect(`changed::${READOUTS_INTERVAL_KEY}`, () => {
+            this.interval = settings.get_int(READOUTS_INTERVAL_KEY);
+            this._restart();
+        });
     }
 
-    _restart() {
-        if (this._timeoutId)
-            GLib.source_remove(this._timeoutId);
-        this._timeoutId = 0;
-        this._cancellable?.cancel();
-        this._cancellable = null;
-        this.snapshot = null;
-        this._sampler.reset();
-        this.emit('changed');
-        if (!this._active)
-            return;
-        this._cancellable = new Gio.Cancellable();
-        this._tick(true);
+    stop() {
+        this.setActive(false);
+        this._settings.disconnect(this._settingsId);
     }
 
-    // _restart cancels the tick under way and removes the next one.
-    async _tick(first) {
-        const cancellable = this._cancellable;
-        try {
-            const snapshot = await this._sampler.sample([...this.sections], {
-                // Per-core temperatures only for a CPU temperature shown.
-                cores: temperatureSource(this.temperatureSource, this.loadSource) !== 'gpu',
-                now: this._now(),
-                cancellable,
-            });
-            if (!cancellable.is_cancelled() && snapshot) {
-                this.snapshot = snapshot;
-                this.emit('changed');
-            }
-        } catch (error) {
-            if (!cancellable.is_cancelled() && !this._warned) {
-                console.warn(`Froonty: panic system metrics sample failed: ${error.message}`);
-                this._warned = true;
-            }
-        } finally {
-            if (!cancellable.is_cancelled()) {
-                const delay = first ? FOLLOW_UP_MS : this.interval * 1000;
-                this._timeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, delay, () => {
-                    this._timeoutId = 0;
-                    this._tick(false);
-                    return GLib.SOURCE_REMOVE;
-                });
-            }
-        }
+    /**
+     * @param {string[]} sections what the chosen readouts read
+     * @param {boolean} cores whether one needs per-core temperatures
+     */
+    setNeeds(sections, cores) {
+        this.sections = new Set(sections);
+        this.cores = cores;
+        this._restart();
     }
 }

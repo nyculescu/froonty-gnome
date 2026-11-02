@@ -12,7 +12,7 @@
 //   └─────┴──────────────────────────────────────────────────────┘
 //     header (hubHeader.js), across the whole hub: a pill with the date
 //       and the time that opens GNOME's own calendar and notification menu
-//       (with GNOME's unread dot), exactly over GNOME's clock under the
+//       (with the unread dot), exactly over GNOME's clock under the
 //       island; the panic bar (max 8) on its two sides, half each (the
 //       right one more when odd), both sides equally wide
 //     side column, below the header: the tab column (one icon per feature;
@@ -200,10 +200,10 @@ export class Hub extends EventEmitter {
     }
 
     /**
-     * Shows GNOME's unread dot on the header's date pill, whose name then
+     * Shows the unread dot on the header's date pill, whose name then
      * says so.
      *
-     * @param {boolean} unread whether GNOME's clock would show its dot
+     * @param {boolean} unread CalendarMenu.hasUnread
      */
     setUnread(unread) {
         this._header.setUnread(unread);

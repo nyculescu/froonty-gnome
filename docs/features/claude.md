@@ -130,8 +130,8 @@ Froonty reads a different one.
   Δ under it without scrolling (320 before the livenerf row, 260 before
   the credits row).
 - **Panic button** `claude-session` (added the same day, user request):
-  the session's (or, if chosen, the week's) usage in orange, as large as
-  the button allows, over a faint grey Spark, number only; "?" when
+  the session's (or, if chosen, the week's) usage in orange, after the
+  Spark in the same orange, number only; "?" when
   unknown; a click opens this tab. Add it in Settings → Panic buttons. In
   Settings → Claude → Panic button, choose Session or Weekly; the button
   follows the choice immediately and says which window it shows in its

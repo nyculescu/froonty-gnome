@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // The store over GNOME's message tray (shell/notificationStore.js), which
-// the Claude attention bar reads GNOME's notifications through.
+// the Claude attention bar and the unread dot read GNOME's notifications
+// through.
 //
 // GNOME's objects are fakes with the same shape as GNOME Shell 50.1's
 // (ui/messageTray.js): a source keeps at most what it is given, emits
@@ -287,8 +288,9 @@ const FakeTray = GObject.registerClass({
 const ago = seconds => GLib.DateTime.new_now_local().add_seconds(-seconds);
 
 function notify(source, {title = 'Title', body = 'Body', urgency = NORMAL, seconds = 60,
-    acknowledged = false, time = undefined, actions = [], resident = false} = {}) {
+    acknowledged = false, time = undefined, actions = [], resident = false, transient = false} = {}) {
     const n = new FakeNotification();
+    n.isTransient = transient;
     n.title = title;
     n.body = body;
     n.urgency = urgency;
@@ -619,6 +621,41 @@ test('store: dismiss() destroys with the dismissed reason; again, or unlisted, i
     eq(titles(store).length, 1);
     ok(store.has(other));
     store.unwatch();
+});
+
+const usec = date => date.to_unix_usec();
+
+test('store: hasNewerThan() sees a seen notification that came after the time', () => {
+    const tray = new FakeTray();
+    const source = makeSource(tray);
+    const store = makeStore(tray);
+    store.watch();
+    const seenAt = usec(ago(30));
+    notify(source, {title: 'Older', seconds: 60, acknowledged: true});
+    eq(store.hasNewerThan(seenAt), false, 'older than the time');
+    const newer = notify(source, {title: 'Newer', seconds: 10, acknowledged: true});
+    eq(store.hasNewerThan(seenAt), true, 'its banner having shown changes nothing');
+    eq(store.hasNewerThan(usec(ago(5))), false, 'the time moved past it');
+    store.dismiss(newer);
+    eq(store.hasNewerThan(seenAt), false, 'gone');
+    store.unwatch();
+});
+
+test('store: hasNewerThan() follows an update, and skips a transient or timeless one', () => {
+    const tray = new FakeTray();
+    const source = makeSource(tray);
+    const store = makeStore(tray);
+    store.watch();
+    const seenAt = usec(ago(30));
+    notify(source, {title: 'Goes with its banner', seconds: 10, transient: true});
+    notify(source, {title: 'No time', time: null});
+    eq(store.hasNewerThan(seenAt), false);
+    const old = notify(source, {title: 'Old', seconds: 60, acknowledged: true});
+    eq(store.hasNewerThan(seenAt), false);
+    old.datetime = ago(1);
+    eq(store.hasNewerThan(seenAt), true, 'GNOME renewed its time');
+    store.unwatch();
+    eq(store.hasNewerThan(seenAt), false, 'not watching');
 });
 
 await done();

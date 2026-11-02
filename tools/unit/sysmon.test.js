@@ -7,10 +7,10 @@ import {levelCells, levelClass} from '../../froonty@catalin/features/sysmon/leve
 import {Sampler, SECTIONS} from '../../froonty@catalin/features/sysmon/sampler.js';
 import {SysmonService} from '../../froonty@catalin/features/sysmon/service.js';
 import {
-    PANIC_LOAD_KEY, PANIC_TEMP_KEY, PanicMetricsService, panicLoad,
-    panicTemperature, temperatureColor,
+    PANIC_LOAD_KEY, PANIC_TEMP_KEY, PanicMetricsService, READOUTS_INTERVAL_KEY,
+    ReadoutMetricsService, panicLoad, panicTemperature, temperatureColor,
 } from '../../froonty@catalin/features/sysmon/panicMetrics.js';
-import {done, eq, ok, test} from './test.js';
+import {done, eq, ok, sleep, test, waitFor} from './test.js';
 
 const CPUINFO = `processor\t: 0
 vendor_id\t: GenuineIntel
@@ -417,6 +417,28 @@ test('panic sampler reads the union of the selected load and thermometer sources
     eq([...service.sections], ['gpu']);
     settings.set_string(PANIC_LOAD_KEY, 'memory');
     eq([...service.sections].sort(), ['cpu', 'memory']);
+    service.stop();
+    eq(settings.handlers.size, 0);
+});
+
+test('the readouts\' sampler reads only what they need, at their own interval, while shown', async () => {
+    const settings = fakeSettings({[READOUTS_INTERVAL_KEY]: 7});
+    const service = new ReadoutMetricsService(settings, {io: fakeIo(machine()).io, now: () => 1});
+    eq(service.interval, 7);
+
+    service.setActive(true);
+    await sleep(0);
+    eq(service.samples, 0, 'nothing chosen, nothing read');
+    eq(service._timeoutId, 0);
+
+    service.setNeeds(['memory'], false);
+    ok(await waitFor(() => service.samples > 0), 'chosen, it reads');
+    eq(Object.keys(service.snapshot), ['memory']);
+    eq(service._timeoutId !== 0, true, 'a next reading is due');
+
+    service.setActive(false);
+    eq(service._timeoutId, 0);
+    eq(service.samples, 0);
     service.stop();
     eq(settings.handlers.size, 0);
 });

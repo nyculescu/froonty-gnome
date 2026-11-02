@@ -5,7 +5,7 @@ Status:
 - **A. GNOME's own calendar and notification menu, from the island:
   implemented** (Unreleased, 2026-10-02). The pill covers GNOME's clock;
   this step makes what the clock opens reachable again, and shows the
-  clock's unread-notifications dot on the pill. Since 2026-10-03 a date
+  unread-notifications dot on the pill. Since 2026-10-03 a date
   pill in the hub header opens it (it replaced a 📅 icon button, and the
   Clock tab went).
 - **B. A Calendar tab on Evolution Data Server: removed** (after
@@ -29,7 +29,7 @@ either**: no calendar and no notification store of Froonty's own
 (DESIGN.md §2, principle 1).
 
 ```
- collapsed:      ( 14:35 • )                    • = GNOME's unread dot
+ collapsed: ( 14:35 • ) • = the unread dot
  expanded:  ┌────┬───────────────────────────────────────────┐
             │ 📝 │   [🎤][🔊] ( Sat Oct 3 14:35 • )          │  the date pill opens
             │ …  │   active tab                              │  GNOME's menu
@@ -55,11 +55,13 @@ either**: no calendar and no notification store of Froonty's own
    where the clock is: as on GNOME's clock, the menu closes and nothing
    else opens), or Super+V again. The focus goes back to where it was
    before the island was opened.
-5. **Unread notifications:** while GNOME's clock would show its dot, the
-   collapsed pill shows the same dot after the time, and so does the date
-   pill in the open island. Showing GNOME's list marks the notifications as seen,
-   GNOME's own rule, and the dot goes. Do Not Disturb hides it, as on the
-   clock.
+5. **Unread notifications:** while GNOME's clock would show its dot, or a
+   notification has come or changed since GNOME's list was last shown, the
+   collapsed pill shows a dot after the time, and so does the date pill in
+   the open island. A notification whose banner has shown counts: GNOME
+   calls it seen and shows no dot for it. Showing the list clears the dot.
+   A transient notification, gone with its banner, leaves none. Do Not
+   Disturb hides it, as on the clock.
 6. **Banners:** a notification that arrives while the island is open waits
    until the island closes, then shows as usual. (Without this it would
    show underneath the open island and count as seen.)
@@ -76,7 +78,7 @@ either**: no calendar and no notification store of Froonty's own
     has only "Sat 3"), and the time in Froonty's 12/24-hour setting
     ("Follow system" follows GNOME's): "Sat Oct 3 14:35". Always with the
     date: there is room in the header, and "Show date when collapsed" is
-    the collapsed pill's. GNOME's unread dot follows the time, as on the
+    the collapsed pill's. The unread dot follows the time, as on the
     collapsed pill. The figures are tabular, so the pill keeps its width
     from minute to minute; it changes a little when the hour gains a
     digit (12-hour), the day gains one, or the dot comes and goes, as
@@ -155,15 +157,15 @@ either**: no calendar and no notification store of Froonty's own
 ### A.4 Structure
 
 ```
-shell/dateMenu.js   CalendarMenu: open()/close() (Panel.toggleCalendar,
-                    closeCalendar), isOpen, 'opened'; hasUnread,
-                    'unread-changed' (the clock's MessagesIndicator);
-                    holdBanners() (MessageTray.bannerBlocked)
-ui/island.js        one at a time; holds banners while expanded
-ui/hubHeader.js     the date pill: date, time, dot, name, tooltip
-services/clock.js   snapshot(): date ("Sat Oct 3"), time, weekday,
-                    longDate; 'changed' on the top bar clock's ticks
-ui/collapsedView.js the dot after the time, balanced by a pad
+shell/dateMenu.js: CalendarMenu: open()/close() (Panel.toggleCalendar,
+  closeCalendar), isOpen, 'opened'; hasUnread, 'unread-changed' (the clock's
+  MessagesIndicator, and a NotificationStore for the notifications' times);
+  holdBanners() (MessageTray.bannerBlocked)
+ui/island.js: one at a time; holds banners while expanded; room for the dot
+ui/hubHeader.js: the date pill: date, time, dot, name, tooltip
+services/clock.js: snapshot(): date ("Sat Oct 3"), time, weekday, longDate;
+  'changed' on the top bar clock's ticks
+ui/collapsedView.js: the dot after the time, balanced by a pad
 ```
 
 ### A.5 Resources and lifecycle
@@ -171,9 +173,11 @@ ui/collapsedView.js the dot after the time, balanced by a pad
 Created with the island, released in `Island.destroy()` (so on every
 disable and screen lock): one handler on the date menu's
 `open-state-changed`, two on its unread indicator (`notify::visible`,
-`destroy`). The date pill: one handler on the clock service's `changed`,
-removed when the hub is destroyed. No timers, no polling, nothing created
-at module load. If the island holds banners when it is destroyed, it
+`destroy`), one on GNOME's `show-banners` setting, and a NotificationStore
+following the message tray. When the list was last shown is one number kept
+in the module, so the dot survives a screen lock. The date pill: one handler
+on the clock service's `changed`, removed when the hub is destroyed. No
+timers, no polling, nothing created at module load. If the island holds banners when it is destroyed, it
 releases them. When this Shell has no date menu, there is no date pill;
 without the indicator, no dot.
 

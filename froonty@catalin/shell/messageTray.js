@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Adapter around GNOME Shell's message tray, for the Claude attention bar
 // (features/claude/attentionHost.js, docs/features/claude-attention.md),
-// which reads GNOME's notifications from the Claude app and browsers.
+// which reads GNOME's notifications from the Claude app and browsers, and
+// for the unread dot (shell/dateMenu.js).
 //
 // PRIVATE / INTERNAL API. Verified against GNOME Shell
 // 50.1:

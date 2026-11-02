@@ -1,23 +1,20 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Panic button "Claude session usage": the session's or, as chosen in
 // Settings → Claude, the week's usage (0-100, no "%") in Claude's orange,
-// as large as the button allows, over a faint grey Spark (user request:
-// the number first, the Spark barely visible). Not an action: a click
-// opens the Claude tab. Its name (the tooltip) spells the number out.
+// after the Spark. Not an action: a click opens the Claude tab. Its name
+// (the tooltip) spells the number out.
 //
 // Same data and rules as the Claude tab (features/claude/service.js): read
 // each time the island opens, followed while it stays open, nothing while
 // it is collapsed. "?" when it is not known: offline, no reading, or a
 // window that renewed since the reading.
 
-import Clutter from 'gi://Clutter';
-import St from 'gi://St';
-
 import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 
 import {sparkIcon} from '../features/claude/icon.js';
 import {ClaudeService} from '../features/claude/service.js';
 import {WEEKLY} from '../features/claude/usage.js';
+import {valueButton} from './valueButton.js';
 
 const USAGE_WINDOW_KEY = 'claude-panic-usage-window';
 
@@ -33,36 +30,10 @@ export class ClaudeSessionButton {
         this._title = title;
         this._settings = settings;
 
-        this._number = new St.Label({
-            style_class: 'froonty-claude-session-number',
-            x_expand: true,
-            y_expand: true,
-            x_align: Clutter.ActorAlign.CENTER,
-            y_align: Clutter.ActorAlign.CENTER,
-        });
-        // Fills the whole button (its padding is 0), so the number can use
-        // all of it; the Spark behind is only a faint watermark.
-        const stack = new St.Widget({
-            style_class: 'froonty-claude-session-stack',
-            layout_manager: new Clutter.BinLayout(),
-        });
-        stack.add_child(new St.Icon({
-            style_class: 'froonty-claude-session-icon',
-            gicon: sparkIcon(),
-            x_expand: true,
-            y_expand: true,
-            x_align: Clutter.ActorAlign.CENTER,
-            y_align: Clutter.ActorAlign.CENTER,
-        }));
-        stack.add_child(this._number);
-
-        this.actor = new St.Button({
-            style_class: 'froonty-icon-button froonty-panic-button froonty-claude-session',
-            accessible_name: title,
-            can_focus: true,
-            track_hover: true,
-            child: stack,
-        });
+        const {actor, icon, number} = valueButton(title, 'froonty-claude-session', 'froonty-claude-session-number');
+        icon.gicon = sparkIcon();
+        this.actor = actor;
+        this._number = number;
         this.actor.connect('clicked', () => selectTab('claude'));
 
         this._service = new ClaudeService({settings});

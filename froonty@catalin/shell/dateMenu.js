@@ -4,16 +4,16 @@
 // PRIVATE / INTERNAL API. Every GNOME Shell internal Froonty touches for the
 // date menu is confined to this file. Verified against GNOME Shell 50.1:
 //
-//   Main.panel.statusArea.dateMenu     DateMenuButton instance registered by
-//                                      Panel._ensureIndicator() (ui/panel.js)
-//   dateMenu.container                 St.Bin wrapper that PanelMenu.ButtonBox
-//                                      places in the panel's center box
-//                                      (ui/panelMenu.js)
-//   dateMenu._clock                    the GnomeDesktop.WallClock behind the
-//                                      top bar clock (ui/dateMenu.js), alive
-//                                      as long as the Shell (topBarWallClock)
-//   dateMenu._indicator                MessagesIndicator, the clock's
-//                                      unread-notifications dot (CalendarMenu)
+//   Main.panel.statusArea.dateMenu: DateMenuButton instance registered by
+//     Panel._ensureIndicator() (ui/panel.js)
+//   dateMenu.container: St.Bin wrapper that PanelMenu.ButtonBox places in
+//     the panel's center box (ui/panelMenu.js)
+//   dateMenu._clock: the GnomeDesktop.WallClock behind the top bar clock
+//     (ui/dateMenu.js), alive as long as the Shell (topBarWallClock)
+//   dateMenu._indicator: MessagesIndicator, the clock's unread-notifications
+//     dot (CalendarMenu)
+//   Main.messageTray: its notifications' times, through NotificationStore
+//     (CalendarMenu)
 //
 // Why opacity instead of hide(): the date menu's popup is anchored to the
 // button (PopupMenu -> BoxPointer.setPosition(sourceActor)), PopupMenu closes
@@ -26,6 +26,7 @@
 // completely; coverBounds tells the island where it is on screen.
 
 import Clutter from 'gi://Clutter';
+import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import GnomeDesktop from 'gi://GnomeDesktop';
 import Graphene from 'gi://Graphene';
@@ -34,6 +35,12 @@ import St from 'gi://St';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import {EventEmitter} from 'resource:///org/gnome/shell/misc/signals.js';
+
+import {gnomeNotifications} from './messageTray.js';
+
+// When GNOME's list was last shown (Unix microseconds). A module's state
+// outlives disable(), which every screen lock is, as the notifications do.
+let listSeenAt = null;
 
 /**
  * The top bar clock's own WallClock, or null if this Shell has none
@@ -162,13 +169,13 @@ export class PanelClock extends EventEmitter {
 /**
  * GNOME's own calendar and notification menu: the one the top bar clock
  * opens, with the notification list, the calendar, events, world clocks
- * and weather. Froonty only opens and closes it and reads the clock's
- * unread-notifications dot. GNOME keeps the notifications, their actions
+ * and weather. Froonty only opens and closes it and reads whether there
+ * are unread notifications. GNOME keeps the notifications, their actions
  * and Do Not Disturb; nothing here dismisses or destroys a notification.
  *
  * Emits 'opened' when the menu opens, by any means (the island, Super+V, a
- * click on a visible clock), and 'unread-changed' when the dot appears or
- * goes.
+ * click on a visible clock), and 'unread-changed' when hasUnread may have
+ * changed.
  */
 export class CalendarMenu extends EventEmitter {
     constructor() {
@@ -177,12 +184,25 @@ export class CalendarMenu extends EventEmitter {
         this._menu = button?.menu ?? null;
         // GNOME's MessagesIndicator. It is visible while notifications are
         // unseen and not waiting for their banner, unless Do Not Disturb is
-        // on. Following it keeps GNOME's rules in one place.
+        // on.
         const indicator = button?._indicator;
         this._indicator = indicator instanceof St.Widget ? indicator : null;
         this._holdingBanners = false;
 
+        // What Froonty found stays GNOME's to count: its indicator covers
+        // the unseen ones, and the rest are not new.
+        listSeenAt ??= GLib.get_real_time();
+        this._notifications = new Gio.Settings({schema_id: 'org.gnome.desktop.notifications'});
+        this._notifications.connectObject('changed::show-banners',
+            () => this.emit('unread-changed'), this);
+        this._store = gnomeNotifications()?.createStore() ?? null;
+        this._storeId = this._store?.connect('changed', () => this.emit('unread-changed'));
+        this._store?.watch();
+
         this._menu?.connectObject('open-state-changed', (_menu, open) => {
+            // On closing too: what came while it was open was in the list.
+            listSeenAt = GLib.get_real_time();
+            this.emit('unread-changed');
             if (open)
                 this.emit('opened');
         }, this);
@@ -199,6 +219,10 @@ export class CalendarMenu extends EventEmitter {
         this.holdBanners(false);
         this._menu?.disconnectObject(this);
         this._indicator?.disconnectObject(this);
+        this._notifications.disconnectObject(this);
+        this._store?.disconnect(this._storeId);
+        this._store?.unwatch();
+        this._store = null;
         this._menu = null;
         this._indicator = null;
     }
@@ -212,9 +236,18 @@ export class CalendarMenu extends EventEmitter {
         return this._menu?.isOpen ?? false;
     }
 
-    /** Whether GNOME's clock would show its unread-notifications dot. */
+    /**
+     * Whether to show the unread dot: GNOME's clock shows its own, or a
+     * notification came since the list was last shown. GNOME's dot alone
+     * would miss every notification whose banner showed, which it counts
+     * as seen (MessageTray._updateShowingNotification). Do Not Disturb
+     * hides it, as on the clock.
+     */
     get hasUnread() {
-        return this._indicator?.visible ?? false;
+        if (this._indicator?.visible)
+            return true;
+        return this._notifications.get_boolean('show-banners') &&
+            (this._store?.hasNewerThan(listSeenAt) ?? false);
     }
 
     /**

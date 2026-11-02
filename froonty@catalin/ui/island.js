@@ -34,6 +34,7 @@ import {ContextMenu} from './contextMenu.js';
 import {IslandGeometry} from './geometry.js';
 import {HoverOpen} from './hoverOpen.js';
 import {Hub} from './hub.js';
+import {ReadoutBar} from './readoutBar.js';
 import {ResizeGrip} from './resizeGrip.js';
 
 const EXPAND_MODE = Clutter.AnimationMode.EASE_OUT_BACK;
@@ -111,6 +112,7 @@ export class Island {
 
         this._connectSignals();
         this._syncAccessory();
+        this._syncPillShown();
         this._syncCueSources();
         this._updateContent();
         this._updateUnread();
@@ -159,6 +161,8 @@ export class Island {
 
         // Before the hub: the accessory holds a feature's shared service.
         this._destroyAccessory();
+        this._readouts.disconnect(this._readoutsId);
+        this._readouts.destroy();
 
         // The hub stops feature services and destroys their views.
         this._hub.disconnectObject(this);
@@ -336,6 +340,9 @@ export class Island {
             featureView: id => this._hub?.viewOf(id) ?? null,
         };
         this._ctx = ctx;
+        this._readouts = new ReadoutBar(ctx);
+        this._collapsedView.setReadouts(this._readouts);
+        this._readoutsId = this._readouts.connect('changed', () => this._fitCollapsedWidth());
         this._hub = new Hub(ctx, FEATURES, {
             clockOffset: () => this._geometry.clockOffset(),
             openSettings: () => this._openSettings('settings'),
@@ -369,8 +376,8 @@ export class Island {
             event.get_key_symbol() === Clutter.KEY_Escape && this._hub.handleEscape()
                 ? Clutter.EVENT_STOP
                 : Clutter.EVENT_PROPAGATE);
-        // Over fullscreen windows the strip is unmapped: no accessory on the pill.
-        this._strip.connect('notify::mapped', () => this._syncAccessoryShown());
+        // Over fullscreen windows the strip is unmapped: nothing on the pill.
+        this._strip.connect('notify::mapped', () => this._syncPillShown());
         // Tab/arrow focus navigation is normally driven from the stage, which
         // the expanded island's modal grab keeps key events away from, so
         // forward them to the focus manager (as PanelMenu.Button does).
@@ -476,9 +483,7 @@ export class Island {
     }
 
     // The most urgent cue on the collapsed pill; the pill widens only when
-    // it no longer fits. Eased only when the cue itself changed, never
-    // while the pill is resizing anyway, and re-synced afterwards (the
-    // clock it covers may have changed meanwhile; see _onCoverChanged).
+    // it no longer fits.
     _updateCue() {
         const now = Date.now();
         let best = null;
@@ -490,7 +495,15 @@ export class Island {
         const resized = this._collapsedView.setCue(best);
         this._cueTab = best?.tab ?? null;
         this._pill.accessible_name = this._collapsedView.accessibleText;
-        if (!resized || this._expanded ||
+        if (resized)
+            this._easeToCollapsedSize();
+    }
+
+    // For a change in what the pill shows. Never while the pill is resizing
+    // anyway, and re-synced afterwards (the clock it covers may have changed
+    // meanwhile; see _onCoverChanged).
+    _easeToCollapsedSize() {
+        if (this._expanded ||
             this._pill.get_transition('width') || this._pill.get_transition('height'))
             return;
         const {width, height} = this._targetSize(false);
@@ -508,14 +521,17 @@ export class Island {
         }
     }
 
-    // GNOME's clock, under the pill, would show its unread-notifications
-    // dot: the pill shows one instead, and so does the hub header's date
-    // pill.
+    // The dot on the pill, which covers GNOME's clock and its dot, and on
+    // the hub header's date pill. GNOME's clock does not widen for a dot
+    // only Froonty shows, so the pill makes its own room.
     _updateUnread() {
         const unread = this._calendarMenu.hasUnread;
+        const changed = unread !== this._collapsedView.hasUnread;
         this._collapsedView.setUnread(unread);
         this._hub.setUnread(unread);
         this._pill.accessible_name = this._collapsedView.accessibleText;
+        if (changed)
+            this._easeToCollapsedSize();
     }
 
     _targetSize(expanded) {
@@ -589,20 +605,23 @@ export class Island {
         this._pill.set_size(width, height);
     }
 
-    // While the pill shows an accessory (or a notice), it is as wide as its
-    // content needs (a notice at most PEEK_MAX_WIDTH); otherwise 0, the
-    // usual size.
+    // While the pill shows readouts, an accessory, a notice, a cue or the
+    // unread dot, it is as wide as its content needs (a notice at most
+    // PEEK_MAX_WIDTH beside the readouts); otherwise 0, the usual size.
     _collapsedContentWidth() {
         const accessory = this._accessory;
         const shown = accessory && (accessory.showing || accessory.peekText);
-        if ((!shown && !this._collapsedView.hasCue) || !this._pill.get_stage())
+        const extras = this._collapsedView.hasCue || this._collapsedView.hasUnread ||
+            this._readouts.count > 0;
+        if ((!shown && !extras) || !this._pill.get_stage())
             return 0;
         const node = this._pill.get_theme_node();
         const [, natural] = this._collapsedView.actor.get_preferred_width(-1);
         const width = natural + node.get_horizontal_padding() +
             node.get_border_width(St.Side.LEFT) + node.get_border_width(St.Side.RIGHT);
         const scale = this._themeContext.scale_factor;
-        return accessory?.peekText ? Math.min(width, PEEK_MAX_WIDTH * scale) : width;
+        return accessory?.peekText
+            ? Math.min(width, PEEK_MAX_WIDTH * scale + this._readouts.width) : width;
     }
 
     // The accessory of the first feature that wants one (wings around the
@@ -614,7 +633,7 @@ export class Island {
             this._accessory = feature.createPillAccessory(this._ctx, {pill: this._pill});
             this._accessoryId = this._accessory.connect('changed', () => this._onAccessoryChanged());
             this._collapsedView.setAccessory(this._accessory);
-            this._syncAccessoryShown();
+            this._syncPillShown();
         }
         this._onAccessoryChanged();
     }
@@ -628,19 +647,27 @@ export class Island {
         this._accessory = null;
     }
 
-    _syncAccessoryShown() {
-        this._accessory?.setPillShown(!this._expanded && this._strip.mapped);
+    _syncPillShown() {
+        const shown = !this._expanded && this._strip.mapped;
+        this._accessory?.setPillShown(shown);
+        this._readouts.setShown(shown);
     }
 
     // Music came or went on the collapsed pill: its width follows (while
     // expanded, the collapse picks it up).
     _onAccessoryChanged() {
         this._collapsedView.setPeek(this._accessory?.peekText ?? null);
+        this._fitCollapsedWidth();
+    }
+
+    _fitCollapsedWidth() {
         this._pill.accessible_name = this._collapsedView.accessibleText;
         if (this._expanded || !this._pill.get_stage() ||
             this._pill.get_transition('height'))
             return;
         const {width} = this._targetSize(false);
+        if (width === this._pill.width && !this._pill.get_transition('width'))
+            return;
         this._pill.ease({
             width,
             duration: this._settings.get_int('animation-duration'),
@@ -649,7 +676,7 @@ export class Island {
     }
 
     // At least the geometry's (covering the clock), and wide enough for
-    // the collapsed row with an accessory or a cue in it.
+    // the collapsed row with an accessory, a cue or the dot in it.
     _collapsedSize() {
         return this._geometry.collapsedSize(this._collapsedContentWidth());
     }
@@ -736,7 +763,7 @@ export class Island {
             for (const bar of this._pillBars.values())
                 bar.hide();
         }
-        this._syncAccessoryShown();
+        this._syncPillShown();
         // The expanded island covers the place where GNOME shows banners.
         this._calendarMenu.holdBanners(expanded);
         this._hub.setShown(expanded);
