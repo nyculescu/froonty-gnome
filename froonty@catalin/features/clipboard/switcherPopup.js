@@ -24,6 +24,7 @@ import {excerpt} from './entries.js';
 import {popupPlacement, stepIndex} from './switching.js';
 import {filesHeading, filesPreview, HIDDEN, kindIcon} from './view.js';
 
+const dbg = msg => console.log(`Froonty DEBUG-SWITCHER ${GLib.get_monotonic_time() / 1000 | 0} ${msg}`); // DEBUG-SWITCHER
 // As Alt+Tab's (POPUP_DELAY_TIMEOUT, POPUP_FADE_OUT_TIME).
 const POPUP_DELAY_MS = 150;
 const FADE_OUT_MS = 100;
@@ -137,6 +138,7 @@ export class SwitcherPopup {
     open(mask) {
         this._grab = Main.pushModal(this.actor);
         this._mask = primaryModifier(mask);
+        dbg(`open: entries=${this._entries.length} mask=${this._mask} mods=${global.get_pointer()[2]} grabState=${this._grab.get_seat_state?.()} keyFocus=${global.stage.key_focus === this.actor}`); // DEBUG-SWITCHER
         this._render();
 
         // The modifier may have been released before the grab was taken
@@ -157,6 +159,7 @@ export class SwitcherPopup {
 
     /** Gone at once, without calling done (the extension is disabled). */
     destroy() {
+        dbg(`popup destroy: finished=${this._finished}`); // DEBUG-SWITCHER
         this._finished = true;
         this._clear();
         if (!this._gone)
@@ -175,6 +178,7 @@ export class SwitcherPopup {
         const state = event.get_state();
         const code = event.get_key_code();
         const action = global.display.get_keybinding_action(code, state);
+        dbg(`key press: keysym=${keysym} state=${state} action=${action} own=${this._action} repeat=${Boolean(event.get_flags() & Clutter.EventFlags.FLAG_REPEATED)}`); // DEBUG-SWITCHER
         if (action === this._action) {
             this._step(false);
         } else if ((state & Clutter.ModifierType.SHIFT_MASK) &&
@@ -194,6 +198,7 @@ export class SwitcherPopup {
     }
 
     _onKeyRelease() {
+        dbg(`key release: mods=${global.get_pointer()[2]} mask=${this._mask} finished=${this._finished}`); // DEBUG-SWITCHER
         if (this._mask && !(global.get_pointer()[2] & this._mask))
             this._finish(true);
         return Clutter.EVENT_STOP;
@@ -215,6 +220,7 @@ export class SwitcherPopup {
             return;
         this._finished = true;
         const entry = choose ? this.current : null;
+        dbg(`finish: choose=${choose} index=${this._index} kind=${entry?.kind ?? null} shown=${this.actor.opacity > 0} from=${new Error().stack.split('\n')[1]}`); // DEBUG-SWITCHER
         this._clear();
         if (this.actor.opacity > 0) {
             this.actor.reactive = false;

@@ -40,6 +40,7 @@ import {acquireRecorder, focusedApp, releaseRecorder} from './shared.js';
 import {isTerminal, pasteKeys} from './switching.js';
 import {SwitcherPopup} from './switcherPopup.js';
 
+const dbg = msg => console.log(`Froonty DEBUG-SWITCHER ${GLib.get_monotonic_time() / 1000 | 0} ${msg}`); // DEBUG-SWITCHER
 const ENABLED_KEY = 'clipboard-switcher-enabled';
 const TAB_KEY = 'clipboard-enabled';
 // GNOME tells nothing when a text field gets the input method's focus back
@@ -124,6 +125,7 @@ export class ClipboardSwitcher {
     }
 
     _onShortcut(binding) {
+        dbg(`shortcut: popup=${Boolean(this._popup)} finished=${this._popup?.finished} waiting=${Boolean(this._waitId)} mask=${binding.get_mask()} im=${Boolean(Main.inputMethod.currentFocus)} modal=${Main.modalCount} mode=${Main.actionMode}`); // DEBUG-SWITCHER
         if (this._popup && !this._popup.finished)
             return;
         // One still fading out goes now.
@@ -144,6 +146,7 @@ export class ClipboardSwitcher {
             action: this._action,
             anchor: this._anchor(window),
             done: entry => {
+                dbg(`done: entry=${entry?.kind ?? null} window=${window?.get_wm_class()} textFocus=${context.textFocus} terminal=${context.terminal}`); // DEBUG-SWITCHER
                 if (entry)
                     this._insert(entry, context).catch(e =>
                         console.warn(`Froonty: clipboard switcher: ${e.message}`));
@@ -173,16 +176,24 @@ export class ClipboardSwitcher {
 
     async _insert(entry, {window, textFocus, terminal}) {
         const text = entry.kind === 'text' || entry.kind === 'password' ? entry.text : null;
+        const t0 = GLib.get_monotonic_time(); // DEBUG-SWITCHER
         if (text !== null && textFocus && !terminal && await this._textFocusBack(window)) {
+            dbg(`commit after ${(GLib.get_monotonic_time() - t0) / 1000 | 0} ms: im=${Boolean(Main.inputMethod.currentFocus)} focus=${global.display.focus_window?.get_wm_class()} sameWindow=${global.display.focus_window === window}`); // DEBUG-SWITCHER
             this._textInput.commit(text);
             return;
         }
+        dbg(`clipboard route after ${(GLib.get_monotonic_time() - t0) / 1000 | 0} ms: text=${text !== null} textFocus=${textFocus} terminal=${terminal}`); // DEBUG-SWITCHER
         // Back on the clipboard, as a click in the tab (a password stays
         // hidden and unsaved), then pasted.
-        if (!this._recorder || !await this._recorder.copy(entry.id))
+        if (!this._recorder || !await this._recorder.copy(entry.id)) {
+            dbg(`copy failed: recorder=${Boolean(this._recorder)}`); // DEBUG-SWITCHER
             return;
-        if (!this._on || global.display.focus_window !== window || !window)
+        }
+        if (!this._on || global.display.focus_window !== window || !window) {
+            dbg(`no paste: on=${this._on} window=${window?.get_wm_class()} focus=${global.display.focus_window?.get_wm_class()}`); // DEBUG-SWITCHER
             return;
+        }
+        dbg(`paste: terminal=${terminal} focus=${global.display.focus_window?.get_wm_class()}`); // DEBUG-SWITCHER
         this._paste(terminal);
     }
 
@@ -208,6 +219,8 @@ export class ClipboardSwitcher {
     }
 
     _cancelWait() {
+        if (this._waitId)
+            dbg('cancelWait: an insertion was still waiting for the text field'); // DEBUG-SWITCHER
         if (this._waitId)
             GLib.source_remove(this._waitId);
         this._waitId = 0;
