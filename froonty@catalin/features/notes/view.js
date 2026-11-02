@@ -80,12 +80,19 @@ export class NotesView {
 
         this._labelMenu = new LabelMenu(ctx, service, {
             // All notes reads the file in another process: save first.
-            onAllNotes: () => {
+            onAllNotes: name => {
                 this._finishEdit();
-                service.flush().finally(() => {
-                    if (this._service)
-                        ctx.openSettingsWindow('all-notes');
-                });
+                const openAllNotes = async () => {
+                    try {
+                        if (service.selected !== name)
+                            await service.select(name);
+                        await service.flush();
+                    } finally {
+                        if (this._service)
+                            ctx.openSettingsWindow('all-notes');
+                    }
+                };
+                openAllNotes().catch(e => logError(e));
             },
             onRename: async name => {
                 this._finishEdit();

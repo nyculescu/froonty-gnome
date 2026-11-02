@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // The "All notes" page's note pane (settings window; GTK 4 + libadwaita, so
-// nothing from the Shell side): the open note's header (colour, name,
-// labels, a Labels menu and the fold button), the island's formatting bar
-// and the note, drawn rendered (allNotesStyler.js) to read and copy, or as
-// its Markdown source, to edit with undo (MD).
+// nothing from the Shell side): the island's formatting bar, a note drawn
+// rendered (allNotesStyler.js) to read and copy, or as its Markdown source,
+// to edit with undo (MD). Note actions and labels are on the page's context
+// menus.
 //
 //   ● Plan                       q4 · work  [Labels ▾] [⤴]
 //   [B][I][S][H][•][1.][☑][</>][🔗][🖼][MD][↩]           formatting bar
@@ -47,14 +47,12 @@ import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
 import Gtk from 'gi://Gtk';
-import Pango from 'gi://Pango';
 
 import {gettext as _} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
 import {FormatBar} from './allNotesFormatBar.js';
 import {bufferState, editBuffer, insertAtCursor, MarkdownStyler, replaceText} from './allNotesStyler.js';
 import {formatActions, formatShortcut} from './formatActions.js';
-import * as Labels from './labels.js';
 import {NoteWriter} from './noteWriter.js';
 import {markdownImagePath} from './renderer/imageFile.js';
 import {chooseImage, copyImage, saveImageBytes} from './renderer/image-picker.js';
@@ -110,15 +108,17 @@ export class NotePane {
      * @param {Function} callbacks.onRescued (name, copy) text that could not
      *   be saved in the previous folder was kept as `copy` in the new one
      * @param {Function} callbacks.onError (message)
-     * @param {Function} callbacks.onRename (name, text) the title was edited
+     * @param {Function} callbacks.onTitle (name) the shown note changed
      */
-    constructor(library, settings, {onConflict, onRescued, onError, onRename}) {
+    constructor(library, settings, {onConflict, onRescued, onError, onChangeTitle = () => {}, onDelete = () => {}, onTitle = () => {}}) {
         this._library = library;
         this._settings = settings;
         this._onConflict = onConflict;
         this._onRescued = onRescued;
         this._onError = onError;
-        this._onRename = onRename;
+        this._onChangeTitle = onChangeTitle;
+        this._onDelete = onDelete;
+        this._onTitle = onTitle;
         this._writer = null;
         this._writerStore = null;
         this._showing = 0;
@@ -127,8 +127,9 @@ export class NotePane {
         /** The note shown, or null. */
         this.name = null;
 
-        this._buildHeader();
+        this._buildNoteControls();
         this._buildEditor();
+        this._buildContextMenu();
         this._buildTools();
         this._stack = new Gtk.Stack({hexpand: true, vexpand: true});
         // Not plain UTF-8 text: shown, never written.
@@ -136,7 +137,6 @@ export class NotePane {
             title: _('Not plain UTF-8 text: read-only here, so that saving cannot damage it'),
         });
         const note = new Gtk.Box({orientation: Gtk.Orientation.VERTICAL});
-        note.append(this._header);
         note.append(this._tools);
         note.append(new Gtk.Separator());
         note.append(this._readOnlyBanner);
@@ -207,7 +207,7 @@ export class NotePane {
         }
         this._stack.add_controller(shortcuts);
         // The formatting shortcuts, from the note's views and fields only
-        // (not the title or the Labels menu). A key controller, not
+        // (not the title bar or a context menu). A key controller, not
         // shortcut triggers: a shifted digit (Ctrl+Shift+8) is matched by
         // its key, whose keyval is the layout's symbol (formatShortcut).
         const formatKeys = new Gtk.EventControllerKey();
@@ -253,6 +253,7 @@ export class NotePane {
         if (name === null) {
             this.name = null;
             this._stack.visible_child_name = 'empty';
+            this.sync();
             return true;
         }
         let read;
@@ -263,6 +264,7 @@ export class NotePane {
                 return null;
             this.name = null;
             this._stack.visible_child_name = isError(e, Gio.IOErrorEnum.NOT_FOUND) ? 'gone' : 'empty';
+            this.sync();
             if (!isError(e, Gio.IOErrorEnum.NOT_FOUND))
                 this._onError(e.message);
             return false;
@@ -300,6 +302,7 @@ export class NotePane {
         this._showing++; // a show() on its way read the old folder
         this.name = null;
         this._stack.visible_child_name = 'empty';
+        this.sync();
         old.stop().then(async () => {
             if (!old.dirty)
                 return;
@@ -374,23 +377,23 @@ export class NotePane {
         if (this.name === name) {
             this.name = null;
             this._stack.visible_child_name = 'gone';
+            this.sync();
         }
     }
 
     /** Header: colour, name, labels; the Labels menu if open. */
     sync() {
         const name = this.name;
+        this._onTitle(name);
+        this._stack._noteName = name;
+        this._foldButton.sensitive = name !== null;
         if (name === null)
             return;
-        const color = this._library.colorOf(name);
-        this._dot.css_classes = ['froonty-dot', `froonty-dot-${color}`];
-        this._title.label = name;
-        const labels = this._library.labelsOf(name);
-        this._labelsCaption.label = labels.join(' · ');
-        this._labelsCaption.visible = labels.length > 0;
-        this._labelsButton.sensitive = this._library.labelsState !== 'unreadable';
-        if (this._labelsPopover.visible)
-            this._fillLabels();
+    }
+
+    /** The formatting visibility control shown in the window title bar. */
+    takeHeaderControls() {
+        return {tools: this._foldButton};
     }
 
     /**
@@ -438,8 +441,23 @@ export class NotePane {
         this._view.scroll_to_mark(buffer.get_insert(), 0.1, false, 0, 0);
     }
 
+    /** Focuses the current editor without changing its cursor position. */
+    grabEditorFocus() {
+        if (this.name === null)
+            return;
+        if (!this._formatBar.markdownButton.active)
+            this._styler.focusRendered();
+        else
+            this._view.grab_focus();
+    }
+
     /** The page or the window is closing. */
     stop() {
+        // The menu was parented by hand: GTK does not take it down with the
+        // view, and the preferences service then never exits (it spins at
+        // shutdown and keeps its D-Bus name, so the window cannot reopen).
+        if (this._contextMenu.get_parent())
+            this._contextMenu.unparent();
         return this._writer?.stop() ?? Promise.resolve();
     }
 
@@ -475,94 +493,7 @@ export class NotePane {
         buffer.place_cursor(buffer.get_iter_at_offset(Math.min(cursor, buffer.get_char_count())));
     }
 
-    _endRename(rename) {
-        if (this._titleStack.visible_child_name !== 'entry')
-            return;
-        this._titleStack.visible_child_name = 'title';
-        if (rename && this.name !== null && this._titleEntry.text !== this.name)
-            this._onRename(this.name, this._titleEntry.text);
-    }
-
-    _buildHeader() {
-        this._dot = new Gtk.Box({css_classes: ['froonty-dot'], valign: Gtk.Align.CENTER});
-        this._title = new Gtk.Label({
-            css_classes: ['title-4'],
-            ellipsize: Pango.EllipsizeMode.END,
-            xalign: 0,
-            tooltip_text: _('Double-click to rename'),
-        });
-        // A double click renames, as on the island's tab: Enter or leaving
-        // the entry renames, Escape does not.
-        this._titleEntry = new Gtk.Entry();
-        this._titleStack = new Gtk.Stack({hexpand: true});
-        this._titleStack.add_named(this._title, 'title');
-        this._titleStack.add_named(this._titleEntry, 'entry');
-        const doubleClick = new Gtk.GestureClick();
-        doubleClick.connect('pressed', (_gesture, presses) => {
-            if (presses === 2 && this.name !== null && this._view.editable) {
-                this._titleEntry.text = this.name;
-                this._titleStack.visible_child_name = 'entry';
-                this._titleEntry.grab_focus();
-            }
-        });
-        this._title.add_controller(doubleClick);
-        this._titleEntry.connect('activate', () => this._endRename(true));
-        const leave = new Gtk.EventControllerFocus();
-        // Once the focus has moved (GTK must not lose the entry meanwhile).
-        leave.connect('leave', () => GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
-            this._endRename(true);
-            return GLib.SOURCE_REMOVE;
-        }));
-        this._titleEntry.add_controller(leave);
-        const keys = new Gtk.EventControllerKey();
-        keys.connect('key-pressed', (_controller, keyval) => {
-            if (keyval !== Gdk.KEY_Escape)
-                return false;
-            this._endRename(false);
-            return true;
-        });
-        this._titleEntry.add_controller(keys);
-        this._labelsCaption = new Gtk.Label({
-            css_classes: ['dim-label', 'caption'],
-            ellipsize: Pango.EllipsizeMode.END,
-            max_width_chars: 30,
-        });
-        this._labelsPopover = new Gtk.Popover();
-        this._labelsPopover.connect('show', () => {
-            this._labelsFor = null; // a fresh order each time it opens
-            this._fillLabels();
-        });
-        this._labelsButton = new Gtk.MenuButton({
-            label: _('Labels'),
-            valign: Gtk.Align.CENTER,
-            popover: this._labelsPopover,
-        });
-
-        const box = new Gtk.Box({orientation: Gtk.Orientation.VERTICAL, spacing: 6});
-        this._labelEntry = new Gtk.Entry({placeholder_text: _('Add a label…')});
-        this._labelEntry.connect('activate', () => this._onLabelEnter());
-        this._labelList = new Gtk.Box({orientation: Gtk.Orientation.VERTICAL});
-        box.append(this._labelEntry);
-        box.append(new Gtk.ScrolledWindow({
-            hscrollbar_policy: Gtk.PolicyType.NEVER,
-            propagate_natural_height: true,
-            max_content_height: 240,
-            child: this._labelList,
-        }));
-        this._labelsPopover.set_child(box);
-
-        this._header = new Gtk.Box({
-            spacing: 10,
-            margin_start: 12,
-            margin_end: 12,
-            margin_top: 8,
-            margin_bottom: 8,
-        });
-        this._header.append(this._dot);
-        this._header.append(this._titleStack);
-        this._header.append(this._labelsCaption);
-        this._header.append(this._labelsButton);
-
+    _buildNoteControls() {
         // Folds the formatting bar away (notes-show-tools, as in the island).
         this._foldIcon = new Gtk.Image();
         this._foldButton = new Gtk.Button({
@@ -572,7 +503,61 @@ export class NotePane {
         });
         this._foldButton.connect('clicked', () => this._settings.set_boolean('notes-show-tools',
             !this._settings.get_boolean('notes-show-tools')));
-        this._header.append(this._foldButton);
+    }
+
+    _buildContextMenu() {
+        this._contextMenu = new Gtk.Popover({has_arrow: true});
+        const actions = new Gtk.Box({orientation: Gtk.Orientation.VERTICAL, spacing: 3,
+            margin_top: 6, margin_bottom: 6, margin_start: 6, margin_end: 6});
+        for (const [label, action] of [
+            [_('Copy source text'), () => this.copySource()],
+            [_('Copy rendered text'), () => this.copyRendered()],
+            [_('Change note title'), () => this._onChangeTitle(this.name)],
+            [_('Delete note'), () => this._onDelete(this.name)],
+        ]) {
+            const button = new Gtk.Button({label, css_classes: ['flat'], halign: Gtk.Align.FILL});
+            button.connect('clicked', () => {
+                this._contextMenu.popdown();
+                if (this.name !== null)
+                    action();
+            });
+            actions.append(button);
+        }
+        this._contextMenu.set_child(actions);
+        this._contextMenu.set_parent(this._scroll);
+        const rightClick = new Gtk.GestureClick({button: Gdk.BUTTON_SECONDARY});
+        rightClick.connect('pressed', (gesture, _presses, x, y) => {
+            if (this.name === null)
+                return;
+            this._contextMenu.set_pointing_to(new Gdk.Rectangle({x, y, width: 1, height: 1}));
+            this._contextMenu.popup();
+            gesture.set_state(Gtk.EventSequenceState.CLAIMED);
+        });
+        this._scroll.add_controller(rightClick);
+    }
+
+    copySource() {
+        if (this.name !== null)
+            this._view.get_clipboard().set(this._buffer.text);
+    }
+
+    copyRendered() {
+        if (this.name === null)
+            return;
+        const wasRendered = this._styler._rendered;
+        if (!wasRendered)
+            this._styler.setRendered(true);
+        const buffer = this._styler._buffer;
+        const [start, end] = buffer.get_bounds();
+        const hidden = [this._styler._tags.get('hidden'), this._styler._tags.get('taskbox'), this._styler._blockHidden];
+        const chars = [];
+        for (const iter = start.copy(); iter.compare(end) < 0; iter.forward_char()) {
+            if (!hidden.some(tag => tag && iter.has_tag(tag)))
+                chars.push(iter.get_char());
+        }
+        if (!wasRendered)
+            this._styler.setRendered(false);
+        this._view.get_clipboard().set(chars.join(''));
     }
 
     // The formatting bar, under the header: Wrap lines and the fold button
@@ -704,63 +689,6 @@ export class NotePane {
     _syncFormatState() {
         if (this._tools?.visible)
             this._formatBar.update(this._editing() ? bufferState(this._buffer) : {text: '', start: 0, end: 0});
-    }
-
-    // One check button per label: this note's first, then the others. The
-    // order is set when the menu opens; while it is open, ticks follow the
-    // file and new labels are added at the end.
-    _fillLabels() {
-        const name = this.name;
-        if (name === null)
-            return;
-        const mine = this._library.labelsOf(name);
-        const keys = new Set(mine.map(Labels.labelKey));
-        const checks = [];
-        for (let child = this._labelList.get_first_child(); child; child = child.get_next_sibling())
-            checks.push(child);
-        if (this._labelsFor !== name) {
-            for (const check of checks)
-                this._labelList.remove(check);
-            checks.length = 0;
-            this._labelsFor = name;
-        }
-        const shown = new Set(checks.map(check => Labels.labelKey(check.label)));
-        const others = this._library.allLabels().map(({label}) => label)
-            .filter(label => !keys.has(Labels.labelKey(label)));
-        for (const label of [...mine, ...others]) {
-            if (shown.has(Labels.labelKey(label)))
-                continue;
-            const check = new Gtk.CheckButton({label});
-            check.connect('toggled', () => {
-                if (!this._fillingLabels)
-                    this._setLabel(name, label, check.active);
-            });
-            this._labelList.append(check);
-            checks.push(check);
-        }
-        this._fillingLabels = true;
-        for (const check of checks)
-            check.active = keys.has(Labels.labelKey(check.label));
-        this._fillingLabels = false;
-    }
-
-    // Enter: an existing label is turned on (never off), a new one added.
-    _onLabelEnter() {
-        const clean = Labels.cleanLabel(this._labelEntry.text);
-        if (!clean || this.name === null)
-            return;
-        this._labelEntry.text = '';
-        if (!this._library.labelsOf(this.name).some(l => Labels.labelKey(l) === Labels.labelKey(clean)))
-            this._setLabel(this.name, clean, true);
-    }
-
-    async _setLabel(name, label, on) {
-        try {
-            await this._library.setLabel(name, label, on);
-        } catch (e) {
-            this._onError(e.message);
-            this.sync();
-        }
     }
 
     _buildEditor() {

@@ -16,10 +16,13 @@ import Soup from 'gi://Soup?version=3.0';
 import St from 'gi://St';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+import * as WindowMenu from 'resource:///org/gnome/shell/ui/windowMenu.js';
+import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 import * as Volume from 'resource:///org/gnome/shell/ui/status/volume.js';
 import {ExtensionState} from 'resource:///org/gnome/shell/misc/extensionUtils.js';
 
 import {metadataVariants} from '../unit/fakeMpris.js';
+import {NotesWindowMenu} from '../../froonty@catalin/shell/notesWindowMenu.js';
 
 const UUID = 'froonty@catalin';
 const SETTLE_MS = 150;
@@ -2164,6 +2167,18 @@ async function testNotesHeader(outDir) {
     await closeSettingsWindows();
     check('notes menu: windows closed, the view key is "settings"',
         settingsWindows().length === 0 && await waitForKey('settings'), viewKey());
+    // GNOME's preferences service exits two seconds after its last window.
+    // One that does not (the note pane's hand-parented menu left in place
+    // made it spin) keeps its D-Bus name, and no window opens again.
+    let serviceGone = false;
+    for (let waited = 0; waited < 8000 && !serviceGone; waited += 250) {
+        // eslint-disable-next-line no-await-in-loop
+        await sleep(250);
+        // eslint-disable-next-line no-await-in-loop
+        serviceGone = !await hasOwner('org.gnome.Shell.Extensions');
+    }
+    check('notes menu: once the window on All notes has closed, the preferences service exits',
+        serviceGone);
 }
 
 // End to end: the island's note, edited in the All notes window; then a
@@ -2200,13 +2215,13 @@ async function testAllNotesWindow(outDir) {
     await clickAllNotesMenu(view);
     const window = await waitForSettingsWindow();
     const focused = window !== null && await waitForFocus(window);
-    await sleep(2000); // the page is shown, the notes read, the search focused
+    await sleep(2000); // the page and selected note are shown and focus settles
     check('all notes: the window opens focused on All notes', focused && viewKey() === 'all-notes',
         `focus=${global.display.focus_window?.get_title()} key=${viewKey()}`);
     await screenshotAll(outDir, 'all-notes-e2e');
 
-    // Return in the empty search: into the note, at its end.
-    await pressKeys(Clutter.KEY_Return);
+    // Notes List starts hidden, so opening All notes puts focus directly in
+    // the current note instead of the unmapped search entry.
     await typeText('!');
     await sleep(1500);
     check('all notes: typing in the window saves the note after the pause',
@@ -2271,6 +2286,63 @@ async function testAllNotesWindow(outDir) {
         tabNames().join(', '));
     file('zzz external').delete(null);
     await sleep(1500);
+}
+
+// Froonty's title action and Labels submenu belong to GNOME Shell's titlebar
+// menu, alongside its standard window actions. Keep the hook limited to
+// Froonty's All notes view and restore the Shell prototype on disable.
+async function testNotesNativeWindowMenu(outDir) {
+    const prototype = WindowMenu.WindowMenu.prototype;
+    const original = prototype._buildMenu;
+    const base = function () {};
+    let labelsMenu = null;
+    const notesFolder = Gio.File.new_for_path(GLib.build_filenamev([outDir, 'native-menu-notes']));
+    notesFolder.make_directory_with_parents(null);
+    notesFolder.get_child('.froonty-current-note')
+        .replace_contents('Plan', null, false, Gio.FileCreateFlags.NONE, null);
+    const values = new Map([
+        ['settings-window-view', 'all-notes'],
+        ['notes-folder', notesFolder.get_path()],
+    ]);
+    const fakeSettings = {
+        get_string: key => values.get(key) ?? '',
+        set_string: (key, value) => values.set(key, value),
+    };
+    try {
+        prototype._buildMenu = base;
+        const hook = new NotesWindowMenu(fakeSettings);
+        const create = window => {
+            const menu = Object.create(prototype);
+            menu.items = [];
+            menu.actions = [];
+            menu.addMenuItem = item => menu.items.push(item);
+            menu.addAction = (label, action) => menu.actions.push({label, action});
+            menu._buildMenu(window);
+            return menu;
+        };
+        const ours = create({get_wm_class: () => 'org.gnome.Shell.Extensions'});
+        labelsMenu = ours.items.find(item => item instanceof PopupMenu.PopupSubMenuMenuItem);
+        check('all notes: native window menu contains a Labels submenu', Boolean(labelsMenu),
+            `items=${ours.items.map(item => item.constructor.name)}`);
+        check('all notes: native window menu contains Change note title',
+            ours.actions.some(action => action.label === 'Change note title'),
+            `actions=${ours.actions.map(action => action.label)}`);
+        await ours.actions.find(action => action.label === 'Change note title').action();
+        const request = JSON.parse(values.get('all-notes-title-request') ?? '{}');
+        check('all notes: title action requests the selected note in the prefs window',
+            request.name === 'Plan' && Boolean(request.id), JSON.stringify(request));
+        const other = create({get_wm_class: () => 'org.gnome.Nautilus'});
+        check('all notes: custom window actions are limited to the preferences window',
+            other.items.length === 0 && other.actions.length === 0,
+            `items=${other.items.length} actions=${other.actions.length}`);
+        hook.destroy();
+        check('all notes: native window menu hook restores on disable',
+            prototype._buildMenu === base);
+    } catch (e) {
+        check('all notes: native window menu hook installs', false, `${e}\n${e.stack}`);
+    } finally {
+        prototype._buildMenu = original;
+    }
 }
 
 // The settings-window-view key never outlives a window that is not there:

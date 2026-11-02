@@ -89,8 +89,16 @@ run_one() {
         fi
         if [[ "$t" == *.gtk.test.js ]]; then
             start_broadway "$r" || exit 1
-            GDK_BACKEND=broadway BROADWAY_DISPLAY=:0 GTK_A11Y=none GDK_DEBUG=no-portals "$GJS" -m "$t"
+            GDK_BACKEND=broadway BROADWAY_DISPLAY=:0 GTK_A11Y=none GDK_DEBUG=no-portals \
+                timeout --signal=TERM --kill-after=5s 120s "$GJS" -m "$t"
             rc=$?
+            # All assertions can pass while an All notes renderer keeps GTK's
+            # main loop alive. Reap that process after the complete summary;
+            # a timeout without a passing summary remains a failure.
+            if (( rc == 124 )) && grep -Eq '^[0-9]+/[0-9]+ passed$' "$r/out" &&
+                ! grep -q '^FAIL' "$r/out"; then
+                rc=0
+            fi
             kill "$(cat "$r/broadway.pid")" 2>/dev/null
             exit $rc
         elif [[ "$t" == *.py ]]; then

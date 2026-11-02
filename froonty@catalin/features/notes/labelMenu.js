@@ -62,7 +62,7 @@ export class LabelMenu {
         this._name = name;
         menu.addTitle(_('Note · %s').format(name));
         menu.addAction(_('All notes'), () => {
-            this._closeWithAction(menu, () => this._callbacks.onAllNotes());
+            this._closeWithAction(menu, () => this._callbacks.onAllNotes(name));
         });
         menu.addAction(_('Rename'), () => {
             this._closeWithAction(menu, () => this._callbacks.onRename(name));

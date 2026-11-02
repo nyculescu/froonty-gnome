@@ -67,6 +67,11 @@
       <summary>Keep the All notes window above others</summary>
       <description>When true, the settings window stays above other windows while the All notes page is open.</description>
     </key>
+    <key name="all-notes-title-request" type="s">
+      <default>''</default>
+      <summary>Internal: request changing a note title</summary>
+      <description>A one-time request from GNOME Shell to open the title editor for the selected note.</description>
+    </key>
 
     <!-- Panic buttons (docs/features/panic-buttons.md) -->
     <key name="panic-buttons" type="as">

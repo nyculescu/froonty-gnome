@@ -28,7 +28,8 @@
 // or its 2 s fallback, sees it change). `notes-last` is the fallback for
 // folders without that marker.
 //
-// Create, rename and Trash stay in the island.
+// Labels are available from each note row's context menu and the native
+// window menu for the selected note. Other note actions are on context menus.
 
 import Adw from 'gi://Adw';
 import Gdk from 'gi://Gdk';
@@ -46,12 +47,14 @@ import {
 import {NotePane} from './allNotesNote.js';
 import * as Labels from './labels.js';
 import {NotesLibrary} from './library.js';
+import * as Meta from './meta.js';
 import * as Names from './names.js';
 import {moveRenderSizes} from './renderSizes.js';
 import {markup, searchNotes} from './search.js';
 
 const VIEW_KEY = 'settings-window-view';
 const PINNED_KEY = 'all-notes-pinned';
+const TITLE_REQUEST_KEY = 'all-notes-title-request';
 const MATCH_KEY = 'notes-label-match';
 const LAST_KEY = 'notes-last';
 const MAX_ROWS = 300;
@@ -172,6 +175,7 @@ class AllNotesPage {
         this._selectionSerial = 0;
         this._selectionPending = false;
         this._selectionWrite = Promise.resolve();
+        this._lastTitleRequestId = null;
         this._folded = new Map(); // search.js keeps folded texts here
         addCss();
 
@@ -193,7 +197,9 @@ class AllNotesPage {
                 this._open(copy);
             },
             onError: message => this._toast(message),
-            onRename: (name, text) => this._rename(name, text),
+            onChangeTitle: name => this._changeTitle(name),
+            onDelete: name => this._deleteNote(name),
+            onTitle: name => this._syncWindowTitle(name),
         });
         this._build();
 
@@ -206,6 +212,8 @@ class AllNotesPage {
                 this._followIsland();
         });
         this._pinnedId = settings.connect(`changed::${PINNED_KEY}`, () => this._syncPin());
+        this._titleRequestId = settings.connect(`changed::${TITLE_REQUEST_KEY}`, () =>
+            this._onTitleRequest());
 
         const page = this.navigationPage;
         page.connect('showing', () => {
@@ -217,7 +225,10 @@ class AllNotesPage {
         page.connect('shown', () => {
             if (this._settings.get_string(VIEW_KEY) !== 'all-notes')
                 this._settings.set_string(VIEW_KEY, 'all-notes');
-            this._search.grab_focus();
+            if (this._split.show_sidebar)
+                this._search.grab_focus();
+            else
+                this._focusEditorWhenListHidden();
         });
         page.connect('hiding', () => this.flush());
         page.connect('hidden', () => {
@@ -236,8 +247,11 @@ class AllNotesPage {
         this.flush();
         this._pane.stop();
         this._library.stop();
+        if (this._rowContextMenu?.get_parent() === this._listScroll)
+            this._rowContextMenu.unparent();
         this._settings.disconnect(this._lastId);
         this._settings.disconnect(this._pinnedId);
+        this._settings.disconnect(this._titleRequestId);
     }
 
     /** Another notes folder: the page starts over there (now or when shown). */
@@ -252,6 +266,7 @@ class AllNotesPage {
 
     /** The window was raised (e.g. from a note tab's context menu). */
     activated() {
+        this._focusEditorWhenListHidden();
         if (this._library.running)
             this._library.refresh().finally(() => this._followPreferredSelection());
         else
@@ -307,6 +322,7 @@ class AllNotesPage {
     // not be saved, it stays, and so does its row.
     async _open(name) {
         const serial = ++this._selectionSerial;
+        const hadOpenNote = this._pane.name !== null;
         this._selectionPending = Boolean(name);
         this._selectRow(name);
         try {
@@ -321,7 +337,25 @@ class AllNotesPage {
         } finally {
             if (serial === this._selectionSerial)
                 this._selectionPending = false;
+            // The search entry is not mapped while Notes List is hidden.
+            // Focus the newly opened note once its async read has completed,
+            // instead of leaving keyboard focus on an invisible widget.
+            if (serial === this._selectionSerial)
+                this._focusEditorWhenListHidden(!hadOpenNote);
         }
+    }
+
+    _focusEditorWhenListHidden(moveToEnd = false) {
+        if (!this.navigationPage.get_visible() || this._split.show_sidebar || !this._pane.name)
+            return;
+        // Wait until the preferences window finishes taking keyboard focus;
+        // otherwise GTK's focus restoration can put it back on the hidden
+        // search entry immediately after this request.
+        GLib.timeout_add(GLib.PRIORITY_DEFAULT, 150, () => {
+            if (this.navigationPage.get_visible() && !this._split.show_sidebar && this._pane.name)
+                moveToEnd ? this._pane.focusEditor() : this._pane.grabEditorFocus();
+            return GLib.SOURCE_REMOVE;
+        });
     }
 
     // A note named after the time, as the island's "+" makes, opened (the
@@ -397,6 +431,89 @@ class AllNotesPage {
         }
     }
 
+    _withOpenNote(name, action) {
+        if (name === this._pane.name) {
+            action();
+            return;
+        }
+        this._open(name).then(shown => {
+            if (shown)
+                action();
+        });
+    }
+
+    _changeTitle(name) {
+        if (!name || name !== this._pane.name)
+            return;
+        const dialog = new Gtk.Dialog({
+            title: _('Change note title'),
+            transient_for: this._window,
+            modal: true,
+            use_header_bar: true,
+        });
+        dialog.add_button(_('Cancel'), Gtk.ResponseType.CANCEL);
+        dialog.add_button(_('Change'), Gtk.ResponseType.ACCEPT);
+        dialog.set_default_response(Gtk.ResponseType.ACCEPT);
+        const entry = new Gtk.Entry({text: name, activates_default: true, hexpand: true});
+        entry.set_activates_default(true);
+        const content = dialog.get_content_area();
+        content.append(new Gtk.Label({label: _('Note title'), xalign: 0}));
+        content.append(entry);
+        dialog.connect('response', (_dialog, response) => {
+            const text = entry.text;
+            dialog.close();
+            if (response === Gtk.ResponseType.ACCEPT && this._pane.name === name)
+                this._rename(name, text);
+        });
+        dialog.present();
+        entry.grab_focus();
+        entry.select_region(0, -1);
+    }
+
+    _onTitleRequest() {
+        let request;
+        try {
+            request = JSON.parse(this._settings.get_string(TITLE_REQUEST_KEY));
+        } catch {
+            return;
+        }
+        if (!request?.id || request.id === this._lastTitleRequestId || !request.name)
+            return;
+        this._lastTitleRequestId = request.id;
+        const showTitleEditor = () => {
+            if (this._pane.name === request.name)
+                this._changeTitle(request.name);
+        };
+        if (request.name === this._pane.name)
+            showTitleEditor();
+        else
+            this._open(request.name).then(showTitleEditor);
+    }
+
+    async _deleteNote(name) {
+        const store = this._library.store;
+        if (!store || name !== this._pane.name)
+            return;
+        try {
+            await this._pane.flush();
+            if (this._pane.name !== name)
+                return;
+            if (!await this._pane.show(null))
+                return;
+            await store.trash(name);
+            const meta = await store.readMeta();
+            if (meta.state !== 'unreadable')
+                await store.writeMeta(Meta.withoutNote(meta.meta, name));
+            await this._library.refresh();
+            this._picked = true;
+            const first = this._list.get_first_child();
+            if (first?._noteName)
+                await this._open(first._noteName);
+        } catch (e) {
+            this._toast(_('Could not delete “%s”: %s').format(name, e.message));
+        }
+    }
+
     _clearLabels() {
         this._selected.clear();
         this._chipsShown = null;
@@ -423,13 +540,50 @@ class AllNotesPage {
             sidebar_width_fraction: 0.38,
             min_sidebar_width: 260,
             max_sidebar_width: 380,
+            show_sidebar: false,
         });
+        // We control sidebar visibility ourselves. Otherwise Adw reopens it
+        // when the split view expands, including after the collapse transition.
+        this._split.pin_sidebar = true;
         const narrow = new Adw.Breakpoint({condition: Adw.BreakpointCondition.parse('max-width: 600sp')});
         narrow.add_setter(this._split, 'collapsed', true);
+        this._split.connect('notify::collapsed', () => {
+            if (this._split.collapsed)
+                this._split.show_sidebar = false;
+        });
         bin.add_breakpoint(narrow);
 
-        this._title = new Adw.WindowTitle({title: _('All notes')});
-        const header = new Adw.HeaderBar({title_widget: this._title});
+        this._titleLabel = new Gtk.Label({
+            label: _('All notes'),
+            css_classes: ['title-4', 'froonty-all-notes-title'],
+            ellipsize: Pango.EllipsizeMode.END,
+            width_chars: 1,
+            max_width_chars: 48,
+            hexpand: true,
+            xalign: 0.5,
+        });
+        this._subtitleLabel = new Gtk.Label({css_classes: ['dim-label', 'caption']});
+        const titleWidget = new Gtk.Box({
+            orientation: Gtk.Orientation.VERTICAL,
+            spacing: 0,
+            hexpand: true,
+        });
+        titleWidget.append(this._titleLabel);
+        titleWidget.append(this._subtitleLabel);
+        this._shortTitle = false;
+        const shortTitle = new Adw.Breakpoint({
+            condition: Adw.BreakpointCondition.parse('max-width: 540sp'),
+        });
+        shortTitle.connect('apply', () => {
+            this._shortTitle = true;
+            this._updateWindowTitle();
+        });
+        shortTitle.connect('unapply', () => {
+            this._shortTitle = false;
+            this._updateWindowTitle();
+        });
+        bin.add_breakpoint(shortTitle);
+        const header = new Adw.HeaderBar({title_widget: titleWidget, show_back_button: false});
         this._pinButton = new Gtk.ToggleButton({
             icon_name: 'view-pin-symbolic',
             tooltip_text: _('Keep All notes above other windows'),
@@ -445,15 +599,22 @@ class AllNotesPage {
         });
         this._split.bind_property('show-sidebar', sidebarButton, 'active',
             GObject.BindingFlags.BIDIRECTIONAL | GObject.BindingFlags.SYNC_CREATE);
-        // Keep both right-side controls together so the header allocates
+        const noteActions = this._pane.takeHeaderControls();
+        // Keep the right-side actions together so the header allocates
         // them as one persistent action group at narrow widths too.
         const headerActions = new Gtk.Box({spacing: 6});
-        headerActions.append(sidebarButton);
+        headerActions.append(noteActions.tools);
         headerActions.append(this._pinButton);
         header.pack_end(headerActions);
+        // Notes List takes the leading position where the navigation back
+        // button would normally appear.
+        header.pack_start(sidebarButton);
         const newButton = new Gtk.Button({icon_name: 'list-add-symbolic', tooltip_text: _('New note')});
         newButton.connect('clicked', () => this._create());
         header.pack_start(newButton);
+        // Keep the complete control set reachable when the window is
+        // compressed; the centered title yields space before the actions do.
+        bin.width_request = 500;
         this._banner = new Adw.Banner();
 
         const toolbar = new Adw.ToolbarView();
@@ -487,6 +648,27 @@ class AllNotesPage {
         this._pinButton.tooltip_text = pinned
             ? _('Stop keeping All notes above other windows')
             : _('Keep All notes above other windows');
+    }
+
+    _syncWindowTitle(name) {
+        const title = name ? _('All notes: %s').format(name) : _('All notes');
+        this._currentNoteTitle = name;
+        this._titleLabel.label = title;
+        this._updateWindowTitle();
+        this.navigationPage.title = title;
+    }
+
+    _updateWindowTitle() {
+        if (!this._titleLabel)
+            return;
+        const name = this._currentNoteTitle;
+        if (!name) {
+            this._titleLabel.label = _('All notes');
+            return;
+        }
+        // Drop the prefix before the note name is crowded. At smaller widths
+        // Gtk.Label ellipsizes the note name from its end.
+        this._titleLabel.label = this._shortTitle ? name : _('All notes: %s').format(name);
     }
 
     _buildSidebar() {
@@ -570,12 +752,106 @@ class AllNotesPage {
                 this._split.show_sidebar = false;
         });
         this._search.set_key_capture_widget(this._list);
-        sidebar.append(new Gtk.ScrolledWindow({
+        this._listScroll = new Gtk.ScrolledWindow({
             vexpand: true,
             hscrollbar_policy: Gtk.PolicyType.NEVER,
             child: this._list,
-        }));
+        });
+        sidebar.append(this._listScroll);
+        this._buildRowContextMenu();
         return sidebar;
+    }
+
+    _buildRowContextMenu() {
+        const menu = new Gtk.Popover({has_arrow: true});
+        const actions = new Gtk.Box({orientation: Gtk.Orientation.VERTICAL, spacing: 3,
+            margin_top: 6, margin_bottom: 6, margin_start: 6, margin_end: 6});
+        actions.append(this._labelsMenu(() => this._rowContextNote));
+        for (const [label, action] of [
+            [_('Copy source text'), name => this._withOpenNote(name, () => this._pane.copySource())],
+            [_('Copy rendered text'), name => this._withOpenNote(name, () => this._pane.copyRendered())],
+            [_('Change note title'), name => this._withOpenNote(name, () => this._changeTitle(name))],
+            [_('Delete note'), name => this._withOpenNote(name, () => this._deleteNote(name))],
+        ]) {
+            const button = new Gtk.Button({label, css_classes: ['flat'], halign: Gtk.Align.FILL});
+            button.connect('clicked', () => {
+                const name = this._rowContextNote;
+                menu.popdown();
+                if (name && this._library.notes.has(name))
+                    action(name);
+            });
+            actions.append(button);
+        }
+        menu.set_child(actions);
+        menu.set_parent(this._listScroll);
+        this._rowContextMenu = menu;
+    }
+
+    _labelsMenu(noteName) {
+        const popover = new Gtk.Popover();
+        const content = new Gtk.Box({orientation: Gtk.Orientation.VERTICAL, spacing: 6,
+            margin_top: 8, margin_bottom: 8, margin_start: 8, margin_end: 8});
+        const entry = new Gtk.Entry({placeholder_text: _('Add a label…')});
+        const list = new Gtk.Box({orientation: Gtk.Orientation.VERTICAL});
+        entry.connect('activate', () => this._addContextLabel(noteName(), entry, list));
+        content.append(entry);
+        content.append(new Gtk.ScrolledWindow({
+            hscrollbar_policy: Gtk.PolicyType.NEVER,
+            propagate_natural_height: true,
+            max_content_height: 240,
+            child: list,
+        }));
+        const button = new Gtk.MenuButton({label: _('Labels'), popover, halign: Gtk.Align.FILL});
+        button.set_sensitive(this._library.labelsState !== 'unreadable');
+        popover.connect('show', () => {
+            const name = noteName();
+            button.set_sensitive(Boolean(name) && this._library.labelsState !== 'unreadable');
+            this._fillContextLabels(name, list, entry);
+        });
+        popover.set_child(content);
+        return button;
+    }
+
+    _fillContextLabels(name, list, entry) {
+        while (list.get_first_child())
+            list.remove(list.get_first_child());
+        entry.sensitive = name !== null && this._library.labelsState !== 'unreadable';
+        if (name === null)
+            return;
+        if (this._library.labelsState === 'unreadable') {
+            list.append(new Gtk.Label({label: _('Labels cannot be changed because the labels file cannot be read'),
+                wrap: true, xalign: 0}));
+            return;
+        }
+        const mine = this._library.labelsOf(name);
+        const keys = new Set(mine.map(Labels.labelKey));
+        const others = this._library.allLabels().map(({label}) => label)
+            .filter(label => !keys.has(Labels.labelKey(label)));
+        for (const label of [...mine, ...others]) {
+            const check = new Gtk.CheckButton({label, active: keys.has(Labels.labelKey(label))});
+            check.connect('toggled', () => this._setContextLabel(name, label, check.active));
+            list.append(check);
+        }
+    }
+
+    async _addContextLabel(name, entry, list) {
+        const label = Labels.cleanLabel(entry.text);
+        if (!name || !label)
+            return;
+        entry.text = '';
+        if (this._library.labelsOf(name).some(item => Labels.labelKey(item) === Labels.labelKey(label)))
+            return;
+        await this._setContextLabel(name, label, true);
+        this._fillContextLabels(name, list, entry);
+    }
+
+    async _setContextLabel(name, label, active) {
+        try {
+            await this._library.setLabel(name, label, active);
+            this._renderChips();
+        } catch (e) {
+            this._toast(_('Could not update labels: %s').format(e.message));
+        }
     }
 
     // Enter in the search: into the note, at the first match. That is the
@@ -599,7 +875,15 @@ class AllNotesPage {
                 return;
             }
         }
-        this._pane.focusEditor();
+        // Gtk.SearchEntry handles its activate signal after the connected
+        // callback returns. When the note is already open, focusEditor()
+        // can run before that handler finishes and the entry keeps focus.
+        // Defer the handoff until the activation event has fully completed.
+        GLib.idle_add(GLib.PRIORITY_DEFAULT, () => {
+            if (this.navigationPage.get_visible() && this._pane.name !== null)
+                this._pane.focusEditor();
+            return GLib.SOURCE_REMOVE;
+        });
     }
 
     _onLibraryChanged(change) {
@@ -711,7 +995,7 @@ class AllNotesPage {
             if (!library.notes.has(name))
                 this._folded.delete(name);
         }
-        this._title.subtitle = ngettext('%d note', '%d notes', notes.length).format(notes.length);
+        this._subtitleLabel.label = ngettext('%d note', '%d notes', notes.length).format(notes.length);
         this._placeholder.title = notes.length ? _('No matching notes') : _('No notes yet');
 
         this._list.remove_all();
@@ -779,6 +1063,18 @@ class AllNotesPage {
         }
         const row = new Gtk.ListBoxRow({child: box});
         row._noteName = note.name;
+        const rightClick = new Gtk.GestureClick({button: Gdk.BUTTON_SECONDARY});
+        rightClick.connect('pressed', (gesture, _presses, x, y) => {
+            this._rowContextNote = note.name;
+            const allocation = row.get_allocation();
+            this._rowContextMenu.set_pointing_to(new Gdk.Rectangle({
+                x: allocation.x + x, y: allocation.y + y - this._listScroll.vadjustment.value,
+                width: 1, height: 1,
+            }));
+            this._rowContextMenu.popup();
+            gesture.set_state(Gtk.EventSequenceState.CLAIMED);
+        });
+        row.add_controller(rightClick);
         return row;
     }
 

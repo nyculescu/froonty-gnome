@@ -51,6 +51,7 @@ Gtk.Settings.get_default().gtk_enable_animations = false;
 // Folder events (inotify, then GIO's rate limit for changes); autosave.
 const SETTLE = 1500;
 const AUTOSAVE = 1200;
+const FIRST_FOCUS = 300;
 
 // ---- the modules under test, with the gettext import pointing at a stub
 // (and the notes' bundled icons, which the pane loads by path)
@@ -244,6 +245,10 @@ class Ui {
             w.has_css_class('froonty-all-notes-list'));
     }
 
+    get windowTitle() {
+        return find(this.page, w => w.has_css_class?.('froonty-all-notes-title'));
+    }
+
     get split() {
         return find(this.page, w => w instanceof Adw.OverlaySplitView);
     }
@@ -269,10 +274,10 @@ class Ui {
 
     // The note pane's title: the open note.
     get open() {
-        const stack = find(this.page, w => w instanceof Gtk.Stack);
+        const stack = find(this.page, w => w instanceof Gtk.Stack && w.get_child_by_name('note'));
         if (stack.visible_child_name !== 'note')
             return null;
-        return find(stack, w => w instanceof Gtk.Label && w.has_css_class('title-4')).label;
+        return stack._noteName;
     }
 
     get banners() {
@@ -373,8 +378,12 @@ async function openWindow(dir, {last = '', view = 'all-notes', source = false, w
     window.set_default_size(width, 400);
     window.present();
     const ui = new Ui(window);
-    if (view === 'all-notes')
+    if (view === 'all-notes') {
         await waitFor(() => ui.page && ui.rows.length > 0 && ui.open !== null);
+        // With the list hidden, the page focuses the editor 150 ms after the
+        // first note opens, cursor at the end: a selection before that is lost.
+        await sleep(FIRST_FOCUS);
+    }
     return {window, settings, ui};
 }
 
@@ -402,31 +411,57 @@ test('window: pin stays beside Notes List when narrow and when the sidebar is op
     const {window, settings, ui} = await openWindow(dir, {last: 'Plan', width: 420});
     ok(await waitFor(() => ui.pinButton?.get_mapped() && ui.notesListButton?.get_mapped()),
         'pin and Notes List are visible in the narrow layout');
+    ok(![...walk(ui.page)].some(w => w instanceof Gtk.Button && w.icon_name === 'go-previous-symbolic'),
+        'the navigation back button is absent on All Notes');
     ok(ui.pinButton.get_width() > 0 && ui.notesListButton.get_width() > 0,
-        'both right-side controls receive space');
+        'pin and Notes List receive space');
+    const newButton = find(ui.page, w => w instanceof Gtk.Button && w.tooltip_text === 'New note');
+    ok(newButton && ui.notesListButton.get_parent() === newButton.get_parent(),
+        'Notes List sits in the leading slot beside New note');
+    ok(!ui.split.show_sidebar, 'the Notes list starts hidden at the compressed width');
+    ok(ui.split.pin_sidebar, 'Adw automatic sidebar visibility is disabled');
+    ok(!ui.labelsButton?.get_mapped() && ui.foldButton.get_mapped(),
+        'Labels leave the title bar; formatting visibility stays there');
+    eq(ui.windowTitle.label, 'Plan', 'drops the prefix first at the compressed width');
 
     ui.pinButton.active = true;
     eq(settings.get_boolean('all-notes-pinned'), true, 'pin control updates the setting');
     ui.pinButton.active = false;
     eq(settings.get_boolean('all-notes-pinned'), false);
 
+    ui.notesListButton.active = true;
+    ok(await waitFor(() => ui.split.show_sidebar), 'Notes List can still be opened manually');
     window.set_default_size(900, 640);
     ok(await waitFor(() => !ui.split.collapsed), 'the wide layout opens the sidebar');
+    ok(await waitFor(() => ui.windowTitle.label === 'All notes: Plan'),
+        'restores the prefix when the title has room');
     ok(await waitFor(() => ui.pinButton.get_mapped()),
         `pin maps with the sidebar open (visible=${ui.pinButton.visible}, ` +
         `width=${ui.pinButton.get_width()}, actions=${ui.pinButton.get_parent()?.get_mapped()})`);
     ok(ui.notesListButton.get_mapped(), 'Notes List remains available with the sidebar open');
+    ok(!ui.labelsButton?.get_mapped() && ui.foldButton.get_mapped(),
+        'Labels leave the title bar when the sidebar is open');
+
+    ui.split.collapsed = true;
+    ok(!ui.split.show_sidebar, 'collapsing hides the Notes list');
+    ui.split.collapsed = false;
+    await sleep(350); // Allow Adw's expand transition to finish.
+    ok(!ui.split.show_sidebar, 'finishing the expand transition does not reopen the list');
+    ok(ui.notesListButton.get_mapped(), 'Notes List remains available after resizing');
+    ui.split.collapsed = true;
+    ui.notesListButton.active = true;
+    ok(await waitFor(() => ui.split.show_sidebar), 'Notes List can be reopened while collapsed');
     await closeWindow(window);
 });
 
-test('window: the formatting bar wraps its right-side actions in a narrow window', async () => {
+test('window: the formatting bar keeps all actions available in a narrow window', async () => {
     const dir = tempFolder({Plan: 'one'});
     const {window, ui} = await openWindow(dir, {last: 'Plan', width: 420});
     ok(await waitFor(() => ui.formatButtons.length === 12 &&
         ui.formatButtons.every(button => button.get_mapped() && button.get_width() > 0)),
     'all formatting actions remain visible');
-    const rows = new Set(ui.formatButtons.map(button => button.get_allocation().y));
-    ok(rows.size > 1, 'the actions wrap onto multiple rows instead of clipping');
+    ok(!ui.labelsButton?.get_mapped() && ui.foldButton.get_mapped(),
+        'Labels are in context menus; Show formatting tools stays in the header');
     await closeWindow(window);
 });
 
@@ -487,13 +522,20 @@ test('window: label chips narrow the list, all or any (notes-label-match); Clear
     await closeWindow(window);
 });
 
-test('window: the Labels menu adds and removes a label of the open note, on disk', async () => {
+test('window: right-click Labels on a note and the window adds and removes its labels', async () => {
     const dir = tempFolder({Plan: 'plan', Other: 'other'});
     write(dir, '.froonty-labels.json', JSON.stringify({version: 1, labels: {Other: ['home']}}));
     const {window, ui} = await openWindow(dir, {last: 'Plan'});
-    ui.labelsButton.popup();
+    const rightClickRow = name => controllers(ui.rows.find(row => row._noteName === name))
+        .find(c => c instanceof Gtk.GestureClick && c.get_button() === Gdk.BUTTON_SECONDARY)
+        .emit('pressed', 1, 4, 4);
+    rightClickRow('Plan');
+    const rowMenu = find(ui.page, w => w instanceof Gtk.Popover && w.visible &&
+        find(w, b => b instanceof Gtk.MenuButton && b.label === 'Labels'));
+    const rowLabels = find(rowMenu, w => w instanceof Gtk.MenuButton && w.label === 'Labels');
+    rowLabels.popup();
     await sleep(200);
-    const popover = ui.labelsButton.popover;
+    const popover = rowLabels.popover;
     const entry = find(popover, w => w instanceof Gtk.Entry);
     entry.text = '#ideas';
     entry.emit('activate');
@@ -510,6 +552,11 @@ test('window: the Labels menu adds and removes a label of the open note, on disk
     ok(await waitFor(() => !onDisk().Plan?.includes('ideas')), JSON.stringify(onDisk()));
     eq(onDisk().Plan, ['home']);
     popover.popdown();
+
+    const header = find(ui.page, w => w instanceof Adw.HeaderBar);
+    ok(!controllers(header).some(c => c instanceof Gtk.GestureClick &&
+        c.get_button() === Gdk.BUTTON_SECONDARY),
+    'the title area leaves right-click to GNOME’s native window menu');
     await closeWindow(window);
 });
 
@@ -531,24 +578,30 @@ test('window: New note makes a note named after the time and opens it, also unde
     await closeWindow(window);
 });
 
-test('window: a double-click on the title renames the note, with its labels, place and colour', async () => {
+test('window: the note context menu renames the note, with its labels, place and colour', async () => {
     const dir = tempFolder({Plan: 'ship', Other: 'x'});
     write(dir, '.froonty-labels.json', JSON.stringify({version: 1, labels: {Plan: ['work']}}));
     write(dir, '.froonty.json', JSON.stringify({version: 1, order: ['Plan', 'Other'], colors: {Plan: 'blue'}}));
     const {window, settings, ui} = await openWindow(dir, {last: 'Plan'});
-    const title = find(ui.page, w => w instanceof Gtk.Label && w.tooltip_text === 'Double-click to rename');
-    ok(title, 'the title');
-    // What the double click does (GTK has no synthetic clicks here).
-    const stack = title.get_parent();
-    stack.visible_child_name = 'entry';
-    const entry = stack.get_child_by_name('entry');
+    const rightClickRow = name => controllers(ui.rows.find(row => row._noteName === name))
+        .find(c => c instanceof Gtk.GestureClick && c.get_button() === Gdk.BUTTON_SECONDARY)
+        .emit('pressed', 1, 4, 4);
+    rightClickRow('Plan');
+    const changeMenu = find(ui.page, w => w instanceof Gtk.Popover && w.visible &&
+        find(w, b => b instanceof Gtk.Button && b.label === 'Change note title'));
+    const change = find(changeMenu, w => w instanceof Gtk.Button && w.label === 'Change note title');
+    ok(change, 'the context menu has Change note title');
+    change.emit('clicked');
+    const dialog = [...Gtk.Window.get_toplevels()].find(w => w instanceof Gtk.Dialog && w.title === 'Change note title');
+    ok(dialog, 'the rename dialog opens');
+    const entry = find(dialog, w => w instanceof Gtk.Entry);
     entry.text = 'Q4 plan';
-    entry.emit('activate');
+    dialog.response(Gtk.ResponseType.ACCEPT);
     ok(await waitFor(() => ui.open === 'Q4 plan' && ui.rowNames.includes('Q4 plan')),
         `open: ${ui.open} rows: ${ui.rowNames}`);
-    eq(stack.visible_child_name, 'title', 'the title again');
     eq(read(dir, 'Q4 plan.md'), 'ship', 'the file renamed');
     ok(!ui.rowNames.includes('Plan'), `rows: ${ui.rowNames}`);
+    await waitFor(() => read(dir, '.froonty-labels.json').includes('Q4 plan'));
     eq(JSON.parse(read(dir, '.froonty-labels.json')).labels, {'Q4 plan': ['work']}, 'its labels');
     const meta = JSON.parse(read(dir, '.froonty.json'));
     eq(meta.order.slice(0, 3), ['Plan', 'Q4 plan', 'Other'], 'its place, beside the old name');
@@ -556,13 +609,68 @@ test('window: a double-click on the title renames the note, with its labels, pla
     eq(settings.get_string('notes-last'), 'Q4 plan', 'the island follows');
 
     // A name taken by another note: nothing changes, and says so.
-    stack.visible_child_name = 'entry';
-    entry.text = 'Other';
-    entry.emit('activate');
+    rightClickRow('Q4 plan');
+    const duplicateMenu = find(ui.page, w => w instanceof Gtk.Popover && w.visible &&
+        find(w, b => b instanceof Gtk.Button && b.label === 'Change note title'));
+    find(duplicateMenu, w => w instanceof Gtk.Button && w.label === 'Change note title').emit('clicked');
+    const duplicateDialog = [...Gtk.Window.get_toplevels()].find(w => w instanceof Gtk.Dialog && w.title === 'Change note title');
+    find(duplicateDialog, w => w instanceof Gtk.Entry).text = 'Other';
+    duplicateDialog.response(Gtk.ResponseType.ACCEPT);
     await sleep(500);
     eq(ui.open, 'Q4 plan');
     eq(read(dir, 'Other.md'), 'x', 'the other note untouched');
     eq(settings.get_string('notes-last'), 'Q4 plan', 'the selection back');
+    await closeWindow(window);
+});
+
+test('window: a title change requested from GNOME’s window menu opens the same rename flow', async () => {
+    const dir = tempFolder({Plan: 'ship'});
+    const {window, settings, ui} = await openWindow(dir, {last: 'Plan'});
+    settings.set_string('all-notes-title-request', JSON.stringify({id: 'native-menu-test', name: 'Plan'}));
+    ok(await waitFor(() => [...Gtk.Window.get_toplevels()].some(w =>
+        w instanceof Gtk.Dialog && w.title === 'Change note title')),
+    'the title editor opens from the shared request');
+    const dialog = [...Gtk.Window.get_toplevels()].find(w => w instanceof Gtk.Dialog &&
+        w.title === 'Change note title');
+    find(dialog, w => w instanceof Gtk.Entry).text = 'Renamed';
+    dialog.response(Gtk.ResponseType.ACCEPT);
+    ok(await waitFor(() => ui.open === 'Renamed' && ui.rowNames.includes('Renamed')),
+        `open=${ui.open} rows=${ui.rowNames}`);
+    eq(read(dir, 'Renamed.md'), 'ship', 'the existing rename flow moved the note');
+    await closeWindow(window);
+});
+
+test('window: right-click copies source and rendered text, then deletes the note', async () => {
+    const dir = tempFolder({Plan: '# Plan\n\nship **today**'});
+    const {window, ui} = await openWindow(dir, {last: 'Plan'});
+    const views = find(ui.page, w => w instanceof Gtk.Stack && w.get_child_by_name('rendered'));
+    const rightClick = () => controllers(views)
+        .find(c => c instanceof Gtk.GestureClick && c.get_button() === Gdk.BUTTON_SECONDARY)
+        .emit('pressed', 1, 4, 4);
+    const choose = async label => {
+        rightClick();
+        ok(await waitFor(() => find(ui.page, w => w instanceof Gtk.Popover && w.visible &&
+            find(w, b => b instanceof Gtk.Button && b.label === label))),
+            `menu action ${label}`);
+        const menu = find(ui.page, w => w instanceof Gtk.Popover && w.visible &&
+            find(w, b => b instanceof Gtk.Button && b.label === label));
+        const button = find(menu, w => w instanceof Gtk.Button && w.label === label);
+        button.emit('clicked');
+    };
+    ok(!find(ui.page, w => w instanceof Gtk.Label && w.tooltip_text === 'Double-click to rename'),
+        'the duplicate title row and double-click rename are gone');
+    await choose('Copy source text');
+    const clipboard = ui.editor.get_clipboard();
+    eq(await new Promise(resolve => clipboard.read_text_async(null,
+        (_clip, result) => resolve(clipboard.read_text_finish(result)))), '# Plan\n\nship **today**', 'source copied');
+    await choose('Copy rendered text');
+    const rendered = await new Promise(resolve => clipboard.read_text_async(null,
+        (_clip, result) => resolve(clipboard.read_text_finish(result))));
+    ok(rendered.includes('Plan') && rendered.includes('ship today') && !rendered.includes('**'),
+        `rendered text copied: ${rendered}`);
+    await choose('Delete note');
+    ok(await waitFor(() => ui.open === null && ui.rowNames.length === 0),
+        `deleted note; open=${ui.open}, rows=${ui.rowNames}`);
     await closeWindow(window);
 });
 

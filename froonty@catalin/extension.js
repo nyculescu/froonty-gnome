@@ -15,6 +15,7 @@ import {Extension, gettext as _} from 'resource:///org/gnome/shell/extensions/ex
 import {FEATURES, PARTS} from './features/registry.js';
 import {ClockService} from './services/clock.js';
 import {PanelClock} from './shell/dateMenu.js';
+import {NotesWindowMenu} from './shell/notesWindowMenu.js';
 import {SettingsWindow} from './shell/settingsWindow.js';
 import {Island} from './ui/island.js';
 import {PanelLauncher} from './ui/panelLauncher.js';
@@ -28,6 +29,7 @@ export default class FroontyExtension extends Extension {
     enable() {
         this._settings = this.getSettings();
         this._panelClock = new PanelClock();
+        this._notesWindowMenu = new NotesWindowMenu(this._settings, text => this.gettext(text));
         this._settingsWindow = new SettingsWindow(this.uuid, this.metadata.name, this._settings);
         this._clock = null;
         this._island = null;
@@ -125,6 +127,8 @@ export default class FroontyExtension extends Extension {
         this._launcher?.destroy();
         this._launcher = null;
 
+        this._notesWindowMenu.destroy();
+        this._notesWindowMenu = null;
         this._settingsWindow.destroy();
         this._settingsWindow = null;
         this._panelClock = null;
