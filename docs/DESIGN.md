@@ -885,6 +885,10 @@ Release 0.12.0, the first stable release (no public build any more):
 **821/821** in the default session mode and **817/817** in Ubuntu's,
 plus 880 unit tests.
 
+Release 0.13.0: **841/841** in the default session mode and **837/837** in
+Ubuntu's, plus 908 unit tests. `make test` still exits non-zero: the
+clipboard switcher's debug lines count as shell log lines mentioning Froonty.
+
 Unreleased: the Notifications and Calendar tabs were removed. The date
 pill opens GNOME's own calendar and notification menu, which already
 lists GNOME's notifications (with Do Not Disturb and Clear) and the

@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.13.0 (2026-11-02)
+
+- The usage, load and temperature panic buttons show their icon in front
+  of the value, solid, as the readouts do, instead of a faint icon behind
+  it. The readouts' icons are solid white now too.
+- Readouts: up to 8 read-only values on the collapsed pill, split around
+  the time so that both sides come out about as wide: CPU, GPU and RAM
+  load, temperatures, network speed, disk used, Claude usage and favourite
+  time zones (short names: "Dub 18:47"). Chosen in Settings → Readouts,
+  none by default.
+- The unread dot on the pill now shows for notifications whose banner has
+  popped up, and stays until you open the notification list. It followed
+  GNOME's own dot, which counts a shown banner as seen.
+- LocalSend: text from the phone goes to the clipboard, ready to paste,
+  also when another app shares it as a small text file (it was saved as
+  `text.txt`). "Send clipboard" sends the computer's clipboard text to a
+  device.
+- LocalSend: sending from the computer works with LocalSend 2.2 again,
+  which refused it ("certificate required"): Froonty now presents its
+  certificate when it connects.
+- Notes: the All notes window's titlebar menu holds the selected note's
+  labels and renaming, and All notes opens on the note it was asked for.
+- The clipboard switcher logs each step to the system journal, for
+  debugging.
+
 ## 0.12.0 (2026-10-18)
 
 The first stable release, for GNOME Shell 50 on Ubuntu 26.04 (Wayland).
