@@ -12,7 +12,7 @@ GLIB_COMPILE_SCHEMAS ?= /usr/bin/glib-compile-schemas
 
 MATHJAX := $(SRC)/third_party/mathjax/fetched.json
 
-.PHONY: schemas mathjax break-art third-party install uninstall unit test log clean devkit
+.PHONY: schemas mathjax break-art third-party pad-power install uninstall unit test log clean devkit horizon-submodule horizon-setup horizon-wizard
 
 schemas: $(SRC)/schemas/gschemas.compiled
 
@@ -50,6 +50,49 @@ $(BREAK_ART):
 third-party:
 	bash tools/patch-third-party.sh
 
+# The llano pad off at log-out, shutdown and restart, back on at 300 rpm at
+# the next log-in if it was on, and off while asleep: tools/llano-session.service
+# (the session), tools/llano-off.service and tools/llano-sleep.service (the
+# system; needs sudo). LLANO=/path/to/llano.py when it lives elsewhere.
+LLANO ?= $(CURDIR)/third_party/llano-v12-linux/llano.py
+PAD_POWER_SED = sed -e 's|@LLANO@|$(LLANO)|' -e 's|@LLANO_DIR@|$(dir $(LLANO))|' \
+	-e 's|@SCRIPT@|$(CURDIR)/tools/llano-power.sh|' -e 's|@SCRIPT_DIR@|$(CURDIR)/tools/|' \
+	-e 's|@MARKER@|$(or $(XDG_STATE_HOME),$(HOME)/.local/state)/llano/on-at-exit|'
+pad-power:
+	mkdir -p $(HOME)/.config/systemd/user
+	$(PAD_POWER_SED) tools/llano-session.service >$(HOME)/.config/systemd/user/llano-session.service
+	systemctl --user daemon-reload
+	systemctl --user enable llano-session.service
+	systemctl --user start llano-session.service
+	$(PAD_POWER_SED) tools/llano-off.service | sudo tee /etc/systemd/system/llano-off.service >/dev/null
+	$(PAD_POWER_SED) tools/llano-sleep.service | sudo tee /etc/systemd/system/llano-sleep.service >/dev/null
+	sudo systemctl daemon-reload
+	sudo systemctl enable --now llano-off.service
+	sudo systemctl enable llano-sleep.service
+
+# Ensures bundled third-party repos (such as Horizon) are initialized before
+# local devkit runs or other automation checks them.
+horizon-submodule:
+	git submodule update --init --recursive third_party/Horizon
+
+HORIZON_DIR := third_party/Horizon
+HORIZON_DEVKIT_DIR := $(if $(FROONTY_DEVKIT_DIR),$(FROONTY_DEVKIT_DIR),$(HOME)/.cache/froonty-devkit)
+HORIZON_DATA_DIR := $(HORIZON_DEVKIT_DIR)/data/froonty/horizon
+# One place for the session and the devkit (horizonAi.js horizonVenvDirs).
+HORIZON_VENV_DIR := $(HOME)/.cache/horizon-venv
+
+# One-time Horizon setup: a copy-based Python environment outside the
+# source submodule (the source filesystem may forbid the lib64 symlink venv
+# creates). The AI is chosen in Settings → Widgets.
+horizon-setup: horizon-submodule
+	python3 -m venv --copies "$(HORIZON_VENV_DIR)"
+	UV_PROJECT_ENVIRONMENT="$(HORIZON_VENV_DIR)" UV_LINK_MODE=copy uv sync --project "$(CURDIR)/$(HORIZON_DIR)" --python "$(HORIZON_VENV_DIR)/bin/python"
+
+# Optional: Horizon's own wizard, to pick sources by interest. Its AI step
+# is overwritten unless Settings → Widgets → AI is "Horizon's own setting".
+horizon-wizard: horizon-setup
+	"$(HORIZON_VENV_DIR)/bin/horizon-wizard" --data-dir "$(HORIZON_DATA_DIR)"
+
 # Copies the extension into the user's extensions directory. A copy, not a
 # symlink: GNOME Shell loads extensions once, at login, and a link into a
 # drive that is mounted later (e.g. a data partition udisks mounts on first
@@ -78,7 +121,7 @@ unit: schemas
 # SYSTEM_BUS=1 lets it reach the real asusd (tools/devkit.sh --system-bus):
 # the Fan settings page's laptop profile and curves then change this
 # computer's.
-devkit: schemas $(MATHJAX) $(BREAK_ART)
+devkit: horizon-submodule schemas $(MATHJAX) $(BREAK_ART)
 	tools/devkit.sh $(if $(SYSTEM_BUS),--system-bus)
 
 # Isolated headless GNOME Shell 50 runs; do not touch the real session.

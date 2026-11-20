@@ -14,6 +14,7 @@ import {localSendPage} from './localsend/prefs.js';
 import {mediaPage} from './media/prefs.js';
 import {sysmonPage} from './sysmon/prefs.js';
 import {timezonesPage} from './timezonePlanner/prefs.js';
+import {widgetsPage} from './widgets/prefs.js';
 import {writingPage} from './writing/prefs.js';
 import {addIconPath as addZeroTierIconPath, zeroTierPage} from './zerotier/prefs.js';
 
@@ -43,6 +44,7 @@ export function featurePages(window, settings, pageStack) {
         breakPage(settings),
         zeroTierPage(settings),
         localSendPage(settings),
+        widgetsPage(settings),
         writingPage(settings, window),
         formulasPage(settings),
         // Not hub tabs (PARTS in registry.js).

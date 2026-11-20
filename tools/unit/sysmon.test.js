@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import {
-    coreInputs, cpuPackageInput, findEfiMount, loadPercent, parseCpuMhz, parseCpuModel,
-    parseMeminfo, parseNetDev, parseNvidiaSmi, parseStat, pciDeviceName, rate,
+    coreInputs, cpuPackageInput, driveName, findEfiMount, isSnapMount, loadPercent,
+    parseCpuMhz, parseCpuModel, parseDiskMounts, parseMeminfo, parseNetDev, parseNvidiaSmi,
+    parseStat, pciDeviceName, rate,
 } from '../../froonty@catalin/features/sysmon/parse.js';
 import {levelCells, levelClass} from '../../froonty@catalin/features/sysmon/level.js';
 import {Sampler, SECTIONS} from '../../froonty@catalin/features/sysmon/sampler.js';
@@ -108,6 +109,29 @@ test('the EFI partition is a mounted FAT file system, never an automount', () =>
         '/boot/efi');
     eq(findEfiMount('systemd-1 /efi autofs rw 0 0\n'), null);
     eq(findEfiMount('/dev/sda1 /boot ext4 rw 0 0\n'), null);
+});
+
+test('mounted drives: block devices only, each once, names unescaped', () => {
+    const mounts = [
+        'proc /proc proc rw 0 0',
+        'tmpfs /tmp tmpfs rw 0 0',
+        '/dev/nvme0n1p2 /home btrfs rw,subvol=/home 0 0',
+        '/dev/nvme0n1p2 / btrfs rw,subvol=/ 0 0',
+        '/dev/sda /run/media/me/MY\\040STICK vfat rw 0 0',
+        'systemd-1 /efi autofs rw 0 0',
+        '/dev/loop3 /snap/core22/2987 squashfs ro 0 0',
+        'gvfsd-fuse /run/user/1000/gvfs fuse.gvfsd-fuse rw 0 0',
+    ].join('\n');
+    const drives = parseDiskMounts(mounts);
+    eq(drives.map(d => [d.source, d.target, d.type]), [
+        ['/dev/nvme0n1p2', '/', 'btrfs'],
+        ['/dev/sda', '/run/media/me/MY STICK', 'vfat'],
+        ['/dev/loop3', '/snap/core22/2987', 'squashfs'],
+    ]);
+    eq(drives.map(isSnapMount), [false, false, true]);
+    eq(driveName('/run/media/me/MY STICK'), 'MY STICK');
+    eq(driveName('/media/me/JLINK'), 'JLINK');
+    eq(driveName('/srv/shared'), '/srv/shared');
 });
 
 test('CPU temperature inputs by chip and label', () => {
@@ -351,11 +375,70 @@ test('without nvidia-smi, the NVIDIA card says what is missing', async () => {
 
 test('disks: root, swap from meminfo, the EFI partition', async () => {
     const {second} = await twoSamples(machine(), ['disks']);
-    eq(second.disks, {
-        root: {total: 1000, used: 400},
-        swap: {total: 8000000 * 1024, used: 1000000 * 1024},
-        efi: {total: 100, used: 5, path: '/boot/efi'},
-    });
+    eq(second.disks.root, {total: 1000, used: 400});
+    eq(second.disks.swap, {total: 8000000 * 1024, used: 1000000 * 1024});
+    eq(second.disks.drives.map(d => [d.path, d.role, d.total, d.used]),
+        [['/', 'root', 1000, 400], ['/boot/efi', 'efi', 100, 5]]);
+    eq(second.disks.snaps, null);
+});
+
+// This laptop on 2026-11-13: a J-Link and an ST-LINK board plugged in,
+// a Windows partition, a disk image and two snaps.
+const DRIVES = machine({
+    files: {
+        '/proc/self/mounts': [
+            '/dev/nvme0n1p1 / ext4 rw 0 0',
+            '/dev/nvme0n1p3 /boot/efi vfat rw 0 0',
+            '/dev/nvme1n1p3 /run/media/me/Windows ntfs3 rw 0 0',
+            '/dev/sdb /run/media/me/JLINK vfat rw 0 0',
+            '/dev/sda /run/media/me/DIS_F413ZH vfat rw 0 0',
+            '/dev/loop40 /mnt/iso iso9660 ro 0 0',
+            '/dev/loop1 /snap/snapd/28254 squashfs ro 0 0',
+            '/dev/loop2 /snap/core22/2987 squashfs ro 0 0',
+        ].join('\n'),
+        '/sys/class/block/nvme0n1p1/partition': '1\n',
+        '/sys/class/block/nvme0n1p3/partition': '3\n',
+        '/sys/class/block/nvme1n1p3/partition': '3\n',
+        '/sys/class/block/nvme0n1/device/model': 'KINGSTON SKC3000S1024G   \n',
+        '/sys/class/block/nvme1n1/device/model': 'SAMSUNG MZVL21T0HCLR-00B00\n',
+        '/sys/class/block/sda/device/vendor': 'MBED    \n',
+        '/sys/class/block/sda/device/model': 'microcontroller \n',
+        '/sys/class/block/sdb/device/vendor': 'SEGGER  \n',
+        '/sys/class/block/sdb/device/model': 'MSD Volume      \n',
+        '/sys/class/block/loop40/loop/backing_file': '/home/me/Downloads/ubuntu.iso\n',
+    },
+});
+DRIVES.links = {
+    ...MACHINE.links,
+    '/sys/class/block/nvme0n1p1': '../../devices/pci0000:00/0000:6c:00.0/nvme/nvme0/nvme0n1/nvme0n1p1',
+    '/sys/class/block/nvme0n1p3': '../../devices/pci0000:00/0000:6c:00.0/nvme/nvme0/nvme0n1/nvme0n1p3',
+    '/sys/class/block/nvme1n1p3': '../../devices/pci0000:00/0000:6d:00.0/nvme/nvme1/nvme1n1/nvme1n1p3',
+    '/sys/class/block/sda': '../../devices/pci0000:00/0000:00:14.0/usb1/1-1/1-1.4/host1/block/sda',
+    '/sys/class/block/sdb': '../../devices/pci0000:00/0000:00:14.0/usb1/1-1/1-1.2/host0/block/sdb',
+};
+DRIVES.filesystems = {
+    '/': {total: 1000, used: 400},
+    '/boot/efi': {total: 100, used: 5},
+    '/run/media/me/Windows': {total: 900, used: 300},
+    '/run/media/me/JLINK': {total: 11, used: 1},
+    '/run/media/me/DIS_F413ZH': {total: 5, used: 0},
+    '/mnt/iso': {total: 50, used: 50},
+    '/snap/snapd/28254': {total: 45, used: 45},
+    '/snap/core22/2987': {total: 74, used: 74},
+};
+
+test('disks: every mounted drive, its size, virtual ones marked and last', async () => {
+    const {second} = await twoSamples(DRIVES, ['disks']);
+    eq(second.disks.drives.map(d => [d.name, d.role, d.total, d.virtual, d.probe ?? d.image ?? d.model]), [
+        ['/', 'root', 1000, null, 'KINGSTON SKC3000S1024G'],
+        ['/boot/efi', 'efi', 100, null, 'KINGSTON SKC3000S1024G'],
+        ['Windows', null, 900, null, 'SAMSUNG MZVL21T0HCLR-00B00'],
+        ['/mnt/iso', null, 50, 'image', 'ubuntu.iso'],
+        ['DIS_F413ZH', null, 5, 'probe', 'MBED'],
+        ['JLINK', null, 11, 'probe', 'SEGGER'],
+    ]);
+    eq(second.disks.drives.filter(d => d.usb).map(d => d.name), ['DIS_F413ZH', 'JLINK']);
+    eq(second.disks.snaps, {count: 2, total: 119});
 });
 
 test('sections that are off are not read', async () => {

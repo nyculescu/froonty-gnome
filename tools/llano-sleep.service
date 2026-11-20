@@ -1,0 +1,20 @@
+# Switches the llano pad off while the computer sleeps (suspend or
+# hibernate), and back to its speed and control on waking. Installed by
+# `make pad-power`, which fills in the @...@ paths.
+
+[Unit]
+Description=Switch the llano cooling pad off while the computer sleeps
+Before=sleep.target
+StopWhenUnneeded=yes
+RequiresMountsFor=@LLANO_DIR@ @SCRIPT_DIR@
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh "@SCRIPT@" sleep-off /run/llano/sleep-state
+ExecStop=/bin/sh "@SCRIPT@" wake /run/llano/sleep-state
+Environment=LLANO=@LLANO@ LLANO_CLIENT=sleep
+TimeoutSec=20
+
+[Install]
+WantedBy=sleep.target

@@ -10,7 +10,7 @@ import {done, eq, ok, test} from './test.js';
 import {froontySettings, isMemory, setup} from './breakWorld.js';
 import {GnomeBreakSettings} from '../../froonty@catalin/features/break/gnomeSettings.js';
 import {
-    PauseKeeper, allowPauses, applyHold, applyPause, holdApplied, pauseApplied, pauseState, restoreHold,
+    PauseKeeper, allowPauses, applyHold, applyPause, holdApplied, offApplied, pauseApplied, pauseState, restoreHold,
     restorePause, untilTomorrow, workHours,
 } from '../../froonty@catalin/features/break/pause.js';
 
@@ -117,7 +117,10 @@ test('the keeper ends a pause when the tab or Froonty is turned off, not under t
     eq(gnome.selected(), [], 'locked: still paused');
     keeper = new PauseKeeper(settings, gnome);
     settings.set_boolean('break-enabled', false);
-    eq(gnome.selected(), ['eyesight', 'movement'], 'tab off');
+    eq(gnome.selected(), [], 'Break off: GNOME\'s breaks off too');
+    eq(pauseApplied(settings), false, 'the pause is over');
+    settings.set_boolean('break-enabled', true);
+    eq(gnome.selected(), ['eyesight', 'movement'], 'Break on: the breaks from before the pause');
     keeper.destroy({restore: true});
 
     ({gnome, settings} = world());
@@ -125,6 +128,37 @@ test('the keeper ends a pause when the tab or Froonty is turned off, not under t
     applyPause(settings, gnome);
     keeper.destroy({restore: true});
     eq(gnome.selected(), ['eyesight', 'movement'], 'Froonty off');
+});
+
+test('Break off turns GNOME\'s breaks off, on gives them back; only the switch does', () => {
+    let {gnome, settings} = world(['movement']);
+    settings.set_boolean('break-enabled', false);
+    let keeper = new PauseKeeper(settings, gnome);
+    eq(gnome.selected(), ['movement'], 'found off at start: GNOME\'s breaks untouched');
+    settings.set_boolean('break-enabled', true);
+    settings.set_boolean('break-enabled', false);
+    eq([gnome.selected(), offApplied(settings)], [[], true]);
+    keeper.destroy({restore: true});
+    eq(gnome.selected(), [], 'Froonty off: Break stays off');
+
+    // Turned on while Froonty was not running: given back at start.
+    settings.set_boolean('break-enabled', true);
+    keeper = new PauseKeeper(settings, gnome);
+    eq([gnome.selected(), offApplied(settings)], [['movement'], false]);
+
+    // Changed by the user while off: theirs, left alone.
+    settings.set_boolean('break-enabled', false);
+    gnome.breaks.set_strv('selected-breaks', ['eyesight']);
+    settings.set_boolean('break-enabled', true);
+    eq([gnome.selected(), offApplied(settings)], [['eyesight'], false]);
+    keeper.destroy({restore: true});
+
+    ({gnome, settings} = world([]));
+    settings.set_boolean('break-enabled', true);
+    keeper = new PauseKeeper(settings, gnome);
+    settings.set_boolean('break-enabled', false);
+    eq(offApplied(settings), false, 'nothing on, nothing recorded');
+    keeper.destroy({restore: true});
 });
 
 test('busy: GNOME\'s dimming and locking off, exactly back; a key changed meanwhile stays', () => {

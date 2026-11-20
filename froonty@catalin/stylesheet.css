@@ -161,6 +161,61 @@
     icon-size: 12px;
 }
 
+.froonty-widgets {
+    spacing: 6px;
+}
+
+.froonty-widgets-header {
+    spacing: 8px;
+}
+
+.froonty-widgets-status {
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.froonty-widget-refresh {
+    padding: 4px 10px;
+    border-radius: 9px;
+    background-color: rgba(255, 255, 255, 0.08);
+}
+
+.froonty-widget-refresh:hover,
+.froonty-widget-refresh:focus {
+    background-color: rgba(255, 255, 255, 0.15);
+}
+
+.froonty-widgets-list {
+    spacing: 6px;
+}
+
+.froonty-widget-item {
+    background-color: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    padding: 8px 10px;
+    text-align: left;
+}
+
+.froonty-widget-item:hover,
+.froonty-widget-item:focus {
+    background-color: rgba(255, 255, 255, 0.07);
+}
+
+.froonty-widget-item-inner {
+    spacing: 4px;
+}
+
+.froonty-widget-item-title {
+    font-weight: 600;
+    color: #ffffff;
+}
+
+.froonty-widget-item-summary {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.9em;
+}
+
 /* Hub (expanded island) */
 
 .froonty-hub {
@@ -994,9 +1049,10 @@
 .froonty-claude-benchmark {
     padding: 6px 4px 0;
 }
-/* livenerf's chart: the series in livenerf's own blue. */
+/* livenerf's chart: the series in livenerf's own blue. It grows with the
+   island's height from this minimum. */
 .froonty-claude-chart {
-    height: 112px;
+    min-height: 100px;
     margin: 2px 0;
     font-size: 0.68em;
     font-feature-settings: "tnum";
@@ -1154,12 +1210,10 @@
     padding-right: 8px;
     font-size: 0.78em;
 }
-/* The pad noise slider's stages: dots on the Quick Settings slider's track. */
-.froonty-pad-noise-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 4px;
-    border: 1px solid rgba(0, 0, 0, 0.55);
+/* The pad noise slider's row: GNOME's `.quick-slider > StBoxLayout`
+   spacing, lost when the row is wrapped with the status line. */
+.froonty-pad-slider-row {
+    spacing: 6px;
 }
 
 /* Clipboard feature: the history, newest first; the entry now on the

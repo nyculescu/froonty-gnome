@@ -11,27 +11,28 @@ resets.
 ```
 ┌────┬──────────────────────────────────────┐
 │ 🕒 │   [🎤][🔊] ( Sat Oct 3 14:05 )       │
-│ 📝 │ Session                          13% │
-│ ✳  │ ███░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ │
-│    │ Resets in 4 h 2 min                  │
-│    │ Weekly                           33% │
-│    │ ███████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ │
+│ 📝 │ Weekly                           33% │
+│ ✳  │ ███████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ │
 │    │ Resets Fri 22:56                     │
 │    │ Weekly Fable                     18% │
 │    │ ████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ │
 │    │ Resets Fri 22:56                     │
-│    │ Cloud session credits  $181.09 left  │
-│    │ ███████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ │
-│    │ Resets Thu 5 Nov 08:59               │
 │    │                    Updated 2 min ago │
-│    │ Opus 5.5 vs launch week 54.5% correct│
-│    │ 80%┆░░░░░░░░                          │
-│    │ 60%┆░•─•─•╮░ 54.5%  Collecting the    │
-│    │ 40%┆░░░░░░╰•         baseline: day 7…  │
-│    │     Sep 24   Oct 01   Oct 08   Oct 22 │
-│    │ Baseline day 7 of 10 · livenerf, up… │
+│    │ Opus 5.5 vs launch week 70.1% correct│
+│    │ 90%┆              •─• Fable 5.2 84.6% │
+│    │ 70%┆░░░    •╮   ╭• 70.1%             │
+│    │ 50%┆░•─•─•─╰•─•╯                      │
+│    │     Sep 24   Oct 15   Nov 05   Nov 19 │
+│    │ Δ +0.014 ± 0.025, days 41–50 (…): no │
+│    │ change · livenerf, updated Fri 10:31 │
+│    │                                      │
 └────┴──────────────────────────────────────┘
 ```
+
+The plan has two limits now, Weekly and Weekly Fable. A Session row,
+other per-model rows or Cloud session credits appear the same way if
+Claude's servers send them. The livenerf row follows the usage rows
+directly, and its chart takes any spare height.
 
 The last row redraws livenerf's own chart (its README's hero image): the
 daily score with its 95% interval, the baseline days shaded, the latest
@@ -70,6 +71,8 @@ Froonty reads a different one.
   - **A, "Ask Claude Code for fresh usage"** (`claude-ask-claude-code`, on
     by default): when the tab or the panic button comes on screen,
     Froonty runs the user's Claude Code `/usage`, at most once a minute.
+    The pill's Claude readouts also ask about once a minute while the pill
+    stays on screen (docs/features/readouts.md).
   - **B, the status line**: Froonty's Claude Code status line saves
     Session and Weekly after each Claude Code reply. Set up from Settings
     → Claude, never over a status line of the user's own.
@@ -107,9 +110,14 @@ Froonty reads a different one.
     %"). Before the chart has been read, "Day 7 of 30" from the README.
   - **The chart** (user request, after livenerf's hero image): redrawn
     with Cairo from livenerf's own SVG, not shown as an image (at 300 px
-    its 960-px text would be unreadable). Scores 40–80% (the SVG's own
-    grid), dates along the bottom, the series in livenerf's blue. A
+    its 960-px text would be unreadable). The SVG's own grid (30–100% on
+    2026-11-13), dates along the bottom, the series in livenerf's blue. A
     pointer on it does nothing.
+  - **Fable 5.2** (livenerf added it 2026-11-11; user request 2026-11-13):
+    its own series in livenerf's orange, from its launch on 2026-11-09,
+    drawn over Opus with its own band and whiskers, and ended by
+    "Fable 5.2 84.6%" like livenerf's label. Before, its dots were read
+    as Opus days and the Opus line ran back through them.
   - **The line under it:** until a result is published (baseline to about
     2026-10-04, first 10-day result after day 20) "Baseline day 7 of 10";
     then "Δ <Δ ± SE>, <window>: <decision>", copied from livenerf's
@@ -126,9 +134,13 @@ Froonty reads a different one.
     day count shows as a bar instead.
   - Always the last row, below the usage footer, and shown even without
     Claude Code (it does not depend on it). Not on the panic button.
-- **Size:** 380×465: room for the usage rows, the chart and a two-line
-  Δ under it without scrolling (320 before the livenerf row, 260 before
-  the credits row).
+- **Offline before any reading:** Weekly and Weekly Fable, "Unknown".
+- **Size** (adjustable since 2026-11-13, user request): Settings → Claude
+  → Size, or drag the open island's bottom-right corner (`claude-width`,
+  `claude-height`, default 380×360). livenerf's chart takes the spare
+  height, from 100 px. Before, it was fixed at 380×465: room for the
+  usage rows, the chart and a two-line Δ under it without scrolling (320
+  before the livenerf row, 260 before the credits row).
 - **Panic button** `claude-session` (added the same day, user request):
   the session's (or, if chosen, the week's) usage in orange, after the
   Spark in the same orange, number only; "?" when
@@ -226,7 +238,10 @@ draws it:
   4 px above the label's baseline. Two labels fix the linear scale. The
   grid lines' ends are the plot's left and right edges.
 - **Days:** each `<circle>` is a day's score. The vertical line at its x
-  (`opacity="0.5"`) is its 95% interval. Values are read back through the
+  in the same colour (`opacity="0.5"`) is its 95% interval. A series
+  other than Opus is named by an end label
+  `<text><tspan fill="#e0793a">Fable 5.2</tspan> 84.6%</text>`: the
+  circles in that colour are its days, the rest are Opus's. Values are read back through the
   scale. plot.py rounds positions to 0.1 px, which is under 0.02 points
   at its usual 236 px for 40 points. These values are only drawn, never
   printed.

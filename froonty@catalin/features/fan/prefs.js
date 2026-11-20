@@ -10,6 +10,7 @@ import {gettext as _} from 'resource:///org/gnome/Shell/Extensions/js/extensions
 
 import {addIconPath} from '../../prefs/rows.js';
 import {PROFILES} from './asus.js';
+import {MAX_RPM, MIN_RPM, percentToRpm} from './pad.js';
 import {FAN_ICON_NAME} from './icon.js';
 import {FanService} from './service.js';
 
@@ -41,13 +42,12 @@ function padStatusText(service) {
         const status = service.status;
         const control = service.control === 'released' ? _('released to the pad’s roller')
             : status.control === 'pad' ? _('the pad’s roller') : _('software control');
-        const speed = status.off ? _('Off') : _('%d%%').format(status.speed);
+        const speed = status.off ? _('Off') : _('%d rpm').format(service.rpm);
         const details = [_('%s · %s · %s').format(speed,
             status.off ? _('pad and lights off') : status.lightsOff ? _('lights off') : _('lights on'),
             control)];
         if (service.noise)
-            details.push(_('≈%d rpm · ≈%d dB · %s').format(service.noise.rpm,
-                Math.round(service.noise.ear_db), service.noise.band));
+            details.push(_('≈%d dB · %s').format(Math.round(service.noise.ear_db), service.noise.band));
         return details.join(' · ');
     }
     switch (service.error) {
@@ -75,7 +75,7 @@ function recommendationText(service) {
     if (!rec)
         return _('Waiting for CPU and GPU temperatures.');
     const leader = rec.device === 'gpu' ? _('GPU') : _('CPU');
-    return _('Recommended %d%% · %s at %d °C%s').format(rec.fan, leader, Math.round(rec.temp),
+    return _('Recommended %d rpm · %s at %d °C%s').format(percentToRpm(rec.fan), leader, Math.round(rec.temp),
         service.lut?.built ? ` · ${_('table of %s').format(service.lut.built)}` : '');
 }
 
@@ -95,7 +95,7 @@ export function fanPage(settings, pageStack, window) {
 
     const pad = new Adw.PreferencesGroup({
         title: _('Cooling pad'),
-        description: _('Control the llano V12 Ultra cooling pad. Off stops the fan and lights; 0% keeps the pad on at its slowest speed.'),
+        description: _('Control the llano V12 Ultra cooling pad. Off stops the fan and lights; 300 rpm keeps the pad on at its slowest speed.'),
     });
     const status = new Adw.ActionRow({title: _('Pad status')});
     const stop = button(_('Stop it'), () => {
@@ -113,8 +113,10 @@ export function fanPage(settings, pageStack, window) {
         digits: 0,
         hexpand: true,
     });
-    speed.set_range(0, 100);
-    speed.set_increments(1, 10);
+    // The pad's display moves in 50 rpm steps, as the Quick Settings slider does.
+    speed.set_range(MIN_RPM, MAX_RPM);
+    speed.set_increments(50, 250);
+    speed.set_format_value_func((_scale, value) => _('%d rpm').format(value));
     speed.set_tooltip_text(_('Fan speed'));
     const speedRow = rowWithSuffix(_('Fan speed'), speed);
     pad.add(speedRow);
@@ -125,14 +127,14 @@ export function fanPage(settings, pageStack, window) {
         if (settingSpeed)
             return;
         holdSliderUntil = GLib.get_monotonic_time() / 1000 + 1500;
-        service.setSpeed(speed.get_value());
+        service.setRpm(Math.round(speed.get_value() / 50) * 50);
     });
 
     const actions = new Gtk.Box({orientation: Gtk.Orientation.HORIZONTAL, spacing: 6});
     const off = button(_('Off'), () => service.off());
-    const zero = button(_('0%'), () => service.setSpeed(0));
-    const half = button(_('50%'), () => service.setSpeed(50));
-    const full = button(_('100%'), () => service.setSpeed(100));
+    const zero = button(_('%d rpm').format(MIN_RPM), () => service.setRpm(MIN_RPM));
+    const half = button(_('%d rpm').format(1550), () => service.setRpm(1550));
+    const full = button(_('%d rpm').format(MAX_RPM), () => service.setRpm(MAX_RPM));
     const lock = button(_('Lock off'), () => service.setLocked(!service.lock));
     const release = button(_('Release'), () => service.release());
     for (const item of [off, zero, half, full, lock, release])
@@ -142,7 +144,7 @@ export function fanPage(settings, pageStack, window) {
     const recommendation = new Adw.ActionRow({title: _('Recommended')});
     const apply = button(_('Apply'), () => {
         if (service.recommendation)
-            service.setSpeed(service.recommendation.fan);
+            service.setRpm(percentToRpm(service.recommendation.fan));
     });
     recommendation.add_suffix(apply);
     pad.add(recommendation);
@@ -167,7 +169,7 @@ export function fanPage(settings, pageStack, window) {
     const settingsGroup = new Adw.PreferencesGroup({title: _('Fan settings')});
     const showSlider = new Adw.SwitchRow({
         title: _('Pad noise slider in Quick Settings'),
-        subtitle: _('Adjust the connected llano pad by RPM, with estimated noise stages.'),
+        subtitle: _('Adjust the connected llano pad by RPM; its fan icon switches the pad off.'),
     });
     settings.bind('cooling-slider-enabled', showSlider, 'active', Gio.SettingsBindFlags.DEFAULT);
     settingsGroup.add(showSlider);
@@ -196,17 +198,15 @@ export function fanPage(settings, pageStack, window) {
             gpu === null ? '' : _('hottest GPU %d °C').format(Math.round(gpu)),
         ].filter(Boolean).join(' · ') || _('Waiting for temperature readings.');
         stop.set_visible(Boolean(service.controllers.length) && !service.lock);
-        stop.set_sensitive(!service.busy);
-
         const locked = Boolean(service.lock);
         lock.label = locked ? _('Unlock') : _('Lock off');
-        // Not the slider while busy: a drag queues speeds, and an
-        // insensitive slider would drop the drag.
+        // Never greyed out while busy: every refresh's status read is busy
+        // too, so they would flicker; a click while a command runs queues.
         speed.set_sensitive(!locked);
         for (const control of [off, zero, half, full, release])
-            control.set_sensitive(!locked && !service.busy);
-        apply.set_sensitive(!locked && !service.busy && Boolean(service.recommendation) &&
-            service.recommendation.fan !== service.status?.speed);
+            control.set_sensitive(!locked);
+        apply.set_sensitive(!locked && Boolean(service.recommendation) &&
+            percentToRpm(service.recommendation.fan) !== service.rpm);
         const stopUnit = service.controllers[0];
         if (stopUnit) {
             status.subtitle += _(' · %s is setting the speed').format(stopUnit.replace(/\.service$/, ''));
@@ -215,7 +215,7 @@ export function fanPage(settings, pageStack, window) {
         if (service.status && !service.busy &&
             GLib.get_monotonic_time() / 1000 >= holdSliderUntil) {
             settingSpeed = true;
-            speed.set_value(service.status.speed);
+            speed.set_value(service.rpm);
             settingSpeed = false;
         }
 

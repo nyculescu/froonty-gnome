@@ -7,3 +7,6 @@
 [submodule "third_party/asusctl"]
 	path = third_party/asusctl
 	url = https://gitlab.com/asus-linux/asusctl.git
+[submodule "third_party/Horizon"]
+	path = third_party/Horizon
+	url = https://github.com/Thysrael/Horizon.git

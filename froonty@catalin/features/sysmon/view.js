@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Btop tab: CPU (with each logical CPU in a fold-out), each GPU, memory,
 // disks and network, live while the tab is on screen. Actors are made
-// once and their text updated on each sample; only the GPU list and the
-// core grid are rebuilt, and only when their count changes.
+// once and their text updated on each sample; only the GPU list, the
+// drive list and the core grid are rebuilt, and only when they change.
 // Each share (load, used space) is its value and then a level (level.js).
 
 import Clutter from 'gi://Clutter';
@@ -40,6 +40,8 @@ export class SysmonView {
         this._service = service;
         // The listed GPUs' ids; null before the first sample, '' for none.
         this._gpuKey = undefined;
+        // The listed drives' mount points, the same way.
+        this._driveKey = undefined;
         this._coreCount = -1;
         this._coreColumns = 0;
 
@@ -146,9 +148,14 @@ export class SysmonView {
 
     _buildDisks(parent) {
         const box = this._section(parent, _('Disks'));
-        this._root = addMeter(box, {detail: false});
+        this._driveList = new St.BoxLayout({
+            style_class: 'froonty-sysmon-list',
+            orientation: Clutter.Orientation.VERTICAL,
+        });
+        this._drives = [];
+        box.add_child(this._driveList);
+        this._snaps = addMeter(box, {level: false});
         this._swap = addMeter(box, {detail: false});
-        this._efi = addMeter(box, {detail: false});
         return box;
     }
 
@@ -255,15 +262,32 @@ export class SysmonView {
     }
 
     _syncDisks(disks) {
-        const meter = (target, name, usage, missing) => target.update({
-            name,
-            value: usage ? amount(usage.used, usage.total) : missing,
-            fraction: share(usage?.used, usage?.total),
+        // Before the first sample, one row of dashes.
+        const rows = disks ? (disks.drives ?? []).map(driveRow) : [{name: _('Root'), value: DASH}];
+        const key = disks ? (disks.drives ?? []).map(drive => drive.path).join('\n') : null;
+        if (key !== this._driveKey) {
+            this._driveList.destroy_all_children();
+            this._drives = rows.map(() => addMeter(this._driveList));
+            this._driveKey = key;
+        }
+        rows.forEach((row, i) => this._drives[i].update(row));
+
+        this._snaps.visible = Boolean(disks?.snaps);
+        if (disks?.snaps) {
+            const {count, total} = disks.snaps;
+            this._snaps.update({
+                name: _('Snap packages'),
+                tag: _('Virtual'),
+                value: known(total) ? _('%d images · %s').format(count, size(total)) : _('%d images').format(count),
+                detail: _('Read-only images, one per installed snap revision'),
+            });
+        }
+        this._swap.update({
+            name: _('Swap'),
+            value: disks?.swap?.total ? amount(disks.swap.used, disks.swap.total)
+                : disks?.swap ? _('None') : DASH,
+            fraction: share(disks?.swap?.used, disks?.swap?.total || null),
         });
-        meter(this._root, _('Root'), disks?.root, DASH);
-        meter(this._swap, _('Swap'), disks?.swap?.total ? disks.swap : null,
-            disks?.swap ? _('None') : DASH);
-        meter(this._efi, _('EFI'), disks?.efi, disks ? _('Not mounted') : DASH);
     }
 
     _syncNetwork(network) {
@@ -306,6 +330,41 @@ function gpuRow(gpu) {
             gpu.mhz > 0 && _('%d MHz').format(gpu.mhz),
         ]),
     };
+}
+
+// A drive's row: its name (Root, EFI, the volume name or the mount
+// point), used / total, and what it is. Virtual drives carry a tag.
+function driveRow(drive) {
+    const name = drive.role === 'root' ? _('Root') : drive.role === 'efi' ? _('EFI') : drive.name;
+    let what;
+    if (drive.virtual === 'probe')
+        what = probeText(drive.probe);
+    else if (drive.virtual === 'image')
+        what = drive.image ? _('Disk image %s').format(drive.image) : _('Disk image');
+    else
+        what = join([drive.model, drive.usb && _('USB')]);
+    return {
+        name,
+        tag: drive.virtual ? _('Virtual') : null,
+        value: amount(drive.used, drive.total),
+        fraction: share(drive.used, drive.total),
+        // The mount point, unless it is already the name.
+        detail: join([what, drive.type, name !== drive.path && drive.path]),
+    };
+}
+
+// The drive a debug probe or bootloader emulates over USB, by its vendor.
+function probeText(vendor) {
+    switch (vendor) {
+    case 'SEGGER':
+        return _('SEGGER J-Link probe’s drive');
+    case 'MBED':
+        return _('Debug probe’s drive (ST-LINK or DAPLink)');
+    case 'RPI':
+        return _('Raspberry Pi RP2 bootloader’s drive');
+    default:
+        return _('Debug probe’s drive');
+    }
 }
 
 function addMeter(parent, options) {
@@ -379,8 +438,17 @@ class Meter extends St.BoxLayout {
             .find(child => child.name === name) ?? null;
     }
 
-    update({name, value, fraction = null, detail = ''}) {
-        this._part('name').text = name;
+    // tag: a short word after the name ("Virtual"), or null.
+    update({name, value, fraction = null, detail = '', tag = null}) {
+        const nameLabel = this._part('name');
+        if (tag) {
+            const escape = text => GLib.markup_escape_text(text, -1);
+            nameLabel.clutter_text.set_markup(
+                `${escape(name)}  <span weight="normal" size="small" foreground="#8ab4f8">${escape(tag)}</span>`);
+        } else {
+            nameLabel.clutter_text.use_markup = false;
+            nameLabel.text = name;
+        }
         this._part('value').text = value;
         this._part('level')?.setFraction(fraction);
         const detailLabel = this._part('detail');

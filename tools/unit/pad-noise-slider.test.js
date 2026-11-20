@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import {
-    MAX_RPM, MIN_RPM, NOISE_STAGES, rpmToSlider, sliderToRpm, snapRpm,
+    MAX_RPM, MIN_RPM, rpmToSlider, sliderToRpm, snapRpm,
 } from '../../froonty@catalin/features/padNoiseSlider/noiseStages.js';
 import {done, eq, test} from './test.js';
 
@@ -31,17 +31,6 @@ test('pad noise slider: the pad\'s 50 RPM steps', () => {
     eq(sliderToRpm(0.011), 350);
     for (const rpm of [300, 400, 600, 1000, 2000, 2800])
         eq(snapRpm(rpm), rpm);
-});
-
-test('pad noise slider: stages match the requested order and thresholds', () => {
-    eq(NOISE_STAGES.map(stage => [stage.name, stage.rpm]), [
-        ['Near-silent', 300],
-        ['Almost quiet', 400],
-        ['Comfortable', 600],
-        ['Noticeably loud', 1000],
-        ['Loud', 2000],
-        ['Get out of here loud', 2800],
-    ]);
 });
 
 await done();

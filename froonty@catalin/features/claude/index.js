@@ -22,9 +22,10 @@ export default {
         return sparkIcon();
     },
     enabledKey: 'claude-enabled',
-    // Three limits and the cloud session credits, each a name, a bar and a
-    // reset time; then livenerf's Opus 5.5 row with its chart.
-    hubSize: {width: 380, height: 465},
+    // Settings → Claude → Size, or the grip. The weekly limits, each a
+    // name, a bar and a reset time; then livenerf's row, its chart taking
+    // the spare height.
+    hubSizeKeys: {width: 'claude-width', height: 'claude-height'},
     createService: ctx => new ClaudeService({
         benchmark: new LivenerfService(),
         settings: ctx.settings,

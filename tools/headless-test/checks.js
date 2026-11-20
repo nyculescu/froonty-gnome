@@ -4911,12 +4911,14 @@ async function testClaude(outDir) {
     const {view, service} = entry;
     check('claude: the tab opens', hub().activeFeature?.id === 'claude' && view && service);
     const [w, h] = pill().get_transformed_size();
-    // Its hubSize, or wider where the date pill, kept over GNOME's clock,
+    // Its size keys, or wider where the date pill, kept over GNOME's clock,
     // needs room on both sides.
-    const claudeWidth = Math.max(380 * scale(), hub().minWidth + islandFrame());
-    check('claude: island resizes to the tab\'s hubSize (wider only for the header)',
-        Math.abs(w - claudeWidth) <= 1 && h === 465 * scale() && headerPlacement(hub()).ok,
-        `${w}x${h}, needs ${claudeWidth}`);
+    const claudeWidth = Math.max(settings().get_int('claude-width') * scale(),
+        hub().minWidth + islandFrame());
+    const claudeHeight = settings().get_int('claude-height') * scale();
+    check('claude: island resizes to the tab\'s size keys (wider only for the header)',
+        Math.abs(w - claudeWidth) <= 1 && h === claudeHeight && headerPlacement(hub()).ok,
+        `${w}x${h}, needs ${claudeWidth}x${claudeHeight}`);
 
     // Swap in a network we control, then show the tab again.
     const network = new FakeNetwork();
@@ -4970,7 +4972,7 @@ async function testClaude(outDir) {
         chartOf()?.has_style_class_name('froonty-claude-chart') &&
         service.benchmark.benchmark.chart.points.length === 7,
         JSON.stringify(benchmarkRow(view)));
-    await screenshotTop(outDir, 'claude-tab', 465);
+    await screenshotTop(outDir, 'claude-tab', 360);
 
     // Within the hour no second fetch; forget the reading to fetch again.
     writeLivenerf({baselineMean: 59.4, resultRow: '| 1 | days 11–20 (from 2026-10-04) | 7020 | 61.2% | ' +
@@ -4984,7 +4986,7 @@ async function testClaude(outDir) {
             `Δ −2.1 ± 1.4, days 11–20 (from 2026-10-04): no change · ${livenerfUpdated}`) &&
         service.benchmark.benchmark.chart.baselineMean === 59.4,
         JSON.stringify(benchmarkRow(view)));
-    await screenshotTop(outDir, 'claude-tab-delta', 465);
+    await screenshotTop(outDir, 'claude-tab-delta', 360);
 
     writeClaudeConfig(claudeConfig({session: 21}));
     check('claude: while shown, a new reading from Claude Code appears',
@@ -5024,7 +5026,7 @@ async function testClaude(outDir) {
     check('claude: offline, a line says Claude cannot be asked',
         view._notice.visible && view._notice.text.startsWith('No internet connection') &&
         !view._footer.visible, view._notice.text);
-    await screenshotTop(outDir, 'claude-offline', 465);
+    await screenshotTop(outDir, 'claude-offline', 360);
     network.set(true, Gio.NetworkConnectivity.PORTAL);
     await sleep(SETTLE_MS);
     check('claude: a captive portal is not a connection to Claude', view._notice.visible);
@@ -5077,7 +5079,7 @@ async function testClaude(outDir) {
     check('claude: without Claude Code\'s file, a hint instead of rows',
         view._empty.visible && service.error === 'missing' && !view._footer.visible,
         view._emptyTitle.text);
-    await screenshotTop(outDir, 'claude-empty', 465);
+    await screenshotTop(outDir, 'claude-empty', 360);
 
     settings().set_boolean('claude-enabled', false);
     await sleep(SETTLE_MS);
@@ -5762,6 +5764,9 @@ async function testLifecycle(outDir) {
         settings().reset('break-enabled');
         settings().reset('posture-enabled');
         settings().reset('break-work-hours');
+        await sleep(SETTLE_MS);
+        // Break off recorded GNOME's breaks; GNOME's keys are reset instead.
+        settings().reset('break-gnome-saved');
         breaks.reset('selected-breaks');
         eyes.reset('interval-seconds');
         await sleep(SETTLE_MS);
@@ -9387,10 +9392,18 @@ async function testBreak(outDir) {
         await sleep(animationWait());
         s.set_boolean('break-enabled', false);
         await sleep(SETTLE_MS);
-        check('break: turned off: GNOME\'s notifications are back, its breaks stay on',
-            wellbeingUser() === null && breaks.get_strv('selected-breaks').length === 2 &&
+        check('break: turned off: no tab or cue, GNOME\'s notifications are back, its breaks off too',
+            wellbeingUser() === null && breaks.get_strv('selected-breaks').length === 0 &&
+            JSON.parse(s.get_string('break-gnome-saved') || '{}')['breaks/off'] &&
             !tabButton('break') && !island()._collapsedView.hasCue,
-            `enable=${wellbeingUser()} selected=${breaks.get_strv('selected-breaks')}`);
+            `enable=${wellbeingUser()} selected=${breaks.get_strv('selected-breaks')} ` +
+            `saved=${s.get_string('break-gnome-saved')}`);
+        s.set_boolean('break-enabled', true);
+        await sleep(SETTLE_MS);
+        check('break: turned on again: the breaks it had come back, nothing left recorded',
+            breaks.get_strv('selected-breaks').length === 2 && Boolean(tabButton('break')) &&
+            !JSON.parse(s.get_string('break-gnome-saved') || '{}')['breaks/off'],
+            `selected=${breaks.get_strv('selected-breaks')} saved=${s.get_string('break-gnome-saved')}`);
     } finally {
         delete extension().stateObj?._isSessionLocked;
         for (const key of ['break-enabled', 'break-pill-reminders', 'posture-enabled', 'panic-buttons',
@@ -9398,6 +9411,8 @@ async function testBreak(outDir) {
             'break-natural-pause', 'break-max-skips'])
             s.reset(key);
         await sleep(SETTLE_MS);
+        // Break turned off above recorded GNOME's breaks; GNOME's keys are reset instead.
+        s.reset('break-gnome-saved');
         gnomeKeys.forEach(resetKeys);
         if (island()?.expanded)
             island().collapse();
@@ -9433,9 +9448,10 @@ async function testBrightness() {
         brightnessSliders().length === 1 && gnome.get_next_sibling() === slider &&
         quickSettingsMenu()._grid.layout_manager.get_child_meta(
             quickSettingsMenu()._grid, slider).column_span === 2);
-    check('brightness: slider icon is an accessible button for opening its settings',
-        slider.iconReactive && slider._iconButton.reactive &&
-        slider._iconButton.accessible_name === 'Brightness settings');
+    check('brightness: a monitor icon, not GNOME\'s sun, and a > button for its settings',
+        !slider.iconReactive && slider.iconName === 'video-display-symbolic' &&
+        slider._settingsButton.reactive &&
+        slider._settingsButton.accessible_name === 'Brightness settings');
     check('brightness: at 100 % with no tint, the layer is on top and has no monitor overlays',
         global.stage.get_last_child() === brightnessLayer() &&
         warmthOverlays().length === 0 && dimOverlays().length === 0);
@@ -9477,11 +9493,21 @@ async function testBrightness() {
     check('brightness: the layer takes no pointer (left out of picking)',
         picked && !brightnessLayer().contains(picked), `${picked}`);
 
+    const capture = new Shell.Screenshot().screenshot_stage_to_content();
+    const hiddenDuring = !brightnessLayer().visible;
+    let captured = true;
+    await capture.catch(() => (captured = false));
+    check('brightness: a screenshot is taken without the layer, which comes back after it',
+        hiddenDuring && captured && brightnessLayer().visible,
+        `hidden=${hiddenDuring} captured=${captured} visible=${brightnessLayer().visible}`);
+
     s.set_string('brightness-monitors', 'built-in');
     await sleep(SETTLE_MS);
     check('brightness: "Built-in screen" with no built-in panel dims nothing', dimOverlays().length === 0);
     s.set_string('brightness-monitors', 'all');
     await sleep(SETTLE_MS);
+    check('brightness: the icon follows the monitors setting',
+        slider.iconName === 'video-joined-displays-symbolic', slider.iconName);
     check('brightness: "All monitors" dims every monitor', dimOverlays().length === monitors.length);
 
     slider.slider.value = 0;
@@ -9512,8 +9538,8 @@ async function testBrightness() {
     check('brightness: Start brings them back', Boolean(brightnessLayer()) && brightnessSliders().length === 1);
 
     const [currentSlider] = brightnessSliders();
-    currentSlider._iconButton.emit('clicked', currentSlider._iconButton);
-    check('brightness: clicking the icon opens the Brightness settings page',
+    currentSlider._settingsButton.emit('clicked', currentSlider._settingsButton);
+    check('brightness: clicking > opens the Brightness settings page',
         s.get_string('prefs-page') === 'brightness' && await waitForSettingsWindow() !== null,
         s.get_string('prefs-page'));
     await closeSettingsWindows();
@@ -9533,7 +9559,7 @@ async function testBrightness() {
 // ---------------------------------------------------------------- pad noise slider
 
 const padNoiseSliders = () => quickSettingsMenu()._grid.get_children()
-    .filter(item => item._dots instanceof St.Widget && item._sliderRow);
+    .filter(item => item._settingsButton instanceof St.Button && item._statusLabel);
 
 async function testPadNoiseSlider(outDir) {
     const s = settings();
@@ -9542,14 +9568,12 @@ async function testPadNoiseSlider(outDir) {
     s.set_boolean('running', true);
     await sleep(SETTLE_MS);
     const slider = padNoiseSliders()[0];
-    const dots = slider?._dots.get_children() ?? [];
-    const stages = dots.map(dot => dot.accessible_name?.replace(/ · \d+ RPM$/, ''));
-    check('pad noise slider: one Quick Settings slider with six noise stages',
-        padNoiseSliders().length === 1 && dots.length === 6,
-        `${padNoiseSliders().length} slider, ${dots.length} stages`);
-    check('pad noise slider: noise stages are shown in order',
-        slider && stages.join(',') ===
-            'Near-silent,Almost quiet,Comfortable,Noticeably loud,Loud,Get out of here loud');
+    check('pad noise slider: one plain Quick Settings slider, the settings arrow at its right',
+        padNoiseSliders().length === 1 && slider.slider.get_parent().get_children().length === 1 &&
+        slider._settingsButton.get_parent().get_last_child() === slider._settingsButton &&
+        slider._settingsButton.child.icon_name === 'go-next-symbolic' &&
+        slider._settingsButton.get_parent().has_style_class_name('froonty-pad-slider-row'),
+        `${padNoiseSliders().length} slider`);
     quickSettingsMenu().open();
     await sleep(SETTLE_MS);
     const grid = quickSettingsMenu()._grid;
@@ -9646,16 +9670,43 @@ async function testFanSliderSettingsButton() {
     const slider = padNoiseSliders()[0];
     const active = hub.activeFeature?.id ?? null;
     if (!slider)
-        return check('fan: Quick Settings icon opens Fan settings', false, 'slider unavailable');
-    check('fan: the Quick Settings icon is an enabled button, not a hub entry',
-        !hub._entries.has('fan') && slider._iconButton.reactive &&
-        slider._iconButton instanceof St.Button);
-    slider._iconButton.emit('clicked', slider._iconButton);
-    check('fan: clicking the Quick Settings icon opens Fan settings without switching tabs',
+        return check('fan: the Quick Settings arrow opens Fan settings', false, 'slider unavailable');
+    check('fan: the Quick Settings arrow is an enabled button, not a hub entry',
+        !hub._entries.has('fan') && slider._settingsButton.reactive);
+    slider._settingsButton.emit('clicked', slider._settingsButton);
+    check('fan: clicking the Quick Settings arrow opens Fan settings without switching tabs',
         s.get_string('prefs-page') === 'fan' && await waitForSettingsWindow() !== null &&
         hub.activeFeature?.id === active,
         `page=${s.get_string('prefs-page')}, active=${hub.activeFeature?.id}`);
     await closeSettingsWindows();
+
+    // The icon switches the pad (run.sh's fake llano.py) off and back on.
+    const script = s.get_string('fan-llano-path');
+    const padStatus = () => new TextDecoder().decode(GLib.spawn_sync(null,
+        ['/usr/bin/python3', script, 'status'], null, GLib.SpawnFlags.DEFAULT, null)[1]);
+    const iconPath = () => slider._icon.gicon?.get_file?.()?.get_path() ?? '';
+    const part = extension()?.stateObj?._parts.find(item => item._slider === slider);
+    if (!part)
+        return check('fan: the Quick Settings icon switches the pad off and on', false, 'no part');
+    // The pad is detected over USB; the closed menu does not poll, so this holds.
+    const present = part._padPresent;
+    part._padPresent = true;
+    part._syncSlider();
+    const value = slider.slider.value;
+    slider._iconButton.emit('clicked', slider._iconButton);
+    await waitFor(() => /pad off/.test(padStatus()), 5000);
+    check('fan: clicking the Quick Settings icon switches the pad off, the fan crossed out',
+        /pad off/.test(padStatus()) && iconPath().endsWith('froonty-fan-off-symbolic.svg') &&
+        slider.slider.value === value,
+        `status=${padStatus()} icon=${iconPath()}`);
+    slider._iconButton.emit('clicked', slider._iconButton);
+    await waitFor(() => !/pad off/.test(padStatus()), 5000);
+    await waitFor(() => !part._applying, 5000);
+    check('fan: clicking it again switches the pad back on',
+        !/pad off/.test(padStatus()) && iconPath().endsWith('froonty-fan-symbolic.svg'),
+        `status=${padStatus()} icon=${iconPath()}`);
+    part._padPresent = present;
+    part._syncSlider();
 }
 
 // The Fan lock panic button: llano.py lock and unlock (run.sh's fake

@@ -109,6 +109,25 @@ test('livenerf chart: scores and intervals read back through the grid', () => {
     eq(chart.updated, Date.parse('2026-09-30T19:44:00Z'));
 });
 
+// Since 2026-11-11 plot.py adds Fable 5.2 in orange, on the same days as
+// the last Opus points, named by its end label.
+const FABLE = `<line x1="498.0" y1="180.5" x2="498.0" y2="121.5" stroke="#e0793a" stroke-width="1.5" opacity="0.5"/>
+<circle cx="498.0" cy="151.0" r="3.5" fill="#e0793a" stroke="#1a1a19" stroke-width="1.5"/>
+<text x="508.0" y="143.0" text-anchor="start" fill="#ffffff" font-size="13" font-weight="600"><tspan fill="#e0793a">Fable 5.2</tspan> 70.0%</text>
+</svg>`;
+
+test('livenerf chart: a second series is kept apart, by its colour', () => {
+    const chart = Livenerf.chartFromSvg(CHART.replace('</svg>', FABLE));
+    const round = v => Math.round(v * 100) / 100;
+    eq(chart.points.map(p => [round(p.at), round(p.score), round(p.low), round(p.high)]),
+        [[0.02, 60, 50, 70], [0.5, 55, 45, 65]]);
+    eq(chart.latest, 55);
+    eq(chart.others.map(o => [o.name, o.color, o.latest,
+        o.points.map(p => [round(p.at), round(p.score), round(p.low), round(p.high)])]),
+    [['Fable 5.2', '#e0793a', 70, [[0.5, 70, 65, 75]]]]);
+    eq(Livenerf.chartFromSvg(CHART).others, []);
+});
+
 test('livenerf chart: while collecting, the note; without points or a grid, null', () => {
     const collecting = CHART.replace(/<line x1="64" y1="210.0"[^\n]*\n<text[^\n]*baseline 60.0%<\/text>/,
         '<text x="633.6" y="210.0" text-anchor="middle" font-size="14">Collecting the baseline: day 7 of 10.</text>');
@@ -152,6 +171,11 @@ test('livenerf: the chart in third_party/livenerf is understood', () => {
     ok(Math.abs(last.score - chart.latest) < 0.1, `${last.score} vs ${chart.latest}`);
     ok(chart.points.every(p => p.low <= p.score && p.score <= p.high && p.at >= 0 && p.at <= 1),
         JSON.stringify(chart.points));
+    // Other series (Fable 5.2): each one's label agrees with its last point.
+    for (const other of chart.others) {
+        const end = other.points[other.points.length - 1];
+        ok(Math.abs(end.score - other.latest) < 0.1, `${other.name}: ${end.score} vs ${other.latest}`);
+    }
 });
 
 // ---- service

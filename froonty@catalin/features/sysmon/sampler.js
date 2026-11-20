@@ -9,9 +9,10 @@
 // change since the previous sample, so the first one has none. No St.
 
 import {
-    coreInputs, CPU_CHIPS, cpuPackageInput, findEfiMount, loadPercent, NVIDIA_FIELDS,
-    parseCpuMhz, parseCpuModel, parseMeminfo, parseNetDev, parseNvidiaSmi, parseStat,
-    pciDeviceName, rate, sysfsNumber, vendorName,
+    coreInputs, CPU_CHIPS, cpuPackageInput, driveName, findEfiMount, isSnapMount,
+    loadPercent, NVIDIA_FIELDS, parseCpuMhz, parseCpuModel, parseDiskMounts, parseMeminfo,
+    parseNetDev, parseNvidiaSmi, parseStat, pciDeviceName, PROBE_VENDORS, rate, sysfsNumber,
+    vendorName,
 } from './parse.js';
 
 export const SECTIONS = ['cpu', 'gpu', 'memory', 'disks', 'network'];
@@ -20,6 +21,7 @@ const CPU_DIR = '/sys/devices/system/cpu';
 const HWMON_DIR = '/sys/class/hwmon';
 const DRM_DIR = '/sys/class/drm';
 const NET_DIR = '/sys/class/net';
+const BLOCK_DIR = '/sys/class/block';
 // Fixed system locations only, never $PATH.
 const NVIDIA_SMI = ['/usr/bin/nvidia-smi', '/bin/nvidia-smi'];
 const PCI_IDS = ['/usr/share/hwdata/pci.ids', '/usr/share/misc/pci.ids'];
@@ -37,6 +39,10 @@ export class Sampler {
         this._pciIds = undefined;
         // Interface name -> whether it is a physical device (see _network).
         this._physical = new Map();
+        // "source target" -> what the device is (_device), and a snap
+        // image's size, which never changes while it is mounted.
+        this._devices = new Map();
+        this._snapSizes = new Map();
         this._previous = {time: null, stat: null, net: null};
     }
 
@@ -361,15 +367,106 @@ export class Sampler {
         return result;
     }
 
+    // Every mounted drive with its size, Root first, then EFI, the others
+    // by name and virtual ones last; snap images together. `root` alone is
+    // what the disk readout shows.
     async _disks(memory, mounts, cancellable) {
+        const all = mounts === null ? [] : parseDiskMounts(mounts);
+        const snapMounts = all.filter(isSnapMount);
+        const listed = all.filter(m => !isSnapMount(m));
+        // A root that is no block device (a container's overlay) still counts.
+        if (!listed.some(m => m.target === '/'))
+            listed.unshift({source: null, target: '/', type: null});
         const efiPath = mounts === null ? null : findEfiMount(mounts);
-        const [root, efi] = await Promise.all([
-            this._io.filesystem('/', cancellable),
-            efiPath ? this._io.filesystem(efiPath, cancellable) : null,
+
+        const [usages, devices, snapSizes] = await Promise.all([
+            Promise.all(listed.map(m => this._io.filesystem(m.target, cancellable))),
+            Promise.all(listed.map(m => this._device(m, cancellable))),
+            Promise.all(snapMounts.map(m => this._snapSize(m, cancellable))),
         ]);
+        if (!cancellable?.is_cancelled()) {
+            const current = new Set(all.map(m => `${m.source} ${m.target}`));
+            for (const cache of [this._devices, this._snapSizes]) {
+                for (const key of cache.keys()) {
+                    if (!current.has(key))
+                        cache.delete(key);
+                }
+            }
+        }
+
+        const rank = d => d.role === 'root' ? 0 : d.role === 'efi' ? 1 : d.virtual ? 3 : 2;
+        const drives = listed.map((m, i) => ({
+            path: m.target,
+            name: driveName(m.target),
+            role: m.target === '/' ? 'root' : m.target === efiPath ? 'efi' : null,
+            type: m.type,
+            total: usages[i]?.total ?? null,
+            used: usages[i]?.used ?? null,
+            ...devices[i],
+        })).sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
+
+        const sizes = snapSizes.filter(size => size !== null);
         const swap = memory?.swapTotal === null || memory?.swapTotal === undefined
             ? null : {total: memory.swapTotal, used: memory.swapUsed};
-        return {root, swap, efi: efi && {...efi, path: efiPath}};
+        return {
+            root: usages[listed.findIndex(m => m.target === '/')] ?? null,
+            swap,
+            drives,
+            snaps: snapMounts.length
+                ? {count: snapMounts.length, total: sizes.length ? sizes.reduce((a, b) => a + b, 0) : null}
+                : null,
+        };
+    }
+
+    /**
+     * What a mounted device is, from /sys/class/block: {model, usb,
+     * virtual, probe, image}. virtual is 'probe' for a drive a debug probe
+     * or bootloader emulates over USB (probe: its vendor), 'image' for a
+     * disk image on a loop device (image: the file's name), else null.
+     */
+    async _device(mount, cancellable) {
+        const key = `${mount.source} ${mount.target}`;
+        if (this._devices.has(key))
+            return this._devices.get(key);
+        let info = {model: null, usb: false, virtual: null, probe: null, image: null};
+        if (mount.source) {
+            const read = async path => (await this._io.read(path, cancellable))?.trim() || null;
+            // /dev/mapper/NAME and /dev/disk/by-*/… are links to the device.
+            const name = basename(await this._io.link(mount.source, cancellable) ?? mount.source);
+            const sys = `${BLOCK_DIR}/${name}`;
+            if (name.startsWith('loop')) {
+                const backing = await read(`${sys}/loop/backing_file`);
+                info = {...info, virtual: 'image', image: basename(backing?.replace(/ \(deleted\)$/, ''))};
+            } else {
+                const [where, partition] = await Promise.all([
+                    this._io.link(sys, cancellable),
+                    this._io.exists(`${sys}/partition`, cancellable),
+                ]);
+                // A partition's folder sits in its disk's: …/block/sda/sda1.
+                const parts = where?.split('/') ?? [];
+                const disk = partition && parts.length > 1 ? parts[parts.length - 2] : name;
+                const [vendor, model] = await Promise.all([
+                    read(`${BLOCK_DIR}/${disk}/device/vendor`),
+                    read(`${BLOCK_DIR}/${disk}/device/model`),
+                ]);
+                const usb = Boolean(where?.includes('/usb'));
+                const probe = usb && PROBE_VENDORS.includes(vendor) ? vendor : null;
+                info = {...info, model, usb, virtual: probe ? 'probe' : null, probe};
+            }
+        }
+        if (!cancellable?.is_cancelled())
+            this._devices.set(key, info);
+        return info;
+    }
+
+    async _snapSize(mount, cancellable) {
+        const key = `${mount.source} ${mount.target}`;
+        if (this._snapSizes.has(key))
+            return this._snapSizes.get(key);
+        const size = (await this._io.filesystem(mount.target, cancellable))?.total ?? null;
+        if (size !== null && !cancellable?.is_cancelled())
+            this._snapSizes.set(key, size);
+        return size;
     }
 
     // Physical interfaces only (those backed by a device): a VPN's or a

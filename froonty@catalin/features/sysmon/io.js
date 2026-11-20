@@ -52,13 +52,13 @@ async function list(path, cancellable = null) {
     }
 }
 
-/** Where a symbolic link points, or null. */
+/** Where a symbolic link points, or null (also for a path that is no link). */
 async function link(path, cancellable = null) {
     try {
         const info = await Gio.File.new_for_path(path).query_info_async(
-            'standard::symlink-target', Gio.FileQueryInfoFlags.NOFOLLOW_SYMLINKS,
+            'standard::is-symlink,standard::symlink-target', Gio.FileQueryInfoFlags.NOFOLLOW_SYMLINKS,
             GLib.PRIORITY_DEFAULT, cancellable);
-        return info.get_symlink_target();
+        return info.get_is_symlink() ? info.get_symlink_target() : null;
     } catch (e) {
         return null;
     }

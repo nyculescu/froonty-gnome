@@ -559,7 +559,7 @@ The keys behind it:
 | `brightness-monitors` | `external` | `external` (all but a built-in screen), `built-in` or `all` |
 | `brightness-warmth` | `0` | Optional warm tint strength, 0-100 (maximum opacity 25%) |
 | `prefs-page` | `''` | The settings tab to show next (internal; "Open Settings → Writing") |
-| `break-enabled` | `false` | Show the Break tab and follow GNOME's break reminders |
+| `break-enabled` | `false` | Breaks: the whole Break feature; off also turns GNOME's breaks off, on gives them back |
 | `break-pill-reminders` | `true` | Remind in the island; GNOME's Wellbeing notifications are off meanwhile |
 | `break-pill-cue` | `icon` | `off`, `icon` or `icon-and-time` |
 | `break-escalate-after-skips`, `break-max-delays` | 2, 0 | Froonty's urgency rules (0: never, no limit) |

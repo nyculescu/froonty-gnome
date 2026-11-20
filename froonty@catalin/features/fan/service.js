@@ -114,18 +114,23 @@ export class FanService extends Emitter {
         return this._busy || this._pending !== null;
     }
 
+    /** The pad's speed in rpm, as llano.py estimates it from its percent, or null. */
+    get rpm() {
+        return this.status ? Pad.percentToRpm(this.status.speed) : null;
+    }
+
     /**
-     * Takes software control and sets the fan to `percent` (0-100), the pad on
-     * and its lights too: at 0 % the fan still turns at its slowest (off()
-     * stops it). A speed the pad already has under software control is not
-     * sent again.
+     * Takes software control and sets the fan to `rpm` (300-2800; llano.py
+     * picks the highest percent at or under it), the pad on and its lights
+     * too: at 300 rpm the fan still turns (off() stops it). A speed the pad
+     * already has under software control is not sent again.
      */
-    setSpeed(percent) {
-        const speed = Math.round(Math.min(100, Math.max(0, percent)));
-        if (!this.busy && this.control === 'software' && !this.status.off && this.status.speed === speed)
+    setRpm(rpm) {
+        const target = Math.round(Math.min(Pad.MAX_RPM, Math.max(Pad.MIN_RPM, rpm)));
+        if (!this.busy && this.control === 'software' && !this.status.off && this.rpm === target)
             return;
         this._released = false;
-        this._queue({args: ['speed', String(speed)]});
+        this._queue({args: ['rpm', String(target)]});
     }
 
     /**

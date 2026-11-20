@@ -414,9 +414,28 @@ advice, nothing not at hand, no text Stretchly took from other authors
 
 ## Settings (Settings → Break)
 
+**Breaks** (`break-enabled`), the page's first switch, turns the whole
+feature on or off (user request, 2026-11-13). Every other row on the page
+is greyed out while it is off.
+
+- **Off** ends the tab, the cue, the tracking, a pause and a busy hold,
+  and gives GNOME's notifications back. It also turns GNOME's selected
+  breaks off. Before, they kept reminding through GNOME's notifications.
+  What they were goes into `break-gnome-saved` (entry `breaks/off`) first.
+- **On** gives them back, unless they were changed meanwhile (for example
+  in Settings → Wellbeing). A change by the user is theirs and is left
+  alone. Turned on while Froonty wasn't running, they come back when it
+  starts.
+- **Only the switch's change acts.** Break found off when Froonty starts
+  (the default) leaves GNOME's breaks alone, since they may be in use
+  without Froonty. Froonty turned off or a screen lock keeps them as they
+  are, because off is the user's choice.
+- With a pause running, the pause's breaks are given back first, so those
+  are the ones recorded.
+
 | Key | Default | |
 |---|---|---|
-| `break-enabled` | false | The tab, and the tracking behind it |
+| `break-enabled` | false | **Breaks**, the master switch: the tab, the tracking behind it, and GNOME's breaks (below) |
 | `break-pill-reminders` | true | Remind in the island instead of GNOME's notifications |
 | `break-pill-cue` | `icon` | `off`, `icon`, `icon-and-time` |
 | `break-escalate-after-skips` | 2 | Overdue at once after this many skips or delays in a row (0 never) |

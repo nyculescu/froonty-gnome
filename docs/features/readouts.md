@@ -70,9 +70,13 @@ disabled. With no readout chosen, nothing runs.
   file and on the status line's file, the network monitor, and a read per
   write (the file was 85 kB here on 2026-11-02). As with the panic button,
   coming on screen asks Claude Code's `/usage` (2-3 s, about 350 MB, at most
-  once a minute), here on each collapse. It does not run on a timer: between
-  collapses new numbers come from Claude Code's own writes and the status
-  line.
+  once a minute), here on each collapse, and then again about once a minute
+  while the pill stays on screen (user request: the pill is on screen most of
+  the session, so asking only on collapse left the number stale). Each ask
+  comes a minute and a second after Claude Code's last reading, since it does
+  not fetch again sooner; a run so comes about every 63 s. Claude Code's
+  own writes and the status line still come in as they happen. With "Ask
+  Claude Code for fresh usage" off, or in low power, nothing is run.
 - **Time zones:** the shared clock's ticks; no timer.
 
 The value's minimum width in the stylesheet keeps the pill still as digits

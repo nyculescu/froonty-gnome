@@ -19,8 +19,11 @@ amber overlay and does not change the brightness slider's meaning.
 Settings → Brightness → **Software brightness** on. The slider then sits
 right under GNOME's brightness slider in Quick Settings (where GNOME has
 one; on a desktop without a backlight GNOME shows none, and Froonty's
-slider takes that place). Click the slider's display icon to open Froonty's
-Brightness settings directly.
+slider takes that place). Its icon is a monitor, not GNOME's sun, so it
+does not look like the laptop screen's own slider above it: one monitor
+for **External monitors**, a computer for **Built-in screen**, two
+monitors for **All monitors**. The arrow at its right opens Froonty's
+Brightness settings.
 
 - **Monitors:** **External monitors** (the default): every monitor but a
   laptop's built-in screen, so on a desktop all of them. **Built-in
@@ -81,6 +84,14 @@ Froonty runs and follows `brightness-enabled` itself.
   then adds the slider at the end). It spans the minimum to 100 % and
   writes whole percents to `brightness-level`.
 - **Monitors added or removed:** `Main.layoutManager` `monitors-changed`.
+- **Screenshots:** `Shell.Screenshot` paints the stage again, layer and
+  all. Its `screenshot`, `screenshot_area`, `screenshot_stage_to_content`
+  (Print and the screenshot UI) and `pick_color` are wrapped
+  (`InjectionManager`) to hide the layer until they finish, so a
+  screenshot has the real colours. Print paints offscreen at once, so
+  nothing changes on screen; the D-Bus API used by other screenshot tools
+  waits for the next frame, which then shows undimmed. Window shots paint
+  only the window and are not wrapped.
 
 Pure logic (targets, opacities, the slider's scale) is in
 `features/brightness/levels.js`, unit-tested in
@@ -100,8 +111,8 @@ Pure logic (targets, opacities, the slider's scale) is in
 
 - **The lock screen is not dimmed:** GNOME disables extensions while the
   screen is locked, so the layer goes with them and comes back on unlock.
-- **Screenshots and screen casts** show the dimmed picture, since the
-  layer is part of what the Shell draws.
+- **Screen casts and screen sharing** show the dimmed picture: they record
+  what reaches the screen. Screenshots do not (§3).
 - **No keyboard brightness keys:** they keep driving GNOME's own slider.
 - **One level for every dimmed monitor.**
 - **Not yet tried on real hardware:** the headless tests use virtual

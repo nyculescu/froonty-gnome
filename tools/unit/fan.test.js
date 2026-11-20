@@ -4,7 +4,9 @@ import GLib from 'gi://GLib';
 
 import {AsusFans, modelName, offeredProfiles, parseCurves, parseFans, profileNumber} from '../../froonty@catalin/features/fan/asus.js';
 import {deviceFan, parseLut, recommend} from '../../froonty@catalin/features/fan/lut.js';
-import {activeUnits, failureKind, parseLock, parseNoise, parseStatus} from '../../froonty@catalin/features/fan/pad.js';
+import {
+    activeUnits, failureKind, parseLock, parseNoise, parseStatus, percentToRpm,
+} from '../../froonty@catalin/features/fan/pad.js';
 import {done, eq, test} from './test.js';
 
 const LUT = JSON.stringify({
@@ -191,6 +193,11 @@ test('asus: without asusd, only the fans', async () => {
     eq([laptop.present, laptop.daemon, laptop.profile, laptop.profiles, laptop.curves, laptop.readError],
         [true, false, null, [], [], '']);
     eq(laptop.fans.length, 1);
+});
+
+test('pad: percent to rpm as llano-v12-linux noise.py maps it', () => {
+    eq([0, 1, 2, 12, 50, 83, 100].map(percentToRpm), [300, 300, 350, 600, 1550, 2375, 2800]);
+    eq([percentToRpm(-5), percentToRpm(130)], [300, 2800]);
 });
 
 await done();

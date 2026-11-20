@@ -131,9 +131,44 @@ export function findEfiMount(mounts) {
     return EFI_MOUNTS.find(path => fat.has(path)) ?? null;
 }
 
+/**
+ * The file systems on a block device from /proc/self/mounts, as
+ * [{source, target, type}], each device once at its shortest mount point:
+ * a btrfs subvolume or a bind mount of it is not another drive. Pseudo
+ * file systems (proc, tmpfs, overlay, FUSE) have no /dev source.
+ */
+export function parseDiskMounts(mounts) {
+    const byDevice = new Map();
+    for (const line of mounts.split('\n')) {
+        const [source, target, type] = line.split(' ').map(unescapeMount);
+        if (!source?.startsWith('/dev/') || !target || type === 'autofs')
+            continue;
+        const kept = byDevice.get(source);
+        if (!kept || target.length < kept.target.length)
+            byDevice.set(source, {source, target, type});
+    }
+    return [...byDevice.values()];
+}
+
+/** A snap package's read-only image, one per installed revision. */
+export const isSnapMount = mount => mount.type === 'squashfs' && mount.target.startsWith('/snap/');
+
+// USB drives that debug probes and bootloaders emulate for drag-and-drop
+// flashing, by the SCSI vendor they report.
+export const PROBE_VENDORS = ['SEGGER', 'MBED', 'RPI'];
+
+/**
+ * A drive's name: a desktop mount (/run/media/USER/NAME, /media/USER/NAME)
+ * by its volume name, any other by its mount point.
+ */
+export function driveName(target) {
+    const desktop = /^\/(?:run\/)?media\/[^/]+\/(.+)$/.exec(target);
+    return desktop ? desktop[1] : target;
+}
+
 // /proc/self/mounts writes space, tab, newline and backslash as octal.
 function unescapeMount(path) {
-    return path.replace(/\\([0-7]{3})/g, (_m, octal) => String.fromCharCode(parseInt(octal, 8)));
+    return path?.replace(/\\([0-7]{3})/g, (_m, octal) => String.fromCharCode(parseInt(octal, 8)));
 }
 
 /**

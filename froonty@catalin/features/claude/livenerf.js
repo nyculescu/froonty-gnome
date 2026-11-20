@@ -114,8 +114,8 @@ function cells(line) {
  *
  * @param {string} text the SVG
  * @returns {object|null} {grid: [%], band: [from, to], ticks: [{at, label}],
- *   points: [{at, score, low, high}], latest, baselineMean, collecting:
- *   {day, of}|null, updated}. `at` and the band run from 0 (the
+ *   points: [{at, score, low, high}], others: [{name, color, latest,
+ *   points}], latest, baselineMean, collecting: {day, of}|null, updated}. `at` and the band run from 0 (the
  *   plot's left edge) to 1 (its right edge); scores are percent correct,
  *   low and high the 95% interval. Null without a grid or points.
  */
@@ -143,14 +143,23 @@ export function chartFromSvg(text) {
         return null;
     const atX = x => (x - grid.a.x1) / (grid.a.x2 - grid.a.x1);
 
-    // Each day: its 95% whisker (a vertical line), then its dot.
+    // Each day: its 95% whisker (a vertical line in the series' colour),
+    // then its dot. Other series (Fable 5.2 since 2026-11-11) are named by
+    // an end label in their colour; the rest is the Opus series.
     const whiskers = elements.filter(e => e.tag === 'line' && e.a.x1 === e.a.x2 && e.a.opacity === 0.5);
-    const points = elements.filter(e => e.tag === 'circle' && Number.isFinite(e.a.cx) && Number.isFinite(e.a.cy))
-        .map(c => {
-            const w = whiskers.find(l => Math.abs(l.a.x1 - c.a.cx) < 0.05);
-            const [lo, hi] = w ? [Math.max(w.a.y1, w.a.y2), Math.min(w.a.y1, w.a.y2)] : [c.a.cy, c.a.cy];
-            return {at: atX(c.a.cx), score: valueAt(c.a.cy), low: valueAt(lo), high: valueAt(hi)};
-        });
+    const circles = elements.filter(e => e.tag === 'circle' && Number.isFinite(e.a.cx) && Number.isFinite(e.a.cy));
+    const seriesPoints = keep => circles.filter(c => keep(c.a.fill)).map(c => {
+        const w = whiskers.find(l => l.a.stroke === c.a.fill && Math.abs(l.a.x1 - c.a.cx) < 0.05);
+        const [lo, hi] = w ? [Math.max(w.a.y1, w.a.y2), Math.min(w.a.y1, w.a.y2)] : [c.a.cy, c.a.cy];
+        return {at: atX(c.a.cx), score: valueAt(c.a.cy), low: valueAt(lo), high: valueAt(hi)};
+    });
+    const others = [...text.matchAll(new RegExp(String.raw`<text\b[^>]*>\s*<tspan fill="([^"]+)">([^<]+)</tspan>` +
+        String.raw`\s*(\d+(?:\.\d+)?)%\s*</text>`, 'g'))]
+        .map(([, color, name, value]) => ({name: decode(name), color, latest: parseFloat(value),
+            points: seriesPoints(fill => fill === color)}))
+        .filter(o => o.points.length);
+    const otherColors = new Set(others.map(o => o.color));
+    const points = seriesPoints(fill => !otherColors.has(fill));
     if (!points.length)
         return null;
 
@@ -166,6 +175,7 @@ export function chartFromSvg(text) {
         ticks: texts.filter(e => e.a['text-anchor'] === 'middle' && /^[A-Z][a-z]{2} \d{2}$/.test(e.text))
             .map(e => ({at: atX(e.a.x), label: e.text})),
         points,
+        others,
         latest: latest ? parseFloat(latest.text) : null,
         baselineMean: mean ? +mean[1] : null,
         collecting: collecting ? {day: +collecting[1], of: +collecting[2]} : null,

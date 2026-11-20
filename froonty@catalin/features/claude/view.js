@@ -1,25 +1,22 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Claude tab: the plan's usage limits, as in Claude's Settings → Usage.
 //
-//   Session                              13%
-//   ██████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
-//   Resets in 4 h 2 min
 //   Weekly                               33%
 //   ███████████░░░░░░░░░░░░░░░░░░░░░░░░░░░
 //   Resets Sat 22:59
 //   Weekly Fable                         18%
 //   ██████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 //   Resets Sat 22:59
-//   Cloud session credits          $181.09 left
-//   ███████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
-//   Resets Thu 5 Nov 08:59
 //                            Updated 2 min ago
-//   Opus 5.5 vs launch week     54.5% correct
-//   80% ┆░░░░░░░░░░                          (livenerf's chart: daily
-//   60% ┆░•─•─•─•─•╮░  Collecting the          score, 95% interval,
-//   40% ┆░░░░░░░░░░╰•  baseline: day 7 of 10   baseline shaded)
-//       Sep 24     Oct 01     Oct 08
-//   Baseline day 7 of 10 · livenerf, updated Wed 21:44
+//   Opus 5.5 vs launch week     70.1% correct
+//   90% ┆                    •─• Fable 5.2 84.6% (livenerf's chart: daily
+//   70% ┆░░░░       •╮      ╭•  70.1%           score, 95% interval,
+//   50% ┆░•─•─•─•─•─╰•─•─•─╯                   baseline shaded)
+//       Sep 24     Oct 15     Nov 05
+//   Δ +0.014 ± 0.025, days 41–50: no change · livenerf, updated Fri 10:31
+//
+// Claude's servers may also send Session, more per-model rows and Cloud
+// session credits; each gets a row like these.
 //
 // The last row is livenerf's (livenerf.js): the latest day's score and
 // its chart, redrawn here; once livenerf publishes a Δ, the line under it
@@ -42,7 +39,7 @@ import St from 'gi://St';
 import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 
 import {
-    CREDITS, SESSION, STALE_MS, WEEKLY, describeReset, fillFraction, minutesSince,
+    CREDITS, MODEL, SESSION, STALE_MS, WEEKLY, describeReset, fillFraction, minutesSince,
 } from './usage.js';
 
 // Beyond this, a reset shows its date, not only its weekday.
@@ -51,8 +48,12 @@ const DATED_RESET_MS = 6 * 24 * 3600 * 1000;
 // A row over an hour old, of 255.
 const STALE_OPACITY = 140;
 
-// Rows shown as "Unknown" offline before any reading was ever made.
-const DEFAULT_KINDS = [SESSION, WEEKLY];
+// Rows shown as "Unknown" offline before any reading was ever made: the
+// plan's two weekly limits.
+const DEFAULT_WINDOWS = [
+    {id: WEEKLY, kind: WEEKLY, model: null},
+    {id: 'fable', kind: MODEL, model: 'Fable'},
+];
 
 export class ClaudeView {
     constructor(ctx, service) {
@@ -75,7 +76,6 @@ export class ClaudeView {
             vscrollbar_policy: St.PolicyType.AUTOMATIC,
             overlay_scrollbars: true,
             x_expand: true,
-            y_expand: true,
             child: this._rows,
         });
         this._notice = wrappingLabel('froonty-claude-notice');
@@ -99,11 +99,15 @@ export class ClaudeView {
             orientation: Clutter.Orientation.VERTICAL,
             x_expand: true,
         });
+        // Takes the spare height while livenerf's row, whose chart
+        // otherwise takes it, is hidden.
+        this._spacer = new St.Widget({y_expand: true});
 
         this.actor.add_child(this._scroll);
         this.actor.add_child(this._empty);
         this.actor.add_child(this._footer);
         this.actor.add_child(this._benchmark);
+        this.actor.add_child(this._spacer);
         this.actor.add_child(this._notice);
 
         this._active = false;
@@ -135,7 +139,7 @@ export class ClaudeView {
 
         let windows = usage?.windows ?? [];
         if (!online && !windows.length)
-            windows = DEFAULT_KINDS.map(kind => ({id: kind, kind, model: null}));
+            windows = DEFAULT_WINDOWS;
 
         this._rows.destroy_all_children();
         for (const window of windows)
@@ -145,6 +149,7 @@ export class ClaudeView {
         const empty = windows.length === 0;
         this._scroll.visible = !empty;
         this._empty.visible = empty && loaded;
+
         this._emptyTitle.text = _('No plan usage from Claude Code yet');
         this._emptyHint.text = error === 'unreadable'
             ? _('Claude Code’s settings file could not be read.')
@@ -184,6 +189,7 @@ export class ClaudeView {
     _syncBenchmark(online) {
         const source = this._service.benchmark;
         this._benchmark.visible = Boolean(source) && (source.loaded || !online);
+        this._spacer.visible = !this._empty.visible && !this._benchmark.visible;
         if (!this._benchmark.visible)
             return;
         const name = _('Opus 5.5 vs launch week');
@@ -204,7 +210,10 @@ export class ClaudeView {
             const body = chart ? new ScoreChart(chart)
                 : new UsageBar(progress ? progress.collected / progress.total : 0);
             actor = row(name, value, body, this._benchmarkText(progress, result, chart), true);
+            // The chart grows with the island's height.
+            actor.y_expand = Boolean(chart);
         }
+        this._benchmark.y_expand = actor.y_expand;
         this._benchmark.destroy_all_children();
         this._benchmark.add_child(actor);
     }
@@ -338,6 +347,13 @@ function wrappingLabel(styleClass) {
     return label;
 }
 
+// "#e0793a" as [r, g, b] from 0 to 1; livenerf's orange if not a colour.
+function hexColor(hex) {
+    const m = /^#([0-9a-f]{6})$/i.exec(hex ?? '');
+    const v = m ? parseInt(m[1], 16) : 0xe0793a;
+    return [(v >> 16) / 255, ((v >> 8) & 0xff) / 255, (v & 0xff) / 255];
+}
+
 // A rounded bar: CSS paints the track (background-color, border-radius),
 // this paints the used part in the foreground colour, as GNOME's own
 // ui/barLevel.js does (also a DrawingArea subclass).
@@ -368,12 +384,13 @@ class UsageBar extends St.DrawingArea {
 
 // livenerf's hero chart, redrawn small: the daily score (percent correct)
 // with its 95% interval, the baseline window shaded, the baseline mean
-// dashed once known, and the latest score printed by its point. The
-// series is in the CSS colour; the rest in greys over the island's black.
+// dashed once known, and the latest score printed by its point. Opus is in
+// the CSS colour, other series (Fable 5.2) in livenerf's colour for them,
+// named in their end label; the rest in greys over the island's black.
 const ScoreChart = GObject.registerClass(
 class ScoreChart extends St.DrawingArea {
     _init(chart) {
-        super._init({style_class: 'froonty-claude-chart', x_expand: true});
+        super._init({style_class: 'froonty-claude-chart', x_expand: true, y_expand: true});
         this._chart = chart;
     }
 
@@ -381,7 +398,7 @@ class ScoreChart extends St.DrawingArea {
         const cr = this.get_context();
         const [width, height] = this.get_surface_size();
         const node = this.get_theme_node();
-        const {grid, band, ticks, points, latest, baselineMean, collecting} = this._chart;
+        const {grid, band, ticks, points, others = [], latest, baselineMean, collecting} = this._chart;
 
         const font = node.get_font();
         const bold = font.copy();
@@ -442,46 +459,72 @@ class ScoreChart extends St.DrawingArea {
             cr.setDash([], 0);
         }
 
-        const color = node.get_foreground_color();
-        if (points.length > 1) {
-            // The 95% band, faint.
+        // Opus in the CSS colour, then the other series over it, as
+        // livenerf draws them.
+        const series = (pts, setColor) => {
+            if (pts.length > 1) {
+                // The 95% band, faint.
+                cr.pushGroup();
+                pts.forEach((p, i) => (i ? cr.lineTo : cr.moveTo).call(cr, X(p.at), Y(p.high)));
+                [...pts].reverse().forEach(p => cr.lineTo(X(p.at), Y(p.low)));
+                cr.closePath();
+                setColor();
+                cr.fill();
+                cr.popGroupToSource();
+                cr.paintWithAlpha(0.15);
+            }
+            cr.setLineWidth(1);
+            for (const p of pts) {
+                cr.moveTo(X(p.at), Y(p.low));
+                cr.lineTo(X(p.at), Y(p.high));
+            }
             cr.pushGroup();
-            points.forEach((p, i) => (i ? cr.lineTo : cr.moveTo).call(cr, X(p.at), Y(p.high)));
-            [...points].reverse().forEach(p => cr.lineTo(X(p.at), Y(p.low)));
-            cr.closePath();
-            cr.setSourceColor(color);
-            cr.fill();
+            setColor();
+            cr.stroke();
             cr.popGroupToSource();
-            cr.paintWithAlpha(0.15);
-        }
-        cr.setSourceColor(color);
-        cr.setLineWidth(1);
-        for (const p of points) {
-            cr.moveTo(X(p.at), Y(p.low));
-            cr.lineTo(X(p.at), Y(p.high));
-        }
-        cr.pushGroup();
-        cr.setSourceColor(color);
-        cr.stroke();
-        cr.popGroupToSource();
-        cr.paintWithAlpha(0.5);
+            cr.paintWithAlpha(0.5);
 
-        cr.setSourceColor(color);
-        cr.setLineWidth(1.5);
-        cr.setLineJoin(1); // Cairo.LineJoin.ROUND
-        points.forEach((p, i) => (i ? cr.lineTo : cr.moveTo).call(cr, X(p.at), Y(p.score)));
-        cr.stroke();
-        for (const p of points) {
-            cr.arc(X(p.at), Y(p.score), 2.5, 0, 2 * Math.PI);
-            cr.fill();
-        }
+            setColor();
+            cr.setLineWidth(1.5);
+            cr.setLineJoin(1); // Cairo.LineJoin.ROUND
+            pts.forEach((p, i) => (i ? cr.lineTo : cr.moveTo).call(cr, X(p.at), Y(p.score)));
+            cr.stroke();
+            for (const p of pts) {
+                cr.arc(X(p.at), Y(p.score), 2.5, 0, 2 * Math.PI);
+                cr.fill();
+            }
+        };
+        const color = node.get_foreground_color();
+        series(points, () => cr.setSourceColor(color));
+        for (const other of others)
+            series(other.points, () => cr.setSourceRGBA(...hexColor(other.color), 1));
 
-        if (typeof latest === 'number') {
-            const last = points[points.length - 1];
-            const t = `${latest.toFixed(1)}%`;
-            const {w} = layout(t, bold);
+        // End labels right of their last point, or left if they would pass
+        // the edge; one moved off another it would overlap.
+        const taken = [];
+        const endLabel = (pts, parts) => {
+            const last = pts[pts.length - 1];
+            const sizes = parts.map(([t]) => layout(t, bold).w);
+            const w = sizes.reduce((a, b) => a + b, 0);
             const x = X(last.at) + 6 + w <= width ? X(last.at) + 6 : X(last.at) - 6 - w;
-            text(t, x, Y(last.score) - lineHeight / 2 - 1, 0, [1, 1, 1, 1], bold);
+            let y = Y(last.score) - lineHeight / 2 - 1;
+            for (const other of taken) {
+                if (Math.abs(y - other.y) < lineHeight + 1)
+                    y = last.score >= other.score ? other.y - lineHeight - 1 : other.y + lineHeight + 1;
+            }
+            y = Math.min(Math.max(y, top + lineHeight / 2), top + ph - lineHeight / 2);
+            taken.push({y, score: last.score});
+            let at = x;
+            parts.forEach(([t, rgba], i) => {
+                text(t, at, y, 0, rgba, bold);
+                at += sizes[i];
+            });
+        };
+        if (typeof latest === 'number')
+            endLabel(points, [[`${latest.toFixed(1)}%`, [1, 1, 1, 1]]]);
+        for (const other of others) {
+            endLabel(other.points, [[`${other.name} `, [...hexColor(other.color), 1]],
+                [`${other.latest.toFixed(1)}%`, [1, 1, 1, 1]]]);
         }
         cr.$dispose();
     }

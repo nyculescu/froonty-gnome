@@ -32,17 +32,20 @@ export function breakPage(settings) {
     // Kept with the page (the window holds the page).
     page._gnome = gnome;
     page.add(breaksGroup(settings, gnome));
-    page.add(gnomeGroup(gnome));
-    page.add(busyGroup(settings));
-    page.add(pauseGroup(settings));
-    page.add(urgencyGroup(settings));
-    page.add(moveGroup(settings));
-    page.add(garminGroup(settings));
-    page.add(exercisesGroup(settings));
-    page.add(postureGroup(settings));
-    page.add(historyGroup(settings));
-    page.add(sizeGroup(settings, ['break-width', 'break-height'],
-        _('Of the island while the Break tab is shown, in logical pixels. Or drag the open island’s bottom-right corner.')));
+    // Everything else is greyed out while Break is off.
+    under(settings, 'break-enabled',
+        gnomeGroup(gnome),
+        busyGroup(settings),
+        pauseGroup(settings),
+        urgencyGroup(settings),
+        moveGroup(settings),
+        garminGroup(settings),
+        exercisesGroup(settings),
+        postureGroup(settings),
+        historyGroup(settings),
+        sizeGroup(settings, ['break-width', 'break-height'],
+            _('Of the island while the Break tab is shown, in logical pixels. Or drag the open island’s bottom-right corner.')),
+    ).forEach(group => page.add(group));
     return page;
 }
 
@@ -51,7 +54,8 @@ function breaksGroup(settings, gnome) {
         title: _('Breaks'),
         description: _('Froonty shows and drives GNOME’s own break reminders (Settings → Wellbeing). Not medical advice.'),
     });
-    group.add(switchRow(settings, 'break-enabled', _('Show the Break tab')));
+    group.add(switchRow(settings, 'break-enabled', _('Breaks'),
+        _('The whole Break feature. Off: no tab, no cue, nothing recorded, and GNOME’s eye and movement breaks are turned off too. On: the breaks you had come back.')));
     const reminders = switchRow(settings, 'break-pill-reminders',
         _('Remind me in the island instead of GNOME’s notifications'),
         _('Turns off GNOME’s Wellbeing notifications while the island is shown; GNOME’s daily screen-time limit alerts use the same switch. Turned back on when this, the Break tab, the island or Froonty is turned off. Should Froonty be removed while it is not running: %s')
@@ -90,8 +94,10 @@ function breaksGroup(settings, gnome) {
     });
     settings.connect('changed::break-pill-cue', syncCue);
     group.add(cue);
-    group.add(switchRow(settings, 'break-pause-media', _('Pause media on “Take now”'),
-        _('Pauses what is playing, and plays again only that when you come back')));
+    const media = switchRow(settings, 'break-pause-media', _('Pause media on “Take now”'),
+        _('Pauses what is playing, and plays again only that when you come back'));
+    group.add(media);
+    under(settings, 'break-enabled', reminders, status, cue, media);
     return group;
 }
 

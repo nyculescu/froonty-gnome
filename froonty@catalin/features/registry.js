@@ -19,11 +19,13 @@ import notes from './notes/index.js';
 import {PadNoiseSliderPart} from './padNoiseSlider/quickSlider.js';
 import sysmon from './sysmon/index.js';
 import {TimezonePlannerPart} from './timezonePlanner/quickSettings.js';
+import widgets from './widgets/index.js';
 import writing from './writing/index.js';
 import zerotier from './zerotier/index.js';
 
 export const FEATURES = [
     notes,
+    widgets,
     media,
     claude,
     sysmon,

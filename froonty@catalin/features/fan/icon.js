@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // A three-bladed fan, bundled for the Quick Settings slider and Fan page,
-// and the same fan crossed out, for the Fan lock panic button while locked.
+// and the same fan crossed out, for a pad that is off or locked off.
 
 import Gio from 'gi://Gio';
 

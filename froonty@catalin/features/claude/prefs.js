@@ -9,7 +9,7 @@ import Gtk from 'gi://Gtk';
 
 import {gettext as _} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
-import {addIconPath as addIconFolder, choiceRow} from '../../prefs/rows.js';
+import {addIconPath as addIconFolder, choiceRow, sizeGroup} from '../../prefs/rows.js';
 import {attentionHooksState, installAttentionHooks, removeAttentionHooks} from './attentionSetup.js';
 import {
     claudeSettingsFile, installStatusLine, readClaudeSettings, removeStatusLine, statusLineState,
@@ -68,6 +68,8 @@ export function claudePage(settings) {
     page.add(freshness.group);
     const attention = attentionGroup(settings);
     page.add(attention.group);
+    page.add(sizeGroup(settings, ['claude-width', 'claude-height'],
+        _('Of the island while the Claude tab is shown, in logical pixels. livenerf’s chart takes the spare height. Or drag the open island’s bottom-right corner.')));
     followClaudeSettings(page, [freshness.sync, attention.sync]);
     return page;
 }

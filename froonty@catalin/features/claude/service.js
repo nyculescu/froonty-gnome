@@ -17,7 +17,9 @@
 // Nothing runs while the tab is not on screen. Each time it is shown, the
 // files are read again (user request: refresh on every visit, never poll);
 // while it stays shown, file monitors and the network monitor bring in
-// changes as they happen. Hidden, all are disconnected.
+// changes as they happen. Hidden, all are disconnected. The pill's readouts
+// are the exception (`askEvery`): on screen most of the session, they would
+// otherwise only ever ask Claude Code once (user request).
 //
 // Emits 'changed' when the usage, the error, the connection, the refresh
 // mode or the benchmark changes.
@@ -31,6 +33,10 @@ import {mergeStatusLine, statusLineFromFile, usageFromConfig} from './usage.js';
 
 for (const method of ['load_contents_async', 'query_info_async'])
     Gio._promisify(Gio.File.prototype, method);
+
+// Past the minute after Claude Code's last fetch, so the refresher does not
+// skip the ask as too soon (refresher.js MIN_INTERVAL_MS).
+const ASK_MARGIN_MS = 1000;
 
 // The file also holds Claude Code's settings and project list; a much
 // larger one is not parsed on the Shell's main thread.
@@ -68,9 +74,12 @@ export class ClaudeService extends Emitter {
      * @param {Gio.Settings} [options.settings] to share the Shell's
      *   refresher (refresher.js); without it or `refresher`, no runs
      * @param {ClaudeRefresher} [options.refresher] (tests)
+     * @param {number} [options.askEvery] while shown, ask Claude Code for
+     *   fresh usage again this many seconds after its last reading or ask;
+     *   0 only when shown
      */
     constructor({file = configFile, statusFile = statusLineFile, network = null,
-        benchmark = null, settings = null, refresher = null} = {}) {
+        benchmark = null, settings = null, refresher = null, askEvery = 0} = {}) {
         super();
         this._fileFor = file;
         this._statusFileFor = statusFile;
@@ -79,6 +88,9 @@ export class ClaudeService extends Emitter {
         this._refresher = refresher;
         this._ownsRefresher = false;
         this._refresherIds = [];
+        this._askEvery = askEvery;
+        this._askId = 0;
+        this._askedAt = 0;
 
         /** LivenerfService, or null. */
         this.benchmark = benchmark;
@@ -156,6 +168,9 @@ export class ClaudeService extends Emitter {
             this.refresh().then(() => this._requestFresh());
             this._refreshBenchmark();
         } else {
+            if (this._askId)
+                GLib.source_remove(this._askId);
+            this._askId = 0;
             this._refresher?.setActive(false);
             this._monitor?.cancel();
             this._monitor = null;
@@ -215,6 +230,26 @@ export class ClaudeService extends Emitter {
     _requestFresh() {
         if (this._active && this.online)
             this._refresher?.request(this._cacheFetchedAt);
+        this._askedAt = Date.now();
+        this._scheduleAsk();
+    }
+
+    // Timed from the cache's reading, not a fixed beat: Claude Code fetches
+    // a few seconds into a run, and a beat would land just short of a
+    // minute after it and be skipped.
+    _scheduleAsk() {
+        if (this._askId)
+            GLib.source_remove(this._askId);
+        this._askId = 0;
+        if (!this._active || this._askEvery <= 0)
+            return;
+        const since = Math.max(this._askedAt, this._cacheFetchedAt ?? 0);
+        const delay = Math.max(1000, since + this._askEvery * 1000 + ASK_MARGIN_MS - Date.now());
+        this._askId = GLib.timeout_add(GLib.PRIORITY_LOW, delay, () => {
+            this._askId = 0;
+            this._requestFresh();
+            return GLib.SOURCE_REMOVE;
+        });
     }
 
     // Shown and online only; the benchmark skips a fetch within the hour.
@@ -295,7 +330,12 @@ export class ClaudeService extends Emitter {
             }
         }
         this._cacheUsage = usage;
-        this._cacheFetchedAt = usage?.fetchedAt ?? null;
+        const fetchedAt = usage?.fetchedAt ?? null;
+        if (fetchedAt !== this._cacheFetchedAt) {
+            this._cacheFetchedAt = fetchedAt;
+            if (this._askId)
+                this._scheduleAsk();
+        }
         // The status line alone is enough for Session and Weekly.
         const merged = mergeStatusLine(usage, status);
         if (merged)

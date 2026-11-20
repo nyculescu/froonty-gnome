@@ -1,0 +1,20 @@
+# The llano pad with the GNOME session: off at log-out (also before a
+# shutdown or restart from GNOME), and back on at 300 rpm at the next
+# log-in if it was on. Installed by `make pad-power`, which fills in the
+# @...@ paths.
+
+[Unit]
+Description=llano cooling pad off at log-out, back on at log-in
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh "@SCRIPT@" restore "%S/llano/on-at-exit"
+ExecStop=/bin/sh "@SCRIPT@" off "%S/llano/on-at-exit"
+Environment=LLANO=@LLANO@ LLANO_CLIENT=session
+TimeoutStopSec=15
+
+[Install]
+WantedBy=graphical-session.target

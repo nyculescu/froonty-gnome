@@ -14,6 +14,10 @@
 //   - the service ends a pause or a hold at its time;
 //   - turning the Break tab or Froonty off ends both (PauseKeeper below),
 //     but a screen lock does not (DESIGN.md §2, principle 5);
+//   - turning Break off (break-enabled, the page's master switch) also
+//     turns GNOME's selected breaks off, entry 'breaks/off', and turning
+//     it on gives them back; Froonty off or a lock leaves that as it is,
+//     since it is the user's choice;
 //   - a value the user changed meanwhile is theirs: left alone.
 // Pure rules first; GLib for local days only. No St.
 
@@ -23,6 +27,7 @@ import {parseSaved} from './gnomeSettings.js';
 
 const SAVED_KEY = 'break-gnome-saved';
 const RECORD = 'breaks/selected';
+const OFF_RECORD = 'breaks/off';
 const SELECTED = 'selected-breaks';
 // GLib.DateTime.get_day_of_week(): 1 Monday … 7 Sunday.
 export const WEEKDAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
@@ -192,17 +197,40 @@ export function pauseApplied(settings) {
 export function applyPause(settings, gnome) {
     if (suspended)
         return false;
+    selectNone(settings, gnome, RECORD);
+    return true;
+}
+
+// GNOME's selected breaks emptied, what they were recorded under `id`
+// first (once).
+function selectNone(settings, gnome, id) {
     const s = gnome.breaks;
     if (!s || !gnome.selectedWritable())
-        return true;
+        return;
     const record = readRecord(settings);
-    if (record[RECORD] || !gnome.selected().length)
-        return true;
+    if (record[id] || !gnome.selected().length)
+        return;
     const empty = new GLib.Variant('as', []);
-    record[RECORD] = {user: s.get_user_value(SELECTED)?.print(true) ?? null, set: empty.print(true)};
+    record[id] = {user: s.get_user_value(SELECTED)?.print(true) ?? null, set: empty.print(true)};
     writeRecord(settings, record);
     writeGnome(() => s.set_value(SELECTED, empty));
-    return true;
+}
+
+/** Whether Froonty has GNOME's breaks turned off because Break is off. */
+export function offApplied(settings) {
+    return Boolean(readRecord(settings)[OFF_RECORD]);
+}
+
+/**
+ * Gives GNOME's selected breaks back as they were before Break was turned
+ * off, unless the user changed them since.
+ */
+export function restoreOff(settings, gnome) {
+    const saved = readRecord(settings)[OFF_RECORD];
+    if (!saved)
+        return;
+    giveBack(gnome.breaks, SELECTED, saved, 'as');
+    forget(settings, [OFF_RECORD]);
 }
 
 /**
@@ -277,9 +305,14 @@ function endAll(settings, gnome) {
 }
 
 /**
- * Ends a pause and a hold when the Break tab is turned off, and when
- * Froonty is (but not under the lock screen), like the notification
- * takeover. The service applies and ends them while it runs.
+ * Ends a pause and a hold when Break is turned off, and when Froonty is
+ * (but not under the lock screen), like the notification takeover. The
+ * service applies and ends them while it runs.
+ *
+ * Break turned off also turns GNOME's breaks off (after the pause's are
+ * given back, so those are the ones recorded); turned on, they come back.
+ * Only the switch's change turns them off, never Break found off at
+ * start: GNOME's breaks may be in use without Froonty's.
  */
 export class PauseKeeper {
     /**
@@ -290,9 +323,16 @@ export class PauseKeeper {
         this._settings = settings;
         this._gnome = gnome;
         this._id = settings.connect('changed::break-enabled', () => {
-            if (!settings.get_boolean('break-enabled'))
+            if (settings.get_boolean('break-enabled')) {
+                restoreOff(settings, gnome);
+            } else {
                 endAll(settings, gnome);
+                selectNone(settings, gnome, OFF_RECORD);
+            }
         });
+        // Turned on while Froonty was not running.
+        if (settings.get_boolean('break-enabled'))
+            restoreOff(settings, gnome);
     }
 
     destroy({restore}) {

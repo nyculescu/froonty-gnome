@@ -45,6 +45,23 @@ export function parseStatus(text) {
     };
 }
 
+// llano-v12-linux noise.py's percent_rpm: the pad speaks percent, its
+// display rpm. 0 % and 1 % are its lowest level; 25 rpm a percent from 2 %.
+const PERCENT_RPM = [[0, 300], [1, 300], [2, 350], [12, 600], [100, 2800]];
+export const MIN_RPM = 300;
+export const MAX_RPM = 2800;
+
+/** The rpm for a pad speed in percent (0-100), as llano.py estimates it. */
+export function percentToRpm(percent) {
+    const p = Math.max(0, Math.min(100, percent));
+    for (let i = 1; i < PERCENT_RPM.length; i++) {
+        const [[p0, r0], [p1, r1]] = [PERCENT_RPM[i - 1], PERCENT_RPM[i]];
+        if (p <= p1)
+            return Math.round(r0 + (r1 - r0) * (p - p0) / (p1 - p0));
+    }
+    return MAX_RPM;
+}
+
 /** Where llano.py keeps its lock. */
 export const stateDir = () => `${GLib.get_user_state_dir()}/llano`;
 

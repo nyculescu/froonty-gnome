@@ -1,0 +1,22 @@
+# Switches the llano pad off at shutdown and restart, as root, when the
+# session's llano-session.service did not (shutdown from a terminal), and
+# notes that it was on so the next log-in starts it again. Installed by
+# `make pad-power`, which fills in the @...@ paths.
+
+[Unit]
+Description=Switch the llano cooling pad off at shutdown and restart
+# Started at boot and stopped at shutdown, before the repository's drive is unmounted.
+RequiresMountsFor=@LLANO_DIR@ @SCRIPT_DIR@
+# Stopped after the user sessions, whose llano-session.service goes first.
+After=systemd-udevd.service user.slice
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/true
+ExecStop=/bin/sh "@SCRIPT@" off "@MARKER@"
+Environment=LLANO=@LLANO@ LLANO_CLIENT=shutdown
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target

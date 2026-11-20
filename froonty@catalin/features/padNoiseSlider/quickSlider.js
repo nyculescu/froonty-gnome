@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// llano pad speed slider with the noise stages as dots on its track (a
-// tooltip names each on hover; a click goes there). The speed moves in the
-// pad's own 50 RPM steps.
+// llano pad speed slider in Quick Settings. The speed moves in the pad's
+// own 50 RPM steps: dragging the knob, or pressing beside it, which steps
+// toward the pointer while held. Hovering shows the speed; the fan icon
+// switches the pad off and on, and the arrow opens the Fan settings.
 
 import Clutter from 'gi://Clutter';
 import GLib from 'gi://GLib';
@@ -13,156 +14,137 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import {QuickSlider} from 'resource:///org/gnome/shell/ui/quickSettings.js';
 
 import {Tooltip} from '../../core/tooltip.js';
-
-import {fanIcon} from '../fan/icon.js';
+import {fanIcon, fanOffIcon} from '../fan/icon.js';
 import * as Pad from '../fan/pad.js';
 import {SYSTEM_IO} from '../sysmon/io.js';
 import {addUnderBrightness} from '../../shell/quickSettings.js';
-import {
-    NOISE_STAGES, rpmToSlider, sliderToRpm, snapRpm,
-} from './noiseStages.js';
+import {RPM_STEP, rpmToSlider, sliderToRpm, snapRpm} from './noiseStages.js';
 
 const POLL_S = 5;
 const APPLY_DELAY_MS = 250;
-
-function stageText(stage) {
-    return _('%s · %d RPM').format(_(stage.name), stage.rpm);
-}
-
-function handleRadius(slider) {
-    return slider.get_stage()
-        ? slider.get_theme_node().get_length('-slider-handle-radius') : 0;
-}
-
-// GNOME's Slider centres the knob at radius + (width - 2 radius) x value.
-function knobX(width, radius, fraction) {
-    return radius + Math.max(0, width - 2 * radius) * fraction;
-}
-
-function prioritizeSliderHandle(slider, dots) {
-    const width = slider.get_width();
-    if (!width)
-        return;
-    const radius = handleRadius(slider);
-    const handleX = knobX(width, radius, slider.value);
-    for (const dot of dots) {
-        const dotX = knobX(width, radius, dot._fraction);
-        // Let the slider receive presses on its knob, even when a stage dot
-        // is directly underneath it. The slider then owns the drag sequence.
-        dot.reactive = Math.abs(dotX - handleX) > radius + 6;
-    }
-}
-
-// Puts each dot where the slider's knob is drawn for its value.
-const DotsLayout = GObject.registerClass(
-class DotsLayout extends Clutter.LayoutManager {
-    _init(slider) {
-        super._init();
-        this._slider = slider;
-    }
-
-    vfunc_get_preferred_width() {
-        return [0, 0];
-    }
-
-    vfunc_get_preferred_height() {
-        return [0, 0];
-    }
-
-    vfunc_allocate(container, box) {
-        const width = box.get_width();
-        const height = box.get_height();
-        const radius = handleRadius(this._slider);
-        for (const dot of container.get_children()) {
-            const [, w] = dot.get_preferred_width(-1);
-            const [, h] = dot.get_preferred_height(w);
-            const x = knobX(width, radius, dot._fraction) - w / 2;
-            const y = (height - h) / 2;
-            const child = new Clutter.ActorBox();
-            child.set_origin(Math.round(x), Math.round(y));
-            child.set_size(w, h);
-            dot.allocate(child);
-        }
-    }
-});
+// Pressing beside the knob: one step at once, then more while held.
+const STEP_DELAY_MS = 400;
+const STEP_REPEAT_MS = 100;
 
 const PadNoiseSlider = GObject.registerClass(
 class PadNoiseSlider extends QuickSlider {
-    _init(openSettings) {
+    _init(openSettings, describe) {
         super._init({
-            // The bundled icon works where weather-wind is missing.
             gicon: fanIcon(),
-            iconLabel: _('llano pad speed'),
+            iconLabel: _('Turn the pad off'),
         });
-        this._openSettings = openSettings;
-        this.icon_reactive = true;
-        this.connect('icon-clicked', () => this._openSettings('fan'));
         this.accessible_name = _('llano pad speed');
         this.slider.accessible_name = _('Pad speed');
 
+        // GNOME's own menu arrow opens this.menu; this one opens the Fan page.
         const sliderRow = this.get_child();
         sliderRow.x_expand = true;
+        // GNOME spaces the row as `.quick-slider > StBoxLayout`, which it no
+        // longer is once wrapped in `content` below.
+        sliderRow.add_style_class_name('froonty-pad-slider-row');
+        this._settingsButton = new St.Button({
+            child: new St.Icon({icon_name: 'go-next-symbolic'}),
+            style_class: 'icon-button flat',
+            can_focus: true,
+            y_expand: true,
+            accessible_name: _('Fan settings'),
+        });
+        this._settingsButton.connect('clicked', () => openSettings('fan'));
+        sliderRow.add_child(this._settingsButton);
+
         const content = new St.BoxLayout({
             orientation: Clutter.Orientation.VERTICAL,
             x_expand: true,
         });
         this.set_child(content);
-        this._sliderRow = sliderRow;
         content.add_child(sliderRow);
-
-        // The slider and, over it, a layer with one dot per noise stage, in
-        // the QuickSlider's slider-bin (an St.Bin around the slider: focus
-        // ring, events passed on), where the slider was.
-        const slider = this.slider;
-        const sliderBin = slider.get_parent();
-        const stack = new St.Widget({
-            layout_manager: new Clutter.BinLayout(),
-            x_expand: true,
-        });
-        sliderBin.set_child(null);
-        stack.add_child(slider);
-        this._dots = new St.Widget({
-            layout_manager: new DotsLayout(slider),
-            x_expand: true,
-            y_expand: true,
-        });
-        stack.add_child(this._dots);
-        sliderBin.set_child(stack);
-
-        // In the top-level UI group: the Quick Settings menu clips its content.
-        this._tooltip = new Tooltip();
-        Main.layoutManager.uiGroup.add_child(this._tooltip.actor);
-        for (const stage of NOISE_STAGES) {
-            const dot = new St.Widget({
-                style_class: 'froonty-pad-noise-dot',
-                style: `background-color: ${stage.color};`,
-                reactive: true,
-                track_hover: true,
-                accessible_name: stageText(stage),
-            });
-            dot._fraction = rpmToSlider(stage.rpm);
-            this._tooltip.attach(dot, () => stageText(stage), 'above');
-            // Over the track, a click goes to that stage (the slider below never sees it).
-            dot.connect('button-press-event', () => {
-                if (slider.reactive)
-                    slider.value = dot._fraction;
-                return Clutter.EVENT_STOP;
-            });
-            this._dots.add_child(dot);
-        }
-        const updateDotInput = () => prioritizeSliderHandle(slider, this._dots.get_children());
-        slider.connect('notify::value', updateDotInput);
-        slider.connect('notify::width', updateDotInput);
-        updateDotInput();
-        this.connect('destroy', () => {
-            this._tooltip.actor.destroy();
-            this._tooltip = null;
-        });
         this._statusLabel = new St.Label({
             style_class: 'dim-label',
             x_align: Clutter.ActorAlign.CENTER,
         });
         content.add_child(this._statusLabel);
+
+        // In the top-level UI group: the Quick Settings menu clips its content.
+        this._describe = describe;
+        this._tooltip = new Tooltip();
+        Main.layoutManager.uiGroup.add_child(this._tooltip.actor);
+        this._tooltip.attach(this.slider, describe, 'above');
+        this.slider.connect('notify::value', () => this.updateTooltip());
+
+        // Private: GNOME's Slider jumps to the pointer through this gesture;
+        // it now takes only presses on the knob, the rest step.
+        this._stepTimerId = 0;
+        const pan = this.slider._panGesture;
+        pan?.connect('may-recognize', () => this._onKnob(pan.get_centroid().x));
+        this.slider.connect('button-press-event', (_slider, event) => {
+            if (event.get_button() !== Clutter.BUTTON_PRIMARY || !this.slider.reactive ||
+                this._onKnob(this._localX(...event.get_coords())))
+                return Clutter.EVENT_PROPAGATE;
+            this._startStepping();
+            return Clutter.EVENT_STOP;
+        });
+        this.connect('destroy', () => {
+            this._stopStepping();
+            this._tooltip.actor.destroy();
+            this._tooltip = null;
+        });
+    }
+
+    updateTooltip() {
+        if (this._tooltip && this.slider.hover)
+            this._tooltip.show(this.slider, this._describe(), 'above');
+    }
+
+    _localX(stageX, stageY) {
+        return this.slider.transform_stage_point(stageX, stageY)[1];
+    }
+
+    // Where the knob's centre is drawn, and the span it moves over.
+    _geometry() {
+        const radius = this.slider.get_theme_node().get_length('-slider-handle-radius');
+        const span = Math.max(1, this.slider.width - 2 * radius);
+        return {radius, span, knob: radius + span * this.slider.value};
+    }
+
+    _onKnob(x) {
+        const {radius, knob} = this._geometry();
+        return Math.abs(x - knob) <= radius + 2;
+    }
+
+    // One 50 RPM step toward the pointer; false once the knob is there.
+    _stepTowardPointer() {
+        const [stageX, stageY] = global.get_pointer();
+        const {radius, span} = this._geometry();
+        const target = sliderToRpm((this._localX(stageX, stageY) - radius) / span);
+        const current = sliderToRpm(this.slider.value);
+        if (target === current)
+            return false;
+        this.slider.value = rpmToSlider(current + (target > current ? RPM_STEP : -RPM_STEP));
+        return true;
+    }
+
+    _startStepping() {
+        this._stopStepping();
+        this._stepTowardPointer();
+        this._stepTimerId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, STEP_DELAY_MS, () => {
+            this._stepTimerId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, STEP_REPEAT_MS, () => {
+                const [, , mods] = global.get_pointer();
+                if (!(mods & Clutter.ModifierType.BUTTON1_MASK) || !this.slider.reactive) {
+                    this._stepTimerId = 0;
+                    return GLib.SOURCE_REMOVE;
+                }
+                // Held still at the knob, it waits there for the pointer to move on.
+                this._stepTowardPointer();
+                return GLib.SOURCE_CONTINUE;
+            });
+            return GLib.SOURCE_REMOVE;
+        });
+    }
+
+    _stopStepping() {
+        if (this._stepTimerId)
+            GLib.source_remove(this._stepTimerId);
+        this._stepTimerId = 0;
     }
 });
 
@@ -178,9 +160,12 @@ export class PadNoiseSliderPart {
         this._applying = false;
         this._padPresent = false;
         this._following = false;
-        this._pendingRpm = null;
+        // The next llano.py command to send (['rpm', N] or ['off']), or null.
+        this._pending = null;
         this._changeGeneration = 0;
         this._rpm = 600;
+        // The whole pad off (llano.py off or lock); the slider keeps the speed to go back to.
+        this._off = false;
         this._error = '';
         this._settings.connectObject(
             'changed::cooling-slider-enabled', () => this._sync(), this);
@@ -204,9 +189,10 @@ export class PadNoiseSliderPart {
 
     _show() {
         if (!this._slider) {
-            this._slider = new PadNoiseSlider(this._openSettings);
+            this._slider = new PadNoiseSlider(this._openSettings, () => this._describe());
             this._slider.slider.value = rpmToSlider(this._rpm);
             this._slider.slider.connectObject('notify::value', () => this._onSliderValue(), this);
+            this._slider.connectObject('icon-clicked', () => this._onIconClicked(), this);
             this._cancelPlace = addUnderBrightness(this._slider, 1);
             // The pad is polled only while the slider can be seen.
             const menu = Main.panel.statusArea.quickSettings.menu;
@@ -235,7 +221,7 @@ export class PadNoiseSliderPart {
         if (this._applyTimerId)
             GLib.source_remove(this._applyTimerId);
         this._applyTimerId = 0;
-        this._pendingRpm = null;
+        this._pending = null;
         this._cancelPlace?.();
         this._cancelPlace = null;
         if (this._slider) {
@@ -258,8 +244,8 @@ export class PadNoiseSliderPart {
                 return;
             this._padPresent = present;
             if (!this._padPresent) {
-                // A target the pad never got must not stop following it later.
-                this._pendingRpm = null;
+                // A command the pad never got must not stop following it later.
+                this._pending = null;
                 this._error = '';
                 this._syncSlider();
                 return;
@@ -271,17 +257,9 @@ export class PadNoiseSliderPart {
                 this._error = result.message || result.error;
             } else {
                 this._error = '';
-                if (result.noise?.rpm !== undefined &&
-                    generation === this._changeGeneration &&
-                    this._pendingRpm === null && !this._applying) {
-                    this._rpm = snapRpm(result.noise.rpm);
-                    this._following = true;
-                    this._slider.slider.value = rpmToSlider(this._rpm);
-                    // Private: GNOME's base for the next scroll or arrow key,
-                    // still the last dragged position otherwise.
-                    this._slider.slider._unsnappedValue = null;
-                    this._following = false;
-                }
+                if (generation === this._changeGeneration &&
+                    this._pending === null && !this._applying)
+                    this._follow(result);
             }
             this._syncSlider();
         } catch (e) {
@@ -291,6 +269,21 @@ export class PadNoiseSliderPart {
         } finally {
             this._refreshing = false;
         }
+    }
+
+    // Takes the pad's state from llano.py's output; while it is off, the
+    // knob stays at the speed it was turned off from.
+    _follow(result) {
+        this._off = result.status.off;
+        if (this._off || result.noise?.rpm === undefined)
+            return;
+        this._rpm = snapRpm(result.noise.rpm);
+        this._following = true;
+        this._slider.slider.value = rpmToSlider(this._rpm);
+        // Private: GNOME's base for the next scroll or arrow key, still the
+        // last dragged position otherwise.
+        this._slider.slider._unsnappedValue = null;
+        this._following = false;
     }
 
     async _padConnected() {
@@ -304,7 +297,6 @@ export class PadNoiseSliderPart {
     _onSliderValue() {
         if (this._following)
             return;
-        this._changeGeneration++;
         this._rpm = sliderToRpm(this._slider.slider.value);
         // The knob moves in the pad's 50 RPM steps, not freely.
         this._following = true;
@@ -312,25 +304,50 @@ export class PadNoiseSliderPart {
         // Private, as above: the next step starts from the snapped speed.
         this._slider.slider._unsnappedValue = null;
         this._following = false;
+        // Any speed switches the pad back on.
+        this._send(['rpm', String(this._rpm)], APPLY_DELAY_MS);
+    }
+
+    _onIconClicked() {
+        this._send(this._off ? ['rpm', String(this._rpm)] : ['off'], 0);
+    }
+
+    _send(args, delayMs) {
+        this._changeGeneration++;
+        this._off = args[0] === 'off';
         this._error = '';
         this._syncSlider();
         if (!this._padPresent)
             return;
-        this._pendingRpm = this._rpm;
+        this._pending = args;
         if (this._applyTimerId)
             GLib.source_remove(this._applyTimerId);
-        this._applyTimerId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, APPLY_DELAY_MS, () => {
+        this._applyTimerId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, delayMs, () => {
             this._applyTimerId = 0;
             this._applyPending();
             return GLib.SOURCE_REMOVE;
         });
     }
 
+    _describe() {
+        if (!this._padPresent)
+            return _('Pad not connected');
+        return this._off ? _('Off') : _('%d RPM').format(this._rpm);
+    }
+
     _syncSlider() {
         if (!this._slider)
             return;
-        this._slider.slider.reactive = this._padPresent && !this._error;
-        this._slider.slider.can_focus = this._padPresent && !this._error;
+        this._slider.updateTooltip();
+        const usable = this._padPresent && !this._error;
+        this._slider.slider.reactive = usable;
+        this._slider.slider.can_focus = usable;
+        this._slider.iconReactive = usable;
+        if (this._slider._shownOff !== this._off) {
+            this._slider._shownOff = this._off;
+            this._slider.gicon = this._off ? fanOffIcon() : fanIcon();
+            this._slider.iconLabel = this._off ? _('Turn the pad on') : _('Turn the pad off');
+        }
         // Only something to act on: an error, or no pad to adjust.
         const status = this._error
             ? _('Pad unavailable: %s').format(this._error)
@@ -340,22 +357,25 @@ export class PadNoiseSliderPart {
     }
 
     async _applyPending() {
-        if (this._applying || this._pendingRpm === null || !this._padPresent)
+        if (this._applying || this._pending === null || !this._padPresent)
             return;
         this._applying = true;
         try {
-            while (this._pendingRpm !== null && this._padPresent) {
-                const rpm = this._pendingRpm;
-                this._pendingRpm = null;
-                const result = await Pad.llano(this._settings.get_string('fan-llano-path'),
-                    ['rpm', String(rpm)]);
+            while (this._pending !== null && this._padPresent) {
+                const args = this._pending;
+                this._pending = null;
+                const result = await Pad.llano(this._settings.get_string('fan-llano-path'), args);
+                if (!this._slider)
+                    return;
                 if (result.error) {
                     this._error = result.message || result.error;
-                    this._pendingRpm = null;
+                    this._pending = null;
                     break;
                 }
                 this._changeGeneration++;
                 this._error = '';
+                if (this._pending === null)
+                    this._off = result.status.off;
             }
         } catch (e) {
             this._error = e.message;

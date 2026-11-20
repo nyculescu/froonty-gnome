@@ -1,5 +1,54 @@
 # Changelog
 
+## Unreleased
+
+- Readouts: Claude's usage on the pill updates by itself. It asked Claude
+  Code for fresh numbers only when the pill came back on screen, so it
+  went stale while the island stayed collapsed; it now asks again about
+  once a minute.
+- Claude tab: livenerf's chart draws Fable 5.2 as its own orange series
+  with its own end label. Its days were read as Opus days, so the Opus
+  line ran back through them. The chart now sits right under the usage
+  rows, and offline the tab shows Weekly and Weekly Fable.
+- Claude tab: its size can be set, in Settings → Claude → Size or by
+  dragging the island's corner. It opens smaller (380×360), and livenerf's
+  chart grows into any extra height.
+- Btop: Disks lists every mounted drive with its used and total size, and
+  what it is. Virtual drives are tagged: the drives J-Link, ST-LINK,
+  DAPLink and RP2 boards show over USB, mounted disk images, and the snap
+  images (one row).
+- Break: the first switch in Settings → Break, now "Breaks", turns the
+  whole feature off: the tab, the cue, tracking, and GNOME's eye and
+  movement breaks too, which used to keep reminding through GNOME's
+  notifications. Turned on again, the breaks you had come back. The rest
+  of the page is greyed out while it is off.
+- Widgets: Settings → Widgets → AI for Horizon picks what writes the
+  briefings: this computer's model (Writing's, the default), a ChatGPT
+  plan (Sign in), or an API key kept in the keyring. Horizon's wizard is
+  no longer needed: `make horizon-setup` only installs it, and
+  `make horizon-wizard` is optional.
+- Software brightness: its slider shows a monitor instead of GNOME's
+  sun, so on a laptop with the lid open it no longer looks like the
+  screen's own brightness slider above it. The icon follows Settings →
+  Brightness → Monitors, and an arrow at its right opens those settings.
+- Software brightness: screenshots (Print, the screenshot UI, other
+  screenshot tools) and the colour picker no longer include the dimming
+  and warm tint. Screen casts still show them.
+- Pad noise slider: a plain slider, without the noise-stage dots. Its fan
+  icon switches the pad off and back on at the same speed, and an arrow at
+  its right opens the Fan settings. The fan icon is now three swept blades
+  around the hub, without the frame.
+- Fan settings: the pad buttons no longer flicker at each refresh.
+- Fan settings show and set the llano pad in rpm instead of percent:
+  the speed slider (300–2800 rpm in 50 rpm steps), the shortcuts, the
+  status and the recommendation.
+- Pad noise slider: lined up with the other Quick Settings sliders.
+  Hovering it shows the speed, and pressing the track beside the knob
+  steps 50 RPM at a time toward the pointer while held.
+- `make pad-power` switches the llano pad off at log-out, shutdown and
+  restart, and back on at 300 rpm at the next log-in if it was on. It is
+  also off while the computer sleeps, and back at its speed on waking.
+
 ## 0.13.0 (2026-11-02)
 
 - The usage, load and temperature panic buttons show their icon in front

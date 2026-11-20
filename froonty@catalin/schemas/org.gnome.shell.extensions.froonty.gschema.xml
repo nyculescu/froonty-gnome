@@ -46,6 +46,72 @@
       <summary>Hub tab selected last</summary>
       <description>The feature id shown when the island expands (see features/registry.js). When that tab is gone or turned off, the first tab that is on.</description>
     </key>
+    <key name="widgets-enabled" type="b">
+      <default>true</default>
+      <summary>Show the Widgets tab</summary>
+    </key>
+    <key name="widgets-width" type="i">
+      <range min="320" max="960"/>
+      <default>420</default>
+      <summary>Widgets island width</summary>
+    </key>
+    <key name="widgets-height" type="i">
+      <range min="200" max="720"/>
+      <default>340</default>
+      <summary>Widgets island height</summary>
+    </key>
+    <key name="widgets-news-pin-desktop" type="b">
+      <default>false</default>
+      <summary>Pin the Horizon news card to the desktop background layer</summary>
+    </key>
+    <key name="horizon-repo-path" type="s">
+      <default>''</default>
+      <summary>Absolute path to local Horizon clone</summary>
+    </key>
+    <key name="horizon-data-dir" type="s">
+      <default>''</default>
+      <summary>Custom Horizon state and summary directory</summary>
+    </key>
+    <key name="horizon-ai" type="s">
+      <choices>
+        <choice value="local"/>
+        <choice value="chatgpt"/>
+        <choice value="api"/>
+        <choice value="config"/>
+      </choices>
+      <default>'local'</default>
+      <summary>Which AI Horizon uses</summary>
+      <description>local: this computer's model, Writing's Ollama model (writing-ollama-model); chatgpt: a ChatGPT plan (signed in from Settings); api: an API key kept in the keyring (horizon-ai-provider); config: Horizon's own config.json as its wizard wrote it. For all but config, Froonty writes the ai part of Horizon's config.json before each refresh.</description>
+    </key>
+    <key name="horizon-ai-provider" type="s">
+      <choices>
+        <choice value="anthropic"/>
+        <choice value="openai"/>
+        <choice value="gemini"/>
+        <choice value="deepseek"/>
+        <choice value="ali"/>
+        <choice value="minimax"/>
+        <choice value="doubao"/>
+      </choices>
+      <default>'anthropic'</default>
+      <summary>Horizon: the API provider</summary>
+      <description>Used when horizon-ai is api. Its key is in the keyring, never here.</description>
+    </key>
+    <key name="horizon-ai-model" type="s">
+      <default>''</default>
+      <summary>Horizon: the API provider's model</summary>
+      <description>Empty: Horizon's default for the provider.</description>
+    </key>
+    <key name="horizon-chatgpt-model" type="s">
+      <default>''</default>
+      <summary>Horizon: the ChatGPT plan's model</summary>
+      <description>A slug from the signed-in account's model list.</description>
+    </key>
+    <key name="horizon-chatgpt-account" type="s">
+      <default>''</default>
+      <summary>Internal: the ChatGPT account Horizon signed in with</summary>
+      <description>Horizon's client ID for it; the sign-in itself is in Horizon's own folder (~/.config/horizon/chatgpt).</description>
+    </key>
     <key name="prefs-page" type="s">
       <default>''</default>
       <summary>Internal: the settings tab to show next</summary>
@@ -257,6 +323,18 @@
       <default>'session'</default>
       <summary>Usage window shown in the Claude panic button</summary>
       <description>Whether the Claude panic button shows current session usage or weekly usage.</description>
+    </key>
+    <key name="claude-width" type="i">
+      <range min="300" max="960"/>
+      <default>380</default>
+      <summary>Claude island width</summary>
+      <description>In logical pixels, while the Claude tab is shown.</description>
+    </key>
+    <key name="claude-height" type="i">
+      <range min="260" max="720"/>
+      <default>360</default>
+      <summary>Claude island height</summary>
+      <description>In logical pixels, while the Claude tab is shown. livenerf's chart takes the spare height.</description>
     </key>
     <key name="claude-ask-paused-for-power" type="b">
       <default>false</default>
@@ -538,8 +616,8 @@
     <!-- Break feature (docs/features/break.md) -->
     <key name="break-enabled" type="b">
       <default>false</default>
-      <summary>Show the Break tab and follow GNOME's break reminders</summary>
-      <description>While on, Froonty shows GNOME's own break reminders (Settings → Wellbeing, org.gnome.desktop.break-reminders) in the island and drives them (Take, Delay, Skip); GNOME keeps the timing. It records only when you were at the computer or away, and daily totals, on this computer only (~/.local/share/froonty/break, readable by you only). It never turns GNOME's breaks on by itself: the tab offers it. Off by default. Not medical advice.</description>
+      <summary>Breaks: the whole Break feature</summary>
+      <description>While on, Froonty shows GNOME's own break reminders (Settings → Wellbeing, org.gnome.desktop.break-reminders) in the island and drives them (Take, Delay, Skip); GNOME keeps the timing. It records only when you were at the computer or away, and daily totals, on this computer only (~/.local/share/froonty/break, readable by you only). It never turns GNOME's breaks on by itself: the tab offers it. Turning this off ends everything Break does and turns GNOME's selected breaks off too; turning it on gives back the ones you had (unless you changed them meanwhile). Found off at start, GNOME's breaks are left alone. Off by default. Not medical advice.</description>
     </key>
     <key name="break-pill-reminders" type="b">
       <default>true</default>

@@ -37,7 +37,7 @@ export function sysmonPage(settings) {
     sections.add(switchRow(settings, 'sysmon-show-memory', _('Memory'),
         _('RAM used and cache')));
     sections.add(switchRow(settings, 'sysmon-show-disks', _('Disks'),
-        _('Root, swap and the EFI system partition')));
+        _('Every mounted drive with its size, virtual drives marked, and swap')));
     sections.add(switchRow(settings, 'sysmon-show-network', _('Network'),
         _('Download and upload speed and totals')));
     page.add(sections);

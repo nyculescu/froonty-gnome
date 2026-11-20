@@ -632,13 +632,13 @@ class FakeNetwork {
     }
 }
 
-function setup({refresher = null} = {}) {
+function setup({refresher = null, askEvery = 0} = {}) {
     const dir = Gio.File.new_for_path(GLib.dir_make_tmp('froonty-claude-XXXXXX'));
     const file = dir.get_child('.claude.json');
     const statusFile = dir.get_child('claude-status-line.json');
     const network = new FakeNetwork();
     const service = new ClaudeService({file: () => file, statusFile: () => statusFile,
-        network, refresher});
+        network, refresher, askEvery});
     let reads = 0;
     const read = service._read.bind(service);
     service._read = () => {
@@ -840,6 +840,25 @@ test('service: showing it asks the refresher with the cache\'s own time; hiding 
     service.stop();
     fake.emit('changed');
     eq(changes, 1, 'stopped: disconnected from the refresher');
+});
+
+test('service: with askEvery, it asks again while shown, and stops when hidden', async () => {
+    const calls = [];
+    const fake = new Emitter();
+    fake.mode = {mode: 'claude-code', reason: null};
+    fake.found = true;
+    fake.setActive = active => calls.push(`active ${active}`);
+    fake.request = fetchedAt => calls.push(`request ${fetchedAt}`);
+    const {dir, file, service} = setup({refresher: fake, askEvery: 1});
+    write(dir, file, config());
+    service.start();
+    service.setActive(true);
+    ok(await waitFor(() => calls.length === 3, 4000), JSON.stringify(calls));
+    eq(calls, ['active true', `request ${FETCHED}`, `request ${FETCHED}`]);
+    service.setActive(false);
+    await sleep(2500);
+    eq(calls.length, 4, 'no request once hidden');
+    service.stop();
 });
 
 test('service: the status line\'s missing folder is made, so GLib never looks for it every 4 s', async () => {

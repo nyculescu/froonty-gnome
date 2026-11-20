@@ -6,7 +6,8 @@
 // the narrower keeps its readouts together, next to the time.
 //
 // Their sources run only while the collapsed pill is on screen (setShown):
-// the system sampler at readouts-interval, one Claude service, and the clock.
+// the system sampler at readouts-interval, one Claude service (which asks
+// Claude Code for fresh usage about once a minute), and the clock.
 //
 // Emits 'changed' when what is printed changed: the pill's width and name
 // follow.
@@ -23,6 +24,9 @@ import {metricNeeds} from '../readouts/values.js';
 import {PanicGroupLayout} from './panicBar.js';
 
 const KEY = 'readouts';
+// Claude Code's /usage takes 2-3 s and about 350 MB; the refresher still
+// skips it when the setting is off or in low power.
+const CLAUDE_ASK_EVERY_S = 60;
 
 const ReadoutGroupLayout = GObject.registerClass(
 class ReadoutGroupLayout extends PanicGroupLayout {
@@ -159,7 +163,10 @@ export class ReadoutBar extends Emitter {
         if (wanted === Boolean(this._claude))
             return;
         if (wanted) {
-            this._claude = new ClaudeService({settings: this._settings});
+            this._claude = new ClaudeService({
+                settings: this._settings,
+                askEvery: CLAUDE_ASK_EVERY_S,
+            });
             this._claude.start();
             this._claudeId = this._claude.connect('changed', () => this._sync());
         } else {

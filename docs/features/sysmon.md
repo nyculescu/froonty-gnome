@@ -140,14 +140,40 @@ From `/proc/meminfo`:
 
 ### Disks
 
-- **Root** is the file system holding `/` (`g_file_query_filesystem_info`:
-  size and used).
+Every mounted drive, with used / total (user request, 2026-11-13), each
+read with `g_file_query_filesystem_info`:
+
+- **The list** is every file system in `/proc/self/mounts` whose source
+  is a `/dev/` device. Each device appears once, at its shortest mount
+  point, because a btrfs subvolume or a bind mount isn't another drive.
+  Pseudo file systems (proc, tmpfs, overlay, FUSE such as gvfs) and
+  automount points (`autofs`, whose size read would mount them) are left
+  out. Network shares are left out too, because a stalled server would
+  hold a reader.
+- **Names:** **Root** for `/`. **EFI** for the first of `/boot/efi`,
+  `/efi` or `/boot` mounted as FAT. A desktop mount
+  (`/run/media/USER/NAME`, `/media/USER/NAME`) uses its volume name. Any
+  other drive uses its mount point. Root comes first, then EFI, then the
+  rest by name, with virtual drives last.
+- **The line under each** gives what the drive is, its file system type
+  and its mount point. "What it is" is the disk's model from
+  `/sys/class/block/DISK/device/model`, plus "USB" when it sits on a USB
+  bus. For a partition, DISK is the folder that holds it.
+- **Virtual drives** carry a "Virtual" tag:
+  - A drive that a debug probe or bootloader emulates over USB for
+    drag-and-drop flashing, recognised by its SCSI vendor: `SEGGER`
+    (J-Link), `MBED` (ST-LINK and DAPLink boards) or `RPI` (the RP2
+    bootloader).
+  - A disk image on a loop device, named by its backing file
+    (`/sys/class/block/loopN/loop/backing_file`).
+  - **Snap packages:** the read-only squashfs images under `/snap/`, one
+    per installed revision, in one row with their count and total size.
+    Their sizes are read once per mount.
+- What a device is gets read once per mount (source and mount point), so
+  a different drive that gets the same `/dev/sdX` is read again.
 - **Swap** is `SwapTotal`/`SwapFree` from `/proc/meminfo`, all swap files
   and partitions together. It shows "None" without swap.
-- **EFI** is the first of `/boot/efi`, `/efi` or `/boot` that
-  `/proc/self/mounts` lists as a mounted FAT file system. An automount
-  point (`autofs`) is skipped, because reading its size would mount it.
-  Without one, it shows "Not mounted".
+- The disk readout on the pill still shows Root's share.
 
 ### Network
 
