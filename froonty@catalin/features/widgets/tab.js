@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // The Widgets tab: the Markets card (while its switch is on) above the
-// Horizon briefings.
+// Horizon briefings, scrolled together, so a long list of indexes does not
+// push the briefings out of the tab's fixed height.
 
 import St from 'gi://St';
 
@@ -12,14 +13,21 @@ export class WidgetsTab {
     constructor(ctx, newsService) {
         this._settings = ctx.settings;
         this._markets = null;
-        this.actor = new St.BoxLayout({
+        this._box = new St.BoxLayout({
             style_class: 'froonty-widgets-tab',
             vertical: true,
             x_expand: true,
-            y_expand: true,
         });
-        this._news = new WidgetsView(ctx, newsService);
-        this.actor.add_child(this._news.actor);
+        this.actor = new St.ScrollView({
+            hscrollbar_policy: St.PolicyType.NEVER,
+            vscrollbar_policy: St.PolicyType.AUTOMATIC,
+            overlay_scrollbars: true,
+            x_expand: true,
+            y_expand: true,
+            child: this._box,
+        });
+        this._news = new WidgetsView(ctx, newsService, {scroll: false});
+        this._box.add_child(this._news.actor);
         this._settingsId = this._settings.connect('changed::widgets-markets-enabled', () => this._syncMarkets());
         this._syncMarkets();
     }
@@ -35,7 +43,7 @@ export class WidgetsTab {
         const want = this._settings.get_boolean('widgets-markets-enabled');
         if (want && !this._markets) {
             this._markets = new MarketsView(acquireMarketsService(this._settings));
-            this.actor.insert_child_at_index(this._markets.actor, 0);
+            this._box.insert_child_at_index(this._markets.actor, 0);
         } else if (!want && this._markets) {
             this._hideMarkets();
         }

@@ -8,7 +8,14 @@ import St from 'gi://St';
 import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 
 export class WidgetsView {
-    constructor(_ctx, service) {
+    /**
+     * @param {object} _ctx
+     * @param {HorizonService} service
+     * @param {object} [options]
+     * @param {boolean} [options.scroll] false when the parent scrolls it
+     *   (the tab); the desktop card keeps a scroll of its own
+     */
+    constructor(_ctx, service, {scroll = true} = {}) {
         this._service = service;
         this._refreshing = false;
         this._error = '';
@@ -16,7 +23,7 @@ export class WidgetsView {
             style_class: 'froonty-widgets',
             vertical: true,
             x_expand: true,
-            y_expand: true,
+            y_expand: scroll,
         });
 
         const header = new St.BoxLayout({
@@ -43,19 +50,23 @@ export class WidgetsView {
         header.add_child(this._refreshButton);
         this.actor.add_child(header);
 
-        this._scroll = new St.ScrollView({
-            hscrollbar_policy: St.PolicyType.NEVER,
-            overlay_scrollbars: true,
-            x_expand: true,
-            y_expand: true,
-        });
         this._list = new St.BoxLayout({
             style_class: 'froonty-widgets-list',
             vertical: true,
             x_expand: true,
         });
-        this._scroll.add_child(this._list);
-        this.actor.add_child(this._scroll);
+        if (scroll) {
+            this._scroll = new St.ScrollView({
+                hscrollbar_policy: St.PolicyType.NEVER,
+                overlay_scrollbars: true,
+                x_expand: true,
+                y_expand: true,
+            });
+            this._scroll.add_child(this._list);
+            this.actor.add_child(this._scroll);
+        } else {
+            this.actor.add_child(this._list);
+        }
 
         this._itemsChangedId = this._service.connect('items-changed', () => this._sync());
         this._refreshStateId = this._service.connect('refresh-state', (_service, refreshing) => {

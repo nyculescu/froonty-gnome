@@ -3,7 +3,10 @@
 Status: **first iteration, implemented**, 2026-11-07.
 
 The Widgets tab surfaces compact desktop and island widgets: a Markets card
-of stock index graphs (below) and a Horizon briefing reader. The Horizon
+of stock index graphs (below) and a Horizon briefing reader. In the tab they
+scroll together in one scroll view (`tab.js`), so a long list of indexes
+does not push the briefings out of the tab's fixed height; the desktop
+Horizon card keeps a scroll of its own. The Horizon
 module it looks for dated Markdown summaries in a
 Horizon data directory and shows the newest headlines in the island. When enabled,
 Froonty can also pin the Horizon widget to the desktop background layer.

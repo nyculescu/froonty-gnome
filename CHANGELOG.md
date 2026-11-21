@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Widgets tab: Markets and the Horizon briefings scroll together, so a
+  long list of indexes no longer hides the rest of the tab.
 - Quick Settings: the arrow on GNOME's brightness slider opens a small
   menu with the brightness, a Night Light switch and its warmth, and
   Display Settings. The Night Light tile leaves the grid. Without
