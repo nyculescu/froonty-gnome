@@ -64,6 +64,29 @@
       <default>false</default>
       <summary>Pin the Horizon news card to the desktop background layer</summary>
     </key>
+    <key name="widgets-markets-enabled" type="b">
+      <default>true</default>
+      <summary>Show stock index graphs in the Widgets tab</summary>
+    </key>
+    <key name="widgets-markets-pin-desktop" type="b">
+      <default>false</default>
+      <summary>Pin the Markets card to the desktop background layer</summary>
+    </key>
+    <key name="widgets-markets-symbols" type="as">
+      <default>['^GSPC', '^IXIC', '^DJI', '^GSPTSE']</default>
+      <summary>Yahoo Finance symbols of the indexes the Markets card shows</summary>
+    </key>
+    <key name="widgets-markets-range" type="s">
+      <choices>
+        <choice value="1d"/>
+        <choice value="5d"/>
+        <choice value="1mo"/>
+        <choice value="6mo"/>
+        <choice value="1y"/>
+      </choices>
+      <default>'1d'</default>
+      <summary>Span each Markets graph shows</summary>
+    </key>
     <key name="horizon-repo-path" type="s">
       <default>''</default>
       <summary>Absolute path to local Horizon clone</summary>

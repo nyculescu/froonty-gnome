@@ -216,7 +216,77 @@
     font-size: 0.9em;
 }
 
+/* Markets card (Widgets tab and desktop) */
+
+.froonty-widgets-tab {
+    spacing: 10px;
+}
+
+.froonty-markets {
+    spacing: 6px;
+}
+
+.froonty-markets-status,
+.froonty-markets-detail {
+    color: rgba(255, 255, 255, 0.55);
+    font-size: 0.85em;
+}
+
+.froonty-markets-list {
+    spacing: 2px;
+}
+
+.froonty-markets-row {
+    padding: 4px 8px;
+    border-radius: 10px;
+}
+
+.froonty-markets-row:hover,
+.froonty-markets-row:focus {
+    background-color: rgba(255, 255, 255, 0.07);
+}
+
+.froonty-markets-row-inner {
+    spacing: 10px;
+}
+
+.froonty-markets-name {
+    font-weight: 600;
+    color: #ffffff;
+}
+
+.froonty-markets-spark {
+    width: 84px;
+    height: 28px;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.froonty-markets-price {
+    font-feature-settings: "tnum";
+    color: #ffffff;
+}
+
+.froonty-markets-change {
+    font-feature-settings: "tnum";
+    font-size: 0.85em;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.froonty-markets-spark.up,
+.froonty-markets-change.up {
+    color: #57e389;
+}
+
+.froonty-markets-spark.down,
+.froonty-markets-change.down {
+    color: #f66151;
+}
+
 /* Widgets pinned to the desktop */
+
+.froonty-desktop-widgets {
+    spacing: 12px;
+}
 
 .froonty-desktop-widget {
     width: 360px;

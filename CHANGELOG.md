@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Widgets: a Markets card shows stock indexes, each with a graph, its last
+  value and the change since the previous close (green or red). It comes
+  from Yahoo Finance, free and without a key. When Yahoo fails, the
+  S&P 500, Nasdaq and Dow come from FRED as daily closes, with a free FRED
+  key kept in the keyring. Settings → Widgets → Markets picks the indexes
+  (default S&P 500, Nasdaq, Dow, S&P/TSX) and the span (today to a year),
+  and can pin the card to the desktop. Clicking an index opens its Yahoo
+  page.
 - Widgets: "Pin the Horizon news card to the desktop background" works.
   The switch was there but nothing showed the card. It now sits at the
   top left of the main screen, behind windows, and shares the tab's

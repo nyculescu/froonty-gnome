@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Widgets tab: a compact collection of desktop and island widgets.
+// Widgets tab: stock index graphs and Horizon briefings, in the island and
+// optionally on the desktop.
 
 import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 
-import {DesktopNewsPin} from './desktopLayer.js';
+import {DesktopPins} from './desktopLayer.js';
 import {acquireHorizonService, releaseHorizonService} from './news/shared.js';
-import {WidgetsView} from './view.js';
+import {WidgetsTab} from './tab.js';
 
 // The tab's hold on the service it shares with the desktop card.
 class HorizonHandle {
@@ -33,7 +34,7 @@ export default {
     enabledKey: 'widgets-enabled',
     hubSizeKeys: {width: 'widgets-width', height: 'widgets-height'},
     createService: ctx => new HorizonHandle(ctx.settings),
-    createView: (ctx, handle) => new WidgetsView(ctx, handle.service),
-    // Settings → Widgets → "Pin the Horizon news card to the desktop".
-    createExtensionPart: settings => new DesktopNewsPin(settings),
+    createView: (ctx, handle) => new WidgetsTab(ctx, handle.service),
+    // Settings → Widgets → the "Pin … to the desktop background" switches.
+    createExtensionPart: settings => new DesktopPins(settings),
 };

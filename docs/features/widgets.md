@@ -2,8 +2,9 @@
 
 Status: **first iteration, implemented**, 2026-11-07.
 
-The Widgets tab surfaces compact desktop and island widgets. The first included
-module is a Horizon briefing reader: it looks for dated Markdown summaries in a
+The Widgets tab surfaces compact desktop and island widgets: a Markets card
+of stock index graphs (below) and a Horizon briefing reader. The Horizon
+module it looks for dated Markdown summaries in a
 Horizon data directory and shows the newest headlines in the island. When enabled,
 Froonty can also pin the Horizon widget to the desktop background layer.
 
@@ -19,19 +20,43 @@ Froonty can also pin the Horizon widget to the desktop background layer.
 
 - `widgets-enabled`: show the Widgets tab.
 - `widgets-news-pin-desktop`: pin the Horizon card to the desktop background.
-  The card (`desktopLayer.js`) is an extension part: it exists while this
-  and `widgets-enabled` are both on, whether or not the tab was opened. It
-  sits on GNOME's background actor group at the top left of the primary
-  monitor's work area, and shares one `HorizonService` with the tab
-  (`news/shared.js`). With Desktop Icons NG on, its transparent window
+  Desktop cards (`desktopLayer.js`) are an extension part: each exists
+  while its pin switch and `widgets-enabled` are both on, whether or not
+  the tab was opened. They sit in one column on GNOME's background actor
+  group at the top left of the primary monitor's work area, Markets first,
+  and share their services with the tab (`news/shared.js`,
+  `markets/shared.js`). With Desktop Icons NG on, its transparent window
   covers the desktop, so clicks may go to it instead of the card (not yet
   tested).
+- `widgets-markets-enabled` (on), `widgets-markets-pin-desktop` (off),
+  `widgets-markets-symbols`, `widgets-markets-range` (`1d`): the Markets
+  card (below).
 - `horizon-repo-path`: local Horizon checkout used for refreshes.
 - `horizon-data-dir`: custom state directory used by Horizon.
 - `horizon-ai` (`local`): which AI writes the briefings (below).
 - `horizon-ai-provider` (`anthropic`), `horizon-ai-model` (empty: Horizon's
   default for the provider): with an API key.
 - `horizon-chatgpt-model`, `horizon-chatgpt-account`: with a ChatGPT plan.
+
+## Markets (Settings → Widgets → Markets)
+
+Added 2026-11-20 (user request: index graphs in one widget, without paying
+for an API). Per index: its name, a sparkline of the span with the
+previous close dashed, the last value and the change since the previous
+close. A row opens the index's Yahoo Finance page.
+
+| Source | Used | Notes |
+|---|---|---|
+| Yahoo Finance chart endpoint (`query1.finance.yahoo.com/v8/finance/chart/<symbol>`) | First, for every symbol | Unofficial and keyless; any Yahoo symbol, intraday bars for `1d` (5 min) and `5d` (30 min). Today's daily bar has no close until the session ends, so the line ends at the live price. Yahoo's own message (an unknown symbol) is shown as is. |
+| FRED API (`api.stlouisfed.org/fred/series/observations`) | When Yahoo fails, for `^GSPC`, `^IXIC`, `^DJI` (`SP500`, `NASDAQCOM`, `DJIA`) | Official, free with a key kept in the keyring (Secret Service: schema `org.gnome.shell.extensions.froonty.Markets`, attribute `service=fred`); daily closes only. FRED's keyless `fredgraph.csv` was tried on 2026-11-20: it dropped connections whose User-Agent named Froonty (or a browser without its other headers) and let only known tools through, so it is not used. |
+| The last good reading | When both fail | Marked "not updated". The readings are also kept in `$XDG_CACHE_HOME/froonty/markets.json`, shown at start until the first refresh ends, for the same span only. |
+
+`MarketsService` (`markets/service.js`) runs while the tab's Markets card
+or the desktop card holds it (`markets/shared.js`). It asks for one symbol
+at a time, every 5 minutes while a market in the list is in its regular
+session, every 30 otherwise, and again at once when the symbols or the
+span change. The readers are pure (`markets/sources.js`) and tested with
+the service on a fake fetch (`tools/unit/widgets-markets.test.js`).
 
 ## AI for Horizon (Settings → Widgets)
 
