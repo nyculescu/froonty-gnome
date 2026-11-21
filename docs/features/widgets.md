@@ -19,6 +19,13 @@ Froonty can also pin the Horizon widget to the desktop background layer.
 
 - `widgets-enabled`: show the Widgets tab.
 - `widgets-news-pin-desktop`: pin the Horizon card to the desktop background.
+  The card (`desktopLayer.js`) is an extension part: it exists while this
+  and `widgets-enabled` are both on, whether or not the tab was opened. It
+  sits on GNOME's background actor group at the top left of the primary
+  monitor's work area, and shares one `HorizonService` with the tab
+  (`news/shared.js`). With Desktop Icons NG on, its transparent window
+  covers the desktop, so clicks may go to it instead of the card (not yet
+  tested).
 - `horizon-repo-path`: local Horizon checkout used for refreshes.
 - `horizon-data-dir`: custom state directory used by Horizon.
 - `horizon-ai` (`local`): which AI writes the briefings (below).

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Widgets: "Pin the Horizon news card to the desktop background" works.
+  The switch was there but nothing showed the card. It now sits at the
+  top left of the main screen, behind windows, and shares the tab's
+  briefings, so a Refresh in either one updates both.
 - Readouts: Claude's usage on the pill updates by itself. It asked Claude
   Code for fresh numbers only when the pill came back on screen, so it
   went stale while the island stayed collapsed; it now asks again about
