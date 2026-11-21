@@ -8,6 +8,7 @@
 
 // `break` is a reserved word.
 import breakFeature from './break/index.js';
+import {NightLightMenu} from './brightness/nightLightMenu.js';
 import {SoftwareBrightness} from './brightness/overlay.js';
 import claude from './claude/index.js';
 import clipboard from './clipboard/index.js';
@@ -40,9 +41,11 @@ export const FEATURES = [
 
 // Not hub tabs: parts that live while Froonty runs (extension.js), each
 // made from the settings and a function that opens a settings page:
-// Software brightness, the pad noise slider, the time zone planner.
+// Software brightness, Night Light in the brightness menu, the pad noise
+// slider, the time zone planner.
 export const PARTS = [
     (settings, openSettings) => new SoftwareBrightness(settings, openSettings),
+    settings => new NightLightMenu(settings),
     (settings, openSettings) => new PadNoiseSliderPart(settings, openSettings),
     (settings, openSettings) => new TimezonePlannerPart(settings, openSettings),
 ];

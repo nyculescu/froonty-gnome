@@ -3,8 +3,8 @@
 // Quick Settings slider stands (features/brightness/levels.js).
 
 import {
-    appliedLevel, levelFromSlider, overlayOpacity, sliderValue, TARGETS, targetMonitors,
-    warmthOpacity,
+    appliedLevel, levelFromSlider, overlayOpacity, sliderFromTemperature, sliderValue, TARGETS,
+    targetMonitors, temperatureFromSlider, warmthOpacity,
 } from '../../froonty@catalin/features/brightness/levels.js';
 import {done, eq, ok, test} from './test.js';
 
@@ -68,6 +68,22 @@ test('slider to level and back keeps every whole level', () => {
                 `minimum ${minimum}, level ${level}`);
         }
     }
+});
+
+test('Night Light warmth: 4700 K at the left, 1700 K at the right, in 100 K steps', () => {
+    eq([temperatureFromSlider(0), temperatureFromSlider(1), temperatureFromSlider(0.5)], [4700, 1700, 3200]);
+    eq([temperatureFromSlider(-1), temperatureFromSlider(2), temperatureFromSlider(0.01)], [4700, 1700, 4700]);
+    eq([sliderFromTemperature(4700), sliderFromTemperature(1700), sliderFromTemperature(2700)],
+        [0, 1, 2 / 3]);
+});
+
+test('Night Light warmth: a temperature outside GNOME Settings\' range sits at an end', () => {
+    eq([sliderFromTemperature(6500), sliderFromTemperature(1000)], [0, 1]);
+});
+
+test('Night Light warmth: every 100 K step survives slider and back', () => {
+    for (let kelvin = 1700; kelvin <= 4700; kelvin += 100)
+        eq(temperatureFromSlider(sliderFromTemperature(kelvin)), kelvin);
 });
 
 await done();

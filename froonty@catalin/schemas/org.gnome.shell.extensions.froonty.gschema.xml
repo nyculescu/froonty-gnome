@@ -966,6 +966,11 @@
       <summary>Warm tint strength (%)</summary>
       <description>Optional amber tint applied separately from software dimming; 0 disables the tint.</description>
     </key>
+    <key name="brightness-night-light-menu" type="b">
+      <default>true</default>
+      <summary>Night Light in the brightness menu</summary>
+      <description>The arrow on GNOME's brightness slider opens a menu with the Night Light switch and its warmth; GNOME's Night Light tile leaves Quick Settings. Without GNOME's slider (no backlight), Software brightness's menu holds them. Only with Night Light support.</description>
+    </key>
 
     <!-- The Writing tab (docs/features/writing.md) -->
     <key name="writing-enabled" type="b">

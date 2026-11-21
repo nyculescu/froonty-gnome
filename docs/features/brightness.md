@@ -22,8 +22,10 @@ one; on a desktop without a backlight GNOME shows none, and Froonty's
 slider takes that place). Its icon is a monitor, not GNOME's sun, so it
 does not look like the laptop screen's own slider above it: one monitor
 for **External monitors**, a computer for **Built-in screen**, two
-monitors for **All monitors**. The arrow at its right opens Froonty's
-Brightness settings.
+monitors for **All monitors**. The arrow at its right opens its menu,
+as GNOME's sliders do: **Brightness** (the same level as the slider),
+the **Warm tint**, Night Light when GNOME shows no brightness slider of
+its own (§7), and **Brightness Settings**, Froonty's page.
 
 - **Monitors:** **External monitors** (the default): every monitor but a
   laptop's built-in screen, so on a desktop all of them. **Built-in
@@ -106,6 +108,7 @@ Pure logic (targets, opacities, the slider's scale) is in
 | `brightness-min` | 10 | The slider's left end (5-90) |
 | `brightness-monitors` | `external` | `external`, `built-in` or `all` |
 | `brightness-warmth` | 0 | Optional tint strength (0-100; opacity capped at 25%) |
+| `brightness-night-light-menu` | `true` | Night Light in GNOME's brightness menu (§7) |
 
 ## 5. Limits
 
@@ -143,3 +146,44 @@ project, `Froonty_0.9.0_rc0_software_brightness.zip`, that differed from
 - Levels in whole percent (`brightness-level`, `brightness-min`) instead
   of 0-1 doubles; the keys were never released, so nothing migrates.
 - Unit tests and a headless check, which the patch had none of.
+
+## 7. Night Light in the brightness menu
+
+Added 2026-11-20 (user request: Night Light and its warmth in a small
+menu from the brightness slider, like Sound Output, instead of a tile).
+Settings → Brightness → **Night Light in the brightness menu**, on by
+default (`brightness-night-light-menu`). It is independent of Software
+brightness.
+
+- **The menu:** GNOME's brightness slider has a menu of its own (a slider
+  per monitor) but shows its arrow only with more than one monitor scale
+  (`ui/status/brightness.js`). Froonty turns the arrow on and adds, under
+  GNOME's sliders, a **Night Light** switch, a **Warmth** slider and
+  **Display Settings**. Where GNOME shows no brightness slider (no
+  backlight: a desktop, or the devkit's nested Shell), the switch and
+  slider go in Software brightness's menu instead, above its Brightness
+  Settings, if Software brightness is on. The switch is `night-light-enabled` and the
+  slider `night-light-temperature` in
+  `org.gnome.settings-daemon.plugins.color`, so GNOME Settings and the
+  menu always agree.
+- **Warmth:** 4700 K at the left to 1700 K at the right, in 100 K steps,
+  the range and direction of GNOME Settings' Color Temperature
+  (`levels.js`). As there, it shows only while Night Light is on and
+  inside its schedule; in daytime with "Sunset to Sunrise" it changes
+  nothing on screen.
+- **The tile:** GNOME's Night Light tile is hidden while the menu holds
+  the switch. GNOME binds its visibility to Mutter's
+  `night-light-supported`, so Froonty hides it again whenever it shows.
+- **With neither slider** (no backlight and Software brightness off) or
+  **without Night Light support**, nothing changes: the tile stays, and
+  GNOME's arrow follows GNOME's own rule. Turning the setting or Froonty off
+  restores the same.
+- `features/brightness/nightLightMenu.js`, an extension part (`PARTS` in
+  `registry.js`). GNOME's items come from Quick Settings' private
+  `_brightness` and `_nightLight` indicators, read only in
+  `shell/quickSettings.js` (`gnomeItem`, after `whenQuickSettings`). The
+  separator above Night Light goes in the host menu, not in Night
+  Light's section: GNOME shows a separator only with visible items on
+  both sides of it in its own box. The headless test has neither a
+  backlight nor Night Light, so it checks only that the tile and GNOME's
+  menu are left alone; Night Light in a menu is checked by hand.

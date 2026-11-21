@@ -9448,10 +9448,30 @@ async function testBrightness() {
         brightnessSliders().length === 1 && gnome.get_next_sibling() === slider &&
         quickSettingsMenu()._grid.layout_manager.get_child_meta(
             quickSettingsMenu()._grid, slider).column_span === 2);
-    check('brightness: a monitor icon, not GNOME\'s sun, and a > button for its settings',
-        !slider.iconReactive && slider.iconName === 'video-display-symbolic' &&
-        slider._settingsButton.reactive &&
-        slider._settingsButton.accessible_name === 'Brightness settings');
+    check('brightness: a monitor icon, not GNOME\'s sun, and a > for its menu: brightness, warm tint, Brightness Settings',
+        !slider.iconReactive && slider.iconName === 'video-display-symbolic' && slider.menuEnabled &&
+        slider.level.accessible_name === 'Brightness' && slider.tint.accessible_name === 'Warm tint' &&
+        slider.settingsItem.label.text === 'Brightness Settings');
+    slider.tint.value = 0.3;
+    const tintWritten = s.get_int('brightness-warmth');
+    s.set_int('brightness-warmth', 60);
+    await sleep(SETTLE_MS);
+    check('brightness: the menu\'s warm tint slider sets the tint and follows the setting',
+        tintWritten === 30 && Math.abs(slider.tint.value - 0.6) < 1e-9,
+        `written=${tintWritten} value=${slider.tint.value}`);
+    s.set_int('brightness-warmth', 0);
+    await sleep(SETTLE_MS);
+    // The default minimum is 10 %, so the sliders span 10-100 %.
+    slider.level.value = 0.5;
+    const levelWritten = s.get_int('brightness-level');
+    await sleep(SETTLE_MS);
+    const mainAfterMenu = slider.slider.value;
+    s.set_int('brightness-level', 100);
+    await sleep(SETTLE_MS);
+    check('brightness: the menu\'s brightness slider is the main one\'s setting, both ways',
+        levelWritten === 55 && Math.abs(mainAfterMenu - 0.5) < 1e-9 &&
+        slider.level.value === 1 && slider.slider.value === 1,
+        `written=${levelWritten} main=${mainAfterMenu} menu=${slider.level.value}`);
     check('brightness: at 100 % with no tint, the layer is on top and has no monitor overlays',
         global.stage.get_last_child() === brightnessLayer() &&
         warmthOverlays().length === 0 && dimOverlays().length === 0);
@@ -9538,8 +9558,8 @@ async function testBrightness() {
     check('brightness: Start brings them back', Boolean(brightnessLayer()) && brightnessSliders().length === 1);
 
     const [currentSlider] = brightnessSliders();
-    currentSlider._settingsButton.emit('clicked', currentSlider._settingsButton);
-    check('brightness: clicking > opens the Brightness settings page',
+    currentSlider.settingsItem.activate(Clutter.get_current_event());
+    check('brightness: Brightness Settings in its menu opens the Brightness settings page',
         s.get_string('prefs-page') === 'brightness' && await waitForSettingsWindow() !== null,
         s.get_string('prefs-page'));
     await closeSettingsWindows();
@@ -9554,6 +9574,29 @@ async function testBrightness() {
     ])
         s.reset(key);
     await sleep(SETTLE_MS);
+}
+
+// The test session has no backlight, so GNOME's brightness slider is
+// hidden: Night Light stays GNOME's tile and its menu stays closed, with
+// the setting on or off.
+async function testNightLightMenu() {
+    const s = settings();
+    const quickSettings = Main.panel.statusArea.quickSettings;
+    const gnome = quickSettings._brightness.quickSettingsItems.at(-1);
+    const toggle = quickSettings._nightLight.quickSettingsItems.at(-1);
+    const supported = global.backend.get_monitor_manager().night_light_supported;
+    const asGnome = () => !gnome.menuEnabled && toggle.visible === supported &&
+        !descendants(gnome.menu.actor).some(actor =>
+            actor instanceof St.Label && ['Night Light', 'Warmth'].includes(actor.text));
+    check('night light menu: on by default; without a backlight, GNOME\'s tile and menu are untouched',
+        s.get_boolean('brightness-night-light-menu') && !gnome.visible && asGnome(),
+        `brightness visible=${gnome.visible} menu=${gnome.menuEnabled} tile=${toggle.visible} supported=${supported}`);
+    s.set_boolean('brightness-night-light-menu', false);
+    await sleep(SETTLE_MS);
+    s.set_boolean('brightness-night-light-menu', true);
+    await sleep(SETTLE_MS);
+    check('night light menu: turned off and on, still as GNOME has it', asGnome());
+    s.reset('brightness-night-light-menu');
 }
 
 // ---------------------------------------------------------------- pad noise slider
@@ -9902,6 +9945,7 @@ export async function runAll(outDir) {
         await testCoversPanelClock(outDir);
         await testMonitors();
         await testBrightness();
+        await testNightLightMenu();
         await testPadNoiseSlider(outDir);
         await testTimezonePlanner();
         await testMedia(outDir);

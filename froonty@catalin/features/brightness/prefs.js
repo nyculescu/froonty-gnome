@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Settings → Brightness: software display brightness (overlay.js).
+// Settings → Brightness: Night Light in GNOME's brightness menu
+// (nightLightMenu.js) and software display brightness (overlay.js).
 
 import Adw from 'gi://Adw';
 import Gtk from 'gi://Gtk';
@@ -15,6 +16,13 @@ export function brightnessPage(settings) {
         title: _('Brightness'),
         icon_name: 'display-brightness-symbolic',
     });
+    const nightLight = new Adw.PreferencesGroup({title: _('Night Light')});
+    nightLight.add(switchRow(settings, 'brightness-night-light-menu', _('Night Light in the brightness menu'),
+        _('The arrow on GNOME\'s brightness slider opens the Night Light switch and its warmth, ' +
+            'instead of a Night Light tile in Quick Settings; without GNOME\'s slider, the arrow ' +
+            'on Software brightness\'s does.')));
+    page.add(nightLight);
+
     const group = new Adw.PreferencesGroup({
         title: _('Software brightness'),
         description: _('For monitors whose brightness GNOME cannot set (no DDC/CI): Froonty ' +

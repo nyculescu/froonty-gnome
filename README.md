@@ -226,10 +226,16 @@ feature has a design note in [docs/features/](docs/features/).
   DDC/CI, as some Samsung Smart Monitors). It darkens the chosen monitors
   (external ones by default, built-in screen, or all) with a neutral layer;
   an optional warm tint is adjustable separately. The layers take no input,
-  and the pointer is not dimmed or copied. Click the slider's display icon
-  to open Brightness settings. Software dimming only: the backlight, and
-  its power use, stay as they are. See
+  and the pointer is not dimmed or copied. The slider's > opens a menu
+  with the brightness, the warm tint and Brightness Settings. Software
+  dimming only: the backlight, and its power use, stay as they are. See
   [docs/features/brightness.md](docs/features/brightness.md).
+- **Night Light in the brightness menu** (on by default; Settings →
+  Brightness): the > on GNOME's brightness slider opens a menu with the
+  Night Light switch and its warmth, and the Night Light tile leaves
+  Quick Settings. Without GNOME's slider (no backlight), they go in
+  Software brightness's menu. See
+  [docs/features/brightness.md](docs/features/brightness.md#7-night-light-in-the-brightness-menu).
 - **Pad noise slider** (on by default; Settings
   → Fan): continuously adjusts the connected llano pad from near-silent to
   its maximum speed, with colored noise-stage markers. See
@@ -491,8 +497,8 @@ its tabs:
   and Remove for Ollama, Remove everything, size.
 - **Formulas:** enable, preview in display style, whether MathJax is
   installed, clear the recent formulas, size.
-- **Brightness:** software brightness on or off, which monitors, the
-  lowest level.
+- **Brightness:** Night Light in the brightness menu, software
+  brightness on or off, which monitors, the warm tint, the lowest level.
 
 The keys behind it:
 
@@ -558,6 +564,7 @@ The keys behind it:
 | `brightness-level` / `brightness-min` | 100 / 10 | Its level and the slider's left end, in percent |
 | `brightness-monitors` | `external` | `external` (all but a built-in screen), `built-in` or `all` |
 | `brightness-warmth` | `0` | Optional warm tint strength, 0-100 (maximum opacity 25%) |
+| `brightness-night-light-menu` | `true` | Night Light's switch and warmth in the brightness menu instead of a tile |
 | `prefs-page` | `''` | The settings tab to show next (internal; "Open Settings → Writing") |
 | `break-enabled` | `false` | Breaks: the whole Break feature; off also turns GNOME's breaks off, on gives them back |
 | `break-pill-reminders` | `true` | Remind in the island; GNOME's Wellbeing notifications are off meanwhile |

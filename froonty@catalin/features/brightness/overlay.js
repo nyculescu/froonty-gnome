@@ -8,18 +8,22 @@
 // An extension part (extension.js): it lives while Froonty runs and
 // follows brightness-enabled itself.
 
+import Clutter from 'gi://Clutter';
 import GObject from 'gi://GObject';
 import Shell from 'gi://Shell';
 import St from 'gi://St';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import {InjectionManager, gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
+import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 import {QuickSlider} from 'resource:///org/gnome/shell/ui/quickSettings.js';
+import {Slider} from 'resource:///org/gnome/shell/ui/slider.js';
 
 import {addUnderBrightness} from '../../shell/quickSettings.js';
 import {
-    appliedLevel, levelFromSlider, overlayOpacity, sliderValue, targetMonitors, warmthOpacity,
+    TARGETS, appliedLevel, levelFromSlider, overlayOpacity, sliderValue, targetMonitors, warmthOpacity,
 } from './levels.js';
+import {setSoftwareSlider} from './nightLightMenu.js';
 
 // Shell.Screenshot paints the stage itself, layer included, so it is hidden
 // while one of these runs. screenshot_window paints only the window.
@@ -37,24 +41,55 @@ const MONITOR_ICONS = {
     'all': 'video-joined-displays-symbolic',
 };
 
+// A labelled slider in a menu, as GNOME's brightness menu has them.
+function addMenuSlider(menu, label) {
+    menu.addMenuItem(new PopupMenu.PopupMenuItem(label, {reactive: false}));
+    const slider = new Slider(0);
+    slider.accessible_name = label;
+    const item = new PopupMenu.PopupBaseMenuItem({reactive: false});
+    item.add_child(new St.Bin({
+        style_class: 'slider-bin',
+        child: slider,
+        reactive: true,
+        can_focus: true,
+        x_expand: true,
+        y_align: Clutter.ActorAlign.CENTER,
+    }));
+    menu.addMenuItem(item);
+    return slider;
+}
+
 const BrightnessSlider = GObject.registerClass(
 class BrightnessSlider extends QuickSlider {
     _init(openSettings) {
-        super._init({iconName: MONITOR_ICONS.external});
-        this.slider.accessible_name = _('Software brightness');
-        this._settingsButton = new St.Button({
-            child: new St.Icon({icon_name: 'go-next-symbolic'}),
-            style_class: 'icon-button flat',
-            can_focus: true,
-            y_expand: true,
-            accessible_name: _('Brightness settings'),
+        super._init({
+            iconName: MONITOR_ICONS.external,
+            menuButtonAccessibleName: _('Open software brightness menu'),
         });
-        this._settingsButton.connect('clicked', openSettings);
-        this.get_child().add_child(this._settingsButton);
+        this.slider.accessible_name = _('Software brightness');
+        this.menuEnabled = true;
+        this.menu.setHeader(MONITOR_ICONS.external, _('Software brightness'));
+
+        this.level = addMenuSlider(this.menu, _('Brightness'));
+        this.tint = addMenuSlider(this.menu, _('Warm tint'));
+
+        this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+        this.settingsItem = this.menu.addAction(_('Brightness Settings'), () => openSettings());
+    }
+
+    // For Night Light where GNOME has no brightness slider to hold it
+    // (nightLightMenu.js): above the last two items, the separator and
+    // Brightness Settings.
+    insertBeforeSettings(items) {
+        const position = this.menu.numMenuItems - 2;
+        items.forEach((item, i) => this.menu.addMenuItem(item, position + i));
     }
 
     showMonitors(monitors) {
-        this.iconName = MONITOR_ICONS[monitors] ?? MONITOR_ICONS.external;
+        const icon = MONITOR_ICONS[monitors] ?? MONITOR_ICONS.external;
+        const names = [_('External monitors'), _('Built-in screen'), _('All monitors')];
+        this.iconName = icon;
+        this.menu.setHeader(icon, _('Software brightness'), names[TARGETS.indexOf(monitors)] ?? names[0]);
     }
 });
 
@@ -124,14 +159,21 @@ export class SoftwareBrightness {
         Main.layoutManager.connectObject('monitors-changed', () => this._apply(), this);
 
         this._slider = new BrightnessSlider(() => this._openSettings('brightness'));
-        this._slider.slider.connectObject('notify::value', () => {
-            if (this._following)
-                return;
-            const minimum = this._settings.get_int('brightness-min');
-            this._settings.set_int('brightness-level',
-                levelFromSlider(this._slider.slider.value, minimum));
+        // The menu's brightness slider is the same setting as the main one.
+        for (const levelSlider of [this._slider.slider, this._slider.level]) {
+            levelSlider.connectObject('notify::value', () => {
+                if (this._following)
+                    return;
+                const minimum = this._settings.get_int('brightness-min');
+                this._settings.set_int('brightness-level', levelFromSlider(levelSlider.value, minimum));
+            }, this);
+        }
+        this._slider.tint.connectObject('notify::value', () => {
+            if (!this._following)
+                this._settings.set_int('brightness-warmth', Math.round(this._slider.tint.value * 100));
         }, this);
         this._cancelPlace = addUnderBrightness(this._slider);
+        setSoftwareSlider(this._slider);
         this._hideFromScreenshots();
     }
 
@@ -139,8 +181,10 @@ export class SoftwareBrightness {
         this._cancelPlace?.();
         this._cancelPlace = null;
         if (this._slider) {
-            // Quick Settings put the slider's (unused) menu in an overlay
-            // of its own (ui/quickSettings.js, _completeAddItem): it goes too.
+            // Night Light leaves its menu first, if it is there.
+            setSoftwareSlider(null);
+            // Quick Settings put the slider's menu in an overlay of its own
+            // (ui/quickSettings.js, _completeAddItem): it goes too.
             this._slider.menu.destroy();
             this._slider.destroy();
             this._slider = null;
@@ -202,12 +246,15 @@ export class SoftwareBrightness {
         // The slider follows the setting unless it already stands for it
         // (while it is dragged, each step is written as it comes).
         const minimum = this._settings.get_int('brightness-min');
-        const slider = this._slider.slider;
-        if (levelFromSlider(slider.value, minimum) !== level) {
-            this._following = true;
-            slider.value = sliderValue(level, minimum);
-            this._following = false;
+        const tint = this._slider.tint;
+        this._following = true;
+        for (const slider of [this._slider.slider, this._slider.level]) {
+            if (levelFromSlider(slider.value, minimum) !== level)
+                slider.value = sliderValue(level, minimum);
         }
+        if (Math.round(tint.value * 100) !== warmth)
+            tint.value = warmth / 100;
+        this._following = false;
     }
 
     _hideFromScreenshots() {

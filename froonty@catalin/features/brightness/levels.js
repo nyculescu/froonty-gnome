@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Software brightness, without the Shell: which monitors are dimmed and
 // how much (unit-tested; overlay.js puts it on screen). Levels are in
-// percent, 100 meaning no overlay.
+// percent, 100 meaning no overlay. Also Night Light's warmth slider
+// (nightLightMenu.js).
 
 // Settings → Brightness → Monitors, in the order the settings list them.
 export const TARGETS = ['external', 'built-in', 'all'];
@@ -46,4 +47,22 @@ export function sliderValue(level, minimum) {
 /** The level a slider position (0-1) stands for, in whole percent. */
 export function levelFromSlider(value, minimum) {
     return Math.round(minimum + Math.min(1, Math.max(0, value)) * (100 - minimum));
+}
+
+// Night Light's warmth, as GNOME Settings shows it (cc-night-light-page.ui):
+// 4700 K at the left, 1700 K (warmest) at the right, in steps of 100 K.
+export const WARMTH_COOLEST_K = 4700;
+export const WARMTH_WARMEST_K = 1700;
+
+/** night-light-temperature (K) for a slider position (0-1). */
+export function temperatureFromSlider(value) {
+    const span = WARMTH_COOLEST_K - WARMTH_WARMEST_K;
+    const kelvin = WARMTH_COOLEST_K - Math.min(1, Math.max(0, value)) * span;
+    return Math.round(kelvin / 100) * 100;
+}
+
+/** Where the warmth slider stands (0-1); a temperature outside the range sits at its end. */
+export function sliderFromTemperature(kelvin) {
+    const value = (WARMTH_COOLEST_K - kelvin) / (WARMTH_COOLEST_K - WARMTH_WARMEST_K);
+    return Math.min(1, Math.max(0, value));
 }

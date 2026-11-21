@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Quick Settings: the arrow on GNOME's brightness slider opens a small
+  menu with the brightness, a Night Light switch and its warmth, and
+  Display Settings. The Night Light tile leaves the grid. Without
+  GNOME's slider, Night Light goes in Software brightness's menu.
+  Settings → Brightness → "Night Light in the brightness menu" turns it
+  off.
+- Software brightness: its arrow opens a small menu with the
+  brightness, the warm tint and Brightness Settings, instead of the
+  Settings window straight away.
 - Widgets: a Markets card shows stock indexes, each with a graph, its last
   value and the change since the previous close (green or red). It comes
   from Yahoo Finance, free and without a key. When Yahoo fails, the
