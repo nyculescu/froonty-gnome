@@ -365,6 +365,37 @@ it is below.
 - **Pasting images** into the Markdown source or a part being edited, as
   above.
 
+## Notes on the desktop (2026-11-20)
+
+User request: "a widget for the notes as well"; the owner chose pinned
+notes as stickies over the selected note only or a list of all notes.
+
+- **Pin:** a tab's right-click menu has **Pin to Desktop** (or **Unpin
+  from Desktop**). The pins are kept in `.froonty.json` as `"pinned"`,
+  written only while a note is pinned, renamed with the note and dropped
+  with it (meta.js). Older versions keep the key as one they do not know.
+- **Stickies** (`stickies.js`, shown by `features/widgets/desktopLayer.js`
+  while the Notes tab is on): one card per pinned note, in pin order,
+  looking like the widget cards (owner's choice 2026-11-23: not in the
+  note's colour, as at first) and their size by default (360 px wide, at
+  most 420 px high; 260×300 before; Settings → Widgets → On the desktop
+  sets it): its name, then its text scrolling when long. A click does
+  nothing (owner's choice: it used to open the note in the island). The text is drawn as the
+  island's rendered view draws text, by the same code (`markup.js`, now
+  shared with `renderer/preview.js`): headings, quotes, lists, code,
+  emphasis, tasks as ☐ and ☑. Pictures (tables, images, diagrams,
+  formulas) stay their Markdown. Stickies fill a column at their corner
+  (top right by default), then the next column, within the room left
+  (features/widgets/placement.js).
+- **Read-only:** the stickies read the folder through a `NotesLibrary`,
+  as the All notes window does, which never writes `.froonty.json`. They
+  are rebuilt only when a pinned note's name or text changes, so a
+  change to another note keeps their scrolling.
+- **Widget Lock** (Quick Settings, while a sticky or card shows) makes
+  them ignore the pointer; see docs/features/widgets.md.
+- Checked by `testDesktopStickies` (both headless modes), `notes-meta`,
+  `notes-service`, `notes-library` and `notes-markup` unit tests.
+
 ## Formulas (2026-10-05)
 
 Agreed with the user on 2026-10-03: the notes hold formulas for a PhD, and

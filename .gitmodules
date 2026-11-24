@@ -6,7 +6,7 @@
 	url = https://github.com/stiege/llano-v12-linux.git
 [submodule "third_party/asusctl"]
 	path = third_party/asusctl
-	url = https://gitlab.com/asus-linux/asusctl.git
+	url = https://github.com/opengamingcollective/asusctl.git
 [submodule "third_party/Horizon"]
 	path = third_party/Horizon
 	url = https://github.com/Thysrael/Horizon.git

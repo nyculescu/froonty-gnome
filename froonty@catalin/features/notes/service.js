@@ -153,6 +153,23 @@ export class NotesService extends Emitter {
         });
     }
 
+    /** Whether a note is pinned to the desktop (meta.js). */
+    isPinned(name) {
+        return Meta.isPinned(this._meta, name);
+    }
+
+    /** Pins a note to the desktop, or unpins it. */
+    setPinned(name, on) {
+        return this._enqueue(async () => {
+            if (!this.notes.includes(name) || Meta.isPinned(this._meta, name) === on ||
+                this.metaState === 'unreadable')
+                return;
+            this._meta = Meta.withPinned(this._meta, name, on);
+            await this._saveMeta();
+            this._changed();
+        });
+    }
+
     /** Labels of a note, sorted (labels.js). */
     labelsOf(name) {
         return Labels.labelsOf(this._labels, name);
@@ -504,7 +521,7 @@ export class NotesService extends Emitter {
         this.notes = Meta.orderedNames([...new Set(names)], this._meta);
     }
 
-    // Only on create, rename, trash and colour changes; never per keystroke.
+    // Only on create, rename, trash, colour and pin changes; never per keystroke.
     // Never over a file that could not be read (the order and colours in it
     // are not lost: they show again once it is fixed).
     async _saveMeta() {

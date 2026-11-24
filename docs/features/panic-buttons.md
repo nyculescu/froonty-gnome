@@ -99,6 +99,38 @@ interval. GPU load and temperature use the hottest reported card. The
 thermometer follows the load button by default. Its accessible name and
 tooltip spell out the current reading and unit.
 
+Added 2026-11-23 (user request: "a panic button to toggle the widgets
+show/hide from the desktop"), off by default:
+
+| Id | Action | Shown checked (red) when |
+|---|---|---|
+| `desktop-widgets` ("Desktop widgets") | Three states, each click to the next (owner's request 2026-11-23): the desktop widgets and stickies shown with scrolling and clicks (Markets' rows and Horizon's headlines open their pages; icon: desktop), shown with scrolling only (eye), hidden (crossed-out eye), and back. It sets `widgets-desktop-enabled` and `widgets-desktop-actions`, the settings behind Settings → Widgets → "Show widgets on the desktop" and "Clicks on Markets and Horizon" | They are hidden. Its name says the state and what a click does |
+
+Added 2026-11-23 (owner: "add a panic button that will trigger a
+refresh … Small settings could be adjusted from Froonty pill drop-down as
+well. Do it for the Markets as well"; then "we should have toggle buttons
+to show/hide from Froonty pill drop-down"), off by default:
+
+| Id | A click | A right-click (or the Menu key) |
+|---|---|---|
+| `markets-refresh` ("Refresh Markets") | Fetches every symbol again, while a card shows Markets; with none, opens the menu | The menu: Refresh now; Show: In the Widgets tab, On the desktop; Prices: Live prices; Graph span: Today … 1 year; Markets settings… |
+| `horizon-refresh` ("Refresh Horizon") | Runs Horizon for a new briefing, also while no card shows it; with Horizon off, opens the menu | The menu: Refresh now; Show: In the Widgets tab, On the desktop; AI: this computer, ChatGPT plan, API key, Horizon's own setting; Horizon settings… |
+
+Both are `CardButton`s (`panic/cardButton.js`; the owner chose the
+right-click over a click that opens the menu or a ⚙ in the cards'
+headers). While a refresh runs, the icon is GNOME's loading icon and
+"Refresh now" is dimmed. The menu is the island's `ContextMenu`
+(`ctx.contextMenu`), hung on the button's icon (the menu takes over its
+source's Space and Return, and the button keeps its own). Its toggles and
+choices keep it open; "Refresh now" and "… settings…" close it. "In the
+Widgets tab" and "On the desktop" are checked while the card really shows
+there; on turns on all it needs (the feature, the Widgets tab or all
+desktop widgets, the card's own switch), off only the card's own switch
+(`features/widgets/cards.js`). The name (tooltip) says what a click does,
+"Markets shows nowhere. Click to choose where", or Horizon's last error.
+Their icons: GNOME System Monitor's for Markets (a refresh arrow where it
+is missing), the RSS feed icon for Horizon.
+
 ## 4. Block camera for apps that ask GNOME
 
 **Switched off for now (2026-10-02).** The entry is commented out in
@@ -212,6 +244,11 @@ features/sysmon/panicMetrics.js
 panic/pauseMedia.js the "Pause all media" button
 panic/fanLock.js    the "Fan lock" button (docs/features/fan.md)
 panic/sitStand.js   the Break tab's sit/stand tracker
+panic/desktopWidgets.js the "Desktop widgets" button (three states)
+panic/cardButton.js a click refreshes, a right-click drops down a menu;
+                    for features with a Widgets card
+panic/marketsRefresh.js, panic/horizonRefresh.js
+                    "Refresh Markets" and "Refresh Horizon"
 panic/cameraAccess.js   GNOME's Camera Access switch, Gio only
                     (unit-tested)
 panic/camera.js     the "Block camera" button
@@ -232,7 +269,7 @@ core/tooltip.js     hover bubble, shared by the hub tabs and Notes tabs
   8 buttons). `tools/unit/panic-prefs.gtk.test.js` drives the settings
   page: 8 in the bar, then every Add is off ("The bar holds at most 8
   buttons"), and a 9th written elsewhere is not shown. Both add stand-in
-  entries to the catalog, since Froonty has fewer than 9 buttons yet. `tools/unit/panic-camera.test.js` covers the
+  entries to the catalog, so the cap is tested whatever Froonty offers. `tools/unit/panic-camera.test.js` covers the
   camera entry and `CameraAccess`: toggling, following a change made
   elsewhere, a locked switch, a missing key, and no handler left after
   `destroy()`. Every write goes to a Gio.Settings on its own memory

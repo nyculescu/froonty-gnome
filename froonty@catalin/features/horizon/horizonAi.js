@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Which AI Horizon uses, chosen in Settings → Widgets instead of Horizon's
-// wizard (docs/features/widgets.md): this computer's model (Writing's
+// Which AI Horizon uses, chosen in Settings → Horizon instead of Horizon's
+// wizard (docs/features/horizon.md): this computer's model (Writing's
 // Ollama), a ChatGPT plan, or an API key. Froonty writes the `ai` part of
 // Horizon's config.json before each refresh and keeps the rest; without a
 // config.json it writes a starter one (Hacker News, as the wizard does when

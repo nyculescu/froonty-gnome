@@ -4,7 +4,7 @@
 
 import {
     appliedLevel, levelFromSlider, overlayOpacity, sliderFromTemperature, sliderValue, TARGETS,
-    targetMonitors, temperatureFromSlider, warmthOpacity,
+    targetMonitors, temperatureFromSlider,
 } from '../../froonty@catalin/features/brightness/levels.js';
 import {done, eq, ok, test} from './test.js';
 
@@ -42,12 +42,6 @@ test('the overlay: none at 100 %, black at 0 %', () => {
     eq(overlayOpacity(50), 128);
 });
 
-test('warmth is independent and capped at 25% opacity', () => {
-    eq(warmthOpacity(0), 0);
-    eq(warmthOpacity(50), 32);
-    eq(warmthOpacity(100), 64);
-});
-
 test('the slider spans the minimum to 100 %', () => {
     eq(sliderValue(10, 10), 0);
     eq(sliderValue(100, 10), 1);
@@ -70,19 +64,19 @@ test('slider to level and back keeps every whole level', () => {
     }
 });
 
-test('Night Light warmth: 4700 K at the left, 1700 K at the right, in 100 K steps', () => {
-    eq([temperatureFromSlider(0), temperatureFromSlider(1), temperatureFromSlider(0.5)], [4700, 1700, 3200]);
-    eq([temperatureFromSlider(-1), temperatureFromSlider(2), temperatureFromSlider(0.01)], [4700, 1700, 4700]);
-    eq([sliderFromTemperature(4700), sliderFromTemperature(1700), sliderFromTemperature(2700)],
+test('Night Light warmth: 6500 K (neutral) at the left, 1700 K at the right, in 100 K steps', () => {
+    eq([temperatureFromSlider(0), temperatureFromSlider(1), temperatureFromSlider(0.5)], [6500, 1700, 4100]);
+    eq([temperatureFromSlider(-1), temperatureFromSlider(2), temperatureFromSlider(0.01)], [6500, 1700, 6500]);
+    eq([sliderFromTemperature(6500), sliderFromTemperature(1700), sliderFromTemperature(3300)],
         [0, 1, 2 / 3]);
 });
 
-test('Night Light warmth: a temperature outside GNOME Settings\' range sits at an end', () => {
-    eq([sliderFromTemperature(6500), sliderFromTemperature(1000)], [0, 1]);
+test('Night Light warmth: a temperature outside the range sits at an end', () => {
+    eq([sliderFromTemperature(8000), sliderFromTemperature(1000)], [0, 1]);
 });
 
 test('Night Light warmth: every 100 K step survives slider and back', () => {
-    for (let kelvin = 1700; kelvin <= 4700; kelvin += 100)
+    for (let kelvin = 1700; kelvin <= 6500; kelvin += 100)
         eq(temperatureFromSlider(sliderFromTemperature(kelvin)), kelvin);
 });
 

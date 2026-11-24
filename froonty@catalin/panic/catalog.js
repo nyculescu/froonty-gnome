@@ -91,6 +91,34 @@ export const PANIC_BUTTONS = [
         description: _ => _('Switches the Break tab’s sit/stand tracker. Needs the Break tab ' +
             'with sit/stand turned on.'),
     },
+    {
+        // The desktop widgets in three states, a click going to the next
+        // (panic/desktopWidgets.js, docs/features/widgets.md).
+        id: 'desktop-widgets',
+        icon: 'user-desktop-symbolic',
+        title: _ => _('Desktop widgets'),
+        description: _ => _('Each click goes to the next: the widgets on the desktop with ' +
+            'scrolling and clicks, with scrolling only (Markets and Horizon open nothing), ' +
+            'then hidden.'),
+    },
+    {
+        // A click refreshes; a right-click drops down a menu of where the
+        // card shows and small settings (panic/marketsRefresh.js,
+        // panic/cardButton.js). The icon is GNOME System Monitor's.
+        id: 'markets-refresh',
+        icon: 'org.gnome.SystemMonitor-symbolic',
+        title: _ => _('Refresh Markets'),
+        description: _ => _('Fetches every symbol again. Right-click for a menu: show or hide the card ' +
+            'in the Widgets tab and on the desktop, live prices, the graph span.'),
+    },
+    {
+        // The same for Horizon (panic/horizonRefresh.js).
+        id: 'horizon-refresh',
+        icon: 'application-rss+xml-symbolic',
+        title: _ => _('Refresh Horizon'),
+        description: _ => _('Runs Horizon for a new briefing. Right-click for a menu: show or hide the ' +
+            'card in the Widgets tab and on the desktop, the AI that writes it.'),
+    },
 ];
 
 /**

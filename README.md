@@ -78,6 +78,9 @@ feature has a design note in [docs/features/](docs/features/).
     A click opens the Btop tab.
   - **Temperature** shows the CPU or GPU temperature in °C after a
     thermometer, green to red. A click opens the Btop tab.
+  - **Desktop widgets** goes through three states, a click to the next:
+    the widgets and notes on the desktop with scrolling and clicks, with
+    scrolling only, then hidden (red).
   - The camera button (**Block camera for apps that ask GNOME**) is switched
     off for now; its code is kept
     ([details](docs/features/panic-buttons.md#4-block-camera-for-apps-that-ask-gnome)).
@@ -110,6 +113,10 @@ feature has a design note in [docs/features/](docs/features/).
   - Labels: right-click a note's tab (or Menu / Shift+F10) to add or remove
     them. They live in a hidden `.froonty-labels.json`; the `.md` files
     stay plain Markdown.
+  - **Pin to Desktop**, in a note tab's right-click menu: the note shows
+    on the desktop as a card like the widgets', scrolling when long. Widget
+    Lock in Quick Settings makes stickies and widget cards ignore the
+    pointer.
   - **All notes**, in a note tab's right-click menu, opens every note in a
     window: search them all, filter by labels (all of them, or any), and
     read or edit them there, drawn rendered and with the same formatting
@@ -220,20 +227,34 @@ feature has a design note in [docs/features/](docs/features/).
   recent and starred formulas and a short guide; copy as `$…$` or `$$…$$`,
   or put it into the open note. Drawn on this computer by MathJax, in a
   helper process; see [ZeroTier, Writing and Formulas](#zerotier-writing-and-formulas).
+- **Markets** (Settings → Markets): prices and graphs of up to 30 Yahoo
+  Finance symbols (stocks, ETFs, funds, indexes, crypto, futures, yields)
+  in a card in the Widgets tab and on the desktop. While their market is
+  open, US stocks and ETFs update live from Alpaca's free plan (with its
+  free API keys) and crypto from Coinbase (no key); otherwise Yahoo every
+  minute, then FRED for the S&P 500, Nasdaq and Dow (with a free key).
+  See [docs/features/markets.md](docs/features/markets.md).
+- **Horizon** (Settings → Horizon): news briefings that
+  [Horizon](third_party/Horizon) writes with an AI (this computer's
+  model, a ChatGPT plan or an API key), in a card in the Widgets tab and
+  on the desktop. See [docs/features/horizon.md](docs/features/horizon.md).
+- **Refresh Markets** and **Refresh Horizon** panic buttons: a click
+  refreshes; a right-click drops down a menu to show or hide the card in
+  the Widgets tab and on the desktop, and small settings (live prices and
+  the graph span; the AI).
 - **Software brightness** (off by default;
   Settings → Brightness): a second brightness slider in Quick Settings,
   under GNOME's, for monitors whose brightness GNOME cannot set (no
   DDC/CI, as some Samsung Smart Monitors). It darkens the chosen monitors
-  (external ones by default, built-in screen, or all) with a neutral layer;
-  an optional warm tint is adjustable separately. The layers take no input,
-  and the pointer is not dimmed or copied. The slider's > opens a menu
-  with the brightness, the warm tint and Brightness Settings. Software
-  dimming only: the backlight, and its power use, stay as they are. See
+  (external ones by default, built-in screen, or all) with a neutral
+  layer; warmth comes from Night Light. The layer takes no input, and the
+  pointer is not dimmed or copied. The slider's > opens a menu with the
+  brightness and Brightness Settings. Software dimming only: the backlight, and its power use, stay as they are. See
   [docs/features/brightness.md](docs/features/brightness.md).
 - **Night Light in the brightness menu** (on by default; Settings →
   Brightness): the > on GNOME's brightness slider opens a menu with the
-  Night Light switch and its warmth, and the Night Light tile leaves
-  Quick Settings. Without GNOME's slider (no backlight), they go in
+  Night Light switch, its warmth and its times (From, To, and All day to
+  keep it on in daytime), and the Night Light tile leaves Quick Settings. Without GNOME's slider (no backlight), they go in
   Software brightness's menu. See
   [docs/features/brightness.md](docs/features/brightness.md#7-night-light-in-the-brightness-menu).
 - **Pad noise slider** (on by default; Settings
@@ -286,7 +307,7 @@ Each tab can be turned off on its own page in Settings.
   top row opens GNOME's own calendar and notification menu.
 - **Notes:** Markdown files in `~/.local/share/froonty/notes`, or a folder
   you choose in Settings → Notes, plus hidden files there:
-  `.froonty.json` (order and colours), `.froonty-labels.json` (labels),
+  `.froonty.json` (order, colours and notes pinned to the desktop), `.froonty-labels.json` (labels),
   `.froonty-render-sizes.json` (the sizes you gave rendered pictures) and
   `.froonty-current-note` (the open note, shared by the island and All
   notes). Deleted notes go to the Trash. Pipe tables, note-relative local
@@ -367,8 +388,9 @@ froonty@catalin/             the extension (this directory is what gets installe
 │   ├── localsend/           LocalSend tab: protocol helper (Python), service,
 │   │                        notifications, view, prefs
 │   ├── writing/             Writing tab: engines, set-up, service, view, prefs
-│   ├── brightness/          Software brightness (not a tab): dim/tint layers,
-│   │                        its Quick Settings slider, levels, prefs
+│   ├── brightness/          Software brightness (not a tab): dim layer,
+│   │                        its Quick Settings slider, Night Light menu,
+│   │                        levels, schedule, prefs
 │   ├── fan/                 Fan settings page (not a tab): llano pad, ASUS
 │   │                        fans, recommendation table
 │   ├── padNoiseSlider/      pad speed slider in Quick Settings (not a tab)
@@ -497,8 +519,12 @@ its tabs:
   and Remove for Ollama, Remove everything, size.
 - **Formulas:** enable, preview in display style, whether MathJax is
   installed, clear the recent formulas, size.
+- **Markets:** enable, the symbols, live prices and Alpaca's keys,
+  FRED's key. Under Widgets: the card in the tab and its graph span.
+- **Horizon:** enable, Horizon's folder and data directory, the AI.
+  Under Widgets: the card in the tab.
 - **Brightness:** Night Light in the brightness menu, software
-  brightness on or off, which monitors, the warm tint, the lowest level.
+  brightness on or off, which monitors, the lowest level.
 
 The keys behind it:
 
@@ -525,7 +551,14 @@ The keys behind it:
 | `media-show-in-pill` / `media-track-notice` | `true` | Cover and bars beside the time while music plays; a new song's title for 3 s |
 | `media-include-other-players` | `true` | Follow browsers and video players automatically (off: only when chosen) |
 | `media-remote-art` / `media-lyrics-online` | `false` | The Media tab's two internet options: web covers, lyrics from lrclib.net |
-| `notes-enabled` | `true` | Show the Notes tab |
+| `notes-enabled` | `true` | Show the Notes tab; notes pinned to the desktop show as stickies while it is on |
+| `widgets-desktop-locked` | `false` | Widget Lock: desktop cards and stickies ignore the pointer |
+| `widgets-desktop-actions` | `true` | Clicks on the desktop Markets and Horizon cards open their pages; off, they only scroll |
+| `markets-enabled` | `true` | Markets: off, its card shows nowhere and nothing is fetched |
+| `markets-live` | `true` | Live prices while the market is open: Alpaca for US stocks and ETFs (with keys), Coinbase for crypto |
+| `horizon-enabled` | `true` | Horizon: off, its card shows nowhere and Horizon is not run |
+| `widgets-markets-symbols` | `^GSPC`, `^IXIC`, `^DJI`, `^GSPTSE` | The Markets card's Yahoo symbols, at most 30 |
+| `widgets-desktop-positions` | Markets, Horizon and System top left, each sticky top right | Each desktop item's place (dragged on a picture of the desktop in Settings) and size; they never overlap |
 | `notes-folder` | `''` | Notes folder; empty means `~/.local/share/froonty/notes` |
 | `notes-wrap` | `true` | Wrap long lines in notes; off scrolls horizontally |
 | `notes-show-tools` | `true` | Show the notes formatting row (it can be folded away) |
@@ -563,8 +596,8 @@ The keys behind it:
 | `brightness-enabled` | `false` | Software brightness: its slider in Quick Settings |
 | `brightness-level` / `brightness-min` | 100 / 10 | Its level and the slider's left end, in percent |
 | `brightness-monitors` | `external` | `external` (all but a built-in screen), `built-in` or `all` |
-| `brightness-warmth` | `0` | Optional warm tint strength, 0-100 (maximum opacity 25%) |
 | `brightness-night-light-menu` | `true` | Night Light's switch and warmth in the brightness menu instead of a tile |
+| `brightness-night-light-all-day` / `brightness-night-light-schedule` | `false` / `(20.0, 6.0, false)` | All day in that menu, and the times it put aside (From, To, sunset to sunrise) |
 | `prefs-page` | `''` | The settings tab to show next (internal; "Open Settings → Writing") |
 | `break-enabled` | `false` | Breaks: the whole Break feature; off also turns GNOME's breaks off, on gives them back |
 | `break-pill-reminders` | `true` | Remind in the island; GNOME's Wellbeing notifications are off meanwhile |

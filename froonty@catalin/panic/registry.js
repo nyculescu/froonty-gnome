@@ -10,7 +10,10 @@ import {AudioMuteButton} from './audioMute.js';
 import {byId} from './catalog.js';
 import {ClaudeSessionButton} from './claudeSession.js';
 import {CpuLoadButton} from './cpuLoad.js';
+import {DesktopWidgetsButton} from './desktopWidgets.js';
 import {FanLockButton} from './fanLock.js';
+import {HorizonRefreshButton} from './horizonRefresh.js';
+import {MarketsRefreshButton} from './marketsRefresh.js';
 import {PauseMediaButton} from './pauseMedia.js';
 import {PinIslandButton} from './pinIsland.js';
 import {SitStandButton} from './sitStand.js';
@@ -28,7 +31,11 @@ const FACTORIES = {
     // camera.js, for 'block-camera'.
     'claude-session': (title, actions) => new ClaudeSessionButton(title, actions),
     'cpu-load': (title, actions) => new CpuLoadButton(title, actions),
+    'desktop-widgets': (title, actions) => new DesktopWidgetsButton(title, actions.settings),
     'fan-lock': (title, actions) => new FanLockButton(title, actions),
+    // Both also take actions.ctx, for their menu and settings page.
+    'horizon-refresh': (title, actions) => new HorizonRefreshButton(title, actions),
+    'markets-refresh': (title, actions) => new MarketsRefreshButton(title, actions),
     'pause-media': (title, actions) => new PauseMediaButton(title, actions),
     'sit-stand': (title, actions) => new SitStandButton(title, actions),
     temperature: (title, actions) => new TemperatureButton(title, actions),

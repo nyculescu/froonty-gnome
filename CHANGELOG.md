@@ -2,17 +2,111 @@
 
 ## Unreleased
 
+- Horizon is its own feature too, with its page in Settings: its switch,
+  Horizon's folder and data directory, and the AI. Settings → Widgets
+  keeps where the cards show, with a new switch for the Horizon card in
+  the Widgets tab; the tab says how to show a card when it has none.
+- Panic buttons Refresh Markets and Refresh Horizon. A click refreshes
+  (Horizon's also while no card shows it). A right-click, or the Menu
+  key, drops down a menu: Refresh now, show or hide the card in the
+  Widgets tab and on the desktop (showing it turns on all it needs), and
+  small settings: live prices and the graph span for Markets, the AI for
+  Horizon; then the feature's settings page.
+- Clipboard: a right-click on an entry (or the Menu key) opens its menu:
+  the wider preview, then "Delete this entry".
+- Markets is its own feature, with its page in Settings: its switch, its
+  symbols (up to 30, any Yahoo symbol: stocks, ETFs, funds, indexes,
+  crypto, futures, yields), live prices and the keys. Settings → Widgets
+  keeps how the card looks: in the tab or not, and the graph span.
+- Markets: live prices while the market is open. US stocks and ETFs come
+  from Alpaca's free plan (the trades on IEX, with a free account's API
+  keys, saved in the keyring and checked with Alpaca), crypto pairs from
+  Coinbase without a key, updated about once a second. When a stream
+  fails, the price is Yahoo's, now fetched every minute while the market
+  is open (every 5 minutes while the stream is live, for the graph), then
+  FRED's for the S&P 500, Nasdaq and Dow, then the last one. Every row
+  says where its price comes from: "Alpaca live (IEX)", "Coinbase live",
+  "Yahoo" or "FRED daily close"; a stream that is down says why under the
+  header. Crypto counts as always open, also at weekends.
+- Markets: each row says after its time whether its market is open or
+  closed. A closed market's index is not fetched again until it should
+  open (the next weekday's opening, a holiday found and skipped), apart
+  from one fetch just after the close for the closing price.
+- Widgets: a System widget for the desktop, with Btop's readings: choose
+  any of CPU load, temperature, hottest core and clock, RAM, swap, GPU
+  load, temperature, memory and power, download, upload and disk used.
+  Each shows its value, its low and high over the last 30 minutes (5 to
+  240, in Settings) and a graph of them, optionally as a moving average
+  (30 s to 5 min). The order of value, name and graph is a setting, and
+  the graph takes the width left, so a narrow card stays compact. It
+  reads only what is chosen, only while it is on the desktop, every 5 s
+  by default; its history survives a screen lock.
+- Panic buttons: Desktop widgets goes through three states, a click to
+  the next: the widgets and notes on the desktop with scrolling and
+  clicks, with scrolling only (Markets and Horizon open nothing), then
+  hidden; red while they are hidden. Settings → Widgets → On the desktop
+  has the clicks as a switch too.
+- Desktop widgets: each goes where you drag it on the picture of the
+  desktop in Settings → Widgets → On the desktop, beside another as well
+  as under it: dropped over one, it moves to its nearest side, and edges
+  near another's line up. Widgets never overlap: one in the way is
+  pushed down, or beside. Drag an edge to resize, or use the arrow keys.
+  Each note pinned to the desktop is its own sticky there ("Notes sticky
+  1, 2, …"), with its own place, width and height. Beside a fixed dock
+  that does not fill the height, they also use the space above it, cut
+  at the dock's top.
+- Desktop stickies: the size of the widget cards (360 px wide, up to
+  420 px high).
+- Desktop Markets card: 8 indexes show; more scroll.
+- Settings → Widgets: the Notes stickies row says how to pin a note.
+- Widgets: Settings → Widgets → On the desktop has a switch for
+  Markets, Horizon and the Notes stickies each, and one that shows or
+  hides them all. The Widgets tab has its own switch and no longer takes
+  the desktop widgets with it.
+- Markets: each row shows the price first, then the name, then the
+  graph. The change is now over the span the graph shows, from the
+  dashed level, and the header says which ("Change over 6 months");
+  before, longer spans showed the change since yesterday.
+- Night Light menu: the Night Light and All day switches no longer close
+  the menu. The warmth slider reaches down to 6500 K (no warming) at its
+  left end, below GNOME Settings' 4700 K.
+- Notes on the desktop: a note's tab menu has Pin to Desktop. Each pinned
+  note shows on the desktop as a card like the widgets' (dark, not in the
+  note's colour), its text drawn as in the island and scrolling when
+  long.
+- Quick Settings: Widget Lock, while a widget card or sticky is on the
+  desktop, makes them ignore the pointer, so clicks go to the desktop.
+- Markets: up to 15 indexes. Settings keeps the first 15 and drops
+  repeats; both the tab and the desktop card scroll to show them all.
+- Widgets: each Horizon headline shows 3 lines of its briefing, not only
+  the first sentence, cut with "…", and titles wrap whole. Both were cut
+  to one line. Titles and text no longer show Horizon's escapes such as
+  `&\#x27;` or `\(`.
+- Widgets: the desktop Horizon card has no Refresh button; Refresh is in
+  the tab.
+- Widgets: desktop cards take clicks and scrolling. With Desktop Icons
+  (Ubuntu's default), its window covered them and took both. They also
+  stay clear of a fixed dock, which reserves its space after Froonty
+  starts.
 - Widgets tab: Markets and the Horizon briefings scroll together, so a
-  long list of indexes no longer hides the rest of the tab.
+  long list of indexes no longer hides the rest of the tab. On the
+  desktop, the Markets card's list scrolls under its header.
 - Quick Settings: the arrow on GNOME's brightness slider opens a small
   menu with the brightness, a Night Light switch and its warmth, and
   Display Settings. The Night Light tile leaves the grid. Without
   GNOME's slider, Night Light goes in Software brightness's menu.
   Settings → Brightness → "Night Light in the brightness menu" turns it
   off.
+- Night Light in the brightness menu: From and To, as in GNOME
+  Settings, and an All day switch. All day keeps Night Light on in
+  daytime, so the warmth shows and can be adjusted. Off, it restores
+  the times; changing the times in GNOME Settings turns it off.
 - Software brightness: its arrow opens a small menu with the
-  brightness, the warm tint and Brightness Settings, instead of the
-  Settings window straight away.
+  brightness and Brightness Settings, instead of the Settings window
+  straight away.
+- Software brightness: the warm tint is gone, from Quick Settings,
+  Settings and the `brightness-warmth` key. Night Light's warmth, in the
+  brightness menu, is the one warm setting.
 - Widgets: a Markets card shows stock indexes, each with a graph, its last
   value and the change since the previous close (green or red). It comes
   from Yahoo Finance, free and without a key. When Yahoo fails, the
@@ -55,8 +149,8 @@
   screen's own brightness slider above it. The icon follows Settings →
   Brightness → Monitors, and an arrow at its right opens those settings.
 - Software brightness: screenshots (Print, the screenshot UI, other
-  screenshot tools) and the colour picker no longer include the dimming
-  and warm tint. Screen casts still show them.
+  screenshot tools) and the colour picker no longer include the dimming.
+  Screen casts still show it.
 - Pad noise slider: a plain slider, without the noise-stage dots. Its fan
   icon switches the pad off and back on at the same speed, and an arrow at
   its right opens the Fan settings. The fan icon is now three swept blades

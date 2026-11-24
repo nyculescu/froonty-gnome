@@ -34,11 +34,6 @@ export function overlayOpacity(level) {
     return Math.round(255 * (100 - level) / 100);
 }
 
-/** A warm tint's opacity (0-255), capped at 25% to keep it subtle. */
-export function warmthOpacity(warmth) {
-    return Math.round(64 * warmth / 100);
-}
-
 /** Where the Quick Settings slider stands (0-1): it spans minimum-100 %. */
 export function sliderValue(level, minimum) {
     return (appliedLevel(level, minimum) - minimum) / (100 - minimum);
@@ -49,9 +44,12 @@ export function levelFromSlider(value, minimum) {
     return Math.round(minimum + Math.min(1, Math.max(0, value)) * (100 - minimum));
 }
 
-// Night Light's warmth, as GNOME Settings shows it (cc-night-light-page.ui):
-// 4700 K at the left, 1700 K (warmest) at the right, in steps of 100 K.
-export const WARMTH_COOLEST_K = 4700;
+// Night Light's warmth: 6500 K at the left (neutral, no warming; owner
+// asked for less warmth than GNOME Settings allows, whose slider stops at
+// 4700 K) to 1700 K (warmest, as GNOME Settings) at the right, in steps of
+// 100 K. GNOME stores any value; Settings shows one above 4700 K at its
+// left end.
+export const WARMTH_COOLEST_K = 6500;
 export const WARMTH_WARMEST_K = 1700;
 
 /** night-light-temperature (K) for a slider position (0-1). */

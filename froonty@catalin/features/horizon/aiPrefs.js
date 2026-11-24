@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Settings → Widgets → AI for Horizon (docs/features/widgets.md): this
+// Settings → Horizon → AI for Horizon (docs/features/horizon.md): this
 // computer's model (Writing's), a ChatGPT plan signed in through Horizon's
 // own horizon-chatgpt, or an API key kept in the keyring. Runs in the
 // preferences process (GTK 4 + libadwaita).
@@ -11,8 +11,8 @@ import Gtk from 'gi://Gtk';
 
 import {gettext as _} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
-import {cliJson, horizonBin, PROVIDERS, providerById, SOURCES} from './news/horizonAi.js';
-import {clearKey, lookupKey, storeKey} from './news/horizonSecret.js';
+import {cliJson, horizonBin, PROVIDERS, providerById, SOURCES} from './horizonAi.js';
+import {clearKey, lookupKey, storeKey} from './horizonSecret.js';
 
 Gio._promisify(Gio.Subprocess.prototype, 'communicate_utf8_async', 'communicate_utf8_finish');
 Gio._promisify(Gio.Subprocess.prototype, 'wait_async', 'wait_finish');

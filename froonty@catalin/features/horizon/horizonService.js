@@ -6,8 +6,8 @@ import Gio from 'gi://Gio';
 
 import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 
-import {Emitter} from '../../../core/emitter.js';
-import {probe, startOwn} from '../../writing/engines/ollama.js';
+import {Emitter} from '../../core/emitter.js';
+import {probe, startOwn} from '../writing/engines/ollama.js';
 import {aiFor, defaultHorizonRepoPath, horizonBin, horizonVenvDirs, withAi} from './horizonAi.js';
 import {lookupKey} from './horizonSecret.js';
 import {parseHorizonMarkdown} from './parser.js';
@@ -38,6 +38,11 @@ export class HorizonService extends Emitter {
 
     get items() {
         return this._items;
+    }
+
+    /** Whether Horizon is running for a new briefing. */
+    get refreshing() {
+        return this._isRefreshing;
     }
 
     enable() {
@@ -197,13 +202,13 @@ export class HorizonService extends Emitter {
                     throw new Error(_('The keyring could not be read: %s').format(e.message));
                 }
                 if (!key)
-                    throw new Error(_('No API key saved. Add it in Settings → Widgets.'));
+                    throw new Error(_('No API key saved. Add it in Settings → Horizon.'));
                 env[keyEnv] = key;
             }
             if (source === 'local')
                 await this._startLocalModel(ai.model);
         } else if (!configFile.query_exists(null)) {
-            throw new Error(_('Horizon has no config.json yet. Run make horizon-wizard, or choose an AI in Settings → Widgets.'));
+            throw new Error(_('Horizon has no config.json yet. Run make horizon-wizard, or choose an AI in Settings → Horizon.'));
         }
 
         const launcher = new Gio.SubprocessLauncher({
@@ -263,6 +268,6 @@ export class HorizonService extends Emitter {
 // What a missing choice means, as the tab says it.
 const ERRORS = {
     'no-local-model': () => _('No model on this computer yet. Choose or download one in Settings → Writing.'),
-    'no-chatgpt-model': () => _('Sign in with ChatGPT and choose a model in Settings → Widgets.'),
-    'no-provider': () => _('Choose an API provider in Settings → Widgets.'),
+    'no-chatgpt-model': () => _('Sign in with ChatGPT and choose a model in Settings → Horizon.'),
+    'no-provider': () => _('Choose an API provider in Settings → Horizon.'),
 };

@@ -11,6 +11,7 @@ import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
 import Gio from 'gi://Gio';
 import GdkPixbuf from 'gi://GdkPixbuf';
+import Meta from 'gi://Meta';
 import Shell from 'gi://Shell';
 import Soup from 'gi://Soup?version=3.0';
 import St from 'gi://St';
@@ -442,6 +443,14 @@ function makeFakeFeature(log) {
 
 const tabButton = id => island()._hub._entries.get(id)?.button;
 
+// The tab column scrolls: a tab out of view is brought into it first, or
+// the click lands outside the island and collapses it.
+async function clickTab(id) {
+    island()._hub._revealTab(tabButton(id));
+    await sleep(50);
+    await clickActor(tabButton(id));
+}
+
 // The first tab that is on, in registry order: the one the hub falls back
 // to, and "another tab" for the checks of tabs after it (the Notes tab by
 // default).
@@ -707,7 +716,7 @@ async function testHub(outDir) {
 
         island().expand();
         await sleep(animationWait());
-        await clickActor(tabButton('test-fake'));
+        await clickTab('test-fake');
         await sleep(animationWait());
         const [w, h] = pill().get_transformed_size();
         check('hub: selecting a tab creates, starts and activates it',
@@ -741,7 +750,7 @@ async function testHub(outDir) {
             log.at(-1) === 'inactive' && cw === tabWidth() * scale(),
             `${log.join(',')} width=${cw}`);
 
-        await clickActor(tabButton('test-fake'));
+        await clickTab('test-fake');
         await sleep(animationWait());
         island().collapse();
         await sleep(animationWait());
@@ -2803,6 +2812,48 @@ async function testClipboard(outDir) {
     check('clipboard: the history is in the private data folder',
         Gio.File.new_for_path(GLib.build_filenamev([GLib.get_user_data_dir(), 'froonty',
             'clipboard', 'history.json'])).query_exists(null));
+
+    // The row menu: newest first, the files are the second row now.
+    const newMenu = before => [...island()._menus].find(menu => !before.has(menu)) ?? null;
+    const labelsOf = menu => menu?.items.map(item => item.label?.text ?? '') ?? [];
+    let menusBefore = new Set(island()._menus);
+    await rightClickActor(view._list.get_children()[1].get_first_child());
+    let menu = newMenu(menusBefore);
+    const items = labelsOf(menu);
+    check('clipboard: a right-click opens the entry\'s menu: its wider preview, then Delete this entry',
+        menu?.isOpen && items[0]?.startsWith('Cut 2 items\n') && items[0].includes('/home/test/Report 2026.pdf') &&
+        items.at(-1) === 'Delete this entry',
+        JSON.stringify(items));
+    const deleteItem = menu?.items.find(item => item.label?.text === 'Delete this entry');
+    if (deleteItem)
+        await clickActor(deleteItem);
+    else
+        menu?.close();
+    await sleep(animationWait() + SETTLE_MS);
+    const savedAfter = new TextDecoder().decode(historyFile.load_contents(null)[1]);
+    check('clipboard: Delete this entry removes it from the list and the saved history',
+        !menu?.isOpen && recorder.entries.map(e => e.kind).join(',') === 'text,image' &&
+        view._list.get_children().length === 2 && !savedAfter.includes('Report'),
+        `entries=${recorder.entries.map(e => e.kind)} rows=${view._list.get_children().length} ` +
+        `saved=${savedAfter.includes('Report')}`);
+
+    // Menu (St's 'popup-menu') on the image row: Delete has the key
+    // focus; Escape closes the menu and deletes nothing.
+    menusBefore = new Set(island()._menus);
+    const imageButton = view._list.get_children()[1].get_first_child();
+    imageButton.grab_key_focus();
+    imageButton.emit('popup-menu');
+    await sleep(animationWait());
+    menu = newMenu(menusBefore);
+    const focused = global.stage.get_key_focus();
+    const focusedLabel = focused?.label?.text ?? describeActor(focused);
+    keyboard.notify_keyval(now(), Clutter.KEY_Escape, Clutter.KeyState.PRESSED);
+    keyboard.notify_keyval(now(), Clutter.KEY_Escape, Clutter.KeyState.RELEASED);
+    await sleep(animationWait() + SETTLE_MS);
+    check('clipboard: the Menu key opens it with Delete this entry focused; Escape deletes nothing',
+        menu !== null && focusedLabel === 'Delete this entry' && !menu.isOpen &&
+        recorder.entries.length === 2 && view._list.get_children().length === 2,
+        `menu=${menu !== null} focus=${focusedLabel} open=${menu?.isOpen} entries=${recorder.entries.length}`);
 
     await clickActor(tabButton(firstTabId()));
     await sleep(animationWait());
@@ -8147,10 +8198,11 @@ async function testMedia(outDir) {
     try {
         // H1
         const names = island()._hub._tabColumn.get_children().map(b => b.accessible_name);
-        const published = names.filter(name => ['Notes'].includes(name));
-        check('media: the Media tab is there by default, after the published tabs',
+        const expected = (await expectedTabs()).map(f => f.title);
+        check('media: the Media tab is there by default, in the registry\'s order',
             s.get_boolean('media-enabled') && tabButton('media')?.accessible_name === 'Media' &&
-            names.indexOf('Media') === published.length, names.join(','));
+            names.indexOf('Media') >= 0 && names.indexOf('Media') === expected.indexOf('Media'),
+            `${names.join(',')} expected ${expected.join(',')}`);
         island().expand();
         await sleep(animationWait());
         await movePointerTo(...(() => {
@@ -9426,7 +9478,6 @@ const brightnessLayer = () => global.stage.get_children()
     .find(actor => actor.name === 'froonty-brightness') ?? null;
 const brightnessChildLayer = name => brightnessLayer()?.get_children()
     .find(actor => actor.name === name) ?? null;
-const warmthOverlays = () => brightnessChildLayer('froonty-brightness-tint-layer')?.get_children() ?? [];
 const dimOverlays = () => brightnessChildLayer('froonty-brightness-dim-layer')?.get_children() ?? [];
 const quickSettingsMenu = () => Main.panel.statusArea.quickSettings.menu;
 const brightnessSliders = () => quickSettingsMenu()._grid.get_children()
@@ -9437,8 +9488,7 @@ async function testBrightness() {
     const menuActors = () => quickSettingsMenu()._overlay.get_n_children();
     const menusBefore = menuActors();
     check('brightness: off by default, nothing on the stage or in Quick Settings',
-        !s.get_boolean('brightness-enabled') && s.get_int('brightness-warmth') === 0 &&
-        !brightnessLayer() && brightnessSliders().length === 0);
+        !s.get_boolean('brightness-enabled') && !brightnessLayer() && brightnessSliders().length === 0);
 
     s.set_boolean('brightness-enabled', true);
     await sleep(SETTLE_MS);
@@ -9448,19 +9498,10 @@ async function testBrightness() {
         brightnessSliders().length === 1 && gnome.get_next_sibling() === slider &&
         quickSettingsMenu()._grid.layout_manager.get_child_meta(
             quickSettingsMenu()._grid, slider).column_span === 2);
-    check('brightness: a monitor icon, not GNOME\'s sun, and a > for its menu: brightness, warm tint, Brightness Settings',
+    check('brightness: a monitor icon, not GNOME\'s sun, and a > for its menu: brightness, Brightness Settings, no warm tint',
         !slider.iconReactive && slider.iconName === 'video-display-symbolic' && slider.menuEnabled &&
-        slider.level.accessible_name === 'Brightness' && slider.tint.accessible_name === 'Warm tint' &&
-        slider.settingsItem.label.text === 'Brightness Settings');
-    slider.tint.value = 0.3;
-    const tintWritten = s.get_int('brightness-warmth');
-    s.set_int('brightness-warmth', 60);
-    await sleep(SETTLE_MS);
-    check('brightness: the menu\'s warm tint slider sets the tint and follows the setting',
-        tintWritten === 30 && Math.abs(slider.tint.value - 0.6) < 1e-9,
-        `written=${tintWritten} value=${slider.tint.value}`);
-    s.set_int('brightness-warmth', 0);
-    await sleep(SETTLE_MS);
+        slider.level.accessible_name === 'Brightness' && slider.settingsItem.label.text === 'Brightness Settings' &&
+        !descendants(slider.menu.actor).some(actor => actor instanceof St.Label && /tint/i.test(actor.text ?? '')));
     // The default minimum is 10 %, so the sliders span 10-100 %.
     slider.level.value = 0.5;
     const levelWritten = s.get_int('brightness-level');
@@ -9472,23 +9513,13 @@ async function testBrightness() {
         levelWritten === 55 && Math.abs(mainAfterMenu - 0.5) < 1e-9 &&
         slider.level.value === 1 && slider.slider.value === 1,
         `written=${levelWritten} main=${mainAfterMenu} menu=${slider.level.value}`);
-    check('brightness: at 100 % with no tint, the layer is on top and has no monitor overlays',
+    check('brightness: at 100 %, the layer is on top, holds only the dimming layer and no monitor overlays',
         global.stage.get_last_child() === brightnessLayer() &&
-        warmthOverlays().length === 0 && dimOverlays().length === 0);
+        brightnessLayer().get_n_children() === 1 && dimOverlays().length === 0);
 
     const monitors = Main.layoutManager.monitors;
     const covers = (overlay, m) => overlay.x === m.x && overlay.y === m.y &&
         overlay.width === m.width && overlay.height === m.height;
-    s.set_int('brightness-warmth', 50);
-    await sleep(SETTLE_MS);
-    check('brightness: warmth at full brightness adds only a subtle tint, not dimming',
-        warmthOverlays().length === monitors.length && dimOverlays().length === 0 &&
-        warmthOverlays().every((tint, i) => covers(tint, monitors[i]) && tint.opacity === 32));
-    check('brightness: tint is stacked below the neutral dimming layer',
-        brightnessLayer().get_children()[0] === brightnessChildLayer('froonty-brightness-tint-layer') &&
-        brightnessLayer().get_children()[1] === brightnessChildLayer('froonty-brightness-dim-layer'));
-
-    s.set_int('brightness-warmth', 0);
     s.set_int('brightness-level', 40);
     await sleep(SETTLE_MS);
     // The test session's virtual monitors are not built-in panels, so
@@ -9497,14 +9528,6 @@ async function testBrightness() {
         dimOverlays().length === monitors.length &&
         dimOverlays().every((overlay, i) => covers(overlay, monitors[i]) && overlay.opacity === 153),
         dimOverlays().map(o => `${o.x},${o.y} ${o.width}x${o.height} @${o.opacity}`).join('; '));
-    s.set_int('brightness-warmth', 50);
-    await sleep(SETTLE_MS);
-    check('brightness: tint remains independent while dimming is active',
-        warmthOverlays().length === monitors.length &&
-        warmthOverlays().every((tint, i) => covers(tint, monitors[i]) && tint.opacity === 32) &&
-        dimOverlays().every(overlay => overlay.opacity === 153));
-    s.set_int('brightness-warmth', 0);
-    await sleep(SETTLE_MS);
     check('brightness: the slider follows the setting (40 % between 10 and 100 %)',
         Math.abs(slider.slider.value - 30 / 90) < 0.001, `${slider.slider.value}`);
     const m = monitors[0];
@@ -9568,17 +9591,667 @@ async function testBrightness() {
     await sleep(SETTLE_MS);
     check('brightness: off takes everything away again',
         !brightnessLayer() && brightnessSliders().length === 0 && menuActors() === menusBefore);
-    for (const key of [
-        'brightness-enabled', 'brightness-level', 'brightness-min', 'brightness-monitors',
-        'brightness-warmth',
-    ])
+    for (const key of ['brightness-enabled', 'brightness-level', 'brightness-min', 'brightness-monitors'])
         s.reset(key);
     await sleep(SETTLE_MS);
+}
+
+// Horizon briefings on a desktop card (360 px, a maximum height, more
+// briefings than fit) and in the tab's scroll: each text shows 3 lines cut
+// with "…", titles wrap whole. Both used to shrink to one line, because a
+// scroll view's content gets its minimum height.
+async function testWidgetsNews() {
+    const {HorizonView} = await import(`file://${extension().path}/features/horizon/view.js`);
+    const {Emitter} = await import(`file://${extension().path}/core/emitter.js`);
+    const service = new Emitter();
+    service.triggerRefresh = () => {};
+    const paragraph = 'A briefing paragraph long enough to need far more than three lines ' +
+        'in a card this narrow, so that the cut with an ellipsis can be seen. '.repeat(3);
+    service.items = Array.from({length: 6}, (_, i) => ({
+        title: `Headline ${i + 1}: long enough to wrap onto a second line in a card this narrow`,
+        url: 'https://example.com',
+        summary: paragraph,
+    }));
+    const labels = (view, style) => descendants(view.actor)
+        .filter(actor => actor instanceof St.Label && actor.has_style_class_name(style));
+    const lineCount = label => Math.round(label.height / label.get_preferred_height(-1)[1]);
+    const measure = view => {
+        const summaries = labels(view, 'froonty-widget-item-summary');
+        const titles = labels(view, 'froonty-widget-item-title');
+        return {
+            summaryLines: summaries.map(lineCount),
+            cut: summaries.every(label => label.clutter_text.get_layout().is_ellipsized()),
+            titleLines: titles.map(lineCount),
+            titlesWhole: titles.every(label => !label.clutter_text.get_layout().is_ellipsized()),
+        };
+    };
+
+    const card = new St.BoxLayout({style_class: 'froonty-desktop-widget froonty-desktop-news', vertical: true, x: 80, y: 80});
+    const desktop = new HorizonView(null, service, {refresh: false});
+    card.add_child(desktop.actor);
+    Main.layoutManager.uiGroup.add_child(card);
+    const tabScroll = new St.ScrollView({
+        hscrollbar_policy: St.PolicyType.NEVER, x: 500, y: 80, width: 420, height: 300,
+    });
+    const tabBox = new St.BoxLayout({vertical: true, x_expand: true});
+    const tab = new HorizonView(null, service, {scroll: false});
+    tabBox.add_child(tab.actor);
+    tabScroll.child = tabBox;
+    Main.layoutManager.uiGroup.add_child(tabScroll);
+    try {
+        await sleep(SETTLE_MS);
+        for (const [where, view] of [['desktop card', desktop], ['tab', tab]]) {
+            const m = measure(view);
+            check(`widgets news (${where}): each briefing shows 3 lines, cut with "…"`,
+                m.summaryLines.length === 6 && m.summaryLines.every(n => n === 3) && m.cut,
+                JSON.stringify(m));
+            check(`widgets news (${where}): titles wrap whole`,
+                m.titleLines.every(n => n >= 2) && m.titlesWhole, JSON.stringify(m));
+        }
+        const headlines = view => descendants(view.actor).filter(a => a instanceof St.Button &&
+            a.has_style_class_name('froonty-widget-item'));
+        desktop.setActions(false);
+        const off = headlines(desktop).every(row => !row.reactive) &&
+            descendants(desktop.actor).some(a => a instanceof St.ScrollView && a.reactive);
+        desktop.setActions(true);
+        check('widgets news: with clicks off, the headlines take no pointer and the card still scrolls; back on, they do',
+            headlines(desktop).length === 6 && off && headlines(desktop).every(row => row.reactive));
+        const refreshIn = view => descendants(view.actor)
+            .some(actor => actor instanceof St.Button && actor.label === 'Refresh');
+        check('widgets news: Refresh in the tab, none on the desktop card',
+            refreshIn(tab) && !refreshIn(desktop));
+    } finally {
+        desktop.destroy();
+        tab.destroy();
+        card.destroy();
+        tabScroll.destroy();
+    }
+}
+
+// The desktop items: each at its own position and size
+// (widgets-desktop-positions), never overlapping, clear of the dock, or
+// above a fixed dock that does not fill its strip. With Desktop Icons (Ubuntu's session runs it)
+// the layer is right above its window and below every other window, also
+// after a restack, so the pointer reaches the cards; without it, on the
+// background group. The geometry for Settings' picture follows.
+async function testDesktopPins() {
+    const s = settings();
+    const KEY = 'widgets-desktop-positions';
+    // Desktop Icons' own mark on its desktop windows.
+    const isIcons = actor => Boolean(actor.meta_window?.customJS_ding?.keepAtBottom);
+    // Desktop Icons replaces global.get_window_actors() to leave its own
+    // window out, so the window group is read instead.
+    const windowActors = () => global.window_group.get_children()
+        .filter(actor => actor instanceof Meta.WindowActor);
+    const findLayer = () => descendants(global.window_group)
+        .find(actor => actor instanceof St.Widget && actor.has_style_class_name?.('froonty-desktop-widgets'));
+    const card = id => descendants(findLayer() ?? new St.Widget())
+        .find(actor => actor.has_style_class_name?.(`froonty-desktop-${id}`)) ?? null;
+    const cards = () => descendants(findLayer() ?? new St.Widget())
+        .filter(actor => actor.has_style_class_name?.('froonty-desktop-widget'));
+    const r = b => [b.x1, b.y1, b.x2, b.y2].map(Math.round);
+    // x and y: per ten thousand of the room left to the item (placement.js).
+    const place = (id, x, y, width = 360, height = id === 'markets' ? 0 : 420) => {
+        const placement = s.get_value(KEY).deepUnpack();
+        placement[id] = [x, y, width, height];
+        s.set_value(KEY, new GLib.Variant('a{s(iiii)}', placement));
+    };
+    // Its window comes some seconds after the session starts.
+    if (Main.extensionManager.lookup('ding@rastersoft.com'))
+        await waitFor(() => windowActors().some(isIcons), 20000);
+    s.set_boolean('widgets-enabled', true);
+    s.set_boolean('widgets-news-pin-desktop', true);
+    await sleep(SETTLE_MS);
+    try {
+        const layer = findLayer();
+        const area = Main.layoutManager.getWorkAreaForMonitor(Main.layoutManager.primaryIndex);
+        const [ax, ay, ax2, ay2] = [area.x, area.y, area.x + area.width, area.y + area.height];
+        const news = r(boxOf(card('news')));
+        check('desktop pins: Horizon starts right at the primary work area\'s top-left corner',
+            news[0] === ax && news[1] === ay, `news ${news} area ${ax},${ay}`);
+        const dock = Main.uiGroup.get_children().find(actor => actor.name === 'dashtodockContainer');
+        if (dock?.visible) {
+            const d = r(boxOf(dock));
+            check('desktop pins: clear of the dock',
+                news[2] <= d[0] || news[0] >= d[2] || news[3] <= d[1] || news[1] >= d[3],
+                `news ${news} dock ${d}`);
+        }
+
+        const topIcons = () => windowActors().filter(isIcons).at(-1);
+        const icons = topIcons();
+        // The topmost Desktop Icons window, found again: a restack can
+        // reorder its windows (one per monitor).
+        const stackedRight = () => {
+            const icons = topIcons();
+            const parent = icons.get_parent();
+            const order = parent.get_children();
+            const at = order.indexOf(layer);
+            return layer.get_parent() === parent && layer.get_previous_sibling() === icons &&
+                windowActors().every(a => isIcons(a) ? order.indexOf(a) < at : order.indexOf(a) > at);
+        };
+        if (icons) {
+            check('desktop pins: with Desktop Icons, right above its window, below every other window',
+                stackedRight(), layer.get_parent()?.toString());
+            icons.meta_window.lower();
+            icons.meta_window.raise();
+            await sleep(SETTLE_MS);
+            check('desktop pins: still there after a restack', stackedRight());
+        } else {
+            check('desktop pins: without Desktop Icons, on the background group',
+                layer.get_parent() === Main.layoutManager._backgroundGroup);
+        }
+
+        const fb = boxOf(card('news'));
+        const [cx, cy] = [(fb.x1 + fb.x2) / 2, (fb.y1 + fb.y2) / 2];
+        const covered = windowActors().filter(a => !isIcons(a) && a.visible)
+            .some(a => {
+                const b = boxOf(a);
+                return cx >= b.x1 && cx < b.x2 && cy >= b.y1 && cy < b.y2;
+            });
+        const picked = global.stage.get_actor_at_pos(Clutter.PickMode.REACTIVE, cx, cy);
+        check('desktop pins: the pointer over a card reaches the card (clicks, scrolling)',
+            covered || layer.contains(picked),
+            covered ? 'note: a test window covers the card' : `picked ${picked}`);
+
+        // The tab and the desktop have their own switches.
+        s.set_boolean('widgets-enabled', false);
+        await sleep(SETTLE_MS);
+        check('desktop pins: the Widgets tab off, the card stays on the desktop',
+            cards().length === 1 && findLayer()?.visible, `${cards().length} cards`);
+        s.set_boolean('widgets-desktop-enabled', false);
+        await sleep(SETTLE_MS);
+        check('desktop pins: "Show widgets on the desktop" off takes them all away',
+            cards().length === 0 && !findLayer()?.visible, `${cards().length} cards`);
+        s.set_boolean('widgets-desktop-enabled', true);
+
+        // Each its own corner; a shared corner stacks, by shift, Markets first.
+        s.set_boolean('widgets-markets-pin-desktop', true);
+        await sleep(SETTLE_MS);
+        const m0 = r(boxOf(card('markets')));
+        const n0 = r(boxOf(card('news')));
+        check('desktop pins: by default Markets and Horizon stack in the top-left corner, Markets first',
+            m0[0] === ax && m0[1] === ay && n0[0] === ax && n0[1] === m0[3] + 12, `markets ${m0} news ${n0}`);
+        check('desktop pins: a card is as wide as its width, whatever its content (360 px, 386 outside)',
+            m0[2] - m0[0] === 386 && n0[2] - n0[0] === 386, `markets ${m0} news ${n0}`);
+        // Horizon right of Markets, at the same height: it stays there.
+        const right = Math.round((m0[2] + 12 - ax) / (area.width - 386) * 10000);
+        place('news', right, 0);
+        await sleep(SETTLE_MS);
+        const n1 = r(boxOf(card('news')));
+        check('desktop pins: Horizon placed right of Markets stays beside it, tops lined up',
+            Math.abs(n1[0] - (m0[2] + 12)) <= 1 && n1[1] === ay && r(boxOf(card('markets')))[0] === ax,
+            `markets ${m0} news ${n1}`);
+        place('markets', 10000, 0);
+        place('news', 0, 0);
+        await sleep(SETTLE_MS);
+        const m1 = r(boxOf(card('markets')));
+        check('desktop pins: Markets at the right edge', m1[2] === ax2 && m1[1] === ay, `markets ${m1}`);
+        place('markets', 10000, 10000);
+        await sleep(SETTLE_MS);
+        const corner = r(boxOf(card('markets')));
+        check('desktop pins: Markets in the bottom-right corner of the work area',
+            corner[2] === ax2 && corner[3] === ay2, `${corner} area ${ax},${ay}-${ax2},${ay2}`);
+        place('markets', 0, 5000);
+        place('news', 0, 5000);
+        await sleep(SETTLE_MS);
+        const boxes = cards().map(a => r(boxOf(a)));
+        const [[a1, b1, c1, d1], [a2, b2, c2, d2]] = boxes;
+        check('desktop pins: both placed at the same spot: one under the other, never overlapping, inside the area',
+            boxes.length === 2 && (c1 <= a2 || c2 <= a1 || d1 <= b2 || d2 <= b1) &&
+            boxes.every(([x1, y1, x2, y2]) => x1 >= ax && y1 >= ay && x2 <= ax2 && y2 <= ay2), JSON.stringify(boxes));
+        place('news', 0, 0, 500, 200);
+        await sleep(SETTLE_MS);
+        const sized = r(boxOf(card('news')));
+        check('desktop pins: a size of its own: 500 px wide, at most 200 px tall (padding and border outside)',
+            sized[2] - sized[0] === 526 && sized[3] - sized[1] <= 200, `${sized}`);
+        s.reset(KEY);
+        await sleep(SETTLE_MS);
+        const geometry = s.get_value('widgets-desktop-geometry').deepUnpack();
+        const mb = r(boxOf(card('markets')));
+        check('desktop pins: the geometry for Settings\' picture: the work area and each shown item\'s box',
+            JSON.stringify(geometry.work) === JSON.stringify([ax, ay, area.width, area.height]) &&
+            JSON.stringify(geometry.markets) === JSON.stringify([mb[0], mb[1], mb[2] - mb[0], mb[3] - mb[1]]) &&
+            !Object.keys(geometry).some(id => id.startsWith('sticky:')), JSON.stringify(geometry));
+
+        // A fixed dock in part of its strip (the Ubuntu dock not filling the
+        // height, as the owner has it): the strip above it is used, cut at
+        // its top. Without a dock here, a stand-in named as its container,
+        // reserving its strip as a fixed dock does, 200 px under the top.
+        if (!dock) {
+            const monitor = Main.layoutManager.primaryMonitor;
+            const top = ay + 200;
+            const fake = new St.Widget({name: 'dashtodockContainer', x: monitor.x,
+                y: top, width: 60, height: monitor.y + monitor.height - top});
+            Main.layoutManager.addChrome(fake, {affectsStruts: true});
+            await sleep(1000);
+            try {
+                const work = Main.layoutManager.getWorkAreaForMonitor(Main.layoutManager.primaryIndex);
+                const d = r(boxOf(fake));
+                const m = r(boxOf(card('markets')));
+                const n = r(boxOf(card('news')));
+                const clear = b => b[2] <= d[0] || b[0] >= d[2] || b[3] <= d[1] || b[1] >= d[3];
+                check('desktop pins: above a fixed dock that does not fill its strip, from the screen\'s edge, cut at its top; the next beside it',
+                    work.x === monitor.x + 60 && m[0] === monitor.x && m[3] <= d[1] && clear(m) && clear(n) &&
+                    n[1] === ay && n[0] >= m[2], `work x ${work.x} markets ${m} news ${n} dock ${d}`);
+            } finally {
+                Main.layoutManager.removeChrome(fake);
+                fake.destroy();
+                await sleep(500);
+            }
+        }
+    } finally {
+        s.reset(KEY);
+        s.reset('widgets-news-pin-desktop');
+        s.reset('widgets-markets-pin-desktop');
+        s.reset('widgets-desktop-enabled');
+        s.reset('widgets-enabled');
+        await sleep(SETTLE_MS);
+    }
+}
+
+// The "Desktop widgets" panic button: each click to the next state, shown
+// with scrolling and clicks, with scrolling only, hidden, and back; the
+// same settings as Settings → Widgets → On the desktop. Checked while
+// hidden.
+async function testDesktopWidgetsButton() {
+    const s = settings();
+    const cards = () => descendants(global.window_group)
+        .filter(actor => actor.has_style_class_name?.('froonty-desktop-widget') && actor.mapped);
+    s.set_boolean('widgets-news-pin-desktop', true);
+    s.set_strv('panic-buttons', ['desktop-widgets']);
+    await sleep(SETTLE_MS);
+    island().expand();
+    await sleep(animationWait());
+    try {
+        const [button] = island()._hub._panicBar._buttons;
+        const read = () => ({
+            enabled: s.get_boolean('widgets-desktop-enabled'),
+            actions: s.get_boolean('widgets-desktop-actions'),
+            icon: button.actor.child.icon_name,
+            checked: button.actor.checked,
+            cards: cards().length,
+            name: button.actor.accessible_name,
+        });
+        const expect = (state, want) => {
+            const got = read();
+            check(`desktop widgets button: ${state}`,
+                Object.entries(want).every(([key, value]) => got[key] === value), JSON.stringify(got));
+        };
+        expect('at first, shown with scrolling and clicks', {enabled: true, actions: true,
+            icon: 'user-desktop-symbolic', checked: false, cards: 1,
+            name: 'Desktop widgets: scrolling and clicks. Click for scrolling only'});
+        await clickActor(button.actor);
+        await sleep(SETTLE_MS);
+        expect('a click: still shown, scrolling only', {enabled: true, actions: false,
+            icon: 'view-reveal-symbolic', checked: false, cards: 1,
+            name: 'Desktop widgets: scrolling only. Click to hide them'});
+        await clickActor(button.actor);
+        await sleep(SETTLE_MS);
+        expect('another: hidden, checked', {enabled: false, icon: 'view-conceal-symbolic', checked: true,
+            cards: 0, name: 'Desktop widgets hidden. Click to show them'});
+        await clickActor(button.actor);
+        await sleep(SETTLE_MS);
+        expect('another: shown again, with clicks', {enabled: true, actions: true,
+            icon: 'user-desktop-symbolic', checked: false, cards: 1});
+    } finally {
+        island().collapse();
+        await sleep(animationWait());
+        for (const key of ['panic-buttons', 'widgets-desktop-enabled', 'widgets-desktop-actions',
+            'widgets-news-pin-desktop'])
+            s.reset(key);
+        await sleep(SETTLE_MS);
+    }
+}
+
+// The Markets and Horizon panic buttons: with Markets shown nowhere, a
+// click opens its menu; a right-click opens Horizon's. Their toggles show
+// a card (turning on what it needs) and their choices set the key. No
+// refresh is started (Horizon's would run a subprocess).
+async function testCardPanicButtons() {
+    const s = settings();
+    s.set_strv('panic-buttons', ['markets-refresh', 'horizon-refresh']);
+    s.set_boolean('widgets-enabled', false);
+    await sleep(SETTLE_MS);
+    island().expand();
+    await sleep(animationWait());
+    const newMenu = async open => {
+        const before = new Set(island()._menus);
+        await open();
+        await sleep(SETTLE_MS);
+        return [...island()._menus].find(menu => !before.has(menu)) ?? null;
+    };
+    const toggles = menu => (menu ? descendants(menu.actor).filter(a => typeof a.setChecked === 'function') : []);
+    const read = menu => toggles(menu).map(item => [item.label.text, item.checked]);
+    const toggle = (menu, text) => toggles(menu).find(item => item.label.text === text);
+    try {
+        const [markets, horizon] = island()._hub._panicBar._buttons;
+        check('markets button: shown nowhere, it says so',
+            markets.actor.accessible_name === 'Markets shows nowhere. Click to choose where',
+            markets.actor.accessible_name);
+        let menu = await newMenu(() => clickActor(markets.actor));
+        const refresh = menu?.items.find(item => item.label?.text === 'Refresh now');
+        check('markets button: a click opens its menu, Refresh now dimmed; where it shows, live prices, the span',
+            refresh && !refresh.sensitive && JSON.stringify(read(menu)) === JSON.stringify([
+                ['In the Widgets tab', false], ['On the desktop', false], ['Live prices', true],
+                ['Today', true], ['5 days', false], ['1 month', false], ['6 months', false], ['1 year', false]]),
+            JSON.stringify(read(menu)));
+        await clickActor(toggle(menu, 'On the desktop'));
+        await clickActor(toggle(menu, '1 month'));
+        await sleep(SETTLE_MS);
+        check('markets menu: On the desktop pins the card and shows the desktop widgets; 1 month is the span',
+            s.get_boolean('widgets-markets-pin-desktop') && s.get_boolean('widgets-desktop-enabled') &&
+            s.get_string('widgets-markets-range') === '1mo' && toggle(menu, '1 month')?.checked &&
+            !toggle(menu, 'Today')?.checked && menu.isOpen,
+            JSON.stringify(read(menu)));
+        menu?.close();
+        await sleep(animationWait());
+
+        menu = await newMenu(() => rightClickActor(horizon.actor));
+        check('horizon button: a right-click opens its menu with where it shows and the AI',
+            JSON.stringify(read(menu).map(([text]) => text)) === JSON.stringify(['In the Widgets tab',
+                'On the desktop', 'This computer (Writing’s model)', 'ChatGPT plan', 'API key',
+                'Horizon’s own setting']),
+            JSON.stringify(read(menu)));
+        await clickActor(toggle(menu, 'In the Widgets tab'));
+        await clickActor(toggle(menu, 'API key'));
+        await sleep(SETTLE_MS);
+        check('horizon menu: In the Widgets tab turns the tab on; API key is the AI',
+            s.get_boolean('widgets-enabled') && s.get_boolean('widgets-news-enabled') &&
+            s.get_string('horizon-ai') === 'api' && !toggle(menu, 'This computer (Writing’s model)')?.checked,
+            JSON.stringify(read(menu)));
+        menu?.close();
+        await sleep(animationWait());
+    } finally {
+        island().collapse();
+        await sleep(animationWait());
+        for (const key of ['panic-buttons', 'widgets-enabled', 'widgets-desktop-enabled', 'widgets-markets-pin-desktop',
+            'widgets-markets-range', 'widgets-news-enabled', 'horizon-ai', 'markets-enabled', 'horizon-enabled'])
+            s.reset(key);
+        await sleep(SETTLE_MS);
+    }
+}
+
+// The desktop Markets card shows 8 rows and scrolls the rest; fewer show
+// whole. A fake service, so no request leaves the test.
+async function testDesktopMarketsRows() {
+    const {MarketsView, MAX_ROWS} = await import(`file://${extension().path}/features/markets/view.js`);
+    const {Emitter} = await import(`file://${extension().path}/core/emitter.js`);
+    const measure = async count => {
+        const service = new Emitter();
+        service.refreshing = false;
+        service.rows = Array.from({length: count}, (_, i) =>
+            ({symbol: `S${i}`, reading: null, error: 'offline', stale: false}));
+        const card = new St.BoxLayout({style_class: 'froonty-desktop-widget froonty-desktop-markets',
+            vertical: true, x: 80, y: 80});
+        const view = new MarketsView(service, {scroll: true});
+        card.add_child(view.actor);
+        Main.layoutManager.uiGroup.add_child(card);
+        await sleep(SETTLE_MS);
+        const scroll = descendants(view.actor).find(a => a instanceof St.ScrollView);
+        const rows = view._list.get_children();
+        const height = n => rows.slice(0, n).reduce((sum, row) => sum + row.height, 0) +
+            view._list.layout_manager.spacing * (n - 1);
+        view.setActions(false);
+        const scrollOnly = rows.every(row => !row.reactive) && scroll.reactive;
+        view.setActions(true);
+        const result = {shown: Math.round(scroll.height), eight: Math.round(height(Math.min(count, MAX_ROWS))),
+            all: Math.round(height(count)), scrollOnly, clickable: rows.every(row => row.reactive)};
+        view.destroy();
+        card.destroy();
+        return result;
+    };
+    const many = await measure(12);
+    const few = await measure(5);
+    check('desktop markets: 8 rows show and the rest scroll; 5 show whole',
+        MAX_ROWS === 8 && many.shown === many.eight && many.all > many.shown && few.shown === few.all,
+        JSON.stringify({many, few}));
+    check('desktop markets: with clicks off, the rows take no pointer and the list still scrolls; back on, they do',
+        many.scrollOnly && many.clickable, JSON.stringify(many));
+
+    // Open or Closed after the time: by each reading's session; FRED's
+    // daily closes have none.
+    const {parseYahooChart} = await import(`file://${extension().path}/features/markets/sources.js`);
+    const nowS = Math.floor(Date.now() / 1000);
+    const chart = (start, end) => parseYahooChart(JSON.stringify({chart: {result: [{
+        meta: {symbol: 'X', shortName: 'X', range: '1d', regularMarketPrice: 10, previousClose: 9,
+            regularMarketTime: nowS - 60, gmtoffset: 0, currentTradingPeriod: {regular: {start, end}}},
+        timestamp: [nowS - 600, nowS - 60],
+        indicators: {quote: [{close: [9.5, 10]}]},
+    }]}}));
+    const service = new Emitter();
+    service.refreshing = false;
+    service.range = '1d';
+    service.rows = [
+        {symbol: 'OPEN', reading: chart(nowS - 3600, nowS + 3600), error: '', stale: false},
+        {symbol: 'SHUT', reading: chart(nowS - 7200, nowS - 3600), error: '', stale: false},
+        {symbol: 'FRED', reading: {...chart(nowS - 3600, nowS + 3600), session: null, source: 'fred'}, error: '', stale: false},
+    ];
+    const card = new St.BoxLayout({style_class: 'froonty-desktop-widget froonty-desktop-markets', vertical: true});
+    const view = new MarketsView(service, {scroll: true});
+    card.add_child(view.actor);
+    Main.layoutManager.uiGroup.add_child(card);
+    await sleep(SETTLE_MS);
+    const details = descendants(view.actor).filter(a => a instanceof St.Label &&
+        a.has_style_class_name('froonty-markets-detail')).map(a => a.text);
+    view.destroy();
+    card.destroy();
+    check('desktop markets: Open or Closed right after the time, by the market\'s session, then the source; none for FRED',
+        /^\S+ · Open · Yahoo$/.test(details[0]) && /^\S+ · Closed · Yahoo$/.test(details[1]) &&
+            !/Open|Closed/.test(details[2]) && / · FRED daily close$/.test(details[2]),
+        JSON.stringify(details));
+}
+
+// The System card: Btop's chosen readings on the desktop, each with its
+// low and high over 30 minutes and a graph; the history outlives a screen
+// lock and goes when the card is switched off.
+async function testDesktopSystem() {
+    const s = settings();
+    const systemCard = () => descendants(global.window_group)
+        .find(actor => actor.has_style_class_name?.('froonty-system')) ?? null;
+    // One grid: each part of every row, by its class, in row order.
+    const parts = styleClass => systemCard()
+        ? descendants(systemCard()).filter(actor => actor.has_style_class_name?.(styleClass)) : [];
+    const texts = styleClass => parts(styleClass).map(actor => actor.text);
+    const rows = () => texts('froonty-system-name');
+    const history = () => texts('froonty-system-detail');
+    s.set_strv('widgets-system-metrics', ['ram-usage', 'cpu-load']);
+    s.set_int('widgets-system-interval', 2);
+    s.set_boolean('widgets-system-pin-desktop', true);
+    try {
+        const read = await waitFor(() => rows().length === 2 &&
+            /%$/.test(texts('froonty-system-value')[1] ?? '') &&
+            /%.*%/.test(history()[1] ?? ''), 10000);
+        check('desktop system: the chosen readings, in Btop\'s order, with a value and a 30-minute low and high',
+            read && rows().join() === 'CPU load,RAM usage' && parts('froonty-system-graph').length === 2,
+            JSON.stringify([rows(), texts('froonty-system-value'), history()]));
+        const graphX = parts('froonty-system-graph').map(graph => Math.round(boxOf(graph).x1));
+        check('desktop system: the graphs line up, whatever the names\' lengths',
+            graphX.length === 2 && graphX[0] === graphX[1], JSON.stringify(graphX));
+        // Graph, name, value: the values right-aligned, ending at the card's edge.
+        s.set_string('widgets-system-layout', 'graph-name-value');
+        await sleep(SETTLE_MS * 3);
+        const list = parts('froonty-system-list')[0];
+        const lb = boxOf(list);
+        const inner = Math.round(lb.x2 - list.get_theme_node().get_padding(St.Side.RIGHT));
+        const valueEnds = parts('froonty-system-value').map(v => Math.round(boxOf(v).x2));
+        const graphStarts = parts('froonty-system-graph').map(g => Math.round(boxOf(g).x1));
+        check('desktop system: graph, name, value: the values end at the card\'s edge, the graphs still line up',
+            valueEnds.every(x => Math.abs(x - inner) <= 1) && graphStarts[0] === graphStarts[1],
+            JSON.stringify({valueEnds, inner, graphStarts}));
+        s.reset('widgets-system-layout');
+
+        extension().stateObj._isSessionLocked = () => true;
+        await setExtensionEnabled(false);
+        await setExtensionEnabled(true);
+        delete extension().stateObj._isSessionLocked;
+        await waitFor(() => rows().length === 2);
+        check('desktop system: after a screen lock the card comes back with its history',
+            /%.*%/.test(history()[1] ?? ''), JSON.stringify(history()));
+
+        // The module the extension loaded (same URL), whose history is shared.
+        const {SystemHistoryService} = await import(`file://${extension().path}/features/widgets/system/service.js`);
+        const probe = new SystemHistoryService(s);
+        const kept = probe.history('ram-usage')?.points.length ?? 0;
+        s.set_boolean('widgets-system-pin-desktop', false);
+        await sleep(SETTLE_MS);
+        check('desktop system: switched off it goes, and its history with it',
+            kept > 0 && !systemCard() && probe.history('ram-usage') === null,
+            `kept=${kept} card=${Boolean(systemCard())}`);
+        probe.stop();
+    } finally {
+        delete extension().stateObj?._isSessionLocked;
+        for (const key of ['widgets-system-pin-desktop', 'widgets-system-metrics', 'widgets-system-interval',
+            'widgets-system-layout'])
+            s.reset(key);
+        await sleep(SETTLE_MS);
+    }
+}
+
+// Notes pinned to the desktop: a sticky per pinned note, in its colour,
+// with its text drawn as the island draws it; "Widget Lock" in Quick
+// Settings while something shows, which makes the layer ignore the
+// pointer; a click on a sticky does nothing (owner's choice: scrolling only).
+async function testDesktopStickies() {
+    const s = settings();
+    const hub = island()._hub;
+    const stickies = () => descendants(global.window_group)
+        .filter(actor => actor instanceof St.BoxLayout && actor.has_style_class_name('froonty-desktop-sticky') &&
+            actor.get_parent()?.visible);
+    const lockToggle = () => quickSettingsMenu()._grid.get_children()
+        .find(item => item.title === 'Widget Lock') ?? null;
+    const reaches = actor => {
+        const b = boxOf(actor);
+        const [x, y] = [(b.x1 + b.x2) / 2, (b.y1 + b.y2) / 2];
+        return actor.contains(global.stage.get_actor_at_pos(Clutter.PickMode.REACTIVE, x, y));
+    };
+
+    hub.select('notes');
+    const service = hub._entries.get('notes').service;
+    await service.whenReady();
+    const created = [];
+    const create = async () => {
+        await service.create();
+        created.push(service.selected);
+        return service.selected;
+    };
+    try {
+        const name = await create();
+        service.setText('# Groceries\n\n- [ ] milk\n- [x] eggs');
+        await service.setColor('green');
+        await service.flush();
+        await service.setPinned(name, true);
+        await waitFor(() => stickies().length === 1, 10000);
+        const [sticky] = stickies();
+        const text = descendants(sticky ?? new St.Widget())
+            .find(actor => actor instanceof St.Label && actor.has_style_class_name('froonty-desktop-sticky-text'));
+        check('desktop stickies: a pinned note shows as a card like the widgets\' (not its colour), with its text drawn',
+            sticky?.accessible_name === name && sticky.has_style_class_name('froonty-desktop-widget') &&
+            !sticky.get_style_class_name().includes('froonty-note-color') &&
+            text?.text === 'Groceries\n\n☐  milk\n☑  eggs',
+            `${sticky?.accessible_name} ${JSON.stringify(text?.text)}`);
+        check('desktop stickies: "Widget Lock" is in Quick Settings while it shows', Boolean(lockToggle()));
+
+        const covered = global.window_group.get_children()
+            .some(a => a instanceof Meta.WindowActor && !a.meta_window?.customJS_ding && a.visible && (() => {
+                const b = boxOf(a);
+                const c = boxOf(sticky);
+                return b.x1 < c.x2 && c.x1 < b.x2 && b.y1 < c.y2 && c.y1 < b.y2;
+            })());
+        if (!covered) {
+            const unlocked = reaches(sticky);
+            lockToggle().checked = true;
+            await sleep(SETTLE_MS);
+            const locked = !reaches(sticky) && s.get_boolean('widgets-desktop-locked');
+            lockToggle().checked = false;
+            await sleep(SETTLE_MS);
+            check('desktop stickies: the pointer reaches them, but not with Widget Lock on',
+                unlocked && locked && reaches(sticky), `unlocked=${unlocked} locked=${locked}`);
+
+            // Another note selected first; the sticky is not rebuilt for it.
+            await create();
+            await service.flush();
+            await sleep(SETTLE_MS);
+            const [again] = stickies();
+            check('desktop stickies: a change to another note does not rebuild them', again === sticky);
+            const before = service.selected;
+            await clickActor(again);
+            await sleep(animationWait());
+            check('desktop stickies: a click does nothing: the island stays closed, the note is not opened',
+                !island().expanded && service.selected === before,
+                `expanded=${island().expanded} selected=${service.selected}`);
+            if (island().expanded) {
+                island().collapse();
+                await sleep(animationWait());
+            }
+        }
+
+        await service.setPinned(name, false);
+        await waitFor(() => stickies().length === 0, 10000);
+        check('desktop stickies: unpinned, the sticky and Widget Lock go',
+            stickies().length === 0 && !lockToggle(), `${stickies().length} ${Boolean(lockToggle())}`);
+    } finally {
+        for (const name of created)
+            await service.trash(name); // eslint-disable-line no-await-in-loop
+        s.reset('widgets-desktop-locked');
+        if (island().expanded)
+            island().collapse();
+        await sleep(animationWait());
+    }
 }
 
 // The test session has no backlight, so GNOME's brightness slider is
 // hidden: Night Light stays GNOME's tile and its menu stays closed, with
 // the setting on or off.
+// Night Light's switches in a brightness menu flip without closing it, as
+// its sliders and steppers do. The test session has no Night Light, so the
+// section is put in Software brightness's menu by hand.
+async function testNightLightSwitches() {
+    const s = settings();
+    const part = extension().stateObj._parts.find(p => p.constructor.name === 'NightLightMenu');
+    s.set_boolean('brightness-enabled', true);
+    await sleep(SETTLE_MS);
+    const [slider] = brightnessSliders();
+    const color = new Gio.Settings({schema_id: 'org.gnome.settings-daemon.plugins.color'});
+    const keys = ['night-light-enabled', 'night-light-schedule-automatic', 'night-light-schedule-from',
+        'night-light-schedule-to'];
+    const before = keys.map(key => color.get_value(key));
+    part._wantedHost = () => slider;
+    part._sync();
+    const item = title => descendants(slider.menu.actor).map(a => a._delegate)
+        .find(d => d?.label?.text === title && d._switch);
+    try {
+        Main.panel.statusArea.quickSettings.menu.open();
+        await sleep(animationWait());
+        const states = [];
+        for (const title of ['All day', 'All day', 'Night Light', 'Night Light']) {
+            if (!slider.menu.isOpen) {
+                slider.menu.open();
+                // eslint-disable-next-line no-await-in-loop
+                await sleep(animationWait());
+            }
+            const switchItem = item(title);
+            const was = switchItem?._switch.state;
+            // eslint-disable-next-line no-await-in-loop
+            await clickActor(switchItem);
+            // eslint-disable-next-line no-await-in-loop
+            await sleep(animationWait());
+            states.push(`${title} ${was}→${switchItem?._switch.state} open=${slider.menu.isOpen}`);
+        }
+        check('night light menu: All day and Night Light flip without closing the menu',
+            states.every(state => state.endsWith('open=true') && !/(true→true|false→false)/.test(state)),
+            states.join('; '));
+    } finally {
+        slider.menu.close();
+        Main.panel.statusArea.quickSettings.menu.close();
+        delete part._wantedHost;
+        part._sync();
+        keys.forEach((key, i) => color.set_value(key, before[i]));
+        s.reset('brightness-night-light-all-day');
+        s.reset('brightness-enabled');
+        await sleep(SETTLE_MS);
+    }
+}
+
 async function testNightLightMenu() {
     const s = settings();
     const quickSettings = Main.panel.statusArea.quickSettings;
@@ -9870,6 +10543,9 @@ const ONLY_TESTS = {
     testWriting, testWritingFixes, testStartup, testBrightness, testPadNoiseSlider,
     testTimezonePlanner,
     testFanSliderSettingsButton, testFanLockButton,
+    testWidgetsNews, testDesktopPins, testDesktopStickies, testNightLightSwitches, testDesktopMarketsRows,
+    testDesktopSystem,
+    testDesktopWidgetsButton, testCardPanicButtons,
 };
 
 export async function runAll(outDir) {
@@ -9946,6 +10622,14 @@ export async function runAll(outDir) {
         await testMonitors();
         await testBrightness();
         await testNightLightMenu();
+        await testNightLightSwitches();
+        await testWidgetsNews();
+        await testDesktopPins();
+        await testDesktopStickies();
+        await testDesktopWidgetsButton();
+        await testCardPanicButtons();
+        await testDesktopMarketsRows();
+        await testDesktopSystem();
         await testPadNoiseSlider(outDir);
         await testTimezonePlanner();
         await testMedia(outDir);

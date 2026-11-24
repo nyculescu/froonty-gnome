@@ -48,7 +48,64 @@
     </key>
     <key name="widgets-enabled" type="b">
       <default>true</default>
-      <summary>Show the Widgets tab</summary>
+      <summary>Widgets tab in the island</summary>
+      <description>Only the tab: the desktop widgets follow widgets-desktop-enabled.</description>
+    </key>
+    <key name="widgets-desktop-enabled" type="b">
+      <default>true</default>
+      <summary>Show widgets on the desktop</summary>
+      <description>All of them at once; each also has its own switch (widgets-markets-pin-desktop, widgets-news-pin-desktop, widgets-stickies-on-desktop).</description>
+    </key>
+    <key name="widgets-system-pin-desktop" type="b">
+      <default>false</default>
+      <summary>Show the System widget (Btop's readings) on the desktop</summary>
+    </key>
+    <key name="widgets-system-metrics" type="as">
+      <default>['cpu-load', 'cpu-temp', 'ram-usage', 'net-down', 'net-up']</default>
+      <summary>The readings the System widget shows</summary>
+      <description>Ids from features/widgets/system/metrics.js, shown in its order: cpu-load, cpu-temp, cpu-temp-max, cpu-clock, ram-usage, swap-usage, gpu-load, gpu-temp, gpu-memory, gpu-power, net-down, net-up, disk-used. Only these are read.</description>
+    </key>
+    <key name="widgets-system-interval" type="i">
+      <range min="2" max="60"/>
+      <default>5</default>
+      <summary>System widget refresh interval (s)</summary>
+      <description>How often the System widget reads the computer while it is on the desktop; each reading joins its 30 minutes of history.</description>
+    </key>
+    <key name="widgets-system-period" type="i">
+      <range min="5" max="240"/>
+      <default>30</default>
+      <summary>System widget history (minutes)</summary>
+      <description>The span each reading's graph and its low and high cover.</description>
+    </key>
+    <key name="widgets-system-average" type="s">
+      <choices>
+        <choice value="off"/>
+        <choice value="30"/>
+        <choice value="60"/>
+        <choice value="120"/>
+        <choice value="300"/>
+      </choices>
+      <default>'off'</default>
+      <summary>System widget moving average (s)</summary>
+      <description>The graphs show each reading's trailing average over this many seconds, so quick swings do not hide the trend; off, the readings as they are. The value shown is always the latest reading.</description>
+    </key>
+    <key name="widgets-system-layout" type="s">
+      <choices>
+        <choice value="value-name-graph"/>
+        <choice value="value-graph-name"/>
+        <choice value="name-value-graph"/>
+        <choice value="name-graph-value"/>
+        <choice value="graph-value-name"/>
+        <choice value="graph-name-value"/>
+      </choices>
+      <default>'value-name-graph'</default>
+      <summary>The order of a System widget row's parts</summary>
+      <description>Left to right: value (now), name (with its low and high), graph.</description>
+    </key>
+    <key name="widgets-stickies-on-desktop" type="b">
+      <default>true</default>
+      <summary>Show the notes pinned to the desktop as stickies</summary>
+      <description>While the Notes tab is on.</description>
     </key>
     <key name="widgets-width" type="i">
       <range min="320" max="960"/>
@@ -60,13 +117,52 @@
       <default>340</default>
       <summary>Widgets island height</summary>
     </key>
+    <key name="horizon-enabled" type="b">
+      <default>true</default>
+      <summary>Horizon: news briefings an AI writes</summary>
+      <description>Off, the Horizon card shows neither in the Widgets tab nor on the desktop, and Horizon is not run.</description>
+    </key>
+    <key name="widgets-news-enabled" type="b">
+      <default>true</default>
+      <summary>Show the Horizon card in the Widgets tab</summary>
+    </key>
     <key name="widgets-news-pin-desktop" type="b">
       <default>false</default>
       <summary>Pin the Horizon news card to the desktop background layer</summary>
     </key>
+    <key name="widgets-desktop-positions" type="a{s(iiii)}">
+      <default>{'markets': (0, 0, 360, 0), 'news': (0, 0, 360, 420), 'system': (0, 0, 260, 0)}</default>
+      <summary>Where each desktop item goes, and its size</summary>
+      <description>Item (markets, news, system, or sticky:NOTE for each note pinned to the desktop) → (x, y, width, height). A sticky without an entry starts top right, 300 × 300. x and y are per ten thousand of the room the item can move in on the primary monitor's work area (and the strip beside a dock that covers only part of it): 0 its left or top edge, 10000 its right or bottom edge. Width 200-1200 px; height 120-2000 px, 0 as tall as its content (Markets 8 rows). Items never overlap each other or a dock: one in the way is pushed down. Set by dragging on Settings → Widgets → On the desktop (features/widgets/placement.js).</description>
+    </key>
+    <key name="widgets-desktop-geometry" type="a{s(iiii)}">
+      <default>{}</default>
+      <summary>Internal: the desktop as the Shell last laid it out, for the Settings editor</summary>
+      <description>monitor, work (area) and dock rectangles (x, y, width, height), and each shown item's box.</description>
+    </key>
+    <key name="widgets-desktop-actions" type="b">
+      <default>true</default>
+      <summary>Clicks on the desktop Markets and Horizon cards open their pages</summary>
+      <description>Off, those cards only scroll. The Desktop widgets panic button sets it.</description>
+    </key>
+    <key name="widgets-desktop-locked" type="b">
+      <default>false</default>
+      <summary>Desktop widgets and stickies ignore the pointer</summary>
+      <description>"Widget Lock" in Quick Settings: clicks and scrolling go to the desktop under them.</description>
+    </key>
+    <key name="markets-enabled" type="b">
+      <default>true</default>
+      <summary>Markets: prices and graphs of stocks, indexes, crypto and more</summary>
+      <description>Off, the Markets card shows neither in the Widgets tab nor on the desktop, and nothing is fetched.</description>
+    </key>
+    <key name="markets-live" type="b">
+      <default>true</default>
+      <summary>Live prices: US stocks and ETFs from Alpaca (with its keys), crypto from Coinbase</summary>
+      <description>While the market is open. Off, or when a stream fails, the prices come from Yahoo every minute.</description>
+    </key>
     <key name="widgets-markets-enabled" type="b">
       <default>true</default>
-      <summary>Show stock index graphs in the Widgets tab</summary>
+      <summary>Show the Markets card in the Widgets tab</summary>
     </key>
     <key name="widgets-markets-pin-desktop" type="b">
       <default>false</default>
@@ -74,7 +170,8 @@
     </key>
     <key name="widgets-markets-symbols" type="as">
       <default>['^GSPC', '^IXIC', '^DJI', '^GSPTSE']</default>
-      <summary>Yahoo Finance symbols of the indexes the Markets card shows</summary>
+      <summary>Yahoo Finance symbols the Markets card shows: stocks, ETFs, funds, indexes, crypto, futures, yields</summary>
+      <description>At most 30 are shown; repeats and empty entries are skipped.</description>
     </key>
     <key name="widgets-markets-range" type="s">
       <choices>
@@ -936,7 +1033,7 @@
     <key name="brightness-enabled" type="b">
       <default>false</default>
       <summary>Software display brightness</summary>
-      <description>Dimming slider in Quick Settings for monitors GNOME cannot control. Optional warm tint is adjusted separately. The pointer is not dimmed.</description>
+      <description>Dimming slider in Quick Settings for monitors GNOME cannot control. The pointer is not dimmed.</description>
     </key>
     <key name="brightness-level" type="i">
       <range min="0" max="100"/>
@@ -960,16 +1057,20 @@
       <summary>Monitors software brightness dims</summary>
       <description>external: every monitor but a laptop's built-in screen (all of them on a desktop); built-in: the built-in screen; all: every monitor.</description>
     </key>
-    <key name="brightness-warmth" type="i">
-      <range min="0" max="100"/>
-      <default>0</default>
-      <summary>Warm tint strength (%)</summary>
-      <description>Optional amber tint applied separately from software dimming; 0 disables the tint.</description>
-    </key>
     <key name="brightness-night-light-menu" type="b">
       <default>true</default>
       <summary>Night Light in the brightness menu</summary>
-      <description>The arrow on GNOME's brightness slider opens a menu with the Night Light switch and its warmth; GNOME's Night Light tile leaves Quick Settings. Without GNOME's slider (no backlight), Software brightness's menu holds them. Only with Night Light support.</description>
+      <description>The arrow on GNOME's brightness slider opens a menu with the Night Light switch, its warmth and its schedule (All day, From, To); GNOME's Night Light tile leaves Quick Settings. Without GNOME's slider (no backlight), Software brightness's menu holds them. Only with Night Light support.</description>
+    </key>
+    <key name="brightness-night-light-all-day" type="b">
+      <default>false</default>
+      <summary>Night Light all day</summary>
+      <description>Set from the brightness menu: Night Light's schedule is From = To (all day in GNOME), and brightness-night-light-schedule holds the times to restore when it goes off. Cleared when the schedule is changed elsewhere.</description>
+    </key>
+    <key name="brightness-night-light-schedule" type="(ddb)">
+      <default>(20.0, 6.0, false)</default>
+      <summary>Night Light schedule put aside by All day</summary>
+      <description>From and To in hours from midnight, and whether it was sunset to sunrise, as in org.gnome.settings-daemon.plugins.color.</description>
     </key>
 
     <!-- The Writing tab (docs/features/writing.md) -->

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Extracts structured items from Horizon Markdown briefings.
+// Extracts structured items from Horizon Markdown briefings, as plain text.
 
 export function parseHorizonMarkdown(rawMarkdown) {
     if (!rawMarkdown)
@@ -13,16 +13,19 @@ export function parseHorizonMarkdown(rawMarkdown) {
         if (!current)
             return;
         const {title, url, summary} = current;
-        if (title && url) {
-            items.push({title, url, summary: summary || ''});
-        }
+        if (title && url)
+            items.push({title: plainText(title), url, summary: plainText(summary || '')});
         current = null;
     };
 
     for (const line of lines) {
         const trimmed = line.trim();
-        if (!trimmed)
+        // A blank line ends a briefing's paragraph.
+        if (!trimmed) {
+            if (current)
+                current.inParagraph = false;
             continue;
+        }
 
         // Horizon's own format: "### [Title](url) ⭐️ 8.0/10", then a paragraph.
         const headed = trimmed.match(/^#{2,6}\s*\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/);
@@ -31,12 +34,17 @@ export function parseHorizonMarkdown(rawMarkdown) {
             current = {title: headed[1].trim(), url: headed[2].trim(), summary: '', wantsSummary: true};
             continue;
         }
+        const prose = !/^(#|\*\*|<|---|>|\||[-*]\s*\[)/.test(trimmed);
         if (current?.wantsSummary) {
             current.wantsSummary = false;
-            if (!/^(#|\*\*|<|---|>|\|)/.test(trimmed)) {
-                current.summary = firstSentence(trimmed);
+            if (prose) {
+                current.summary = trimmed;
+                current.inParagraph = true;
                 continue;
             }
+        } else if (current?.inParagraph && prose) {
+            current.summary += ` ${trimmed}`;
+            continue;
         }
 
         const match = trimmed.match(/^[-*]\s*\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)(?:\s*[-–—:]\s*(.*))?$/);
@@ -79,13 +87,19 @@ export function parseHorizonMarkdown(rawMarkdown) {
     return items;
 }
 
-// A Horizon paragraph's first sentence, at most SUMMARY_CHARS long.
-const SUMMARY_CHARS = 220;
-function firstSentence(text) {
-    const end = text.search(/[.!?](\s|$)/);
-    const sentence = end >= 0 ? text.slice(0, end + 1) : text;
-    if (sentence.length <= SUMMARY_CHARS)
-        return sentence;
-    const cut = sentence.slice(0, SUMMARY_CHARS);
-    return `${cut.slice(0, cut.lastIndexOf(' ') > 0 ? cut.lastIndexOf(' ') : SUMMARY_CHARS)}…`;
+const ENTITIES = {amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' '};
+
+// Horizon's Markdown as it reads: backslash escapes (`\(`, `&\#x27;`),
+// then HTML entities, links as their text, no emphasis or code marks.
+export function plainText(text) {
+    return text
+        .replace(/\\([\\`*_{}[\]()#+\-.!|<>~])/g, '$1')
+        .replace(/&#x([0-9a-f]+);/gi, (_m, hex) => String.fromCodePoint(Number.parseInt(hex, 16)))
+        .replace(/&#(\d+);/g, (_m, dec) => String.fromCodePoint(Number.parseInt(dec, 10)))
+        .replace(/&([a-z]+);/gi, (m, name) => ENTITIES[name.toLowerCase()] ?? m)
+        .replace(/\[([^\]]+)\]\([^)\s]+\)/g, '$1')
+        .replace(/\*\*(.+?)\*\*/g, '$1')
+        .replace(/`([^`]+)`/g, '$1')
+        .replace(/\s+/g, ' ')
+        .trim();
 }

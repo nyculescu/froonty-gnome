@@ -48,6 +48,14 @@ test('every catalog entry has an id, an icon and a translatable title', () => {
     }
 });
 
+test('Refresh Markets and Refresh Horizon are offered, their menu named in Settings', () => {
+    for (const id of ['markets-refresh', 'horizon-refresh']) {
+        const entry = Catalog.byId(id);
+        eq(entry.description(t => t).includes('Right-click for a menu'), true, id);
+    }
+    eq(Catalog.byId('horizon-refresh').icon, 'application-rss+xml-symbolic');
+});
+
 test('byId finds entries and returns null for unknown ids', () => {
     eq(Catalog.byId('mute-sound').icon, 'audio-volume-muted-symbolic');
     eq(Catalog.byId('nope'), null);

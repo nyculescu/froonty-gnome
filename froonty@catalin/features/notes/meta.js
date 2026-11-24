@@ -1,9 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Per-folder note metadata: tab order and colours. Pure functions,
-// unit-tested; persisted by store.js as a hidden file next to the notes.
+// Per-folder note metadata: tab order, colours and the notes pinned to the
+// desktop. Pure functions, unit-tested; persisted by store.js as a hidden
+// file next to the notes.
 //
 //   .froonty.json   {"version": 1, "order": ["28.09.26 16.03", "Plan"],
-//                    "colors": {"Plan": "green"}}
+//                    "colors": {"Plan": "green"}, "pinned": ["Plan"]}
+//
+// "pinned" is written only when a note is pinned, so files without pins
+// stay as older versions wrote them.
 //
 // The .md files stay plain Markdown (no front matter), so other editors
 // see only the text. The files on disk decide which notes exist; the
@@ -19,7 +23,7 @@ export const META_FILE = '.froonty.json';
 
 export function emptyMeta() {
     // `extra` has no prototype: a key may be "__proto__".
-    return {version: 1, order: [], colors: {}, extra: Object.create(null)};
+    return {version: 1, order: [], colors: {}, pinned: [], extra: Object.create(null)};
 }
 
 /**
@@ -53,16 +57,19 @@ export function parseMeta(text) {
         if (COLOR_IDS.includes(color) && color !== DEFAULT_COLOR)
             meta.colors[name] = color;
     }
+    if (Array.isArray(data.pinned))
+        meta.pinned = [...new Set(data.pinned.filter(n => typeof n === 'string'))];
     for (const [key, value] of Object.entries(data)) {
-        if (!['version', 'order', 'colors'].includes(key))
+        if (!['version', 'order', 'colors', 'pinned'].includes(key))
             meta.extra[key] = value;
     }
     return {ok: true, meta};
 }
 
 export function serializeMeta(meta) {
-    const {version, order, colors} = meta;
-    return `${JSON.stringify({...meta.extra, version, order, colors}, null, 2)}\n`;
+    const {version, order, colors, pinned} = meta;
+    const pins = pinned.length ? {pinned} : {};
+    return `${JSON.stringify({...meta.extra, version, order, colors, ...pins}, null, 2)}\n`;
 }
 
 /**
@@ -81,14 +88,19 @@ export function colorOf(meta, name) {
     return Object.hasOwn(meta.colors, name) ? meta.colors[name] : DEFAULT_COLOR;
 }
 
-/** Metadata for writing: current display order, colours of existing notes. */
+export function isPinned(meta, name) {
+    return meta.pinned.includes(name);
+}
+
+/** Metadata for writing: current display order, colours and pins of existing notes. */
 export function snapshot(meta, names) {
     const colors = {};
     for (const name of names) {
         if (Object.hasOwn(meta.colors, name))
             colors[name] = meta.colors[name];
     }
-    return {version: 1, order: [...names], colors, extra: Object.assign(Object.create(null), meta.extra)};
+    const pinned = meta.pinned.filter(n => names.includes(n));
+    return {version: 1, order: [...names], colors, pinned, extra: Object.assign(Object.create(null), meta.extra)};
 }
 
 export function withNote(meta, name) {
@@ -97,14 +109,23 @@ export function withNote(meta, name) {
 
 export function withoutNote(meta, name) {
     const {[name]: _removed, ...colors} = meta.colors;
-    return {...meta, order: meta.order.filter(n => n !== name), colors};
+    return {...meta, order: meta.order.filter(n => n !== name), colors,
+        pinned: meta.pinned.filter(n => n !== name)};
 }
 
 export function withRename(meta, from, to) {
     const {[from]: color, ...colors} = meta.colors;
     if (color)
         colors[to] = color;
-    return {...meta, order: meta.order.map(n => n === from ? to : n), colors};
+    return {...meta, order: meta.order.map(n => n === from ? to : n), colors,
+        pinned: meta.pinned.map(n => n === from ? to : n)};
+}
+
+export function withPinned(meta, name, on) {
+    const pinned = meta.pinned.filter(n => n !== name);
+    if (on)
+        pinned.push(name);
+    return {...meta, pinned};
 }
 
 export function withColor(meta, name, color) {

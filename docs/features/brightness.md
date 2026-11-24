@@ -8,11 +8,10 @@ A second brightness slider in Quick Settings, under GNOME's, for monitors
 whose brightness GNOME cannot set: a monitor that `ddcutil` sees but that
 reports DDC/CI as unsupported (some Samsung Smart Monitors), or one behind
 an adapter that does not pass DDC/CI through. Froonty darkens those
-monitors with a neutral dimming layer and, optionally, a separate warm tint.
+monitors with a neutral dimming layer.
 
 It is software dimming: the backlight stays as it is, so it saves no
-power. The default tint is off; when enabled it is an independent, subtle
-amber overlay and does not change the brightness slider's meaning.
+power.
 
 ## 1. Use
 
@@ -24,8 +23,8 @@ does not look like the laptop screen's own slider above it: one monitor
 for **External monitors**, a computer for **Built-in screen**, two
 monitors for **All monitors**. The arrow at its right opens its menu,
 as GNOME's sliders do: **Brightness** (the same level as the slider),
-the **Warm tint**, Night Light when GNOME shows no brightness slider of
-its own (§7), and **Brightness Settings**, Froonty's page.
+Night Light when GNOME shows no brightness slider of its own (§7), and
+**Brightness Settings**, Froonty's page.
 
 - **Monitors:** **External monitors** (the default): every monitor but a
   laptop's built-in screen, so on a desktop all of them. **Built-in
@@ -34,28 +33,20 @@ its own (§7), and **Brightness Settings**, Froonty's page.
   (5-90 %), so a screen never goes black. It is a floor, not an extra
   dimming control: raising it only changes the picture if the current
   Quick Settings level is below the new floor.
-- **Warm tint (%):** off by default; adjust its strength independently of
-  dimming. Its maximum opacity is 25% to avoid a full amber wash.
 
-The slider at its right end (100 %) puts no dimming layer on screen. A
-warm tint can still be active at that level.
+The slider at its right end (100 %) puts no dimming layer on screen.
 
-## 2. Why dimming and tint are separate
+## 2. Warmth comes from Night Light
 
-The software brightness slider still dims with a neutral black layer:
-source-over black attenuates every channel without lifting black levels.
-GNOME's Night Light instead exposes color temperature as a separate warm/
-cold adjustment ([GNOME help](https://help.gnome.org/gnome-help/display-night-light.html));
-Redshift documents color temperature and brightness as distinct adjustments,
-and recommends desktop-integrated color features over gamma-ramp workarounds
-([Redshift README](https://github.com/sharpbracket/redshift#technical-details-gamma-ramps)).
-Froonty's optional tint follows that separation rather than making brightness
-itself change color.
-
-This is still a compositor overlay, not a display color transform: at high
-tint settings even dark colors take on a little amber. Keep the tint at 0
-for neutral color; GNOME Night Light is the better choice for a full
-display-wide color-temperature adjustment.
+Software brightness only dims, with a neutral black layer: source-over
+black attenuates every channel without lifting black levels. It had an
+optional amber overlay ("Warm tint") until 2026-11-20, when it was
+removed (owner: Night Light's warmth is all that's needed). An overlay
+tints even dark colors; GNOME's Night Light changes the display's color
+temperature instead
+([GNOME help](https://help.gnome.org/gnome-help/display-night-light.html)).
+Its switch and warmth are in the brightness menu (§7). A stored
+`brightness-warmth` value from before is left in dconf and unused.
 
 ## 3. How it works
 
@@ -63,12 +54,11 @@ display-wide color-temperature adjustment.
 `extension.js` from `registry.js`'s `PARTS`): it lives while
 Froonty runs and follows `brightness-enabled` itself.
 
-- **The layers:** one `St.Widget` on `global.stage` (not `uiGroup`), with
-  separate tint and dimming child layers. The tint is warm amber and its
-  opacity is capped at 64/255 (25%); the neutral black dimming opacity is
-  255 × (100 − level) / 100. Tint is stacked beneath dimming. The stage
-  layer is raised whenever something is added, so it stays over the top
-  bar, the island, menus and notifications.
+- **The layers:** one `St.Widget` on `global.stage` (not `uiGroup`),
+  holding the dimming layer: per monitor, black at an opacity of
+  255 × (100 − level) / 100. The stage layer is raised whenever
+  something is added, so it stays over the top bar, the island, menus
+  and notifications.
 - **The pointer:** the layer is not reactive and is hidden from picking
   (`Shell.util_set_hidden_from_pick`), so clicks and hover go through.
   GNOME's pointer is not a stage actor (on Wayland usually a hardware
@@ -97,7 +87,8 @@ Froonty runs and follows `brightness-enabled` itself.
 
 Pure logic (targets, opacities, the slider's scale) is in
 `features/brightness/levels.js`, unit-tested in
-`tools/unit/brightness.test.js`.
+`tools/unit/brightness.test.js`; Night Light's schedule steps and All day
+in `schedule.js`, unit-tested in `tools/unit/brightness-schedule.test.js`.
 
 ## 4. Settings
 
@@ -107,8 +98,9 @@ Pure logic (targets, opacities, the slider's scale) is in
 | `brightness-level` | 100 | The level, in percent (0-100; never applied below the minimum) |
 | `brightness-min` | 10 | The slider's left end (5-90) |
 | `brightness-monitors` | `external` | `external`, `built-in` or `all` |
-| `brightness-warmth` | 0 | Optional tint strength (0-100; opacity capped at 25%) |
 | `brightness-night-light-menu` | `true` | Night Light in GNOME's brightness menu (§7) |
+| `brightness-night-light-all-day` | `false` | All day in that menu (§7) |
+| `brightness-night-light-schedule` | `(20.0, 6.0, false)` | The schedule All day put aside: From, To, sunset to sunrise |
 
 ## 5. Limits
 
@@ -158,19 +150,42 @@ brightness.
 - **The menu:** GNOME's brightness slider has a menu of its own (a slider
   per monitor) but shows its arrow only with more than one monitor scale
   (`ui/status/brightness.js`). Froonty turns the arrow on and adds, under
-  GNOME's sliders, a **Night Light** switch, a **Warmth** slider and
-  **Display Settings**. Where GNOME shows no brightness slider (no
-  backlight: a desktop, or the devkit's nested Shell), the switch and
-  slider go in Software brightness's menu instead, above its Brightness
+  GNOME's sliders, a **Night Light** switch, a **Warmth** slider, the
+  schedule (**All day**, **From**, **To**) and **Display Settings**. Where GNOME shows no brightness slider (no
+  backlight: a desktop, or the devkit's nested Shell), Night Light's
+  items go in Software brightness's menu instead, above its Brightness
   Settings, if Software brightness is on. The switch is `night-light-enabled` and the
   slider `night-light-temperature` in
   `org.gnome.settings-daemon.plugins.color`, so GNOME Settings and the
   menu always agree.
-- **Warmth:** 4700 K at the left to 1700 K at the right, in 100 K steps,
-  the range and direction of GNOME Settings' Color Temperature
-  (`levels.js`). As there, it shows only while Night Light is on and
-  inside its schedule; in daytime with "Sunset to Sunrise" it changes
-  nothing on screen.
+- **Warmth:** 6500 K at the left to 1700 K at the right, in 100 K steps
+  (`levels.js`). GNOME Settings' Color Temperature runs the same way but
+  stops at 4700 K; the owner asked for less warmth than that (2026-11-23),
+  and 6500 K is neutral (no warming). The key takes any value; Settings
+  shows one above 4700 K at its left end. As in Settings, it shows only while Night Light is on and
+  inside its schedule; outside it, the slider stores the warmth for the
+  next evening and changes nothing on screen. All day is the way to see
+  it in daytime.
+- **Switches** (Night Light, All day) flip in place: a GNOME menu item's
+  activation closes the whole menu (`PopupMenuBase.itemActivated`), which
+  closed it at every flip (reported 2026-11-23); `testNightLightSwitches`
+  checks it with the section put in Software brightness's menu by hand.
+- **From and To** (added 2026-11-23, user request: adjust the warmth in
+  daytime, with the times in the menu): `night-light-schedule-from` and
+  `-to`, hours from midnight (20.5 is 20:30). Each has hours and minutes
+  between − and + buttons; hours step by 1 round midnight, minutes to
+  the next multiple of 5 round the hour (`schedule.js`). With
+  `night-light-schedule-automatic` on (sunset to sunrise, from GNOME
+  Settings), the times are hidden and the menu says "Sunset to sunrise".
+- **All day:** GNOME keeps Night Light on all day when From equals To
+  (`gsd_night_light_frac_day_is_between` in gnome-settings-daemon).
+  Turning All day on saves From, To and sunset to sunrise in
+  `brightness-night-light-schedule`, turns sunset to sunrise off and sets
+  To to From; the times then show dimmed (what comes back). Off restores
+  the saved schedule. It stays on until turned off, across restarts. If
+  the schedule is changed elsewhere (GNOME Settings), even while
+  Froonty is off, All day ends and keeps the new schedule: the menu
+  checks the schedule when Froonty starts and whenever it changes.
 - **The tile:** GNOME's Night Light tile is hidden while the menu holds
   the switch. GNOME binds its visibility to Mutter's
   `night-light-supported`, so Froonty hides it again whenever it shows.

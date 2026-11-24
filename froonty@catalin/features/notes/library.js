@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Every note in the folder, for the settings window's "All notes" page:
-// text, modification time, colour (read-only) and labels. No St, no GTK;
-// unit-tested with plain gjs.
+// Every note in the folder, for the settings window's "All notes" page and
+// the notes pinned to the desktop: text, modification time, colour and pin
+// (read-only) and labels. No St, no GTK; unit-tested with plain gjs.
 //
 // It runs only while the page is shown: start() lists and reads the notes
 // (at most 8 reads at a time), then follows the folder monitor, re-reading
@@ -17,7 +17,7 @@
 //
 // Emits 'changed' ({names, structure}) after a refresh that changed
 // something: `names` whose text changed, `structure` when notes came or
-// went, or labels, colours or errors changed. Also 'renamed' (from, to)
+// went, or labels, colours, pins or errors changed. Also 'renamed' (from, to)
 // for a rename in the folder, 'removed' (name) for a note that is gone,
 // and 'refreshed' after every refresh, changes or not (the page then reads
 // the island's selection marker, store.readCurrentNote()).
@@ -160,6 +160,11 @@ export class NotesLibrary extends Emitter {
         return Meta.colorOf(this.meta, name);
     }
 
+    /** The notes pinned to the desktop that are in the folder, in pin order. */
+    get pinned() {
+        return this.meta.pinned.filter(name => this.notes.has(name));
+    }
+
     /** Turns a label on or off for a note; read-modify-write (store.js). */
     async setLabel(name, label, on) {
         this.labels = await this.store.updateLabels(
@@ -281,7 +286,8 @@ export class NotesLibrary extends Emitter {
         if (!live())
             return;
         if (meta.state !== this.metaState ||
-            JSON.stringify(meta.meta.colors) !== JSON.stringify(this.meta.colors))
+            JSON.stringify(meta.meta.colors) !== JSON.stringify(this.meta.colors) ||
+            JSON.stringify(meta.meta.pinned) !== JSON.stringify(this.meta.pinned))
             structure = true;
         this.meta = meta.meta;
         this.metaState = meta.state;

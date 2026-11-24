@@ -405,6 +405,21 @@ test('.froonty.json: keys Froonty does not know survive setColor', async () => {
     service.stop();
 });
 
+test('pin to the desktop: any note, written to .froonty.json, follows a rename', async () => {
+    const {dir} = await notesIn(['a', 'b']);
+    const {service} = await startService(dir);
+    await service.setPinned('a', true);
+    eq(service.isPinned('a'), true);
+    const read = () => JSON.parse(new TextDecoder().decode(dir.get_child('.froonty.json').load_contents(null)[1]));
+    eq(read().pinned, ['a']);
+    await service.select('a');
+    await service.rename('A');
+    eq(read().pinned, ['A']);
+    await service.setPinned('A', false);
+    eq('pinned' in read(), false);
+    service.stop();
+});
+
 // ---- failed saves, unreadable files, notes from elsewhere
 
 const setMode = (file, mode) =>

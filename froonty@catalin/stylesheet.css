@@ -232,6 +232,12 @@
     font-size: 0.85em;
 }
 
+.froonty-markets-problem {
+    color: #f6d32d;
+    font-size: 0.85em;
+    padding: 0 0 4px;
+}
+
 .froonty-markets-list {
     spacing: 2px;
 }
@@ -261,6 +267,10 @@
     color: rgba(255, 255, 255, 0.7);
 }
 
+.froonty-markets-values {
+    min-width: 76px;
+}
+
 .froonty-markets-price {
     font-feature-settings: "tnum";
     color: #ffffff;
@@ -282,19 +292,72 @@
     color: #f66151;
 }
 
-/* Widgets pinned to the desktop */
+/* System card (Btop's readings, on the desktop) */
 
-.froonty-desktop-widgets {
-    spacing: 12px;
+.froonty-system {
+    spacing: 6px;
+}
+
+.froonty-system-status,
+.froonty-system-detail {
+    color: rgba(255, 255, 255, 0.55);
+    font-size: 0.85em;
+}
+
+.froonty-system-list {
+    padding: 4px 8px;
+    spacing: 8px;
+}
+
+.froonty-system-row {
+    spacing: 10px;
+}
+
+.froonty-system-value {
+    font-feature-settings: "tnum";
+    color: #ffffff;
+}
+
+.froonty-system-name {
+    font-weight: 600;
+    color: #ffffff;
+}
+
+/* At least this wide; it takes the row's width left. */
+.froonty-system-graph {
+    min-width: 60px;
+    height: 28px;
+    color: #78aeed;
+}
+
+/* Widgets and notes pinned to the desktop */
+
+/* A note pinned to the desktop: a card as the widgets' (.froonty-desktop-widget,
+   also on it), at most Horizon's height. */
+.froonty-desktop-sticky {
+    max-height: 420px;
+}
+
+.froonty-desktop-sticky-title {
+    padding-bottom: 6px;
+}
+
+.froonty-desktop-sticky-text {
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 0.95em;
 }
 
 .froonty-desktop-widget {
     width: 360px;
-    max-height: 420px;
     padding: 12px;
     border-radius: 18px;
     background-color: rgba(0, 0, 0, 0.55);
     border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Horizon's card; Markets' is held to 8 rows instead (markets/view.js MAX_ROWS). */
+.froonty-desktop-news {
+    max-height: 420px;
 }
 
 /* Hub (expanded island) */
@@ -1291,6 +1354,20 @@
     padding-right: 8px;
     font-size: 0.78em;
 }
+/* Night Light's From and To in the brightness menu: hours and minutes,
+   each between round - and + buttons, smaller than GNOME's icon-button. */
+.froonty-night-light-stepper {
+    spacing: 4px;
+}
+.icon-button.froonty-night-light-step {
+    padding: 6px;
+}
+.froonty-night-light-time {
+    min-width: 1.6em;
+    text-align: center;
+    font-feature-settings: "tnum";
+}
+
 /* The pad noise slider's row: GNOME's `.quick-slider > StBoxLayout`
    spacing, lost when the row is wrapped with the status line. */
 .froonty-pad-slider-row {
@@ -1367,6 +1444,10 @@
 }
 .froonty-clipboard-hidden {
     letter-spacing: 2px;
+}
+/* A long line or path wraps here rather than widening the menu. */
+.froonty-clipboard-menu-preview {
+    max-width: 32em;
 }
 .froonty-clipboard-plain {
     border-radius: 6px;

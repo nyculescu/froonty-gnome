@@ -1,9 +1,23 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
-From: Copilot <223556219+Copilot@users.noreply.github.com>
-Subject: [PATCH] Remove Focus and clock-based pad caps; add RPM targets
+From a894f7b85f1bf401033e3a448dc5ed23c664d840 Mon Sep 17 00:00:00 2001
+From: Catalin Niculescu <cn.cata@gmail.com>
+Date: Mon, 12 Oct 2026 21:47:58 -0700
+Subject: [PATCH] feat: add direct RPM targets for cooling slider
 
-Remove the time-based limits and Focus integration, expose direct RPM targets,
-and retire the enforcer timer files.
+Add direct RPM targeting and update noise estimates for slider-based
+control. Remove Focus and clock-based caps, along with the enforcement
+service.
+---
+ NOISE.md                      |  20 ++-----
+ README.md                     |   7 ++-
+ contrib/install-enforcer.sh   |  13 ----
+ contrib/llano-enforce.service |   8 ---
+ contrib/llano-enforce.timer   |  11 ----
+ llano.py                      |  45 ++++++--------
+ noise.py                      | 108 +++-------------------------------
+ 7 files changed, 37 insertions(+), 175 deletions(-)
+ delete mode 100644 contrib/install-enforcer.sh
+ delete mode 100644 contrib/llano-enforce.service
+ delete mode 100644 contrib/llano-enforce.timer
 
 diff --git a/NOISE.md b/NOISE.md
 index 08d99bf..4201e9b 100644

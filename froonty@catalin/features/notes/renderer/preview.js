@@ -38,6 +38,7 @@ import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js'
 import {keepCursorVisible} from '../../../core/textScroll.js';
 import {codeAt, editUnitAt} from '../editUnits.js';
 import {formatEdit, formatShortcut} from '../formatActions.js';
+import {inlineMarkup, lineMarkup} from '../markup.js';
 import {DiagramDraft, LAYOUTS, mermaidLayout, setMermaidLayout, withFenceSource} from '../mermaidEdit.js';
 import {toggleTask} from '../render.js';
 import {clipboardImage, fitRenderSize, resizeWithAspect} from '../renderSizes.js';
@@ -80,30 +81,6 @@ function contentOf(block) {
     if (!contents.has(block.png))
         contents.set(block.png, pngContent(block.png, block.pixelWidth, block.pixelHeight));
     return contents.get(block.png);
-}
-
-// Pango markup for one line's inline Markdown, or its plain text when its
-// markers cross (`**a _b** c_`), which Pango would reject.
-function inlineMarkup(text) {
-    // Code spans first, so markers in code are not formatting.
-    const markup = text.split(/(`[^`\n]+`)/).map((part, i) => i % 2
-        ? `<tt>${escapeMarkup(part.slice(1, -1))}</tt>` : emphasis(escapeMarkup(part))).join('');
-    try {
-        Pango.parse_markup(markup, -1, '');
-        return markup;
-    } catch {
-        return escapeMarkup(text);
-    }
-}
-
-function emphasis(markup) {
-    return markup
-        .replace(/\*\*(\S(?:.*?\S)?)\*\*/g, '<b>$1</b>')
-        .replace(/__(\S(?:.*?\S)?)__/g, '<b>$1</b>')
-        .replace(/~~(\S(?:.*?\S)?)~~/g, '<s>$1</s>')
-        .replace(/(?<![\w*])\*(\S(?:.*?\S)?)\*(?![\w*])/g, '<i>$1</i>')
-        .replace(/(?<![\w_])_(\S(?:.*?\S)?)_(?![\w_])/g, '<i>$1</i>')
-        .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<u>$1</u>');
 }
 
 // What shows in place of a block being drawn.
@@ -384,19 +361,7 @@ export class IslandMarkdownPreview {
                 this._addTask(task, lineStart);
                 continue;
             }
-            const heading = /^(#{1,6})\s+(.*)$/.exec(line);
-            let markup;
-            if (heading) {
-                const size = Math.round(Math.max(1, 1.45 - heading[1].length * 0.07) * 100);
-                markup = `<span weight="bold" size="${size}%">${inlineMarkup(heading[2])}</span>`;
-            } else if (/^\s*>/.test(line)) {
-                markup = `<span style="italic" foreground="#888">${
-                    inlineMarkup(line.replace(/^\s*>\s?/, ''))}</span>`;
-            } else {
-                markup = inlineMarkup(line.replace(/^(\s*)[-*+]\s+/, '$1•  ')
-                    .replace(/^(\s*)(\d+[.)])\s+/, '$1$2  '));
-            }
-            run.push({markup, line: entry});
+            run.push({markup: lineMarkup(line), line: entry});
         }
         this._addRun(run);
     }

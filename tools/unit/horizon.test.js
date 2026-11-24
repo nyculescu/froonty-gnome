@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import {aiFor, cliJson, LOCAL_BASE_URL, starterConfig, withAi} from '../../froonty@catalin/features/widgets/news/horizonAi.js';
-import {parseHorizonMarkdown} from '../../froonty@catalin/features/widgets/news/parser.js';
-import {done, eq, test} from './test.js';
+import Gio from 'gi://Gio';
+import GLib from 'gi://GLib';
+
+import {aiFor, cliJson, LOCAL_BASE_URL, starterConfig, withAi} from '../../froonty@catalin/features/horizon/horizonAi.js';
+import {parseHorizonMarkdown, plainText} from '../../froonty@catalin/features/horizon/parser.js';
+import {EXTENSION_DIR, done, eq, ok, test} from './test.js';
 
 test('parses Markdown headline links and summaries', () => {
     eq(parseHorizonMarkdown([
@@ -15,7 +18,7 @@ test('parses Markdown headline links and summaries', () => {
     ]);
 });
 
-test('parses Horizon\'s own briefing: linked headings, the paragraph\'s first sentence', () => {
+test('parses Horizon\'s own briefing: linked headings, the whole paragraph under each', () => {
     eq(parseHorizonMarkdown([
         '# Horizon Daily - 2026-11-14',
         '**Technology News**',
@@ -31,9 +34,42 @@ test('parses Horizon\'s own briefing: linked headings, the paragraph\'s first se
         '**Tags**: `#x`',
     ].join('\n')), [
         {title: 'Terminal Borders', url: 'https://www.joshka.net/cell-borders/',
-            summary: 'Borders drawn without consuming cells.'},
+            summary: 'Borders drawn without consuming cells. Available in Ratatui 0.20.'},
         {title: 'No paragraph', url: 'https://example.com/b', summary: ''},
     ]);
+});
+
+test('a paragraph wrapped over several lines is read whole, up to the blank line', () => {
+    eq(parseHorizonMarkdown([
+        '### [Wrapped](https://example.com/w) ⭐️ 7.0/10',
+        'First line of the paragraph',
+        'and its second line.',
+        '',
+        'hackernews · someone · Nov 13, 23:06',
+    ].join('\n'))[0].summary, 'First line of the paragraph and its second line.');
+});
+
+test('Horizon\'s escapes and entities read as text (from the 2026-11-14 briefing)', () => {
+    eq(plainText('Jonathan Blow&\\#x27;s Question'), 'Jonathan Blow\'s Question');
+    eq(plainText('user interfaces \\(TUIs\\) by cosmic\\_quanta'), 'user interfaces (TUIs) by cosmic_quanta');
+    eq(plainText('1/8&quot; jacks &amp; a fan &#39;here&#39;'), '1/8" jacks & a fan \'here\'');
+    eq(plainText('See [the post](https://example.com) for **details** in `code`'),
+        'See the post for details in code');
+    eq(plainText('keeps __init__ and &unknown;'), 'keeps __init__ and &unknown;');
+});
+
+test('the real 2026-11-14 briefing: no escapes left, every item with its paragraph', () => {
+    const file = Gio.File.new_for_path(GLib.build_filenamev([EXTENSION_DIR, '..',
+        'third_party', 'Horizon', 'data', 'summaries', 'horizon-2026-11-14-en.md']));
+    if (!file.query_exists(null))
+        return;
+    const [, bytes] = file.load_contents(null);
+    const items = parseHorizonMarkdown(new TextDecoder().decode(bytes));
+    ok(items.length > 0, 'items');
+    for (const {title, summary} of items) {
+        ok(!/&\\?#|&quot;|\\[(_]/.test(title + summary), `escapes left in ${title}`);
+        ok(summary.split(/[.!?] /).length > 1, `more than one sentence for ${title}`);
+    }
 });
 
 test('ignores Markdown without a usable linked headline', () => {

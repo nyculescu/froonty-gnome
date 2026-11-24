@@ -67,6 +67,21 @@ test('library: text, modified time, colour and labels', async () => {
     library.stop();
 });
 
+test('library: pinned notes in pin order, only those in the folder; a pin change is a change', async () => {
+    const dir = folder();
+    write(dir, 'a.md', 'one');
+    write(dir, 'b.md', 'two');
+    write(dir, '.froonty.json', JSON.stringify({version: 1, order: ['a', 'b'], colors: {}, pinned: ['b', 'gone', 'a']}));
+    const {library, events} = await startLibrary(dir);
+    eq(library.pinned, ['b', 'a']);
+    events.length = 0;
+    write(dir, '.froonty.json', JSON.stringify({version: 1, order: ['a', 'b'], colors: {}, pinned: ['a']}));
+    await library.refresh();
+    eq(library.pinned, ['a']);
+    ok(events.some(([kind, change]) => kind === 'changed' && change.structure), JSON.stringify(events));
+    library.stop();
+});
+
 test('library: follows create, edit, delete and rename', async () => {
     const dir = folder();
     write(dir, 'a.md', 'one');

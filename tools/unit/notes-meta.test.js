@@ -4,7 +4,7 @@
 import {test, eq, done} from './test.js';
 import * as Meta from '../../froonty@catalin/features/notes/meta.js';
 
-const meta = (order, colors = {}, extra = {}) => ({version: 1, order, colors, extra});
+const meta = (order, colors = {}, extra = {}, pinned = []) => ({version: 1, order, colors, pinned, extra});
 
 test('parse: odd entries are dropped; a file that is not understood is reported', () => {
     eq(Meta.parseMeta('{"order": "x"}'), {ok: true, meta: Meta.emptyMeta()});
@@ -57,6 +57,23 @@ test('unknown top-level keys survive parse, snapshot and serialize', () => {
     const {meta: odd} = Meta.parseMeta('{"version": 1, "order": [], "colors": {}, "__proto__": {"x": 1}}');
     eq(JSON.parse(Meta.serializeMeta(odd)).__proto__, {x: 1});
     eq(Meta.colorOf(Meta.emptyMeta(), 'constructor'), 'yellow', 'names are not object properties');
+});
+
+test('pinned: set and cleared, kept through rename and snapshot, dropped with the note', () => {
+    let m = Meta.withPinned(meta(['a', 'b']), 'a', true);
+    eq(Meta.isPinned(m, 'a'), true);
+    m = Meta.withRename(m, 'a', 'A');
+    eq(m.pinned, ['A']);
+    eq(Meta.snapshot(Meta.withPinned(m, 'gone', true), ['A', 'b']).pinned, ['A']);
+    eq(Meta.withoutNote(m, 'A').pinned, []);
+    eq(Meta.withPinned(m, 'A', false).pinned, []);
+});
+
+test('pinned: read from the file, written only when a note is pinned', () => {
+    const {meta: m} = Meta.parseMeta('{"version": 1, "order": ["a"], "colors": {}, "pinned": ["a", 3, "a"]}');
+    eq(m.pinned, ['a']);
+    eq(JSON.parse(Meta.serializeMeta(m)).pinned, ['a']);
+    eq('pinned' in JSON.parse(Meta.serializeMeta(Meta.withPinned(m, 'a', false))), false);
 });
 
 await done();

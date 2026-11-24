@@ -46,8 +46,8 @@ A copy counts as a password when any of these is true:
 
 **How it is shown:** `••••••••` (the same 8 dots whatever its length), a
 key icon, and "hidden until 16:42". A click copies it again, and it stays
-hidden. A right-click explains when it goes; the password itself is
-never shown.
+hidden. Its right-click menu explains when it goes; the password itself
+is never shown.
 
 **When it goes,** whichever comes first:
 - `clipboard-password-minutes` pass (1–60, default 5; one one-shot
@@ -309,10 +309,16 @@ with the decisions in `switching.js`:
   - Image: a thumbnail 56 px tall, in proportion and at most 240 px wide,
     loaded in the background by GNOME's texture cache.
   - Files: "Copied 2 items" or "Cut 2 items", then the first names.
-- **Wider preview on right-click** (or the Menu key), gone when the
-  pointer moves, the list scrolls or a key is pressed: up to 12 lines of
-  60 characters, every file's full path (up to 10), or the image's format
-  and size.
+- **Right-click menu** (or the Menu key, or Shift+F10), a GNOME menu
+  under the row (owner's request, 2026-11-23; more items will follow):
+  - At the top, muted, the wider preview: up to 12 lines of 60
+    characters, every file's full path (up to 10), or the image's format
+    and size. Long lines wrap at 32em. A password shows when it
+    disappears, never itself.
+  - **Delete this entry:** as the row's trash button. It runs once the
+    menu has closed. While a menu is open the rows are not rebuilt (a
+    new copy shows once it closes), so the menu's row stays under it.
+  - Opened from the keyboard, Delete this entry has the focus.
 - **The current entry:** the one on the clipboard is outlined and reads "On
   the clipboard, ready to paste".
 - **Rebuilds:** rows are rebuilt only while the tab is on screen.
@@ -380,6 +386,9 @@ with the decisions in `switching.js`:
   - Copies made with the tab closed are listed, newest first.
   - The tab's size.
   - A click puts an entry back on the clipboard.
+  - A right-click opens the row's menu (its preview, then Delete this
+    entry), and Delete this entry removes that entry from the history and
+    its file.
   - The history is in the private data folder.
 
 ## Limits of this iteration

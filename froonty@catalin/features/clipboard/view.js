@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Clipboard tab (docs/features/clipboard.md): the history, newest first.
 // Each entry is a small row (a few lines of text, a thumbnail, or the
-// files' names) with a wider preview on right-click; a click puts it back
-// on the clipboard, ready to be pasted. Rows are rebuilt only while the
-// tab is on screen.
+// files' names); a click puts it back on the clipboard, ready to be
+// pasted, and a right-click opens its menu: a wider preview, then what can
+// be done with it. Rows are rebuilt only while the tab is on screen.
 
 import Clutter from 'gi://Clutter';
 import GLib from 'gi://GLib';
+import Pango from 'gi://Pango';
 import St from 'gi://St';
 
 import {gettext as _, ngettext} from 'resource:///org/gnome/shell/extensions/extension.js';
 
-import {Tooltip} from '../../core/tooltip.js';
 import {excerpt, uriName, uriPath} from './entries.js';
 
-// Small preview in the row; the wider one opens on right-click.
+// Small preview in the row; the wider one heads its menu.
 const ROW_LINES = 4;
 const ROW_WIDTH = 50;
 const BUBBLE_LINES = 12;
@@ -22,10 +22,6 @@ const BUBBLE_WIDTH = 60;
 const BUBBLE_FILES = 10;
 // Thumbnails are this tall, in proportion, and at most as wide as the CSS allows.
 const THUMBNAIL_HEIGHT = 56;
-
-// The preview goes on any of these; not on a click, which may be the
-// right-click that opens it.
-const HIDES_PREVIEW = [Clutter.EventType.MOTION, Clutter.EventType.SCROLL, Clutter.EventType.KEY_PRESS];
 
 // A hidden password's preview: the same dots whatever its length.
 export const HIDDEN = '••••••••';
@@ -55,19 +51,15 @@ export function filesPreview(entry, max) {
 
 export class ClipboardView {
     constructor(ctx, recorder) {
+        this._ctx = ctx;
         this._recorder = recorder;
         this._clock = ctx.clock;
         this._active = false;
         this._dirty = true;
-        this._tooltipEventId = 0;
+        // The open row menu, and what waits for it to be gone.
+        this._menu = null;
+        this._laterIds = new Set();
 
-        // Content, plus an overlay layer (fixed positions, click-through)
-        // for the preview bubble.
-        this.actor = new St.Widget({
-            layout_manager: new Clutter.BinLayout(),
-            x_expand: true,
-            y_expand: true,
-        });
         const content = new St.BoxLayout({
             style_class: 'froonty-clipboard',
             orientation: Clutter.Orientation.VERTICAL,
@@ -130,12 +122,7 @@ export class ClipboardView {
         });
         this._scroll.add_child(this._list);
         content.add_child(this._scroll);
-        this.actor.add_child(content);
-
-        this._tooltip = new Tooltip();
-        const overlay = new St.Widget({x_expand: true, y_expand: true});
-        overlay.add_child(this._tooltip.actor);
-        this.actor.add_child(overlay);
+        this.actor = content;
 
         this._recorderId = this._recorder.connect('changed', () => this._onChanged());
         this._sync();
@@ -143,27 +130,31 @@ export class ClipboardView {
 
     destroy() {
         this._recorder.disconnect(this._recorderId);
-        this._hideTooltip();
+        this._menu?.destroy();
+        for (const id of this._laterIds)
+            GLib.source_remove(id);
+        this._laterIds.clear();
         this.actor.destroy();
     }
 
     setActive(active) {
         this._active = active;
         if (!active)
-            this._hideTooltip();
-        else if (this._dirty)
+            this._menu?.close();
+        else if (this._dirty && !this._menu)
             this._sync();
     }
 
+    // While a row's menu is open the rows stay as they are: a rebuild
+    // would take the menu's row from under it.
     _onChanged() {
         this._dirty = true;
-        if (this._active)
+        if (this._active && !this._menu)
             this._sync();
     }
 
     _sync() {
         this._dirty = false;
-        this._hideTooltip();
         const {shown: entries, loaded, currentId, lastSkip} = this._recorder;
 
         if (!loaded)
@@ -223,17 +214,16 @@ export class ClipboardView {
             child: inner,
         });
         button.connect('clicked', () => this._recorder.copy(entry.id));
-        const showPreview = () => {
-            this._tooltip.show(button, this._bubble(entry), 'below');
-            this._watchTooltip();
-        };
+        // Right-click, or Menu or Shift+F10 (St's 'popup-menu'). The menu
+        // hangs from the button's content: a PopupMenu takes over its
+        // source's Space and Return, which copy the entry here.
         const rightClick = new Clutter.ClickGesture({
             required_button: Clutter.BUTTON_SECONDARY,
             recognize_on_press: true,
         });
-        rightClick.connect('recognize', showPreview);
+        rightClick.connect('recognize', () => this._openMenu(entry, inner, false));
         button.add_action(rightClick);
-        button.connect('popup-menu', showPreview);
+        button.connect('popup-menu', () => this._openMenu(entry, inner, true));
         row.add_child(button);
 
         const remove = new St.Button({
@@ -249,23 +239,48 @@ export class ClipboardView {
         return row;
     }
 
-    _hideTooltip() {
-        if (this._tooltipEventId) {
-            this.actor.disconnect(this._tooltipEventId);
-            this._tooltipEventId = 0;
-        }
-        this._tooltip.hide();
+    // The entry's menu: its wider preview, then its actions. An action runs
+    // once the menu is gone, as it may rebuild the rows.
+    _openMenu(entry, anchor, fromKeyboard) {
+        this._menu?.destroy();
+        let action = null;
+        const menu = this._ctx.contextMenu(anchor, {
+            styleClass: 'froonty-clipboard-menu',
+            onClosed: () => {
+                if (this._menu === menu)
+                    this._menu = null;
+                this._later(() => {
+                    action?.();
+                    if (this._dirty && this._active && !this._menu)
+                        this._sync();
+                });
+            },
+        });
+        this._menu = menu;
+        const preview = menu.addHint(this._bubble(entry));
+        preview.label.add_style_class_name('froonty-clipboard-menu-preview');
+        preview.label.clutter_text.set({
+            line_wrap: true,
+            line_wrap_mode: Pango.WrapMode.WORD_CHAR,
+            ellipsize: Pango.EllipsizeMode.NONE,
+        });
+        menu.addSeparator();
+        const remove = menu.addAction(_('Delete this entry'), () => {
+            action = () => this._recorder.remove(entry.id);
+            menu.close();
+        });
+        menu.open();
+        if (fromKeyboard)
+            remove.grab_key_focus();
     }
 
-    // The pointer moving, the list scrolling or a key hides the preview.
-    _watchTooltip() {
-        if (this._tooltipEventId)
-            return;
-        this._tooltipEventId = this.actor.connect('captured-event', (actor, event) => {
-            if (HIDES_PREVIEW.includes(event.type()))
-                this._hideTooltip();
-            return Clutter.EVENT_PROPAGATE;
+    _later(callback) {
+        const id = GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
+            this._laterIds.delete(id);
+            callback();
+            return GLib.SOURCE_REMOVE;
         });
+        this._laterIds.add(id);
     }
 
     _preview(entry) {
@@ -325,8 +340,8 @@ export class ClipboardView {
         return excerpt(entry.text, 1, 40);
     }
 
-    // The wider preview: more of the text, or every file's full path. Never
-    // a password.
+    // The wider preview at the top of an entry's menu: more of the text, or
+    // every file's full path. Never a password.
     _bubble(entry) {
         if (entry.kind === 'password') {
             return _('A password, never saved. It disappears at %s, when the clipboard is cleared or something else is copied, whichever comes first.')

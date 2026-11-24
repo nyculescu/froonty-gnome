@@ -40,6 +40,73 @@ export function spinRow(settings, key, title, step = 1) {
 }
 
 /**
+ * A number with a slider and a field (no − and + buttons), in steps of 1.
+ * A typed value applies on Enter or when the field loses focus, kept within
+ * the range; one that is not a number puts the value back.
+ *
+ * @param {object} options
+ * @param {string} options.title
+ * @param {string} [options.subtitle]
+ * @param {number} options.lower
+ * @param {number} options.upper
+ * @param {string} options.unit shown after the field, e.g. '%' or 'px'
+ * @param {Function} options.onChange (value) the user moved or typed it
+ * @returns {{row: Adw.ActionRow, set: Function}} set(value) shows a value
+ *   without calling onChange
+ */
+export function sliderRow({title, subtitle = '', lower, upper, unit, onChange}) {
+    const row = new Adw.ActionRow({title, subtitle});
+    const adjustment = new Gtk.Adjustment({lower, upper, step_increment: 1, page_increment: 10});
+    const scale = new Gtk.Scale({
+        adjustment,
+        round_digits: 0,
+        draw_value: false,
+        width_request: 180,
+        valign: Gtk.Align.CENTER,
+    });
+    scale.update_property([Gtk.AccessibleProperty.LABEL], [title]);
+    const entry = new Gtk.Entry({
+        width_chars: 4,
+        max_width_chars: 4,
+        xalign: 1,
+        input_purpose: Gtk.InputPurpose.DIGITS,
+        valign: Gtk.Align.CENTER,
+    });
+    let showing = false;
+    const show = () => {
+        entry.text = String(Math.round(adjustment.value));
+    };
+    const apply = () => {
+        const typed = Number.parseInt(entry.text, 10);
+        if (Number.isFinite(typed))
+            adjustment.value = Math.max(lower, Math.min(typed, upper));
+        show();
+    };
+    adjustment.connect('value-changed', () => {
+        show();
+        if (!showing)
+            onChange(Math.round(adjustment.value));
+    });
+    entry.connect('activate', apply);
+    const focus = new Gtk.EventControllerFocus();
+    focus.connect('leave', apply);
+    entry.add_controller(focus);
+    show();
+    row.add_suffix(scale);
+    row.add_suffix(entry);
+    row.add_suffix(new Gtk.Label({label: unit, valign: Gtk.Align.CENTER}));
+    return {
+        row,
+        set(value) {
+            showing = true;
+            adjustment.value = value;
+            show();
+            showing = false;
+        },
+    };
+}
+
+/**
  * A drop-down for a string key that holds one of `values`, shown as `labels`.
  *
  * @param {Gio.Settings} settings Froonty's

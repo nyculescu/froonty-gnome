@@ -5,6 +5,7 @@
 //
 //   ┌ Note · Plan ─────────────────┐
 //   │ All notes                    │
+//   │ Pin to Desktop               │  or Unpin from Desktop
 //   │ Rename                       │
 //   │ Move to Trash                │
 //   │ [Filter or add a label…    ] │  typing filters; Enter adds or turns on
@@ -63,6 +64,11 @@ export class LabelMenu {
         menu.addTitle(_('Note · %s').format(name));
         menu.addAction(_('All notes'), () => {
             this._closeWithAction(menu, () => this._callbacks.onAllNotes(name));
+        });
+        // A sticky on the desktop (features/widgets/desktopLayer.js).
+        const pinned = service.isPinned(name);
+        menu.addAction(pinned ? _('Unpin from Desktop') : _('Pin to Desktop'), () => {
+            this._closeWithAction(menu, () => service.setPinned(name, !pinned));
         });
         menu.addAction(_('Rename'), () => {
             this._closeWithAction(menu, () => this._callbacks.onRename(name));

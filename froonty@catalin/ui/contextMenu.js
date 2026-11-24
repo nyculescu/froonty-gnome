@@ -6,6 +6,7 @@
 //
 //   const menu = new ContextMenu(anchor, {styleClass, onClosed});
 //   menu.addTitle('…'); menu.addEntry({…}); menu.addToggle('…', true, on => …);
+//   menu.addSeparator();
 //   menu.open();
 //
 // Items can be flipped or acted on without closing the menu: toggles and
@@ -125,6 +126,10 @@ class Items {
         const item = new PopupMenu.PopupMenuItem(text, {reactive: false, can_focus: false});
         item.add_style_class_name('froonty-menu-hint');
         return this._add(item);
+    }
+
+    addSeparator() {
+        return this._add(new PopupMenu.PopupSeparatorMenuItem());
     }
 
     removeAll() {
