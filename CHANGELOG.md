@@ -31,6 +31,8 @@
   redraws them every frame while they move, about 3.4 % of a CPU core in
   a headless test). They move again when a song starts, resumes or
   changes, and when the pointer enters the pill.
+- The pill has no shadow: St drew it again on every frame of a resize,
+  and the pill's clipping hid it anyway.
 - Software brightness: with a laptop open and joined to the monitors it
   dims, they join GNOME's brightness slider, so one slider dims every
   screen and keeps their ratio; Froonty's slider hides. GNOME's menu has a

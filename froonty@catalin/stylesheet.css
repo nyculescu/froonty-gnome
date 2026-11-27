@@ -1,11 +1,12 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Froonty. border-radius and sizes are set from code (see ui/island.js). */
 
+/* No box-shadow: on an actor this short St re-renders it on every frame of a
+   resize, and clip_to_allocation hides it anyway. */
 .froonty-pill {
     background-color: #000000;
     color: #ffffff;
     border: 1px solid rgba(255, 255, 255, 0.08);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
     padding: 0 12px;
     transition-duration: 150ms;
 }
