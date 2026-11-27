@@ -264,6 +264,13 @@ feature has a design note in [docs/features/](docs/features/).
   keep it on in daytime), and the Night Light tile leaves Quick Settings. Without GNOME's slider (no backlight), they go in
   Software brightness's menu. See
   [docs/features/brightness.md](docs/features/brightness.md#7-night-light-in-the-brightness-menu).
+- **Bluetooth in the Sound Output menu** (on by default; Settings →
+  Media): the > on GNOME's volume slider also lists paired Bluetooth
+  headphones and speakers. A click connects one and makes it the sound
+  output, so the slider then sets its volume; a second click disconnects
+  it. "Pair New Device…" opens Settings → Bluetooth. Hidden while
+  Bluetooth is off. See
+  [docs/features/bluetooth-audio.md](docs/features/bluetooth-audio.md).
 - **Pad noise slider** (on by default; Settings
   → Fan): continuously adjusts the connected llano pad from near-silent to
   its maximum speed, with colored noise-stage markers. See
@@ -396,6 +403,8 @@ froonty@catalin/             the extension (this directory is what gets installe
 │   ├── localsend/           LocalSend tab: protocol helper (Python), service,
 │   │                        notifications, view, prefs
 │   ├── writing/             Writing tab: engines, set-up, service, view, prefs
+│   ├── bluetoothAudio/      Bluetooth in the Sound Output menu (not a tab):
+│   │                        which devices, the menu section
 │   ├── brightness/          Software brightness (not a tab): dim layer,
 │   │                        its Quick Settings slider, Night Light menu,
 │   │                        levels, schedule, prefs
@@ -510,7 +519,8 @@ its tabs:
 - **Readouts:** which values the collapsed pill prints, their order, how
   often they refresh.
 - **Media:** enable, music on the island, players followed, lyrics, up
-  next, cover art from the internet, size.
+  next, Bluetooth in the Sound Output menu, cover art from the internet,
+  size.
 - **Notes:** enable, folder, size, All notes.
 - **Claude:** enable.
 - **Kill Process:** enable, refresh interval, what is never killed, size.
@@ -561,6 +571,7 @@ The keys behind it:
 | `media-show-in-pill` / `media-track-notice` | `true` | Cover and bars beside the time while music plays; a new song's title for 3 s |
 | `media-include-other-players` | `true` | Follow browsers and video players automatically (off: only when chosen) |
 | `media-remote-art` / `media-lyrics-online` | `false` | The Media tab's two internet options: web covers, lyrics from lrclib.net |
+| `sound-bluetooth-menu` | `true` | Paired Bluetooth headphones and speakers in GNOME's Sound Output menu, a click from connected and chosen |
 | `notes-enabled` | `true` | Show the Notes tab; notes pinned to the desktop show as stickies while it is on |
 | `widgets-desktop-actions` | `true` | Clicks on the desktop Markets and Horizon cards open their pages; off, they only scroll |
 | `markets-enabled` | `true` | Markets: off, its card shows nowhere and nothing is fetched |

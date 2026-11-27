@@ -284,7 +284,9 @@ Settings → Media:
 | `media-lyrics-online` | **`false`** | Find lyrics online (lrclib.net) |
 | `media-queue` | `true` | The Up next button |
 
-No key stores the chosen player.
+No key stores the chosen player. The same page's Quick Settings group
+holds `sound-bluetooth-menu`, which is not part of the tab
+([bluetooth-audio.md](bluetooth-audio.md)).
 
 ## Network and privacy
 

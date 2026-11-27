@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Bluetooth in the Sound Output menu: the > on GNOME's volume slider also
+  lists paired Bluetooth headphones and speakers. A click connects one
+  and makes it the sound output, so the volume slider then sets its
+  volume, with the menu left open; a second click disconnects it. "Pair
+  New Device…" opens Settings → Bluetooth. The section hides while
+  Bluetooth is off, and while it shows, the slider keeps its > even with
+  one output. On by default; Settings → Media.
 - Software brightness: with a laptop open and joined to the monitors it
   dims, they join GNOME's brightness slider, so one slider dims every
   screen and keeps their ratio; Froonty's slider hides. GNOME's menu has a

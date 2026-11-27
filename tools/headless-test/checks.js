@@ -215,6 +215,8 @@ function shellFootprint() {
             mixerState: countHandlers(Volume.getMixerControl(), 'state-changed'),
             mixerSink: countHandlers(Volume.getMixerControl(), 'default-sink-changed'),
             mixerSource: countHandlers(Volume.getMixerControl(), 'default-source-changed'),
+            // Bluetooth in the Sound Output menu, while it waits for a device's output.
+            mixerStreamAdded: countHandlers(Volume.getMixerControl(), 'stream-added'),
             // The Break tab follows GNOME's break engine.
             ...Object.fromEntries(['notify::state', 'notify::next-break-due-time',
                 'notify::last-break-end-time', 'break-due', 'break-finished', 'take-break']
@@ -10520,6 +10522,113 @@ async function testNightLightMenu() {
     s.reset('brightness-night-light-menu');
 }
 
+// ---------------------------------------------------------------- Bluetooth in the Sound Output menu
+
+const bluetoothPart = () => extension().stateObj._parts.find(p => p.constructor.name === 'BluetoothOutputs');
+
+// GnomeBluetooth's client and devices, as far as the menu uses them.
+function fakeBluetooth(devices, connectService) {
+    return {
+        default_adapter_powered: true,
+        get_devices: () => ({get_n_items: () => devices.length, get_item: i => devices[i]}),
+        connect_service: connectService,
+        connectObject() {},
+        disconnectObject() {},
+    };
+}
+
+const fakeBluetoothDevice = (alias, type, n) => ({
+    alias, type, uuids: [], icon: 'audio-headset', paired: true, trusted: true, connectable: true,
+    connected: false, address: `00:1B:66:AA:0C:0${n}`, get_object_path: () => `/org/bluez/hci0/dev_${n}`,
+    connectObject() {},
+    disconnectObject() {},
+});
+
+async function testBluetoothOutputs() {
+    const s = settings();
+    const quickSettings = Main.panel.statusArea.quickSettings;
+    const output = quickSettings._volumeOutput.quickSettingsItems.at(-1);
+    const items = () => output.menu._getMenuItems();
+    const gnomeSeparator = () => items().findIndex(item => item instanceof PopupMenu.PopupSeparatorMenuItem);
+    const streamAdded = () => countHandlers(Volume.getMixerControl(), 'stream-added');
+    const itemsBefore = items().length;
+    const handlersBefore = streamAdded();
+    // GNOME's rule for the slider's >: more than one output.
+    const gnomeArrow = () => output.menuEnabled === output._deviceItems.size > 1;
+    let part = bluetoothPart();
+    check('bluetooth menu: on by default, between GNOME\'s outputs and Sound Settings, hidden without an adapter',
+        s.get_boolean('sound-bluetooth-menu') && Boolean(part?._section) &&
+        items().indexOf(part._section) === gnomeSeparator() - 1 && !part._section.actor.visible && gnomeArrow(),
+        `section at ${items().indexOf(part?._section)}, separator at ${gnomeSeparator()}, ` +
+        `visible=${part?._section?.actor.visible} menu=${output.menuEnabled} outputs=${output._deviceItems.size}`);
+
+    const calls = [];
+    let answer = () => Promise.reject(new Error('test: out of range'));
+    part._client.disconnectObject(part);
+    part._client = fakeBluetooth([
+        fakeBluetoothDevice('Speaker', 1048576, 1),
+        fakeBluetoothDevice('Headset', 32, 2),
+        fakeBluetoothDevice('Keyboard', 256, 3),
+    ], (path, connect) => {
+        calls.push(`${path} ${connect}`);
+        return answer();
+    });
+    part._sync();
+    const rows = () => part._devices._getMenuItems();
+    const sectionTexts = descendants(part._section.actor)
+        .filter(actor => actor instanceof St.Label && actor.text).map(actor => actor.text);
+    output._sync();
+    check('bluetooth menu: with Bluetooth on, its paired audio devices by name, and Pair New Device…; ' +
+        'the slider\'s > stays even when GNOME syncs it',
+        part._section.actor.visible && output.menuEnabled &&
+        JSON.stringify(rows().map(row => row.label_actor.text)) === '["Headset","Speaker"]' &&
+        ['Bluetooth', 'Connect', 'Pair New Device…'].every(text => sectionTexts.includes(text)),
+        sectionTexts.join(', '));
+
+    try {
+        quickSettings.menu.open();
+        await sleep(animationWait());
+        output.menu.open();
+        await sleep(animationWait());
+        await clickActor(rows()[0]);
+        await sleep(SETTLE_MS);
+        check('bluetooth menu: a click connects the device and keeps the menu open; a failure stops ' +
+            'waiting for its output',
+            calls.join() === '/org/bluez/hci0/dev_2 true' && output.menu.isOpen &&
+            !part._rows.values().next().value.busy && streamAdded() === handlersBefore,
+            `calls=${calls.join()} open=${output.menu.isOpen} stream-added=${streamAdded()}/${handlersBefore}`);
+
+        let finish;
+        answer = () => new Promise(resolve => (finish = resolve));
+        await clickActor(rows()[1]);
+        await sleep(SETTLE_MS);
+        const speaker = [...part._rows.values()].find(row => row.device.alias === 'Speaker');
+        const busy = speaker.busy;
+        const waiting = streamAdded() === handlersBefore + 1;
+        finish();
+        await sleep(SETTLE_MS);
+        check('bluetooth menu: busy while connecting, then waits for the device\'s output',
+            busy && waiting && !speaker.busy && streamAdded() === handlersBefore + 1,
+            `busy=${busy} waiting=${waiting} after=${speaker.busy} stream-added=${streamAdded()}/${handlersBefore}`);
+    } finally {
+        output.menu.close();
+        quickSettings.menu.close();
+        await sleep(animationWait());
+    }
+
+    s.set_boolean('sound-bluetooth-menu', false);
+    await sleep(SETTLE_MS);
+    check('bluetooth menu: turned off, GNOME\'s menu and > are as they were and nothing waits',
+        !part._section && items().length === itemsBefore - 1 && streamAdded() === handlersBefore && gnomeArrow(),
+        `items=${items().length}/${itemsBefore} stream-added=${streamAdded()}/${handlersBefore} ` +
+        `menu=${output.menuEnabled}`);
+    s.reset('sound-bluetooth-menu');
+    await sleep(SETTLE_MS);
+    part = bluetoothPart();
+    check('bluetooth menu: turned on again, back in its place, hidden',
+        items().indexOf(part._section) === gnomeSeparator() - 1 && !part._section.actor.visible);
+}
+
 // ---------------------------------------------------------------- pad noise slider
 
 const padNoiseSliders = () => quickSettingsMenu()._grid.get_children()
@@ -10880,6 +10989,7 @@ const ONLY_TESTS = {
     testTimezonePlanner,
     testFanSliderSettingsButton, testFanLockButton,
     testWidgetsNews, testDesktopPins, testDesktopStickies, testNightLightSwitches, testBrightnessMerge,
+    testBluetoothOutputs,
     testDesktopMarketsRows,
     testDesktopSystem,
     testDesktopWidgetsButton, testCardPanicButtons, testWeatherCard,
@@ -10961,6 +11071,7 @@ export async function runAll(outDir) {
         await testNightLightMenu();
         await testNightLightSwitches();
         await testBrightnessMerge();
+        await testBluetoothOutputs();
         await testWidgetsNews();
         await testDesktopPins();
         await testDesktopStickies();

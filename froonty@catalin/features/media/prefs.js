@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Media settings tab (docs/features/media.md §Settings). Runs in the
+// Media settings tab (docs/features/media.md §Settings), and Bluetooth in
+// the Sound Output menu (docs/features/bluetooth-audio.md). Runs in the
 // preferences process (GTK 4, libadwaita).
 
 import Adw from 'gi://Adw';
@@ -52,6 +53,11 @@ export function mediaPage(settings) {
     extras.add(online);
     extras.add(switchRow(settings, 'media-queue', _('Up next')));
     page.add(extras);
+
+    const quickSettings = new Adw.PreferencesGroup({title: _('Quick Settings')});
+    quickSettings.add(switchRow(settings, 'sound-bluetooth-menu', _('Bluetooth in the Sound Output menu'),
+        _('The arrow on the volume slider also lists paired Bluetooth headphones and speakers: a click connects one and makes it the sound output. Hidden while Bluetooth is off.')));
+    page.add(quickSettings);
 
     const internet = new Adw.PreferencesGroup({title: _('Internet')});
     internet.add(switchRow(settings, 'media-remote-art', _('Cover art from the internet'),

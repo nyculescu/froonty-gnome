@@ -659,6 +659,13 @@
       <description>An Up next button in the Media tab: the player's upcoming songs, for players that share them (MPRIS TrackList).</description>
     </key>
 
+    <!-- Bluetooth in the Sound Output menu (features/bluetoothAudio, docs/features/bluetooth-audio.md) -->
+    <key name="sound-bluetooth-menu" type="b">
+      <default>true</default>
+      <summary>Bluetooth in the Sound Output menu</summary>
+      <description>The arrow on GNOME's volume slider opens a menu that also lists paired Bluetooth headphones and speakers: a click connects one and makes it the sound output, or disconnects it. "Pair New Device…" opens Settings → Bluetooth. Hidden while Bluetooth is off.</description>
+    </key>
+
     <!-- Clipboard feature (docs/features/clipboard.md) -->
     <key name="clipboard-enabled" type="b">
       <default>false</default>
