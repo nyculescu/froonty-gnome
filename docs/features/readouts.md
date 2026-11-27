@@ -67,16 +67,29 @@ disabled. With no readout chosen, nothing runs.
   from going back to sleep. This was not measured. The GPU entries say so in
   Settings.
 - **Claude:** one `ClaudeService`, so a file monitor on Claude Code's config
-  file and on the status line's file, the network monitor, and a read per
-  write (the file was 85 kB here on 2026-11-02). As with the panic button,
-  coming on screen asks Claude Code's `/usage` (2-3 s, about 350 MB, at most
-  once a minute), here on each collapse, and then again about once a minute
-  while the pill stays on screen (user request: the pill is on screen most of
-  the session, so asking only on collapse left the number stale). Each ask
-  comes a minute and a second after Claude Code's last reading, since it does
-  not fetch again sooner; a run so comes about every 63 s. Claude Code's
-  own writes and the status line still come in as they happen. With "Ask
-  Claude Code for fresh usage" off, or in low power, nothing is run.
+  file and on the status line's file, the network monitor, and per write a
+  stat of the file, which is read and parsed only when it changed since the
+  last good read (the file was 85 kB here on 2026-11-02, 183 kB on
+  2026-11-27). As with the panic button, coming on screen asks Claude Code's
+  `/usage` (2-3 s, about 350 MB, at most once a minute), here on each
+  collapse, and then again while the pill stays on screen (user request: the
+  pill is on screen most of the session, so asking only on collapse left the
+  number stale). The request was about once a minute; the cadence now
+  follows Claude Code's own refresh, which gives the same freshness while
+  the pill stays on screen. Each ask comes 2 min 6 s after Claude Code's
+  last reading, or after the last ask if that brought none, so it is not
+  repeated at once. Measured with Claude Code 2.1.332 on 2026-11-27: a
+  `/usage` 61-94 s after its last reading fetched nothing, one 122 s or
+  more after did. Asking every 61 s so brought a new reading only every
+  other run, about every 2 min, for twice the runs (each about 1.6 s of
+  CPU and 320 MB at its peak, the same day). The exception is a collapse
+  or unlock 1-2 min after a reading: its `/usage` brings nothing, and the
+  next ask waits 2 min 6 s from it, so the next reading comes up to about
+  a minute later than with the minute cadence. One within a minute of a
+  reading runs nothing and leaves the next ask timed from that reading.
+  Claude Code's own writes and the status line still come in as they
+  happen. With "Ask Claude Code for fresh usage" off, or in low power,
+  nothing is run.
 - **Time zones:** the shared clock's ticks; no timer.
 
 The value's minimum width in the stylesheet keeps the pill still as digits

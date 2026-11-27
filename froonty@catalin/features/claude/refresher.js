@@ -44,7 +44,8 @@ export const PAUSED = 'claude-ask-paused-for-power';
 // Internal: the current low-power stretch was already acted on, so a user
 // who turns SETTING back on keeps it (survives a Shell restart or lock).
 export const HANDLED = 'claude-low-power-handled';
-// Claude Code neither asks again nor rewrites its cache within a minute.
+// Claude Code asks again at most once a minute; 2.1.332 waited about 2 min
+// (ui/readoutBar.js times the pill's readouts for that).
 export const MIN_INTERVAL_MS = 60 * 1000;
 // A run takes 2-3 s; one that hangs (e.g. no network) is stopped.
 const TIMEOUT_S = 30;

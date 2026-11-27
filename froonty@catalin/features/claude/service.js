@@ -15,10 +15,11 @@
 // chart from GitHub.
 //
 // Nothing runs while the tab is not on screen. Each time it is shown, the
-// files are read again (user request: refresh on every visit, never poll);
-// while it stays shown, file monitors and the network monitor bring in
-// changes as they happen. Hidden, all are disconnected. The pill's readouts
-// are the exception (`askEvery`): on screen most of the session, they would
+// files are checked again (user request: refresh on every visit, never
+// poll), and read only if they changed since the last good read; while it
+// stays shown, file monitors and the network monitor bring in changes as
+// they happen. Hidden, all are disconnected. The pill's readouts are the
+// exception (`askEvery`): on screen most of the session, they would
 // otherwise only ever ask Claude Code once (user request).
 //
 // Emits 'changed' when the usage, the error, the connection, the refresh
@@ -28,19 +29,31 @@ import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 
 import {Emitter} from '../../core/emitter.js';
-import {acquireShared, releaseShared} from './refresher.js';
+import {MIN_INTERVAL_MS, acquireShared, releaseShared} from './refresher.js';
 import {mergeStatusLine, statusLineFromFile, usageFromConfig} from './usage.js';
 
 for (const method of ['load_contents_async', 'query_info_async'])
     Gio._promisify(Gio.File.prototype, method);
 
-// Past the minute after Claude Code's last fetch, so the refresher does not
-// skip the ask as too soon (refresher.js MIN_INTERVAL_MS).
+// A second past `askEvery`, so an ask never lands just short of the wait
+// it was timed for.
 const ASK_MARGIN_MS = 1000;
 
 // The file also holds Claude Code's settings and project list; a much
 // larger one is not parsed on the Shell's main thread.
 const MAX_FILE_SIZE = 16 << 20;
+
+// Most reads find a file unchanged (after a /usage run that wrote nothing,
+// on a re-show), and Claude Code's is large (183 kB on 2026-11-27), so such
+// a file is not parsed again. Inode numbers get reused; the microseconds
+// tell rewrites apart.
+const STAMP_ATTRIBUTES = 'standard::size,time::modified,time::modified-usec,unix::inode';
+
+function stampOf(info) {
+    return [info.get_size(), info.get_attribute_uint64('time::modified'),
+        info.get_attribute_uint32('time::modified-usec'),
+        info.get_attribute_uint64('unix::inode')].join(':');
+}
 
 /**
  * Claude Code's config file, found the way Claude Code finds it: a legacy
@@ -108,6 +121,11 @@ export class ClaudeService extends Emitter {
         /** The cache's own reading, without the status line's. */
         this._cacheUsage = null;
         this._cacheFetchedAt = null;
+        // stampOf() each file at its last good read, or null; set only
+        // together with the reading taken from it.
+        this._cacheStamp = null;
+        this._statusStamp = null;
+        this._statusLine = null;
         this._active = false;
         this._monitor = null;
         this._statusMonitor = null;
@@ -182,8 +200,9 @@ export class ClaudeService extends Emitter {
     }
 
     /**
-     * Reads the file again. Calls made while a read runs are folded into one
-     * more read after it, so a burst of writes costs at most two reads.
+     * Reads the files again, or only stats one unchanged since its last good
+     * read. Calls made while a read runs are folded into one more read after
+     * it, so a burst of writes costs at most two reads.
      *
      * @returns {Promise} resolves when the file has been read (for tests)
      */
@@ -228,15 +247,21 @@ export class ClaudeService extends Emitter {
     // Shown and online only; the refresher decides the rest (mode, once a
     // minute).
     _requestFresh() {
+        // The refresher skips a reading under its minute old, so such an
+        // ask changes nothing and the next one stays timed from the reading.
+        const age = Date.now() - (this._cacheFetchedAt ?? 0);
+        const skipped = age < Math.min(MIN_INTERVAL_MS, this._askEvery * 1000);
         if (this._active && this.online)
             this._refresher?.request(this._cacheFetchedAt);
-        this._askedAt = Date.now();
+        if (!skipped)
+            this._askedAt = Date.now();
         this._scheduleAsk();
     }
 
     // Timed from the cache's reading, not a fixed beat: Claude Code fetches
-    // a few seconds into a run, and a beat would land just short of a
-    // minute after it and be skipped.
+    // a few seconds into a run, and a beat would land just short of its
+    // wait after that fetch and bring nothing. After an ask that brought no
+    // new reading, from the ask, so it is not repeated at once.
     _scheduleAsk() {
         if (this._askId)
             GLib.source_remove(this._askId);
@@ -287,9 +312,18 @@ export class ClaudeService extends Emitter {
     async _readStatusLine() {
         const file = this._statusFile ?? this._statusFileFor();
         try {
+            const info = await file.query_info_async(STAMP_ATTRIBUTES,
+                Gio.FileQueryInfoFlags.NONE, GLib.PRIORITY_DEFAULT, this._cancellable);
+            const stamp = stampOf(info);
+            if (stamp === this._statusStamp)
+                return this._statusLine;
             const [bytes] = await file.load_contents_async(this._cancellable);
-            return statusLineFromFile(JSON.parse(new TextDecoder().decode(bytes)));
+            this._statusLine = statusLineFromFile(JSON.parse(new TextDecoder().decode(bytes)));
+            this._statusStamp = stamp;
+            return this._statusLine;
         } catch (e) {
+            this._statusStamp = null;
+            this._statusLine = null;
             if (e.matches?.(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
                 throw e;
             return null;
@@ -300,6 +334,7 @@ export class ClaudeService extends Emitter {
         const file = this._file ?? this._fileFor();
         let usage = null;
         let error = null;
+        let stamp = null;
         let status;
         try {
             status = await this._readStatusLine();
@@ -307,12 +342,18 @@ export class ClaudeService extends Emitter {
             return;
         }
         try {
-            const info = await file.query_info_async('standard::size',
+            const info = await file.query_info_async(STAMP_ATTRIBUTES,
                 Gio.FileQueryInfoFlags.NONE, GLib.PRIORITY_DEFAULT, this._cancellable);
-            if (info.get_size() > MAX_FILE_SIZE)
-                throw new Error(`${file.get_path()} is larger than ${MAX_FILE_SIZE} bytes`);
-            const [bytes] = await file.load_contents_async(this._cancellable);
-            usage = usageFromConfig(JSON.parse(new TextDecoder().decode(bytes)));
+            const current = stampOf(info);
+            if (current === this._cacheStamp) {
+                usage = this._cacheUsage;
+            } else {
+                if (info.get_size() > MAX_FILE_SIZE)
+                    throw new Error(`${file.get_path()} is larger than ${MAX_FILE_SIZE} bytes`);
+                const [bytes] = await file.load_contents_async(this._cancellable);
+                usage = usageFromConfig(JSON.parse(new TextDecoder().decode(bytes)));
+            }
+            stamp = current;
         } catch (e) {
             if (e.matches?.(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
                 return;
@@ -330,6 +371,7 @@ export class ClaudeService extends Emitter {
             }
         }
         this._cacheUsage = usage;
+        this._cacheStamp = stamp;
         const fetchedAt = usage?.fetchedAt ?? null;
         if (fetchedAt !== this._cacheFetchedAt) {
             this._cacheFetchedAt = fetchedAt;

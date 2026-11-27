@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Pill readouts: the Claude readouts ask Claude Code for fresh usage
+  about every 2 minutes, when Claude Code fetches anew, instead of every
+  minute, when every other run brought nothing: half the runs, the
+  numbers as fresh while the pill stays shown. Claude Code's config file
+  and the status line's are parsed again only when they changed.
 - Software brightness: with a laptop open and joined to the monitors it
   dims, they join GNOME's brightness slider, so one slider dims every
   screen and keeps their ratio; Froonty's slider hides. GNOME's menu has a
