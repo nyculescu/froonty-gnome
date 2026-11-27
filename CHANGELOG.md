@@ -26,6 +26,11 @@
   longer starts WebKit for a note nobody looks at. After a pause, a new
   block shows "Rendering …" a moment longer while the renderer starts
   again.
+- Media: the bars beside a playing song move for 8 to 9 s, then stand
+  still, raised, instead of moving for as long as the music plays (GNOME
+  redraws them every frame while they move, about 3.4 % of a CPU core in
+  a headless test). They move again when a song starts, resumes or
+  changes, and when the pointer enters the pill.
 - Software brightness: with a laptop open and joined to the monitors it
   dims, they join GNOME's brightness slider, so one slider dims every
   screen and keeps their ratio; Froonty's slider hides. GNOME's menu has a

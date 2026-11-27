@@ -8749,6 +8749,24 @@ async function testMediaPill(outDir) {
         };
         check('media: the bars move while playing', accessory()._bars.moving &&
             bars().some(bar => bar.get_transition('scale-y')), barsState());
+        // A burst is whole runs of each bar's motion, 8 to 9 s.
+        const still = () => bars().every(bar => !bar.get_transition('scale-y'));
+        check('media: after a burst the bars stand still, raised, while playing',
+            await waitFor(still, 12000) && accessory()._bars.moving &&
+            bars().every(bar => bar.scale_y > 0.7), barsState());
+        await fakeSet(a, {Metadata: song('Burst Song', {'mpris:artUrl': coverUrl('froontypill')})});
+        check('media: a new song moves the bars again',
+            await waitFor(() => !still(), 2000), barsState());
+        const settled = await waitFor(still, 12000);
+        const hoverDelay = s.get_int('hover-open-delay');
+        s.set_int('hover-open-delay', 0);
+        const monitor = Main.layoutManager.primaryMonitor;
+        await movePointerTo(monitor.x + 60, monitor.y + monitor.height / 2);
+        await movePointerTo(...pillCenter());
+        await sleep(SETTLE_MS);
+        check('media: hovering the pill moves the bars again', settled && !still(),
+            `settled=${settled} ${barsState()}`);
+        s.set_int('hover-open-delay', hoverDelay);
         iface.set_boolean('enable-animations', false);
         await sleep(SETTLE_MS);
         check('media: with GNOME\'s animations off, the bars stand still',

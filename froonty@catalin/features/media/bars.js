@@ -2,12 +2,13 @@
 // Moving bars beside a playing song (the tab's title row, the pill's
 // trailing wing). Decorative: hidden from assistive technology.
 //
-// The motion is Clutter's own (an endless eased scale per bar), so no
-// JavaScript runs per frame; GNOME still redraws the bars' small region
-// every frame while they move. They move only while all hold: the song
-// plays, media-animate-bars is on, GNOME's enable-animations is on, and
-// the bars are on screen (mapped). Otherwise they stand still, low. A
-// colour change never restarts the motion.
+// The motion is Clutter's own (an eased scale per bar), so no JavaScript
+// runs per frame. GNOME redraws the bars' region every frame while they
+// move, so they move in bursts of about 8 s (on starting to play and on
+// pulse(): a new song, a hover), then stand still, raised. They play only
+// while all hold: the song plays, media-animate-bars is on, GNOME's
+// enable-animations is on, and the bars are on screen (mapped). Otherwise
+// they stand still, low. A colour change never restarts the motion.
 
 import Atk from 'gi://Atk';
 import Clutter from 'gi://Clutter';
@@ -15,9 +16,20 @@ import GObject from 'gi://GObject';
 import Graphene from 'gi://Graphene';
 import St from 'gi://St';
 
+const BURST_MS = 8000;
+
 const envelope = (i, n) => 0.55 + 0.45 * Math.sin(Math.PI * (i + 0.5) / n);
 const lowScale = (i, n) => 0.12 + 0.25 * envelope(i, n);
 const highScale = (i, n) => 0.12 + 0.88 * envelope(i, n);
+const runMs = i => Math.round(Math.PI / (5.2 + 0.61 * i) * 1000);
+
+// The repeat count for at least BURST_MS of runs from run `current`,
+// ending raised: an auto-reversed ease's even runs go to its target, odd
+// ones back.
+const lastRun = (duration, towardHigh, current = 0) => {
+    const last = current + Math.ceil(BURST_MS / duration) - 1;
+    return last % 2 === (towardHigh ? 0 : 1) ? last : last + 1;
+};
 
 export const MediaBars = GObject.registerClass(
 class MediaBars extends St.BoxLayout {
@@ -41,6 +53,7 @@ class MediaBars extends St.BoxLayout {
         this._playing = false;
         this._enabled = true;
         this._moving = false;
+        this._towardHigh = [];
         this._bars = [];
         for (let i = 0; i < count; i++) {
             const bar = new St.Widget({
@@ -60,12 +73,22 @@ class MediaBars extends St.BoxLayout {
         // the children, and eases of unmapped actors are skipped; the last
         // child is mapped last (and unmapped before its parent).
         this._bars.at(-1).connect('notify::mapped', () => this._sync());
-        this.connect('destroy', () => this._stSettings.disconnect(this._animationsId));
+        this.connect('destroy', () => {
+            this._stSettings.disconnect(this._animationsId);
+            for (const bar of this._bars)
+                bar.remove_all_transitions();
+        });
     }
 
-    /** Whether the bars move (and are drawn tall). */
+    /** Whether the bars play: in a burst, or standing raised after one. */
     get moving() {
         return this._moving;
+    }
+
+    /** A new burst of motion while the bars play; else nothing. */
+    pulse() {
+        if (this._moving)
+            this._burst(false);
     }
 
     /** @param {boolean} playing */
@@ -99,18 +122,33 @@ class MediaBars extends St.BoxLayout {
         if (moving === this._moving)
             return;
         this._moving = moving;
-        const n = this._count;
         this._bars.forEach((bar, i) => {
             bar.remove_all_transitions();
-            bar.scale_y = lowScale(i, n);
-            if (!moving)
+            bar.scale_y = lowScale(i, this._count);
+        });
+        if (moving)
+            this._burst(true);
+    }
+
+    // A bar still in a burst keeps its ease, for longer, so it never jumps.
+    _burst(fromLow) {
+        const n = this._count;
+        this._bars.forEach((bar, i) => {
+            const duration = runMs(i);
+            const running = bar.get_transition('scale-y');
+            if (running) {
+                const last = lastRun(duration, this._towardHigh[i], running.get_current_repeat());
+                running.set_repeat_count(Math.max(last, running.get_repeat_count()));
                 return;
+            }
+            this._towardHigh[i] = fromLow;
+            // No delay: an ease removed during its delay never emits
+            // 'stopped', so GNOME's ease() would keep it and its bar alive.
             bar.ease({
-                scale_y: highScale(i, n),
-                duration: Math.round(Math.PI / (5.2 + 0.61 * i) * 1000),
-                delay: 170 * i,
+                scale_y: fromLow ? highScale(i, n) : lowScale(i, n),
+                duration,
                 mode: Clutter.AnimationMode.EASE_IN_OUT_SINE,
-                repeatCount: -1,
+                repeatCount: lastRun(duration, fromLow),
                 autoReverse: true,
             });
         });

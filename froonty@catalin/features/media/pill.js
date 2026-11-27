@@ -9,7 +9,8 @@
 // They have equal widths, so the time stays centered. They appear after
 // the pill has grown (if it needs to), and fade out before it shrinks
 // back. A new song (MediaService 'track-started', already debounced)
-// briefly replaces the time with its title (media-track-notice).
+// briefly replaces the time with its title (media-track-notice). A new
+// song or a hover on the pill moves the bars again for a while.
 // Two-finger swipes on the pill change song (media-gestures).
 //
 // The island's pill accessory interface: leading, trailing, showing,
@@ -90,7 +91,7 @@ export class MediaPillAccessory extends Emitter {
             [this._media, this._media.connect('changed', () => this._sync())],
             [this._media, this._media.connect('art-changed', () => this._syncArt())],
             [this._media, this._media.connect('track-started', (_m, info) => this._onTrackStarted(info))],
-            [this._pill, this._pill.connect('notify::hover', () => this._art.repaintCorners())],
+            [this._pill, this._pill.connect('notify::hover', () => this._onHover())],
             [this._pill, this._pill.connect('notify::height', () => this._sizeWings())],
         ];
         for (const key of ['media-animate-bars', 'media-show-in-pill']) {
@@ -252,7 +253,14 @@ export class MediaPillAccessory extends Emitter {
         }
     }
 
+    _onHover() {
+        this._art.repaintCorners();
+        if (this._pill.hover)
+            this._bars.pulse();
+    }
+
     _onTrackStarted({title, artist}) {
+        this._bars.pulse();
         const playback = this._media?.playback;
         if (!this._settings.get_boolean('media-track-notice') || !this._shown ||
             !playback?.playing || !title)

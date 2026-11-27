@@ -30,7 +30,7 @@ export function mediaPage(settings) {
         _('Shows the title for a few seconds')));
     island.add(switchRow(settings, 'media-pill-opens-tab', _('Open the Media tab from the island')));
     island.add(switchRow(settings, 'media-animate-bars', _('Moving bars'),
-        _('While music plays, GNOME redraws the bars every frame')));
+        _('A few seconds at a time while music plays')));
     island.add(switchRow(settings, 'media-gestures', _('Swipe to change song'),
         _('Two fingers left or right on the touchpad')));
     page.add(island);
