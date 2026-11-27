@@ -1,10 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+import Gio from 'gi://Gio';
+import GLib from 'gi://GLib';
+
 import {
     coreInputs, cpuPackageInput, driveName, findEfiMount, isSnapMount, loadPercent,
     parseCpuMhz, parseCpuModel, parseDiskMounts, parseMeminfo, parseNetDev, parseNvidiaSmi,
-    parseStat, pciDeviceName, rate,
+    parseStat, pciDeviceName, pciIdsLines, rate,
 } from '../../froonty@catalin/features/sysmon/parse.js';
+import {SYSTEM_IO} from '../../froonty@catalin/features/sysmon/io.js';
 import {levelCells, levelClass} from '../../froonty@catalin/features/sysmon/level.js';
+import {NvidiaLoop, nvidiaLoop} from '../../froonty@catalin/features/sysmon/nvidiaLoop.js';
 import {Sampler, SECTIONS} from '../../froonty@catalin/features/sysmon/sampler.js';
 import {SysmonService} from '../../froonty@catalin/features/sysmon/service.js';
 import {
@@ -155,6 +160,33 @@ test('GPU names from pci.ids, marketing name first', () => {
     eq(pciDeviceName(PCI_IDS, '0x1234', '0x0001'), null);
 });
 
+test('pci.ids: only the vendor\'s and the device\'s lines are decoded, giving the same name', () => {
+    const blocks = `${PCI_IDS}10df  Another vendor
+\t0001  First
+# a comment inside the block
+
+\t27e0  After a comment and a blank line
+10e0  The next vendor
+\t27e0  Not 10df's
+`;
+    const bytes = new TextEncoder().encode(blocks);
+    eq(pciIdsLines(bytes, '0x10de', '0x27e0'),
+        '10de  NVIDIA Corporation\n\t27e0  AD104M [GeForce RTX 4080 Max-Q / Mobile]\n');
+    const pairs = [['0x8086', '0xa788'], ['0x10de', '0x27e0'], ['0x1002', '0x744c'], ['0x10DE', '0x27E0'],
+        ['0x10df', '0x27e0'], ['0x10e0', '0x27e0']];
+    for (const [vendor, device] of pairs) {
+        eq(pciDeviceName(pciIdsLines(bytes, vendor, device), vendor, device),
+            pciDeviceName(blocks, vendor, device), `${vendor}:${device}`);
+    }
+    eq(pciDeviceName(pciIdsLines(bytes, '0x10df', '0x27e0'), '0x10df', '0x27e0'),
+        'After a comment and a blank line');
+    // Another vendor's device, a subsystem line, an unknown vendor.
+    eq(pciIdsLines(bytes, '0x10de', '0xa788'), null);
+    eq(pciIdsLines(bytes, '0x8086', '0x1043'), null);
+    eq(pciIdsLines(bytes, '0x1234', '0x0001'), null);
+    eq(pciIdsLines(new Uint8Array(0), '0x10de', '0x27e0'), null);
+});
+
 test('nvidia-smi rows by sysfs PCI address; N/A is unknown', () => {
     const gpus = parseNvidiaSmi(
         '00000000:01:00.0, NVIDIA GeForce RTX 4080 Laptop GPU, 8, 52, 15.38, 1664, 12282\n' +
@@ -226,12 +258,26 @@ test('thermometer colors are green through 50, yellow at 75, and red at 100', ()
 });
 
 // A fake /proc and /sys: `files` maps paths to text, `links` to targets.
-// Directory listings come from the paths under them.
+// Directory listings come from the paths under them. `reads` records the
+// files read and folders listed. follow() starts a fake nvidia-smi that
+// prints `smi` at once; a test prints more with emit() and ends it with
+// end().
 function fakeIo({files = {}, links = {}, executables = [], filesystems = {}, smi = null}) {
     const calls = [];
+    const followed = [];
+    const reads = [];
     const io = {
-        read: async path => files[path] ?? null,
+        read: async path => {
+            reads.push(path);
+            return files[path] ?? null;
+        },
+        readBytes: async path => {
+            reads.push(path);
+            const text = files[path] ?? null;
+            return text === null ? null : new TextEncoder().encode(text);
+        },
         list: async dir => {
+            reads.push(dir);
             const names = new Set();
             for (const path of [...Object.keys(files), ...Object.keys(links)]) {
                 if (path.startsWith(`${dir}/`))
@@ -247,8 +293,31 @@ function fakeIo({files = {}, links = {}, executables = [], filesystems = {}, smi
             calls.push(argv);
             return smi;
         },
+        follow: (argv, onLines, onEnd) => {
+            const process = {
+                argv,
+                stopped: false,
+                emit: text => {
+                    if (!process.stopped)
+                        onLines(text.split('\n').filter(Boolean));
+                },
+                end: () => {
+                    if (process.stopped)
+                        return;
+                    process.stopped = true;
+                    onEnd();
+                },
+                stop: () => {
+                    process.stopped = true;
+                },
+            };
+            followed.push(process);
+            if (smi)
+                Promise.resolve().then(() => process.emit(smi));
+            return process;
+        },
     };
-    return {io, calls};
+    return {io, calls, followed, reads};
 }
 
 const DRM = '/sys/class/drm';
@@ -373,6 +442,229 @@ test('without nvidia-smi, the NVIDIA card says what is missing', async () => {
     eq(second.gpus[1].noTool, true);
 });
 
+test('GPUs and the CPU are found only once a sample reads them', async () => {
+    const fake = fakeIo(machine());
+    const sampler = new Sampler(fake.io);
+    await sampler.sample(['memory'], {now: 1});
+    ok(!fake.reads.some(path => path.startsWith(DRM)), 'no GPU discovery');
+    ok(!fake.reads.includes('/usr/share/hwdata/pci.ids'), 'no pci.ids');
+    ok(!fake.reads.includes('/sys/devices/system/cpu'), 'no CPU discovery');
+    const snapshot = await sampler.sample(['gpu'], {now: 2});
+    eq(snapshot.gpus.length, 3);
+    ok(fake.reads.includes('/usr/share/hwdata/pci.ids'));
+});
+
+test('pci.ids is read once per io, whatever the samplers and visits', async () => {
+    const fake = fakeIo(machine());
+    const pciReads = () => fake.reads.filter(path => path.endsWith('/pci.ids')).length;
+    const first = new Sampler(fake.io);
+    await first.sample(['gpu'], {now: 1});
+    first.reset();
+    await first.sample(['gpu'], {now: 2});
+    const other = await new Sampler(fake.io).sample(['gpu'], {now: 3});
+    eq(pciReads(), 1);
+    eq(other.gpus.map(gpu => gpu.name), ['Intel Raptor Lake-S UHD Graphics',
+        'NVIDIA GeForce RTX 4080 Laptop GPU', 'AMD Radeon RX 7900 XT/7900 XTX']);
+    // Another io (a test's fake with another pci.ids) has names of its own.
+    const renamed = fakeIo(machine({files: {
+        '/usr/share/hwdata/pci.ids': '8086  Intel Corporation\n\ta788  Another name\n',
+    }}));
+    eq((await new Sampler(renamed.io).sample(['gpu'], {now: 1})).gpus[0].name, 'Intel Another name');
+});
+
+// card2 lights the laptop's panel, so it cannot sleep.
+const LIT = {
+    [`${DRM}/card2-eDP-1/status`]: 'connected\n',
+    [`${DRM}/card2-eDP-1/enabled`]: 'enabled\n',
+    [`${DRM}/card2-DP-3/status`]: 'disconnected\n',
+    [`${DRM}/card2-DP-3/enabled`]: 'disabled\n',
+};
+const smiLine = load => `00000000:01:00.0, NVIDIA GeForce RTX 4080 Laptop GPU, ${load}, 52, 15.38, 1664, 12282\n`;
+
+test('a card that cannot sleep is read from one nvidia-smi -lms, not a run per sample', async () => {
+    const fake = fakeIo(machine({files: LIT}));
+    const sampler = new Sampler(fake.io);
+    const first = await sampler.sample(['gpu'], {now: 1, interval: 2});
+    eq(first.gpus[1].load, 8, 'it waits for the first line');
+    eq(first.gpus[1].name, 'NVIDIA GeForce RTX 4080 Laptop GPU');
+    eq(fake.calls.length, 0);
+    eq(fake.followed.length, 1);
+    eq(fake.followed[0].argv[0], '/usr/bin/nvidia-smi');
+    eq(fake.followed[0].argv.slice(-4), ['-i', '0000:01:00.0', '-lms', '2000']);
+    fake.followed[0].emit(smiLine(30));
+    const second = await sampler.sample(['gpu'], {now: 3, interval: 2});
+    eq(second.gpus[1].load, 30, 'the latest line');
+    eq(fake.followed.length, 1, 'still the one process');
+    sampler.release();
+    ok(fake.followed[0].stopped, 'killed when the last sampler lets go');
+    ok(!nvidiaLoop(fake.io).running);
+});
+
+test('runtime power management off counts as cannot sleep', async () => {
+    const fake = fakeIo(machine({files: {[`${DRM}/card2/device/power/control`]: 'on\n'}}));
+    const sampler = new Sampler(fake.io);
+    await sampler.sample(['gpu'], {now: 1, interval: 1});
+    eq(fake.followed.length, 1);
+    eq(fake.calls.length, 0);
+    sampler.release();
+});
+
+test('a card that can sleep is still read by one run per sample', async () => {
+    const fake = fakeIo(machine({files: {...LIT, [`${DRM}/card2-eDP-1/enabled`]: 'disabled\n'}}));
+    await new Sampler(fake.io).sample(['gpu'], {now: 1, interval: 2});
+    eq(fake.followed.length, 0, 'a connected panel it does not light');
+    eq(fake.calls.length, 1);
+    // Without an interval (a caller that never releases), never followed.
+    const unlit = fakeIo(machine({files: LIT}));
+    await new Sampler(unlit.io).sample(['gpu'], {now: 1});
+    eq(unlit.followed.length, 0);
+    eq(unlit.calls.length, 1);
+});
+
+test('a display switched off lets the card sleep again: the loop stops', async () => {
+    const spec = machine({files: LIT});
+    const fake = fakeIo(spec);
+    const sampler = new Sampler(fake.io);
+    await sampler.sample(['gpu'], {now: 1, interval: 2});
+    spec.files[`${DRM}/card2-eDP-1/enabled`] = 'disabled\n';
+    const snapshot = await sampler.sample(['gpu'], {now: 3, interval: 2});
+    ok(fake.followed[0].stopped);
+    eq(fake.calls.length, 1, 'read by a run again');
+    eq(snapshot.gpus[1].load, 8);
+});
+
+test('samplers share one nvidia-smi at the shortest interval; the last release kills it', async () => {
+    const fake = fakeIo(machine({files: LIT}));
+    const slow = new Sampler(fake.io);
+    const quick = new Sampler(fake.io);
+    await slow.sample(['gpu'], {now: 1, interval: 5});
+    await quick.sample(['gpu'], {now: 1, interval: 1});
+    eq(fake.followed.map(p => [p.argv.at(-1), p.stopped]), [['5000', true], ['1000', false]]);
+    quick.release();
+    eq(fake.followed.map(p => [p.argv.at(-1), p.stopped]),
+        [['5000', true], ['1000', true], ['5000', false]], 'back to the slow one');
+    await slow.sample(['gpu'], {now: 6, interval: 5});
+    eq(fake.followed.length, 3, 'a sample that changes nothing restarts nothing');
+    await slow.sample(['memory'], {now: 11, interval: 5});
+    ok(fake.followed.every(p => p.stopped), 'a sample without the GPU lets go');
+    ok(!nvidiaLoop(fake.io).running);
+});
+
+test('a sample cancelled meanwhile does not hold the loop after its caller let go', async () => {
+    const fake = fakeIo(machine({files: LIT}));
+    const sampler = new Sampler(fake.io);
+    await sampler.sample(['gpu'], {now: 1, interval: 2});
+    const cancellable = new Gio.Cancellable();
+    const read = fake.io.read;
+    // The caller goes inactive while the sample checks whether the card can sleep.
+    fake.io.read = path => {
+        if (path === `${DRM}/card2/device/power/control` && !cancellable.is_cancelled()) {
+            cancellable.cancel();
+            sampler.release();
+        }
+        return read(path);
+    };
+    eq(await sampler.sample(['gpu'], {now: 3, interval: 2, cancellable}), null);
+    ok(!nvidiaLoop(fake.io).running);
+    eq(fake.followed.length, 1);
+});
+
+test('the loop: lines go stale after two intervals; an exit nobody asked for starts it again, later each time', async () => {
+    let now = 0;
+    const fake = fakeIo({});
+    const loop = new NvidiaLoop(fake.io, {now: () => now, firstRetryMs: 20, maxRetryMs: 40});
+    const holder = {};
+    const address = ['0000:01:00.0'];
+    loop.hold(holder, {path: '/usr/bin/nvidia-smi', addresses: address, intervalMs: 1000});
+    const waiting = loop.read(address);
+    fake.followed[0].emit(smiLine(8));
+    eq((await waiting).get('0000:01:00.0').load, 8, 'a read waits for the first lines');
+    now = 2000;
+    eq((await loop.read(address)).get('0000:01:00.0').load, 8, 'two intervals old');
+    now = 2001;
+    eq((await loop.read(address)).size, 0, 'older is no reading, and no wait');
+
+    fake.followed[0].end();
+    ok(!loop.running);
+    ok(await waitFor(() => fake.followed.length === 2), 'started again');
+    // An error message is a line, not a reading: the next wait still doubles.
+    fake.followed[1].emit('Failed to initialize NVML: Driver/library version mismatch');
+    const ended = GLib.get_monotonic_time();
+    fake.followed[1].end();
+    ok(await waitFor(() => fake.followed.length === 3));
+    ok(GLib.get_monotonic_time() - ended >= 40 * 1000, 'after twice as long');
+    fake.followed[2].emit(smiLine(9));
+    eq(loop._retryMs, 20, 'a reading makes the next wait short again');
+
+    const cancellable = new Gio.Cancellable();
+    loop.hold(holder, {path: '/usr/bin/nvidia-smi', addresses: address, intervalMs: 500});
+    eq(fake.followed.length, 4, 'a new interval starts it anew');
+    // The last line stale, the new process not yet stalled.
+    now = 5000;
+    const cancelled = loop.read(address, cancellable);
+    cancellable.cancel();
+    eq((await cancelled).size, 0, 'a cancelled wait ends at once');
+
+    fake.followed[3].end();
+    loop.release(holder);
+    ok(fake.followed.every(p => p.stopped));
+    ok(!loop.running);
+    eq(loop._retryId, 0, 'no start again after the last release');
+});
+
+test('the loop: a read waiting for a process that was replaced ends when the new one cannot start', async () => {
+    const fake = fakeIo({});
+    const loop = new NvidiaLoop(fake.io, {firstRetryMs: 60000});
+    const holder = {};
+    const address = ['0000:01:00.0'];
+    loop.hold(holder, {path: '/usr/bin/nvidia-smi', addresses: address, intervalMs: 1000});
+    const waiting = loop.read(address);
+    const follow = fake.io.follow;
+    fake.io.follow = () => null;
+    loop.hold(holder, {path: '/usr/bin/nvidia-smi', addresses: address, intervalMs: 500});
+    ok(!loop.running);
+    const result = await Promise.race([waiting, sleep(1000).then(() => 'still waiting')]);
+    eq(result instanceof Map ? result.size : result, 0, 'it ends at once, with no reading');
+    fake.io.follow = follow;
+    loop.release(holder);
+    eq(loop._retryId, 0);
+});
+
+test('the loop: one that stops writing is killed and started again', async () => {
+    let now = 0;
+    const fake = fakeIo({});
+    const loop = new NvidiaLoop(fake.io, {now: () => now, waitMs: 50, firstRetryMs: 20, maxRetryMs: 40});
+    const holder = {};
+    const address = ['0000:01:00.0'];
+    loop.hold(holder, {path: '/usr/bin/nvidia-smi', addresses: address, intervalMs: 1000});
+    fake.followed[0].emit(smiLine(8));
+    now = 3000;
+    await loop.read(address);
+    ok(!fake.followed[0].stopped, 'three intervals without a line is not a stall yet');
+    now = 3001;
+    eq((await loop.read(address)).size, 0, 'no reading, and no wait');
+    ok(fake.followed[0].stopped, 'killed');
+    ok(await waitFor(() => fake.followed.length === 2), 'started again');
+    loop.release(holder);
+    ok(fake.followed.every(p => p.stopped));
+    eq(loop._retryId, 0);
+});
+
+test('a card found able to sleep is let go by every sampler at once', async () => {
+    const spec = machine({files: LIT});
+    const fake = fakeIo(spec);
+    const quick = new Sampler(fake.io);
+    const slow = new Sampler(fake.io);
+    await quick.sample(['gpu'], {now: 1, interval: 2});
+    await slow.sample(['gpu'], {now: 1, interval: 5});
+    ok(nvidiaLoop(fake.io).running);
+    spec.files[`${DRM}/card2-eDP-1/enabled`] = 'disabled\n';
+    await quick.sample(['gpu'], {now: 3, interval: 2});
+    ok(!nvidiaLoop(fake.io).running, 'stopped before the slow sampler looks again');
+    ok(fake.followed.every(p => p.stopped));
+    slow.release();
+});
+
 test('disks: root, swap from meminfo, the EFI partition', async () => {
     const {second} = await twoSamples(machine(), ['disks']);
     eq(second.disks.root, {total: 1000, used: 400});
@@ -442,19 +734,14 @@ test('disks: every mounted drive, its size, virtual ones marked and last', async
 });
 
 test('sections that are off are not read', async () => {
-    const reads = [];
     const fake = fakeIo(machine());
-    const read = fake.io.read;
-    fake.io.read = path => {
-        reads.push(path);
-        return read(path);
-    };
     const sampler = new Sampler(fake.io);
     const snapshot = await sampler.sample(['memory'], {now: 1});
     eq(Object.keys(snapshot), ['memory']);
-    ok(!reads.includes('/proc/stat'));
-    ok(!reads.includes('/proc/net/dev'));
+    ok(!fake.reads.includes('/proc/stat'));
+    ok(!fake.reads.includes('/proc/net/dev'));
     eq(fake.calls.length, 0);
+    eq(fake.followed.length, 0);
 });
 
 // Just what SysmonService uses of Gio.Settings.
@@ -570,6 +857,101 @@ test('a sample taken for a visit that ended is dropped', async () => {
     eq(changes, 0);
     eq(service.snapshot, null);
     service.stop();
+});
+
+test('Btop holds the shared nvidia-smi only while shown and reading GPUs', async () => {
+    const settings = fakeSettings({'sysmon-cores-expanded': false});
+    const fake = fakeIo(machine({files: LIT}));
+    const service = new SysmonService(settings, {io: fake.io, now: () => 1});
+    service.start();
+    service.setActive(true);
+    ok(await waitFor(() => service.snapshot?.gpus), 'sampled');
+    eq(fake.followed.map(p => p.argv.at(-1)), ['2000'], 'at the tab\'s interval');
+    eq(service.snapshot.gpus[1].load, 8);
+    service.setActive(false);
+    ok(fake.followed[0].stopped, 'hidden');
+    service.setActive(true);
+    ok(await waitFor(() => fake.followed.length === 2));
+    settings.set_boolean('sysmon-show-gpu', false);
+    ok(fake.followed[1].stopped, 'GPU section turned off');
+    service.stop();
+    ok(!nvidiaLoop(fake.io).running);
+});
+
+test('a Btop sample under way when its last section, GPU, is turned off lets go as it ends', async () => {
+    const values = {'sysmon-cores-expanded': false};
+    for (const section of SECTIONS)
+        values[`sysmon-show-${section}`] = section === 'gpu';
+    const settings = fakeSettings(values);
+    const fake = fakeIo(machine({files: LIT}));
+    const read = fake.io.read;
+    let turnedOff = false;
+    // Turned off while the sample checks whether the card can sleep, before it holds.
+    fake.io.read = path => {
+        if (path === `${DRM}/card2/device/power/control` && !turnedOff) {
+            turnedOff = true;
+            settings.set_boolean('sysmon-show-gpu', false);
+        }
+        return read(path);
+    };
+    const service = new SysmonService(settings, {io: fake.io, now: () => 1});
+    service.start();
+    service.setActive(true);
+    ok(await waitFor(() => turnedOff && !service._sampling), 'the sample ended');
+    eq(service.polling, false, 'no tick comes to let it go');
+    eq(fake.followed.length, 1, 'it held the loop after the section went off');
+    ok(fake.followed[0].stopped, 'and let go as it ended');
+    ok(!nvidiaLoop(fake.io).running);
+    service.stop();
+});
+
+test('follow() goes on reading after its line handler throws', async () => {
+    const dir = GLib.dir_make_tmp('froonty-sysmon-XXXXXX');
+    const go = `${dir}/go`;
+    const batches = [];
+    let ended = false;
+    // "two" waits until the handler has had "one", so they come apart.
+    const child = SYSTEM_IO.follow(['/bin/sh', '-c',
+        `echo one; while [ ! -e '${go}' ]; do sleep 0.02; done; echo two`], lines => {
+        batches.push(lines);
+        if (batches.length === 1)
+            throw new Error('a bug in the handler');
+    }, () => {
+        ended = true;
+    });
+    ok(child, 'started');
+    ok(await waitFor(() => batches.length === 1));
+    GLib.file_set_contents(go, '');
+    ok(await waitFor(() => ended), 'read to the end');
+    eq(batches, [['one'], ['two']]);
+    Gio.File.new_for_path(go).delete(null);
+    Gio.File.new_for_path(dir).delete(null);
+});
+
+test('the panic and readout samplers hold it only while active and reading GPUs', async () => {
+    const fake = fakeIo(machine({files: LIT}));
+    const settings = fakeSettings({[READOUTS_INTERVAL_KEY]: 3});
+    const readouts = new ReadoutMetricsService(settings, {io: fake.io, now: () => 1});
+    readouts.setNeeds(['gpu'], false);
+    readouts.setActive(true);
+    ok(await waitFor(() => readouts.samples > 0));
+    eq(fake.followed.map(p => p.argv.at(-1)), ['3000']);
+    readouts.setNeeds(['memory'], false);
+    ok(fake.followed[0].stopped, 'no GPU readout any more');
+    readouts.setNeeds(['gpu'], false);
+    ok(await waitFor(() => fake.followed.length === 2));
+    readouts.setActive(false);
+    ok(fake.followed[1].stopped, 'island opened');
+
+    const panic = new PanicMetricsService(fakeSettings({[PANIC_LOAD_KEY]: 'gpu'}), {io: fake.io, now: () => 1});
+    panic.start();
+    panic.setActive(true);
+    ok(await waitFor(() => panic.samples > 0));
+    eq(fake.followed.length, 3);
+    panic.stop();
+    ok(fake.followed[2].stopped, 'stopped');
+    readouts.stop();
+    ok(!nvidiaLoop(fake.io).running);
 });
 
 await done();

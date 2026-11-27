@@ -83,6 +83,7 @@ export class SysmonService extends Emitter {
             this._unschedule();
             this._cancellable.cancel();
             this._cancellable = null;
+            this._sampler.release();
         }
     }
 
@@ -106,6 +107,9 @@ export class SysmonService extends Emitter {
 
     _onSettingsChanged(key) {
         this._readSettings();
+        // With every section off no sample comes to let it go.
+        if (!this.sections.includes('gpu'))
+            this._sampler.release();
         this.emit('changed');
         if (!this._active)
             return;
@@ -144,6 +148,7 @@ export class SysmonService extends Emitter {
         this._sampler.sample(this.sections, {
             cores: this.coresExpanded,
             now: this._now(),
+            interval: this._interval,
             cancellable,
         }).then(snapshot => {
             if (cancellable.is_cancelled() || !snapshot)
@@ -157,6 +162,9 @@ export class SysmonService extends Emitter {
             this._warned = true;
         }).finally(() => {
             this._sampling = false;
+            // Begun before the GPU section was turned off, it held it again.
+            if (!this.sections.includes('gpu'))
+                this._sampler.release();
         });
     }
 }

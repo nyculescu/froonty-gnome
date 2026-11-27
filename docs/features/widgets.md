@@ -183,8 +183,10 @@ over three intervals (a lock, a suspend) breaks the line.
   parts, any of the six (`LAYOUTS`).
 - Resources: Btop's own sampler (`SystemSampling`, `features/sysmon`),
   reading only the sections the chosen readings need, only while the card
-  exists. GPU readings run `nvidia-smi` on an NVIDIA card, which may keep
-  it awake (as for the readouts).
+  exists. GPU readings run `nvidia-smi` on an NVIDIA card: one shared,
+  long-running one while the card cannot sleep anyway (it lights a
+  display), else one per reading, which may keep it awake (as for the
+  readouts, [sysmon.md](sysmon.md#graphics-cards)).
 - History: per reading, its points of the period in wall time,
   in the service module (`system/service.js`), so it outlives a screen
   lock (GNOME disables extensions then; the card goes, the module stays)

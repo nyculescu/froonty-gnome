@@ -7,6 +7,14 @@
   minute, when every other run brought nothing: half the runs, the
   numbers as fresh while the pill stays shown. Claude Code's config file
   and the status line's are parsed again only when they changed.
+- Btop, panic buttons, Readouts, the System card and Settings → Fan: an
+  NVIDIA card that lights a display (or cannot sleep anyway) is read from
+  one `nvidia-smi` that keeps running while a GPU reading is on screen,
+  instead of one run per reading: about 0.09 ms of CPU per reading
+  instead of about 19 ms, and no fork of GNOME Shell each time. A card
+  that can sleep is still read once per reading. GPU names come from
+  `pci.ids` once per Shell session, and only what reads GPUs looks for
+  them, instead of every sampler keeping its own 3 MB copy of the file.
 - Software brightness: with a laptop open and joined to the monitors it
   dims, they join GNOME's brightness slider, so one slider dims every
   screen and keeps their ratio; Froonty's slider hides. GNOME's menu has a

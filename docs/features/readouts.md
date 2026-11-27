@@ -62,10 +62,16 @@ disabled. With no readout chosen, nothing runs.
   as the Btop tab), every `readouts-interval` seconds (1-60, default 5; Btop's
   interval is for a tab on screen). It reads only the sections the chosen ones
   need, and per-core temperatures only for a CPU temperature.
-- **NVIDIA:** a sleeping card is not woken up, as in the Btop tab. An awake
-  one is read with `nvidia-smi`, one process per refresh, which may keep it
-  from going back to sleep. This was not measured. The GPU entries say so in
-  Settings.
+- **NVIDIA:** a sleeping card is not woken up, as in the Btop tab. A card
+  that cannot sleep anyway (it lights a display, or its runtime power
+  management is off) is read from one `nvidia-smi -lms` that keeps running
+  while the pill shows a GPU readout, shared with Btop, the panic buttons
+  and the System card (about 22 MB, about 0.09 ms of CPU per refresh). When
+  the island opens it stops, unless another reader still needs it, and it
+  stops on disable. Any other awake card is read with one `nvidia-smi` per
+  refresh, which may keep it from going back to sleep. This was not
+  measured. The GPU entries say so in Settings
+  ([sysmon.md](sysmon.md#graphics-cards)).
 - **Claude:** one `ClaudeService`, so a file monitor on Claude Code's config
   file and on the status line's file, the network monitor, and per write a
   stat of the file, which is read and parsed only when it changed since the

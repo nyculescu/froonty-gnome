@@ -4,15 +4,17 @@
 // this in /sys, so its GPUs are read with nvidia-smi instead, and only
 // while they are awake: asking a runtime-suspended GPU wakes it up.
 //
-// discover() finds the hardware once per visit; sample() reads one
-// snapshot of the sections asked for. Load and network speed are the
-// change since the previous sample, so the first one has none. No St.
+// discover() finds the hardware the sections read, once per visit, the
+// first time a sample reads them; sample() reads one snapshot of the
+// sections asked for. Load and network speed are the change since the
+// previous sample, so the first one has none. No St.
 
+import {nvidiaLoop} from './nvidiaLoop.js';
 import {
     coreInputs, CPU_CHIPS, cpuPackageInput, driveName, findEfiMount, isSnapMount,
     loadPercent, NVIDIA_FIELDS, parseCpuMhz, parseCpuModel, parseDiskMounts, parseMeminfo,
-    parseNetDev, parseNvidiaSmi, parseStat, pciDeviceName, PROBE_VENDORS, rate, sysfsNumber,
-    vendorName,
+    parseNetDev, parseNvidiaSmi, parseStat, pciDeviceName, pciIdsLines, PROBE_VENDORS, rate,
+    sysfsNumber, vendorName,
 } from './parse.js';
 
 export const SECTIONS = ['cpu', 'gpu', 'memory', 'disks', 'network'];
@@ -31,12 +33,20 @@ const basename = path => path?.split('/').filter(Boolean).pop() ?? null;
 const average = values => values.length
     ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
 
+// io -> Map of "vendor:device" -> the GPU's pci.ids name (null: not in it),
+// for every Sampler on that io. Module state outlives disable(), so
+// SYSTEM_IO's is read from pci.ids once per GPU model and Shell process.
+const gpuNames = new WeakMap();
+const gpuKey = gpu => `${gpu.vendorId}:${gpu.deviceId}`.toLowerCase();
+
 export class Sampler {
     /** @param {object} io SYSTEM_IO (io.js) or a fake of the same shape */
     constructor(io) {
         this._io = io;
-        this._hardware = null;
-        this._pciIds = undefined;
+        // cpu, gpu: each found the first time a sample reads it.
+        this._hardware = {cpu: null, gpu: null};
+        // The shared nvidia-smi (nvidiaLoop.js), while this holds it.
+        this._loop = null;
         // Interface name -> whether it is a physical device (see _network).
         this._physical = new Map();
         // "source target" -> what the device is (_device), and a snap
@@ -48,20 +58,32 @@ export class Sampler {
 
     /** Forgets the hardware and the previous sample (a new visit). */
     reset() {
-        this._hardware = null;
+        this._hardware = {cpu: null, gpu: null};
         this._previous = {time: null, stat: null, net: null};
     }
 
-    async discover(cancellable = null) {
-        const [cpu, gpus] = await Promise.all([
-            this._discoverCpu(cancellable),
-            this._discoverGpus(cancellable),
+    /**
+     * Lets go of the shared nvidia-smi, which stops once no sampler holds
+     * it. Every user calls this when it stops sampling (hidden, disabled);
+     * a later sample of a card that cannot sleep holds it again.
+     */
+    release() {
+        this._loop?.release(this);
+        this._loop = null;
+    }
+
+    /** Finds the hardware that `sections` read and is not known yet. */
+    async discover(sections, cancellable = null) {
+        const want = new Set(sections);
+        const [cpu, gpu] = await Promise.all([
+            want.has('cpu') && !this._hardware.cpu ? this._discoverCpu(cancellable) : null,
+            want.has('gpu') && !this._hardware.gpu ? this._discoverGpuHardware(cancellable) : null,
         ]);
-        const nvidiaSmi = gpus.some(gpu => gpu.driver === 'nvidia')
-            ? await this._findExecutable(NVIDIA_SMI, cancellable) : null;
         // Cancelled reads come back empty; the next visit looks again.
-        if (!cancellable?.is_cancelled())
-            this._hardware = {cpu, gpus, nvidiaSmi};
+        if (cancellable?.is_cancelled())
+            return;
+        this._hardware.cpu ??= cpu;
+        this._hardware.gpu ??= gpu;
     }
 
     /**
@@ -73,13 +95,17 @@ export class Sampler {
      * @param {object} options
      * @param {boolean} options.cores also each logical CPU
      * @param {number} options.now monotonic time in seconds
+     * @param {?number} options.interval seconds until the next sample; with
+     *   it, an NVIDIA card that cannot sleep is read from the shared
+     *   nvidia-smi (nvidiaLoop.js), and the caller calls release()
      */
-    async sample(sections, {cores = false, now, cancellable = null}) {
-        if (!this._hardware)
-            await this.discover(cancellable);
+    async sample(sections, {cores = false, now, interval = null, cancellable = null}) {
+        const want = new Set(sections);
+        if (!want.has('gpu'))
+            this.release();
+        await this.discover(sections, cancellable);
         if (cancellable?.is_cancelled())
             return null;
-        const want = new Set(sections);
         const read = path => this._io.read(path, cancellable);
         const [stat, cpuinfo, meminfo, netdev, mounts] = await Promise.all([
             want.has('cpu') ? read('/proc/stat') : null,
@@ -88,12 +114,15 @@ export class Sampler {
             want.has('network') ? read('/proc/net/dev') : null,
             want.has('disks') ? read('/proc/self/mounts') : null,
         ]);
+        // A new visit's reset() may have dropped the hardware meanwhile.
+        if (cancellable?.is_cancelled())
+            return null;
         const memory = meminfo === null ? null : parseMeminfo(meminfo);
         const seconds = this._previous.time === null ? 0 : now - this._previous.time;
 
         const [cpu, gpus, disks, network] = await Promise.all([
             want.has('cpu') ? this._cpu(stat, cpuinfo, cores, cancellable) : null,
-            want.has('gpu') ? this._gpus(cancellable) : null,
+            want.has('gpu') ? this._gpus(interval, cancellable) : null,
             want.has('disks') ? this._disks(memory, mounts, cancellable) : null,
             want.has('network') ? this._network(netdev, seconds, cancellable) : null,
         ]);
@@ -180,10 +209,17 @@ export class Sampler {
         };
     }
 
+    async _discoverGpuHardware(cancellable) {
+        const gpus = await this._discoverGpus(cancellable);
+        const nvidiaSmi = gpus.some(gpu => gpu.driver === 'nvidia')
+            ? await this._findExecutable(NVIDIA_SMI, cancellable) : null;
+        return {gpus, nvidiaSmi};
+    }
+
     async _discoverGpus(cancellable) {
         const io = this._io;
-        const cards = (await io.list(DRM_DIR, cancellable))
-            .filter(name => /^card\d+$/.test(name)).sort(byNumber);
+        const names = await io.list(DRM_DIR, cancellable);
+        const cards = names.filter(name => /^card\d+$/.test(name)).sort(byNumber);
         const gpus = await Promise.all(cards.map(async card => {
             const dev = `${DRM_DIR}/${card}/device`;
             const [vendor, device, driver, address, hwmon] = await Promise.all([
@@ -204,35 +240,46 @@ export class Sampler {
                 deviceId: device.trim(),
                 driver: basename(driver),
                 hwmon: hwmon.length ? `${dev}/hwmon/${hwmon.sort(byNumber)[0]}` : null,
+                // Its outputs ("card2-eDP-1"), for _cannotSleep.
+                connectors: names.filter(name => name.startsWith(`${card}-`)).sort(),
                 name: null,
             };
         }));
         const found = gpus.filter(Boolean);
-        if (found.length) {
-            const ids = await this._readPciIds(cancellable);
-            for (const gpu of found) {
-                gpu.name = (ids && pciDeviceName(ids, gpu.vendorId, gpu.deviceId)) ??
-                    vendorName(gpu.vendorId) ?? gpu.driver ?? gpu.card;
-            }
-        }
+        await this._nameGpus(found, cancellable);
         return found;
     }
 
-    // pci.ids holds the GPUs' names; read once per Shell session.
+    // From the shared names; pci.ids is read only for a GPU model without one.
+    async _nameGpus(gpus, cancellable) {
+        let names = gpuNames.get(this._io);
+        if (!names) {
+            names = new Map();
+            gpuNames.set(this._io, names);
+        }
+        const missing = gpus.filter(gpu => !names.has(gpuKey(gpu)));
+        if (missing.length) {
+            const bytes = await this._readPciIds(cancellable);
+            // A cancelled or failed read is no answer; the next visit reads it again.
+            if (bytes && !cancellable?.is_cancelled()) {
+                for (const gpu of missing) {
+                    const lines = pciIdsLines(bytes, gpu.vendorId, gpu.deviceId);
+                    names.set(gpuKey(gpu), lines && pciDeviceName(lines, gpu.vendorId, gpu.deviceId));
+                }
+            }
+        }
+        for (const gpu of gpus)
+            gpu.name = names.get(gpuKey(gpu)) ?? vendorName(gpu.vendorId) ?? gpu.driver ?? gpu.card;
+    }
+
     async _readPciIds(cancellable) {
-        if (this._pciIds !== undefined)
-            return this._pciIds;
-        let ids = null;
         for (const path of PCI_IDS) {
             // eslint-disable-next-line no-await-in-loop
-            ids = await this._io.read(path, cancellable);
-            if (ids)
-                break;
+            const bytes = await this._io.readBytes(path, cancellable);
+            if (bytes)
+                return bytes;
         }
-        // A cancelled read is no answer; the next visit reads it again.
-        if (!cancellable?.is_cancelled())
-            this._pciIds = ids;
-        return ids;
+        return null;
     }
 
     async _temperature(path, cancellable) {
@@ -298,24 +345,70 @@ export class Sampler {
         return new Map(entries.map(([core], i) => [core, temps[i]]));
     }
 
-    async _gpus(cancellable) {
-        const {gpus, nvidiaSmi} = this._hardware;
-        const states = await Promise.all(gpus.map(gpu =>
-            this._io.read(`${gpu.dev}/power/runtime_status`, cancellable)));
-        const awake = states.map(state => state?.trim() !== 'suspended');
+    async _gpus(interval, cancellable) {
+        const {gpus, nvidiaSmi} = this._hardware.gpu;
+        const states = (await Promise.all(gpus.map(gpu =>
+            this._io.read(`${gpu.dev}/power/runtime_status`, cancellable))))
+            .map(state => state?.trim() ?? null);
+        const awake = states.map(state => state !== 'suspended');
 
         const nvidia = gpus.filter((gpu, i) => awake[i] && gpu.driver === 'nvidia' && gpu.address);
-        let smi = new Map();
-        if (nvidia.length && nvidiaSmi) {
-            const output = await this._io.run([nvidiaSmi,
-                `--query-gpu=${NVIDIA_FIELDS.join(',')}`, '--format=csv,noheader,nounits',
-                '-i', nvidia.map(gpu => gpu.address).join(',')], cancellable);
-            smi = parseNvidiaSmi(output ?? '');
+        const followable = interval && nvidiaSmi
+            ? await Promise.all(nvidia.map(gpu =>
+                this._cannotSleep(gpu, states[gpus.indexOf(gpu)], cancellable)))
+            : nvidia.map(() => false);
+        const followed = nvidia.filter((_gpu, i) => followable[i]).map(gpu => gpu.address);
+        const spawned = nvidia.filter((_gpu, i) => !followable[i]).map(gpu => gpu.address);
+        // A sample its caller cancelled must not hold the loop again after
+        // the caller's release().
+        if (cancellable?.is_cancelled())
+            return null;
+        // Let go by every reader at once, so the slowest one does not keep it awake.
+        if (interval && nvidiaSmi) {
+            for (const address of spawned)
+                nvidiaLoop(this._io).forget(address);
         }
-        return Promise.all(gpus.map((gpu, i) => this._gpu(gpu, awake[i], smi, cancellable)));
+        if (followed.length) {
+            this._loop = nvidiaLoop(this._io);
+            this._loop.hold(this, {path: nvidiaSmi, addresses: followed,
+                intervalMs: Math.round(interval * 1000)});
+        } else {
+            this.release();
+        }
+
+        const [fromLoop, fromRun] = await Promise.all([
+            followed.length ? this._loop.read(followed, cancellable) : new Map(),
+            spawned.length && nvidiaSmi
+                ? this._io.run([nvidiaSmi,
+                    `--query-gpu=${NVIDIA_FIELDS.join(',')}`, '--format=csv,noheader,nounits',
+                    '-i', spawned.join(',')], cancellable).then(output => parseNvidiaSmi(output ?? ''))
+                : new Map(),
+        ]);
+        const smi = new Map([...fromRun, ...fromLoop]);
+        return Promise.all(gpus.map((gpu, i) =>
+            this._gpu(gpu, awake[i], smi, !nvidiaSmi, cancellable)));
     }
 
-    async _gpu(gpu, awake, smi, cancellable) {
+    // Only a card that never sleeps anyway (runtime power management off,
+    // or it lights a display) may be followed: an NVML client keeps it
+    // awake. These files report the kernel's state and wake nothing.
+    async _cannotSleep(gpu, state, cancellable) {
+        if (state === 'unsupported')
+            return true;
+        const read = async path => (await this._io.read(path, cancellable))?.trim() ?? null;
+        const [control, statuses] = await Promise.all([
+            read(`${gpu.dev}/power/control`),
+            Promise.all(gpu.connectors.map(connector => read(`${DRM_DIR}/${connector}/status`))),
+        ]);
+        if (control === 'on')
+            return true;
+        const connected = gpu.connectors.filter((_connector, i) => statuses[i] === 'connected');
+        const enabled = await Promise.all(connected.map(connector =>
+            read(`${DRM_DIR}/${connector}/enabled`)));
+        return enabled.includes('enabled');
+    }
+
+    async _gpu(gpu, awake, smi, noTool, cancellable) {
         const result = {
             id: gpu.address ?? gpu.card,
             name: gpu.name,
@@ -339,7 +432,7 @@ export class Sampler {
                 gpu.name = values.name ? values.name : gpu.name;
                 Object.assign(result, values, {name: gpu.name});
             }
-            result.noTool = !this._hardware.nvidiaSmi;
+            result.noTool = noTool;
             return result;
         }
 

@@ -51,6 +51,12 @@ only worth anything live.
 - A visit starts fresh. Hardware is found again (a GPU may have been
   plugged in), and load and speed start over, so they show "—" for the
   first 0.5 s.
+- Hardware is looked for only by a sample that reads it: the CPU's
+  sensors for the CPU section, the graphics cards for the GPU section.
+  The same holds for every sampler built on this one (panic buttons,
+  Readouts, the System card, Settings → Fan), so one that reads only
+  the CPU or RAM never lists the cards or reads `pci.ids`. A source
+  switched to the GPU later finds them at its next sample.
 - A slow sample never piles up: a tick that finds the previous one still
   running is skipped.
 - Sections switched off in Settings are not read. With all of them off
@@ -92,6 +98,16 @@ name preferred ("AD104M [GeForce RTX 4080 Max-Q / Mobile]" → "NVIDIA
 GeForce RTX 4080 Max-Q / Mobile"). For NVIDIA, `nvidia-smi`'s own name
 replaces it once read.
 
+`pci.ids` is 1.6 MB, and decoded whole it made a 3 MB string, which every
+sampler used to keep. Now it is read only for a GPU model
+(`vendor:device`) not named yet, and only its vendor's line and its
+device's line are decoded from the file's bytes. The names are kept in
+the sampler module for every sampler (`features/sysmon/sampler.js`), and
+modules stay loaded through screen locks. So the file is read about once
+per GNOME Shell process, and an updated `pci.ids` shows after the Shell
+restarts. The names are the same as from the whole text: checked on
+2026-11-27 for all 20,482 devices in this machine's `pci.ids`.
+
 | Driver | Load | Temperature | Power | Memory |
 |---|---|---|---|---|
 | `nvidia` (proprietary) | `nvidia-smi` | `nvidia-smi` | `nvidia-smi` | `nvidia-smi` |
@@ -115,18 +131,75 @@ is read from it. `nvidia-smi` and the drivers'
 sysfs files can wake a runtime-suspended GPU, which costs battery.
 
 **`nvidia-smi`.** NVIDIA's proprietary driver puts these readings nowhere
-in `/sys`, so Froonty runs `nvidia-smi` once per interval while the tab
-is on screen and an NVIDIA card is awake:
+in `/sys`, so Froonty reads them with `nvidia-smi`. That happens only
+while a GPU reading is on screen (this tab, a GPU panic button or
+readout, the System card's GPU readings, Settings → Fan) and an NVIDIA
+card is awake. How depends on whether the card can sleep at all:
 
-```
-nvidia-smi --query-gpu=pci.bus_id,name,utilization.gpu,temperature.gpu,power.draw,memory.used,memory.total
-           --format=csv,noheader,nounits -i <awake cards' PCI addresses>
-```
+- **A card that cannot sleep anyway** is read from one `nvidia-smi` that
+  keeps running (`features/sysmon/nvidiaLoop.js`). A card counts as unable
+  to sleep when its `device/power/control` is `on` (runtime power
+  management off), its `power/runtime_status` is `unsupported`, or one of
+  its outputs (`/sys/class/drm/cardN-*`) reads `connected` in `status`
+  and `enabled` in `enabled`, so it lights a display. This laptop's RTX
+  4080 lights its panel and the external monitor, so it is read this way.
 
+  ```
+  nvidia-smi --query-gpu=<the fields below> --format=csv,noheader,nounits
+             -i <those cards' PCI addresses> -lms <shortest interval, ms>
+  ```
+
+  - It writes a line per card each interval, and a sample takes the
+    latest. A line more than two intervals old counts as no reading.
+  - The first sample after a start waits for its first lines, at most
+    5 s, so the first reading of a visit has the GPU too.
+  - One process serves every reader in the Shell. It runs at the
+    shortest interval among them, and starts anew when that interval or
+    the cards change: for example 1 s while Btop is open beside a GPU
+    panic button at 2 s, then 2 s once Btop is left. Settings → Fan runs
+    in the settings window's process, so it has its own, stopped when the
+    page is left or the window closes (no disable reaches that process).
+  - A process that writes nothing for three intervals, or 5 s if longer
+    (a wedged driver, say), is killed and started again, as a single run
+    used to be given up after 5 s.
+  - A card found able to sleep again (its display unplugged, say) is
+    dropped by every reader at once, so the process does not keep it
+    awake until the slowest reader's next sample.
+  - If it ends by itself, it starts again after 1 s, then twice as long
+    each time, up to a minute. A reading resets the wait.
+  - It is killed when the last reader stops reading GPUs, goes off screen
+    or stops. That covers every screen lock and disable, so it never
+    outlives them. Should GNOME Shell end without a disable (a crash), it
+    ends at its next line: `nvidia-smi` exits once nothing reads its
+    output (checked 2026-11-27).
+  - Readings may be up to one interval old, where a run gave them fresh
+    at each sample.
+  - Measured on this laptop in the CPU and RAM audit of 2026-11-27: about
+    0.09 ms of CPU per reading, against about 19 ms per run, plus a fork
+    of GNOME Shell for each run. The running process takes about 22 MB.
+- **Any other awake card** (an idle laptop dGPU that lights nothing) gets
+  one run per sample, as before:
+
+  ```
+  nvidia-smi --query-gpu=pci.bus_id,name,utilization.gpu,temperature.gpu,power.draw,memory.used,memory.total
+             --format=csv,noheader,nounits -i <awake cards' PCI addresses>
+  ```
+
+  A running `nvidia-smi` is an NVML client, and that keeps a card from
+  runtime-suspending. Between runs it still can.
+- **The check** runs on every sample, so a display that is switched off
+  or unplugged lets the card sleep again: the shared process stops at the
+  next sample. It reads only files that report what the kernel already
+  knows, and only for a card that already reads awake. On 2026-11-27,
+  reading the suspended Intel card's outputs and `power/control` left it
+  suspended. The NVIDIA card here never sleeps, so the same reads could
+  not be tried on it; its outputs' files come from the same DRM core.
+  Outputs that appear after the cards were found count from the next
+  visit.
 - It is found in fixed system locations only (`/usr/bin`, `/bin`), never
   through `$PATH`.
 - No shell is involved, and stderr is discarded.
-- It is killed after 5 s.
+- A run is killed after 5 s.
 - Measured at about 40 ms per run on an RTX 4080 Laptop GPU with driver
   580 (2026-10-01).
 - Without it, the card's row says that nvidia-smi is needed.
@@ -202,9 +275,10 @@ would double it. `lo` is not counted.
 
 | File | |
 |---|---|
-| `features/sysmon/parse.js` | Pure parsers of `/proc`, `/sys`, `pci.ids` and `nvidia-smi` text |
-| `features/sysmon/io.js` | Async Gio file reads, listings, links, file-system usage, and the subprocess with its timeout |
-| `features/sysmon/sampler.js` | Hardware discovery and one snapshot per call, over an `io` object (faked in tests) |
+| `features/sysmon/parse.js` | Pure parsers of `/proc`, `/sys`, `pci.ids` (text or bytes) and `nvidia-smi` text |
+| `features/sysmon/io.js` | Async Gio file reads (text or bytes), listings, links, file-system usage, the subprocess with its timeout, and a running process's lines |
+| `features/sysmon/sampler.js` | Hardware discovery and one snapshot per call, over an `io` object (faked in tests); the GPU names for every sampler |
+| `features/sysmon/nvidiaLoop.js` | The shared `nvidia-smi -lms` for cards that cannot sleep: held by samplers, killed by the last release |
 | `features/sysmon/service.js` | The timer, tied to the tab being on screen, and the settings |
 | `features/sysmon/panicMetrics.js` | The load and thermometer panic buttons' shared sampler and their values |
 | `features/sysmon/level.js` | The five-cell level: glyphs and CSS classes for a share |
@@ -212,10 +286,17 @@ would double it. `lo` is not counted.
 | `features/sysmon/icon.js`, `icons/` | btop's "B" as a symbolic icon (the tab and the settings page), and the CPU, GPU, memory and thermometer icons of the panic buttons |
 | `features/sysmon/prefs.js` | Settings page |
 
-Tests: `tools/unit/sysmon.test.js` covers the parsers, the levels, the
-sampler over a fake `/proc` and `/sys` (Intel, NVIDIA and AMD cards, an
-asleep card, no `nvidia-smi`), and the service's polling lifecycle
-(including the 0.5 s follow-up). The headless run
+Tests: `tools/unit/sysmon.test.js` covers the parsers (`pci.ids` from its
+bytes giving the same names), the levels, the sampler over a fake `/proc`
+and `/sys` (Intel, NVIDIA and AMD cards, an asleep card, no `nvidia-smi`,
+hardware found only for the sections read, `pci.ids` read once per io),
+the shared `nvidia-smi` (a lit panel or runtime power management off, one
+process for several samplers at the shortest interval, a display switched
+off, stale lines, starting again after an exit or a failed start, a
+cancelled sample, a Btop sample under way when the GPU section is turned
+off, the release by Btop, the panic buttons and the Readouts, and reading
+on after the line handler fails, with a real `/bin/sh`), and the service's
+polling lifecycle (including the 0.5 s follow-up). The headless run
 checks the tab's size, that it polls only while on screen, that a sample
 reaches it, and the threads fold-out.
 

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Parsers for what the Btop tab reads (docs/features/sysmon.md):
 // the kernel's /proc and /sys text, pci.ids and nvidia-smi's CSV. Pure
-// functions of text, so they load in plain gjs tests.
+// functions of text (pci.ids also of its bytes), so they load in plain gjs
+// tests.
 
 /**
  * The CPU's model from /proc/cpuinfo, without trademark signs and the
@@ -246,7 +247,49 @@ export function pciDeviceName(ids, vendorId, deviceId) {
     return short && !name.startsWith(short) ? `${short} ${name}` : name;
 }
 
-// nvidia-smi --query-gpu fields, in order (sampler.js _gpus asks for them).
+const TAB = 0x09;
+const LF = 0x0a;
+const HASH = 0x23;
+const decoder = new TextDecoder();
+const asciiBytes = text => [...text].map(char => char.charCodeAt(0));
+
+/**
+ * The two lines of pci.ids that name a device, its vendor's and its own,
+ * decoded from the file's bytes, or null; pciDeviceName reads them as it
+ * reads the whole text. Only these are decoded: the whole file makes a
+ * 3 MB string, and a name cut from a string keeps all of it alive.
+ *
+ * @param {Uint8Array} bytes pci.ids
+ * @param {string} vendorId "0x10de"
+ * @param {string} deviceId "0x27e0"
+ */
+export function pciIdsLines(bytes, vendorId, deviceId) {
+    const vendor = asciiBytes(`${vendorId.replace(/^0x/i, '').toLowerCase()}  `);
+    const device = asciiBytes(`\t${deviceId.replace(/^0x/i, '').toLowerCase()}  `);
+    const startsWith = (at, prefix) => prefix.every((byte, i) => bytes[at + i] === byte);
+    const lineEnd = at => {
+        const end = bytes.indexOf(LF, at);
+        return end < 0 ? bytes.length : end;
+    };
+    const line = at => decoder.decode(bytes.subarray(at, lineEnd(at)));
+
+    let start = 0;
+    while (start < bytes.length && !startsWith(start, vendor))
+        start = lineEnd(start) + 1;
+    if (start >= bytes.length)
+        return null;
+    // As in pciDeviceName: the devices run to the next line that does not
+    // start with a tab, '#' or a newline.
+    for (let at = lineEnd(start) + 1; at < bytes.length && [TAB, HASH, LF].includes(bytes[at]);
+        at = lineEnd(at) + 1) {
+        if (startsWith(at, device))
+            return `${line(start)}\n${line(at)}\n`;
+    }
+    return null;
+}
+
+// nvidia-smi --query-gpu fields, in order (sampler.js _gpus and
+// nvidiaLoop.js ask for them).
 export const NVIDIA_FIELDS = ['pci.bus_id', 'name', 'utilization.gpu', 'temperature.gpu',
     'power.draw', 'memory.used', 'memory.total'];
 
