@@ -89,9 +89,11 @@ either**: no calendar and no notification store of Froonty's own
   - Its middle is exactly over GNOME's clock under the island, with the
     panic buttons on its two sides (half each, the right one more when
     odd, both sides equally wide) and a tab's own buttons (Notes' All
-    notes) at the header's right end; it never moves off the clock: an
-    island without room for both sides grows wider. Tab reaches it after ⚙️ (at the
-    bottom of the tab column) and the panic buttons on its left.
+    notes) at the header's right end; it stays on the clock: an island
+    without room for both sides grows wider, except in a tab whose size
+    you set, where the row packs and may hide outer panic buttons
+    (panic-buttons.md). Tab reaches it after ⚙️ (at the bottom of the tab
+    column) and the panic buttons on its left.
   - Its accessible name says what it opens and the full date: "Calendar
     and notifications, Saturday, October 3 2026, 14:35" (", unread
     notifications" while the dot shows); its tooltip says "Calendar and

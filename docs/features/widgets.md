@@ -3,8 +3,8 @@
 Status: **first iteration, implemented**, 2026-11-07.
 
 The Widgets tab gathers cards from features of their own: Markets
-([markets.md](markets.md)) and Horizon's news briefings
-([horizon.md](horizon.md)), plus, on the desktop only, the System card
+([markets.md](markets.md)), Weather ([weather.md](weather.md)) and
+Horizon's news briefings ([horizon.md](horizon.md)), plus, on the desktop only, the System card
 (below) and the notes' stickies ([notes.md](notes.md)). Widgets sets
 where the cards show and how they look; what they show is set on their
 own pages (owner, 2026-11-23: "The widgets are a wrapper-feature to
@@ -126,17 +126,15 @@ off turns off only the card's own switch there, so the other cards stay.
   panic/desktopWidgets.js) goes through three states, a click to the
   next: shown with scrolling and clicks, shown with scrolling only,
   hidden (`widgets-desktop-enabled` off), and back with clicks; checked
-  while hidden (docs/features/panic-buttons.md).
-- `widgets-desktop-locked` (off): **Widget Lock** in Quick Settings
-  (`lockToggle.js`), there while a card or sticky shows (user request,
-  2026-11-20: "how can I lock again the widgets to not be active"). On,
-  the whole layer is hidden from picking, so clicks and scrolling reach
-  the desktop and Desktop Icons under it.
+  while hidden (docs/features/panic-buttons.md). It replaced Widget Lock
+  in Quick Settings (removed 2026-11-26, owner's request).
 - `widgets-markets-enabled` (on, in the tab), `widgets-markets-range`
   (`1d`): how the Markets card looks (below). Its symbols and sources:
   [markets.md](markets.md).
 - `widgets-news-enabled` (on, in the tab): the Horizon card. Its own
   settings: [horizon.md](horizon.md).
+- `widgets-weather-enabled` (on, in the tab), `widgets-weather-pin-desktop`
+  (off): the Weather card. Its own settings: [weather.md](weather.md).
 
 ## Markets and Horizon
 

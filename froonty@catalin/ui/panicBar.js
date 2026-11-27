@@ -15,7 +15,7 @@ import {panicGroups, sanitize} from '../panic/catalog.js';
 import {createPanicButton} from '../panic/registry.js';
 import {PanicMetricsService} from '../features/sysmon/panicMetrics.js';
 
-const KEY = 'panic-buttons';
+export const PANIC_BUTTONS_KEY = 'panic-buttons';
 
 // A group's buttons in a row, the CSS spacing apart at their natural width.
 // Given more room (the other group is wider), the gaps between the buttons
@@ -100,7 +100,7 @@ export class PanicBar {
             visible: false,
         }));
 
-        settings.connectObject(`changed::${KEY}`, () => this._rebuild(), this);
+        settings.connectObject(`changed::${PANIC_BUTTONS_KEY}`, () => this._rebuild(), this);
         this._rebuild();
     }
 
@@ -125,7 +125,7 @@ export class PanicBar {
         this._destroyButtons();
         const actions = this._metrics
             ? {...this._actions, metrics: this._metrics} : this._actions;
-        this._buttons = sanitize(this._settings.get_strv(KEY))
+        this._buttons = sanitize(this._settings.get_strv(PANIC_BUTTONS_KEY))
             .map(id => createPanicButton(id, actions))
             .filter(Boolean);
         panicGroups(this._buttons).forEach((buttons, i) => {

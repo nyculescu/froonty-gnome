@@ -1,128 +1,115 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// A modal Shell window to compare Vancouver with the selected favourite
-// cities. The slider moves a real instant across a 24-hour planning window.
+// The planner in its Quick Settings button's menu, which opens inside
+// Quick Settings as Software brightness's does: Vancouver and the
+// favourite cities. The slider moves a real instant across a 24-hour
+// planning window.
 
 import Clutter from 'gi://Clutter';
 import GLib from 'gi://GLib';
-import GObject from 'gi://GObject';
+import Pango from 'gi://Pango';
 import St from 'gi://St';
 
-import * as ModalDialog from 'resource:///org/gnome/shell/ui/modalDialog.js';
+import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 import {Slider} from 'resource:///org/gnome/shell/ui/slider.js';
 import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 
 import {
-    favoriteCities, formatDateAt, formatTimeAt, sliderTimestamp, VANCOUVER_TIMEZONE,
+    dayOffsetAt, dayOffsetLabel, favoriteCities, formatDateAt, formatTimeAt, sliderTimestamp,
+    VANCOUVER_TIMEZONE,
 } from './clock.js';
 
-const row = styleClass => new St.BoxLayout({
+// A row that is not an action: what is in it takes the pointer itself.
+const row = () => new PopupMenu.PopupBaseMenuItem({reactive: false, can_focus: false});
+
+const label = (text, styleClass = null, xExpand = false) => new St.Label({
+    text,
     style_class: styleClass,
-    x_expand: true,
-});
-const vertical = styleClass => new St.BoxLayout({
-    style_class: styleClass,
-    orientation: Clutter.Orientation.VERTICAL,
-    x_expand: true,
+    x_expand: xExpand,
+    y_align: Clutter.ActorAlign.CENTER,
 });
 
-function actionButton(label) {
-    return new St.Button({
-        label,
-        style_class: 'button',
-        can_focus: true,
-        accessible_name: label,
-        y_align: Clutter.ActorAlign.CENTER,
-    });
+// The dates, times and +1 or −1 keep a fixed width, so they line up across
+// rows; Vancouver's row has the room for the +1 too.
+function cityRow(name) {
+    const item = row();
+    item.add_child(label(name, 'froonty-timezone-name', true));
+    const date = label('', 'froonty-timezone-date');
+    const time = label('', 'froonty-timezone-time');
+    const badge = new St.Label({style_class: 'froonty-timezone-badge', y_align: Clutter.ActorAlign.START});
+    item.add_child(date);
+    item.add_child(time);
+    item.add_child(badge);
+    return {item, date, time, badge};
 }
 
-export const TimezonePlanner = GObject.registerClass(
-class TimezonePlanner extends ModalDialog.ModalDialog {
-    // timeFormat() gives the strftime format to write times in.
-    _init(settings, openSettings, timeFormat) {
-        super._init();
+function wrapped(text, styleClass) {
+    const item = row();
+    const line = label(text, styleClass, true);
+    line.clutter_text.set({line_wrap: true, ellipsize: Pango.EllipsizeMode.NONE});
+    item.add_child(line);
+    return {item, line};
+}
+
+export class TimezonePlanner {
+    // menu: the button's menu. timeFormat() gives the strftime format to
+    // write times in.
+    constructor(menu, settings, openSettings, timeFormat) {
         this._settings = settings;
-        this._openSettings = openSettings;
         this._timeFormat = timeFormat;
         this._anchor = GLib.DateTime.new_now_utc().to_unix();
         this._cityTimeLabels = [];
         this._settingSlider = false;
 
-        this.setButtons([{
-            label: _('Close'),
-            action: () => this.close(),
-            key: Clutter.KEY_Escape,
-        }]);
+        menu.setHeader('clock-symbolic', _('Time zone planner'));
+        menu.addMenuItem(wrapped(
+            _('Move the slider to plan a time in Vancouver and compare the local hours.'),
+            'froonty-timezone-description').item);
 
-        const content = vertical('froonty-timezone-content');
-        const title = new St.Label({
-            text: _('Time zone planner'),
-            style_class: 'froonty-timezone-title',
-        });
-        content.add_child(title);
-        content.add_child(new St.Label({
-            text: _('Move the slider to plan a time in Vancouver and compare the local hours.'),
-            style_class: 'froonty-timezone-description',
-            x_expand: true,
-        }));
+        const vancouver = cityRow(_('Vancouver'));
+        this._vancouverDate = vancouver.date;
+        this._vancouverTime = vancouver.time;
+        menu.addMenuItem(vancouver.item);
 
-        const vancouver = row('froonty-timezone-city');
-        vancouver.add_child(new St.Label({
-            text: _('Vancouver'),
-            style_class: 'froonty-timezone-name',
-            x_expand: true,
-            y_align: Clutter.ActorAlign.CENTER,
-        }));
-        this._vancouverDate = new St.Label({style_class: 'froonty-timezone-date'});
-        this._vancouverTime = new St.Label({style_class: 'froonty-timezone-time'});
-        vancouver.add_child(this._vancouverDate);
-        vancouver.add_child(this._vancouverTime);
-        content.add_child(vancouver);
-
-        const sliderRange = row('froonty-timezone-range');
-        sliderRange.add_child(new St.Label({text: _('-12 h')}));
+        const range = row();
+        range.add_child(label(_('-12 h')));
         this._slider = new Slider(0.5);
         this._slider.accessible_name = _('Time in Vancouver');
         this._slider.x_expand = true;
-        sliderRange.add_child(this._slider);
-        sliderRange.add_child(new St.Label({text: _('+12 h')}));
-        content.add_child(sliderRange);
+        range.add_child(this._slider);
+        range.add_child(label(_('+12 h')));
+        menu.addMenuItem(range);
         this._slider.connect('notify::value', () => {
             if (!this._settingSlider)
                 this.updateTimes();
         });
 
-        const controls = row('froonty-timezone-controls');
-        controls.add_child(new St.Label({
-            text: _('Selected Vancouver time'),
-            style_class: 'froonty-timezone-hint',
-            x_expand: true,
+        const controls = row();
+        controls.add_child(label(_('Selected Vancouver time'), 'froonty-timezone-hint', true));
+        const now = new St.Button({
+            label: _('Now'),
+            style_class: 'button',
+            can_focus: true,
+            accessible_name: _('Now'),
             y_align: Clutter.ActorAlign.CENTER,
-        }));
-        const now = actionButton(_('Now'));
-        now.connect('clicked', () => this._resetToNow());
+        });
+        now.connect('clicked', () => this.resetToNow());
         controls.add_child(now);
-        content.add_child(controls);
+        menu.addMenuItem(controls);
 
-        this._cityRows = new St.BoxLayout({
-            orientation: Clutter.Orientation.VERTICAL,
-            x_expand: true,
-        });
-        content.add_child(this._cityRows);
+        this._cities = new PopupMenu.PopupMenuSection();
+        menu.addMenuItem(this._cities);
 
-        this._message = new St.Label({
-            style_class: 'froonty-timezone-message',
-            x_expand: true,
-            visible: false,
-        });
-        content.add_child(this._message);
+        const message = wrapped(_('Choose up to five favourite cities in Settings → Time zones.'),
+            'froonty-timezone-message');
+        this._message = message.item;
+        menu.addMenuItem(this._message);
 
-        const settingsButton = actionButton(_('Manage cities…'));
-        settingsButton.connect('clicked', () => {
-            this.close();
-            this._openSettings('time-zones');
+        menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+        menu.addAction(_('Manage cities…'), () => {
+            Main.panel.closeQuickSettings();
+            openSettings('time-zones');
         });
-        content.add_child(settingsButton);
-        this.contentLayout.add_child(content);
 
         this._settings.connectObject(
             'changed::timezone-planner-cities', () => this._syncCities(),
@@ -130,7 +117,13 @@ class TimezonePlanner extends ModalDialog.ModalDialog {
         this._syncCities();
     }
 
-    _resetToNow() {
+    // The menu goes with its button.
+    destroy() {
+        this._settings.disconnectObject(this);
+        this._settings = null;
+    }
+
+    resetToNow() {
         this._anchor = GLib.DateTime.new_now_utc().to_unix();
         this._settingSlider = true;
         this._slider.value = 0.5;
@@ -144,40 +137,27 @@ class TimezonePlanner extends ModalDialog.ModalDialog {
         const format = this._timeFormat();
         this._vancouverDate.text = formatDateAt(timestamp, VANCOUVER_TIMEZONE);
         this._vancouverTime.text = formatTimeAt(timestamp, VANCOUVER_TIMEZONE, format);
+        // +1 or −1 against the Vancouver date on the slider.
+        const vancouver = GLib.TimeZone.new_identifier(VANCOUVER_TIMEZONE);
         for (const city of this._cityTimeLabels) {
             city.date.text = formatDateAt(timestamp, city.timezone);
             city.time.text = formatTimeAt(timestamp, city.timezone, format);
+            city.badge.text = dayOffsetLabel(dayOffsetAt(timestamp, city.timezone, vancouver));
         }
     }
 
     _syncCities() {
-        for (const child of this._cityRows.get_children())
-            child.destroy();
+        this._cities.removeAll();
         this._cityTimeLabels = [];
-
         const cities = favoriteCities(
             this._settings.get_strv('timezone-planner-cities'),
             this._settings.get_strv('timezone-planner-favorites'));
         for (const city of cities) {
-            const cityRow = row('froonty-timezone-city');
-            cityRow.add_child(new St.Label({
-                text: city.name,
-                style_class: 'froonty-timezone-name',
-                x_expand: true,
-                y_align: Clutter.ActorAlign.CENTER,
-            }));
-            const date = new St.Label({style_class: 'froonty-timezone-date'});
-            const time = new St.Label({style_class: 'froonty-timezone-time'});
-            cityRow.add_child(date);
-            cityRow.add_child(time);
-            this._cityRows.add_child(cityRow);
-            this._cityTimeLabels.push({date, time, timezone: city.timezone});
+            const {item, date, time, badge} = cityRow(city.name);
+            this._cities.addMenuItem(item);
+            this._cityTimeLabels.push({date, time, badge, timezone: city.timezone});
         }
-        this._message.text = cities.length
-            ? ''
-            : _('Choose up to two favourite cities in Settings → Time zones.');
         this._message.visible = cities.length === 0;
         this.updateTimes();
     }
-
-});
+}

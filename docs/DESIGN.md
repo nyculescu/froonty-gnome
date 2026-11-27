@@ -250,9 +250,21 @@ hub     BinLayout, reactive (stops clicks from reaching the pill)
   the right one more when the count is odd. Both groups take the wider
   one's width; the narrower spreads its buttons apart
   (`PanicGroupLayout`), a lone button at its outer end. Without a date pill the two groups are centred together.
-  The pill never moves off the clock: `Hub.minWidth` makes the island
+  The pill stays on the clock: `Hub.minWidth` makes the island
   (centred on the monitor) wide enough for both halves around that point,
-  `PANIC_GAP` (8 px) clear of the hub's edges. The header
+  `PANIC_GAP` (8 px) clear of the hub's edges. A tab whose size the user
+  sets (`hubSizeKeys`) is the exception (2026-11-27, user request: "make it
+  smaller"): it may be as narrow as the pill alone (`Hub.narrowestWidth`,
+  besides its keys' schema range). `Island._targetSize()` tells the hub the
+  width the island is going to (`Hub.fitHeader()`, not every animation
+  frame), and `HubHeader.fit()` keeps the centred layout when it fits;
+  else it packs the row (each group at its natural width, side by side,
+  the pill as near the clock as fits), and narrower still hides the
+  outermost panic buttons, the wider group's first, until the rest fit.
+  The date pill always shows. Changing the panic buttons fits the row
+  again. The first time the island opens with this rule
+  (`hub-narrow-widths`), each tab's width key below the island's width then
+  is raised to it, so no tab moves until the user resizes it. The header
   spans the whole hub and the side column starts below it (2026-10-13), so
   the tabs take no room from the panic buttons and the date pill. The row
   reports a minimum width of 0, so it never squeezes the content.
@@ -328,7 +340,8 @@ hub     BinLayout, reactive (stops clicks from reaching the pill)
   the island takes the size at once (`Island._previewHubSize()`: the size
   replaces the keys' values in `IslandGeometry.expandedSize()`, transitions
   removed); the release writes the two keys while that size still holds, so
-  the island does not move. A click without movement counts towards a
+  the island does not move. Narrower than the panic buttons need, the
+  header packs them, then hides the outermost (header row, above). A click without movement counts towards a
   double-click (GNOME's `double-click-time`, no timer), which resets both
   keys.
 - Multi-monitor: the island follows the **primary** monitor, like GNOME's
@@ -497,9 +510,10 @@ Consequences:
 | `Main.breakManager`: GNOME's break engine, an internal Shell component exported as a `let` (`main.js:95`) and made at startup in every session (`main.js:271-275`), since GNOME 48. Getter `state`; methods `getNextBreakDue()`, `getCurrentTime()`, `delayBreak()`, `skipBreak()`, `takeBreak()`; signals `notify::state`, `notify::next-break-due-time`, `notify::last-break-end-time`, `break-due`, `break-finished`, `take-break` | Show and drive GNOME's breaks (Take, Delay, Skip) instead of timing them; the state numbers are checked against the installed Shell by a unit test | `shell/breakManager.js` (the only reader), `shell/breakEngine.js` |
 | `Main.inputMethod._cursorRect`: `{x, y, width, height}`, the last text cursor a client reported, kept by `vfunc_set_cursor_location` while IBus runs (`misc/inputMethod.js`, 50.1) | The clipboard switcher's pop-up by the text cursor, when the public `cursor-location-changed` has not given one for the focused window yet; believed only inside that window. Without it, the pointer | `shell/inputMethod.js` `TextInput.cursor()` |
 | `Main.panel.statusArea.quickSettings._brightness` (the indicator holding GNOME's brightness slider, made asynchronously in `panel.js` `_setupIndicators`; its `quickSettingsItems`) | Software brightness's slider right under GNOME's. Without it (or not made within 5 s), the slider goes at the end of Quick Settings. Night Light in the brightness menu sets the slider's public `menuEnabled` and adds to its `menu`, following `Main.brightnessManager` (`changed`, `scales`) | `shell/quickSettings.js` `gnomeItem()`, `addUnderBrightness()`; `features/brightness/nightLightMenu.js` |
+| `Main.brightnessManager` (`misc/brightnessManager.js`, 50.1): its private `_monitorScales` map (logical monitor → screen scale), `_sync()`, `_inhibitUpdates` and each scale's `_scaleChanged` flag; the exported `BrightnessScale` subclassed with the calls `_sync()` makes (`syncWithBacklight`, `syncWithScale`, `updateScaleFactor`, `setBacklight`, `monitor`) | Software brightness: with a laptop open beside the monitors it dims, they join GNOME's brightness slider (ratios, the slider per screen in its menu, the keys, the OSD, idle dimming). Without the map or `_sync()`, the two sliders stay | `shell/brightnessManager.js` `joinBrightness()`; `features/brightness/overlay.js` |
 | `Main.panel.statusArea.quickSettings._nightLight` (the indicator holding GNOME's Night Light tile, made with the others; its `quickSettingsItems`; the tile's `visible` is bound to Mutter's `night-light-supported`) | Night Light in the brightness menu hides the tile while a menu holds the switch, and gives it back as GNOME binds it. Without it, the menu leaves everything as GNOME has it | `shell/quickSettings.js` `gnomeItem()`; `features/brightness/nightLightMenu.js` |
 | `Main.layoutManager._backgroundGroup` (the wallpaper actors' group in `global.window_group`; background actors kept at its bottom) | Desktop cards above the wallpaper and behind windows when Desktop Icons is not running | `features/widgets/desktopLayer.js` |
-| `Main.panel.statusArea.quickSettings._backgroundApps` (GNOME's Background Apps item, which `addExternalIndicator` keeps last) | Froonty's Quick Settings tiles (time zones, Widget Lock) go before it, as extensions' items do | `features/timezonePlanner/quickSettings.js`, `features/widgets/desktopLayer.js` |
+| `Main.panel.statusArea.quickSettings._backgroundApps` (GNOME's Background Apps item, which `addExternalIndicator` keeps last) | Froonty's time zone tile goes before it, as extensions' items do | `features/timezonePlanner/quickSettings.js` |
 | Desktop Icons NG's `customJS_ding.keepAtBottom` on its desktop `Meta.Window`s (set by that extension, `emulateX11WindowType.js`); it replaces `global.get_window_actors()` to leave them out | Desktop cards right above its window, so they get the pointer; re-stacked on `global.display` `restacked`. Without it, nothing is found and the cards use the background group | `shell/desktopIcons.js`, `features/widgets/desktopLayer.js` |
 | `Main.breakManager._breakLastEnd`: a private `Map` of break type → last break end | Each type's next break (the public API gives only the earliest one), and telling a delay, a skip or a break taken apart. Without it the tab falls back to the next break only | `shell/breakEngine.js` `read()` |
 

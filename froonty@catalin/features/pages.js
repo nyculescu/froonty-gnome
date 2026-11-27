@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // The features' settings pages after Notes (including Fan, which is not a
-// hub tab, and Markets and Horizon after Widgets, which shows their
-// cards), in their navigation order, then Brightness and Time zones
+// hub tab, and Markets, Weather and Horizon after Widgets, which shows
+// their cards), in their navigation order, then Brightness and Time zones
 // (parts, not tabs). Notes' page is made in prefs.js.
 
 import {addIconPath as addBreakIconPath, breakPage} from './break/prefs.js';
@@ -17,6 +17,7 @@ import {marketsPage} from './markets/prefs.js';
 import {mediaPage} from './media/prefs.js';
 import {sysmonPage} from './sysmon/prefs.js';
 import {timezonesPage} from './timezonePlanner/prefs.js';
+import {weatherPage} from './weather/prefs.js';
 import {widgetsPage} from './widgets/prefs.js';
 import {writingPage} from './writing/prefs.js';
 import {addIconPath as addZeroTierIconPath, zeroTierPage} from './zerotier/prefs.js';
@@ -50,6 +51,7 @@ export function featurePages(window, settings, pageStack) {
         widgetsPage(settings),
         // Not tabs: their cards show in Widgets.
         marketsPage(settings),
+        weatherPage(settings),
         horizonPage(settings),
         writingPage(settings, window),
         formulasPage(settings),

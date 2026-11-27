@@ -17,8 +17,10 @@
 //
 // Keyboard order follows the row: panic 1–4, the date pill, panic 5–8.
 // The hub makes the island wide enough (Hub.minWidth) for both halves
-// around the clock's place, PANIC_GAP clear of the hub's edges. The row
-// spans the hub, above the side column.
+// around the clock's place, PANIC_GAP clear of the hub's edges, unless the
+// open tab's size is the user's to set: then fit() packs the row into a
+// narrower island, and hides the outermost panic buttons if that is not
+// enough (user request). The row spans the hub, above the side column.
 
 import Clutter from 'gi://Clutter';
 import GObject from 'gi://GObject';
@@ -31,8 +33,9 @@ import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js'
 export const PANIC_GAP = 8;
 
 // Places the header's parts in one pass: the date pill centred on the
-// point centre() gives (the island's middle), the panic groups beside it.
-// Mirrored right to left. Its
+// point centre() gives (the island's middle), the panic groups beside it;
+// packed (HubHeader.fit()), the parts side by side at their natural widths,
+// the pill as near that point as fits. Mirrored right to left. Its
 // minimum width is 0: the island makes the room (Hub.minWidth), not the
 // row; while the island animates open, the parts may cross.
 const HeaderLayout = GObject.registerClass(
@@ -75,16 +78,34 @@ class HeaderLayout extends Clutter.LayoutManager {
             actor.allocate(new Clutter.ActorBox({x1, y1, x2: x1 + w, y2: y1 + h}));
             return w;
         };
-        // Always on centre() (Hub.minWidth makes the island wide enough).
-        // Both panic groups take the wider one's width (groupWidth()); the
-        // narrower spreads its buttons (PanicGroupLayout, panicBar.js).
         const centre = this._centre();
+        const middle = rtl ? width - centre : centre;
+        const spacing = this._header.spacing;
+        const shown = this._header.centred.filter(a => a.visible);
+        if (this._header.packed) {
+            const widths = shown.map(a => a.get_preferred_width(-1)[1]);
+            const total = widths.reduce((sum, w) => sum + w, 0) + spacing * Math.max(0, shown.length - 1);
+            const pill = shown.indexOf(this._header.calendarButton);
+            const gap = PANIC_GAP * St.ThemeContext.get_for_stage(global.stage).scale_factor;
+            // Without a pill, the groups' middle goes where the pill's would.
+            const before = pill >= 0
+                ? widths.slice(0, pill).reduce((sum, w) => sum + w + spacing, 0) + widths[pill] / 2
+                : total / 2;
+            let x = Math.max(gap, Math.min(middle - before, width - gap - total));
+            shown.forEach((actor, i) => {
+                x += place(actor, x, widths[i]) + spacing;
+            });
+            return;
+        }
+        // On centre() (Hub.minWidth makes the island wide enough). Both
+        // panic groups take the wider one's width (groupWidth()); the
+        // narrower spreads its buttons (PanicGroupLayout, panicBar.js).
         const [before] = this._header.halves();
         const groupWidth = this._header.groupWidth();
-        let x = (rtl ? width - centre : centre) - before;
-        for (const actor of this._header.centred.filter(a => a.visible)) {
+        let x = middle - before;
+        for (const actor of shown) {
             const forced = actor === this._header.calendarButton ? undefined : groupWidth;
-            x += place(actor, x, forced) + this._header.spacing;
+            x += place(actor, x, forced) + spacing;
         }
     }
 });
@@ -106,6 +127,8 @@ export class HubHeader {
         this._unread = false;
         this.calendarButton = null;
         this.unreadBadge = null;
+        // fit(): the parts side by side, not centred on the clock.
+        this.packed = false;
 
         this.actor = new St.Widget({
             style_class: 'froonty-hub-header',
@@ -136,26 +159,39 @@ export class HubHeader {
         return this.actor.get_theme_node().get_length('spacing');
     }
 
+    // The panic groups, before and after the pill.
+    get _groups() {
+        return this.centred.filter(a => a !== this.calendarButton);
+    }
+
+    // A group's natural width with `buttons` of it shown (stage px).
+    _rowWidth(group, buttons) {
+        if (!buttons.length)
+            return 0;
+        const spacing = group.get_theme_node().get_length('spacing');
+        return buttons.reduce((sum, b) => sum + b.get_preferred_width(-1)[1], 0) +
+            spacing * (buttons.length - 1);
+    }
+
     /**
      * The width both panic groups take: the wider one's natural width, so
      * the two sides of the date pill match (the narrower one spreads its
-     * buttons out).
+     * buttons out). All their buttons count, also those fit() hid.
      */
     groupWidth() {
-        return Math.max(0, ...this.centred.filter(a => a.visible && a !== this.calendarButton)
-            .map(a => a.get_preferred_width(-1)[1]));
+        return Math.max(0, ...this._groups.map(g => this._rowWidth(g, g.get_children())));
     }
 
     /**
      * How far the centred parts reach from the island's middle (stage px,
-     * natural widths): [before it, after it]. The date pill's middle is
-     * the island's; without a pill, the groups' middle is.
+     * natural widths, every panic button): [before it, after it]. The date
+     * pill's middle is the island's; without a pill, the groups' middle is.
      */
     halves() {
         const width = actor => (actor?.visible ? actor.get_preferred_width(-1)[1] : 0);
         const group = this.groupWidth();
         const [start, end] = [this.centred[0], this.centred.at(-1)]
-            .map(actor => (actor?.visible ? group : 0));
+            .map(actor => (actor !== this.calendarButton && actor?.get_n_children() ? group : 0));
         const pill = width(this.calendarButton);
         const spacing = this.spacing;
         if (!pill) {
@@ -163,6 +199,49 @@ export class HubHeader {
             return [total / 2, total / 2];
         }
         return [(start ? start + spacing : 0) + pill / 2, pill / 2 + (end ? spacing + end : 0)];
+    }
+
+    /**
+     * Fits the row to the width the island is opening or resizing to
+     * (stage px; not an animation frame's). With room for the centred
+     * layout, all of it. Else packed: each group at its natural width, the
+     * pill as near the clock as fits; and narrower still, without the
+     * outermost panic buttons, the wider group's first, until the rest fit
+     * `gap` clear of the edges (user request). The date pill always shows.
+     *
+     * @param {number} width the row's width
+     * @param {boolean} room width is at least what the centred layout needs
+     * @param {number} gap kept clear of each edge
+     */
+    fit(width, room, gap) {
+        const groups = this._groups;
+        const shown = groups.map(g => g.get_children());
+        const packed = !room;
+        const pill = this.calendarButton?.get_preferred_width(-1)[1] ?? 0;
+        const packedWidth = () => {
+            const parts = [pill, ...groups.map((g, i) => this._rowWidth(g, shown[i]))].filter(w => w > 0);
+            return parts.reduce((sum, w) => sum + w, 0) + this.spacing * Math.max(0, parts.length - 1) +
+                2 * gap;
+        };
+        while (packed && packedWidth() > width && shown.some(s => s.length)) {
+            const [before, after] = groups.map((g, i) => this._rowWidth(g, shown[i]));
+            if (after >= before)
+                shown[1].pop();
+            else
+                shown[0].shift();
+        }
+        const changed = packed !== this.packed || groups.some((group, i) =>
+            group.visible !== (shown[i].length > 0) ||
+            group.get_children().some(b => b.visible !== shown[i].includes(b)));
+        if (!changed)
+            return;
+        this.packed = packed;
+        groups.forEach((group, i) => {
+            for (const button of group.get_children())
+                button.visible = shown[i].includes(button);
+            group.visible = shown[i].length > 0;
+        });
+        this.actor.queue_relayout();
     }
 
     /** @param {boolean} unread CalendarMenu.hasUnread */

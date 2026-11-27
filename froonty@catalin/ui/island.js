@@ -44,6 +44,10 @@ const RESIZE_MODE = Clutter.AnimationMode.EASE_OUT_QUAD;
 // The pill's widest notice (a feature's peek), logical px.
 const PEEK_MAX_WIDTH = 360;
 
+// Set once tabs whose size the user sets may be narrower than the panic
+// buttons need (_keepTabWidths()).
+const NARROW_KEY = 'hub-narrow-widths';
+
 const GEOMETRY_KEYS = [
     'collapsed-width',
     'collapsed-height',
@@ -540,24 +544,59 @@ export class Island {
         const size = this._geometry.expandedSize(this._hub.activeFeature,
             this._hub.activeExtraHeight, this._liveHubSize);
         const needs = this._hubNeeds();
-        return {width: Math.max(size.width, needs.width), height: Math.max(size.height, needs.height)};
+        const target = {width: Math.max(size.width, needs.width), height: Math.max(size.height, needs.height)};
+        // The header lays out for where the island is going, not for each
+        // frame of the way.
+        if (this._pill.get_stage())
+            this._hub.fitHeader(target.width - this._pillInsets().width);
+        return target;
+    }
+
+    // The pill's padding and borders around the hub (stage px; on stage).
+    _pillInsets() {
+        const node = this._pill.get_theme_node();
+        return {
+            width: node.get_horizontal_padding() +
+                node.get_border_width(St.Side.LEFT) + node.get_border_width(St.Side.RIGHT),
+            height: node.get_vertical_padding() +
+                node.get_border_width(St.Side.TOP) + node.get_border_width(St.Side.BOTTOM),
+        };
     }
 
     // The expanded island's smallest size (stage px): tall enough for the
     // header and, below it, every feature tab and ⚙️ in one column; wide
     // enough that the centred date pill and the panic buttons beside it
-    // clear the hub's edges (Hub.minWidth). (Off stage there is no theme
-    // node, and nothing to show yet.)
+    // clear the hub's edges (Hub.minWidth). A tab whose size the user sets
+    // only needs room for the date pill (Hub.narrowestWidth): the header
+    // packs the panic buttons, then hides some (user request). (Off stage
+    // there is no theme node, and nothing to show yet.)
     _hubNeeds() {
         if (!this._pill.get_stage())
             return {width: 0, height: 0};
-        const node = this._pill.get_theme_node();
+        const insets = this._pillInsets();
+        const narrow = Boolean(this._hub.activeFeature?.hubSizeKeys) &&
+            this._settings.get_boolean(NARROW_KEY);
         return {
-            width: this._hub.minWidth + node.get_horizontal_padding() +
-                node.get_border_width(St.Side.LEFT) + node.get_border_width(St.Side.RIGHT),
-            height: this._hub.minHeight + node.get_vertical_padding() +
-                node.get_border_width(St.Side.TOP) + node.get_border_width(St.Side.BOTTOM),
+            width: (narrow ? this._hub.narrowestWidth : this._hub.minWidth) + insets.width,
+            height: this._hub.minHeight + insets.height,
         };
+    }
+
+    // Once (NARROW_KEY), when the island has opened: before, no tab was
+    // narrower than the panic buttons needed, whatever its width key said.
+    // Each width key below the island's width now is raised to it, so
+    // letting tabs be narrower moves none of them.
+    _keepTabWidths() {
+        if (this._settings.get_boolean(NARROW_KEY) || !this._pill.get_stage())
+            return;
+        const scale = this._themeContext.scale_factor;
+        const width = Math.ceil((this._hub.minWidth + this._pillInsets().width) / scale);
+        for (const key of FEATURES.map(f => f.hubSizeKeys?.width).filter(Boolean)) {
+            const [, [, max]] = this._settings.settings_schema.get_key(key).get_range().recursiveUnpack();
+            if (this._settings.get_int(key) < width)
+                this._settings.set_int(key, Math.min(width, max));
+        }
+        this._settings.set_boolean(NARROW_KEY, true);
     }
 
     // What the resize grip may give the open tab's keys, in logical px:
@@ -783,8 +822,12 @@ export class Island {
             // However a collapse ends: done, or cut short by _syncGeometry()
             // (which then also syncs the bars under the pill).
             onStopped: isFinished => {
-                if (this._expanded)
+                // Also when cut short (a tab chosen while opening): the hub
+                // is laid out by then.
+                if (this._expanded) {
+                    this._keepTabWidths();
                     return;
+                }
                 // The clock may have changed size meanwhile; see
                 // _onCoverChanged. This also brings the bar back.
                 if (isFinished)

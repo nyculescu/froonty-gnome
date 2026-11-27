@@ -30,7 +30,8 @@ export function brightnessPage(settings) {
             'The mouse pointer is not dimmed.'),
     });
     group.add(switchRow(settings, 'brightness-enabled', _('Software brightness'),
-        _('A second brightness slider in Quick Settings, under GNOME\'s')));
+        _('A second brightness slider in Quick Settings, under GNOME\'s. With a laptop open beside ' +
+            'the monitors it dims, GNOME\'s slider dims them too, and this one hides')));
 
     const monitorsRow = new Adw.ComboRow({
         title: _('Monitors'),

@@ -391,8 +391,6 @@ notes as stickies over the selected note only or a list of all notes.
   as the All notes window does, which never writes `.froonty.json`. They
   are rebuilt only when a pinned note's name or text changes, so a
   change to another note keeps their scrolling.
-- **Widget Lock** (Quick Settings, while a sticky or card shows) makes
-  them ignore the pointer; see docs/features/widgets.md.
 - Checked by `testDesktopStickies` (both headless modes), `notes-meta`,
   `notes-service`, `notes-library` and `notes-markup` unit tests.
 

@@ -9,24 +9,23 @@ Settings → Usage: how much of each allowance is used, and when each one
 resets.
 
 ```
-┌────┬──────────────────────────────────────┐
-│ 🕒 │   [🎤][🔊] ( Sat Oct 3 14:05 )       │
-│ 📝 │ Weekly                           33% │
-│ ✳  │ ███████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ │
-│    │ Resets Fri 22:56                     │
-│    │ Weekly Fable                     18% │
-│    │ ████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ │
-│    │ Resets Fri 22:56                     │
-│    │                    Updated 2 min ago │
-│    │ Opus 5.5 vs launch week 70.1% correct│
-│    │ 90%┆              •─• Fable 5.2 84.6% │
-│    │ 70%┆░░░    •╮   ╭• 70.1%             │
-│    │ 50%┆░•─•─•─╰•─•╯                      │
-│    │     Sep 24   Oct 15   Nov 05   Nov 19 │
-│    │ Δ +0.014 ± 0.025, days 41–50 (…): no │
-│    │ change · livenerf, updated Fri 10:31 │
-│    │                                      │
-└────┴──────────────────────────────────────┘
+┌────┬────────────────────────────────────────────┐
+│ 🕒 │   [🎤][🔊] ( Sat Oct 3 14:05 )             │
+│ 📝 │ Weekly                                 33% │
+│ ✳  │ ███████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ │
+│    │ Resets Fri 22:56                           │
+│    │ Weekly Fable                           18% │
+│    │ ████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ │
+│    │ Resets Fri 22:56                           │
+│    │ • Fable 5.2  • Opus 5.5  Updated 2 min ago │
+│    │               •─• 84.6%                ┆90% │
+│    │ ░░░    •╮   ╭• 70.1%                   ┆70% │
+│    │ ░•─•─•─╰•─•╯                           ┆50% │
+│    │ Sep 24   Oct 15   Nov 05   Nov 19          │
+│    │ Δ +0.014 ± 0.025, days 41–50 (…): no       │
+│    │ change · livenerf, updated Fri 10:31       │
+│    │                                            │
+└────┴────────────────────────────────────────────┘
 ```
 
 The plan has two limits now, Weekly and Weekly Fable. A Session row,
@@ -34,12 +33,13 @@ other per-model rows or Cloud session credits appear the same way if
 Claude's servers send them. The livenerf row follows the usage rows
 directly, and its chart takes any spare height.
 
-The last row redraws livenerf's own chart (its README's hero image): the
+The last row redraws livenerf's own chart (its README's hero image),
+without a heading: its last 30 days, scrolling back to earlier ones, the
 daily score with its 95% interval, the baseline days shaded, the latest
 score printed by its point, and once the baseline is complete its mean as
-a dashed line. Once livenerf publishes a 10-day result, the line under the
-chart reads `Δ −2.1 ± 1.4, days 11–20 (…): no change · livenerf, updated
-Wed 21:44`.
+a dashed line. A legend on the footer's line names the series. Once
+livenerf publishes a 10-day result, the line under the chart reads
+`Δ −2.1 ± 1.4, days 11–20 (…): no change · livenerf, updated Wed 21:44`.
 
 The idea comes from vorssaint-utils' AI agents section, which shows plan
 limits and their resets. No code was taken; its data source (a history file
@@ -105,19 +105,42 @@ Froonty reads a different one.
   week", from [livenerf](https://github.com/ninjahawk/livenerf), an
   independent benchmark that runs Opus 5.5 daily through headless Claude
   Code against its launch-week baseline. See section 3.1.
-  - **The value is the latest day's score**, "54.5% correct", exactly as
-    livenerf's chart prints it (user request: "I cannot see any current
-    %"). Before the chart has been read, "Day 7 of 30" from the README.
+  - **No heading over the chart** (user request 2026-11-27): the legend
+    names Opus and the end label prints the latest score, so the heading
+    said both again. Before, it read "Opus 5.5 vs launch week", and the
+    latest day's score, "54.5% correct", exactly as livenerf's chart
+    prints it (user request: "I cannot see any current %"). Without the
+    chart (offline, or not read yet) the heading stays, over a bar:
+    "Day 7 of 30" from the README, or "Unknown".
   - **The chart** (user request, after livenerf's hero image): redrawn
     with Cairo from livenerf's own SVG, not shown as an image (at 300 px
     its 960-px text would be unreadable). The SVG's own grid (30–100% on
-    2026-11-13), dates along the bottom, the series in livenerf's blue. A
-    pointer on it does nothing.
+    2026-11-13) with its labels on the right, by the latest days (user
+    request 2026-11-26: the latest values are the ones read), dates along
+    the bottom, the series in livenerf's blue.
+  - **The last 30 days** (user request 2026-11-27, rather than widening
+    the island to read them all): the view shows the latest 30 days, from
+    half a day before the first of them (`recentSpan` in `livenerf.js`;
+    livenerf spaces days evenly, so the usual gap between points is a
+    day). The wheel or a touchpad scrolls back through earlier days, down
+    or right moving on to later ones; the grid labels stay put on the
+    right. A lighter stretch of the bottom grid line shows which part of
+    the whole series is in view. The view keeps its place across
+    redraws, and a new reading starts at the latest days again. Up to 30
+    days, the whole series fits and nothing scrolls.
   - **Fable 5.2** (livenerf added it 2026-11-11; user request 2026-11-13):
     its own series in livenerf's orange, from its launch on 2026-11-09,
-    drawn over Opus with its own band and whiskers, and ended by
-    "Fable 5.2 84.6%" like livenerf's label. Before, its dots were read
-    as Opus days and the Opus line ran back through them.
+    drawn over Opus with its own band and whiskers, and ended by its
+    latest score, "84.6%". Before, its dots were read as Opus days and
+    the Opus line ran back through them.
+  - **Legend** (user request 2026-11-26): "• Fable 5.2 • Opus 5.5", each
+    name light and small, in its series' colour, the other series first.
+    Also with Opus alone, as nothing else names it. It sits on the usage
+    footer's line, at its left, with "Updated 2 min ago" at its right
+    (user request 2026-11-27); the legend never shortens, the footer
+    wraps if the line runs out of room. Before, Fable's end label carried
+    its name, "Fable 5.2 84.6%", like livenerf's, and then the legend had
+    a line of its own above the plot.
   - **The line under it:** until a result is published (baseline to about
     2026-10-04, first 10-day result after day 20) "Baseline day 7 of 10";
     then "Δ <Δ ± SE>, <window>: <decision>", copied from livenerf's
@@ -348,7 +371,8 @@ features/claude/
 ├── icon.js      the Spark as a Gio.FileIcon (tab, panic button, attention
 │                bar)
 ├── usage.js     pure: parse the cache, reset arithmetic (unit-tested)
-├── livenerf.js  pure: read livenerf's README and chart SVG (unit-tested)
+├── livenerf.js  pure: read livenerf's README and chart SVG, the last
+│                30 days' share of the chart (unit-tested)
 ├── livenerfService.js  fetches both (Soup), at most hourly
 ├── service.js   reads the cache and the status line's file on show, file +
 │                network monitors while shown; asks the refresher for a
@@ -422,14 +446,16 @@ set, names a local folder laid out like the repository to read instead
 - `tools/unit/livenerf.test.js`: the README reader (hard-wrapped progress,
   Δ rows, Unicode minus, columns by name, nothing guessed), the chart
   reader (scores and intervals through the grid, printed values, the
-  collecting note, nothing without a grid or points), both against the
+  collecting note, nothing without a grid or points), the last 30 days'
+  share (a missed day, a short series), both against the
   submodule's real files when checked out, and the service with a fake
   fetch (not before start, hourly limit, failures, one file enough, each
   file's last good reading kept, fetched only when shown and online).
 - `tools/headless-test/checks.js` `testClaude`: the real tab in the Shell
   with a private `CLAUDE_CONFIG_DIR`. It checks the rows and their wording
   (the credits row and its dated reset included),
-  the hub size, the livenerf row (the latest score over the chart, then a
+  the hub size, the livenerf row (its chart without a heading and its
+  legend on the footer's line, then a
   published Δ and decision, "Unknown" offline) from a private README and
   chart in plot.py's format, a live
   update, offline and captive-portal states, nothing

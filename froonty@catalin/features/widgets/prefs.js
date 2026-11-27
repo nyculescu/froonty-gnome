@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Widgets settings: the island's tab, how the Markets and Horizon cards
 // look (each is a feature with its own page: markets/prefs.js,
-// horizon/prefs.js), what shows on the desktop and where
+// weather/prefs.js, horizon/prefs.js), what shows on the desktop and where
 // (desktopPrefs.js), and the System card.
 
 import Adw from 'gi://Adw';
@@ -29,6 +29,7 @@ export function widgetsPage(settings) {
         _('Off, the tab goes; the desktop widgets stay as set below')));
     page.add(group);
     page.add(marketsGroup(settings));
+    page.add(weatherGroup(settings));
     page.add(horizonGroup(settings));
     for (const group of desktopGroups(settings))
         page.add(group);
@@ -61,5 +62,15 @@ function horizonGroup(settings) {
     group.add(switchRow(settings, 'widgets-news-enabled', _('Show Horizon in the Widgets tab')));
     // Horizon off: nothing of it shows anywhere.
     settings.bind('horizon-enabled', group, 'sensitive', Gio.SettingsBindFlags.GET);
+    return group;
+}
+
+function weatherGroup(settings) {
+    const group = new Adw.PreferencesGroup({
+        title: _('Weather'),
+        description: _('Where the Weather card shows. Its cities are on the Weather page.'),
+    });
+    group.add(switchRow(settings, 'widgets-weather-enabled', _('Show Weather in the Widgets tab')));
+    settings.bind('weather-enabled', group, 'sensitive', Gio.SettingsBindFlags.GET);
     return group;
 }

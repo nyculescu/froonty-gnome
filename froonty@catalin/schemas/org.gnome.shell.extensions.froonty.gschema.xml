@@ -46,6 +46,11 @@
       <summary>Hub tab selected last</summary>
       <description>The feature id shown when the island expands (see features/registry.js). When that tab is gone or turned off, the first tab that is on.</description>
     </key>
+    <key name="hub-narrow-widths" type="b">
+      <default>false</default>
+      <summary>Internal: tabs may be narrower than the panic buttons</summary>
+      <description>Set the first time the island has opened since a tab whose size can be set may be narrower than the panic buttons need. Each such tab's stored width below the island's width then was raised to it, so nothing moved. From then on the header packs the panic buttons into a narrower tab, then hides the outermost.</description>
+    </key>
     <key name="widgets-enabled" type="b">
       <default>true</default>
       <summary>Widgets tab in the island</summary>
@@ -117,6 +122,23 @@
       <default>340</default>
       <summary>Widgets island height</summary>
     </key>
+    <key name="weather-enabled" type="b">
+      <default>true</default>
+      <summary>Weather: current conditions and 3 days for up to 3 cities, from Open-Meteo</summary>
+      <description>Off, the Weather card shows neither in the Widgets tab nor on the desktop, and nothing is fetched.</description>
+    </key>
+    <key name="weather-cities" type="a(sdd)">
+      <default>[('Shaughnessy, Vancouver', 49.25, -123.13333)]</default>
+      <summary>Weather: the favourite cities (name, latitude, longitude), at most 3</summary>
+    </key>
+    <key name="widgets-weather-enabled" type="b">
+      <default>true</default>
+      <summary>Show the Weather card in the Widgets tab</summary>
+    </key>
+    <key name="widgets-weather-pin-desktop" type="b">
+      <default>false</default>
+      <summary>Pin the Weather card to the desktop background layer</summary>
+    </key>
     <key name="horizon-enabled" type="b">
       <default>true</default>
       <summary>Horizon: news briefings an AI writes</summary>
@@ -144,11 +166,6 @@
       <default>true</default>
       <summary>Clicks on the desktop Markets and Horizon cards open their pages</summary>
       <description>Off, those cards only scroll. The Desktop widgets panic button sets it.</description>
-    </key>
-    <key name="widgets-desktop-locked" type="b">
-      <default>false</default>
-      <summary>Desktop widgets and stickies ignore the pointer</summary>
-      <description>"Widget Lock" in Quick Settings: clicks and scrolling go to the desktop under them.</description>
     </key>
     <key name="markets-enabled" type="b">
       <default>true</default>
@@ -288,7 +305,7 @@
     <key name="timezone-planner-favorites" type="as">
       <default>['Europe/Dublin', 'Europe/Bucharest']</default>
       <summary>Timezone planner favourite cities</summary>
-      <description>Timezone IDs shown in Quick Settings; at most two city favourites.</description>
+      <description>Timezone IDs compared in the Quick Settings planner; at most five. The button shows the first two.</description>
     </key>
     <key name="timezone-planner-time-format" type="s">
       <choices>

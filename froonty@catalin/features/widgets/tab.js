@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// The Widgets tab: the Markets card above the Horizon briefings, each while
-// its feature and its tab switch are on (cards.js), scrolled together, so
-// a long list of symbols does not push the briefings out of the tab's
-// fixed height. Each card holds its feature's service while it shows.
+// The Widgets tab: the Markets and Weather cards above the Horizon
+// briefings, each while its feature and its tab switch are on (cards.js),
+// scrolled together, so a long list of symbols does not push the briefings
+// out of the tab's fixed height. Each card holds its feature's service
+// while it shows.
 
 import St from 'gi://St';
 
@@ -12,6 +13,8 @@ import {acquireHorizonService, releaseHorizonService} from '../horizon/shared.js
 import {HorizonView} from '../horizon/view.js';
 import {acquireMarketsService, releaseMarketsService} from '../markets/shared.js';
 import {MarketsView} from '../markets/view.js';
+import {acquireWeatherService, releaseWeatherService} from '../weather/shared.js';
+import {WeatherView} from '../weather/view.js';
 import {CARDS} from './cards.js';
 
 // In the tab's order.
@@ -21,6 +24,13 @@ const TAB_CARDS = [
         create: ctx => ({
             view: new MarketsView(acquireMarketsService(ctx.settings)),
             release: releaseMarketsService,
+        }),
+    },
+    {
+        id: 'weather',
+        create: ctx => ({
+            view: new WeatherView(acquireWeatherService(ctx.settings)),
+            release: releaseWeatherService,
         }),
     },
     {
@@ -53,7 +63,7 @@ export class WidgetsTab {
         });
         this._empty = new St.Label({
             style_class: 'froonty-widgets-status',
-            text: _('Nothing to show here. Turn Markets or Horizon on for this tab in Settings → Widgets, or right-click their panic buttons.'),
+            text: _('Nothing to show here. Turn Markets, Weather or Horizon on for this tab in Settings → Widgets.'),
             visible: false,
         });
         this._empty.clutter_text.line_wrap = true;

@@ -24,9 +24,12 @@
 // header stay, and the content says so, with a button that opens Settings.
 // The tab column itself shows only while more than one tab is on.
 //
-// The date pill never leaves GNOME's clock: the island is made wider
+// The date pill stays on GNOME's clock: the island is made wider
 // (minWidth) until both halves around it fit PANIC_GAP clear of the hub's
-// edges, and taller (minHeight) when the header, MIN_TABS tabs and ⚙️
+// edges, unless the open tab's size is the user's to set: that tab may be
+// as narrow as the pill alone (narrowestWidth), and the header packs the
+// panic buttons, then hides the outermost (fitHeader, user request). The
+// island is made taller (minHeight) when the header, MIN_TABS tabs and ⚙️
 // need it. Any other tabs scroll, the open one kept in sight.
 //
 // Keyboard (Tab): the header row from left to right (panic 1–4, the date
@@ -48,7 +51,7 @@ import {EventEmitter} from 'resource:///org/gnome/shell/misc/signals.js';
 import {Emitter} from '../core/emitter.js';
 import {Tooltip} from '../core/tooltip.js';
 import {HubHeader, PANIC_GAP} from './hubHeader.js';
-import {PanicBar} from './panicBar.js';
+import {PANIC_BUTTONS_KEY, PanicBar} from './panicBar.js';
 
 const LAST_TAB_KEY = 'hub-last-tab';
 
@@ -81,6 +84,8 @@ export class Hub extends EventEmitter {
         this._activeId = null;
         this._shown = false;
         this._revealLater = 0;
+        this._fitLater = 0;
+        this._fitWidth = 0;
 
         this._buildActors(openSettings, openCalendar);
 
@@ -90,9 +95,10 @@ export class Hub extends EventEmitter {
     }
 
     destroy() {
-        if (this._revealLater)
-            global.compositor.get_laters().remove(this._revealLater);
+        for (const later of [this._revealLater, this._fitLater].filter(Boolean))
+            global.compositor.get_laters().remove(later);
         this._revealLater = 0;
+        this._fitLater = 0;
         this._settings.disconnectObject(this);
         this._header.destroy();
         this._panicBar.destroy();
@@ -172,7 +178,8 @@ export class Hub extends EventEmitter {
     }
 
     _measureMinWidth() {
-        if (!this.actor.get_stage() || !this._header.centred.some(actor => actor.visible))
+        const parts = this._header.centred.some(a => a === this.calendarButton || a.get_n_children());
+        if (!this.actor.get_stage() || !parts)
             return 0;
         const gap = PANIC_GAP * St.ThemeContext.get_for_stage(global.stage).scale_factor;
         const [before, after] = this._header.halves();
@@ -185,6 +192,42 @@ export class Hub extends EventEmitter {
         const rtl = this.actor.get_text_direction() === Clutter.TextDirection.RTL;
         const offset = rtl ? -this._clockOffset() : this._clockOffset();
         return Math.ceil(2 * Math.max(lead - offset, trail + offset));
+    }
+
+    /**
+     * The width the island's content needs for the date pill alone,
+     * PANIC_GAP clear of the hub's edges (physical pixels; 0 off stage):
+     * the least a tab whose size the user sets may have (fitHeader()).
+     */
+    get narrowestWidth() {
+        if (!this.actor.get_stage())
+            return 0;
+        const gap = PANIC_GAP * St.ThemeContext.get_for_stage(global.stage).scale_factor;
+        return Math.ceil((this.calendarButton?.get_preferred_width(-1)[1] ?? 0) + 2 * gap);
+    }
+
+    /**
+     * Lays the header out for the width the hub is opening or resizing to
+     * (physical pixels): centred with room for it (minWidth), else packed,
+     * the outermost panic buttons hidden if need be (HubHeader.fit()).
+     *
+     * @param {number} width
+     */
+    fitHeader(width) {
+        this._fitWidth = width;
+        // Before the next frame: this may run inside a layout pass (a part's
+        // new allocation resizes the island), where showing or hiding a
+        // button must not.
+        if (this._fitLater)
+            return;
+        this._fitLater = global.compositor.get_laters().add(Meta.LaterType.BEFORE_REDRAW, () => {
+            this._fitLater = 0;
+            if (this.actor.get_stage()) {
+                const gap = PANIC_GAP * St.ThemeContext.get_for_stage(global.stage).scale_factor;
+                this._header.fit(this._fitWidth, this._fitWidth >= this._measureMinWidth(), gap);
+            }
+            return false;
+        });
     }
 
     // Where the date pill's middle goes, from the header row's left edge
@@ -347,6 +390,9 @@ export class Hub extends EventEmitter {
             centre: () => this._headerMiddle(),
         });
         this.calendarButton = this._header.calendarButton;
+        // New panic buttons all show: the island fits the header again
+        // (after the bar's own handler, connected first, rebuilt them).
+        this._settings.connectObject(`changed::${PANIC_BUTTONS_KEY}`, () => this.emit('size-changed'), this);
 
         this._content = new St.Widget({
             layout_manager: new Clutter.BinLayout(),

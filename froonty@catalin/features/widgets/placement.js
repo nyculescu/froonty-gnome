@@ -11,7 +11,7 @@
 // The widgets, in the order they are placed when their positions tie.
 // Each note pinned to the desktop is an item too: STICKY_PREFIX and its
 // name, after the widgets, in the order the notes were pinned.
-export const ITEMS = ['markets', 'news', 'system'];
+export const ITEMS = ['markets', 'news', 'system', 'weather'];
 export const STICKY_PREFIX = 'sticky:';
 
 export const stickyId = name => `${STICKY_PREFIX}${name}`;
@@ -43,6 +43,7 @@ export const DEFAULT_PLACEMENT = {
     markets: {x: 0, y: 0, width: 360, height: 0},
     news: {x: 0, y: 0, width: 360, height: 420},
     system: {x: 0, y: 0, width: 260, height: 0},
+    weather: {x: 0, y: 0, width: 360, height: 0},
 };
 export const DEFAULT_STICKY = {x: MAX_POSITION, y: 0, width: 300, height: 300};
 

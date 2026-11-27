@@ -2,7 +2,9 @@
 // Software display brightness (docs/features/brightness.md): a neutral
 // dimming layer and a slider in Quick Settings under GNOME's. No DDC/CI and no backlight: for monitors GNOME cannot dim. No
 // pointer tracking or cursor clone: the layers take no input and are left
-// out of picking, so GNOME's own pointer stays the only one, on top.
+// out of picking, so GNOME's own pointer stays the only one, on top. With a
+// laptop open and joined to the monitors it dims, they join GNOME's
+// slider instead (§8), and this one hides.
 //
 // An extension part (extension.js): it lives while Froonty runs and
 // follows brightness-enabled itself.
@@ -18,17 +20,16 @@ import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 import {QuickSlider} from 'resource:///org/gnome/shell/ui/quickSettings.js';
 import {Slider} from 'resource:///org/gnome/shell/ui/slider.js';
 
+import {joinBrightness} from '../../shell/brightnessManager.js';
 import {addUnderBrightness} from '../../shell/quickSettings.js';
 import {
-    TARGETS, appliedLevel, levelFromSlider, overlayOpacity, sliderValue, targetMonitors,
+    TARGETS, appliedLevel, levelFromSlider, mergedMonitors, overlayOpacity, sliderValue, targetMonitors,
 } from './levels.js';
 import {setSoftwareSlider} from './nightLightMenu.js';
 
 // Shell.Screenshot paints the stage itself, layer included, so it is hidden
 // while one of these runs. screenshot_window paints only the window.
 const CAPTURES = ['screenshot', 'screenshot_area', 'screenshot_stage_to_content', 'pick_color'];
-
-const KEYS = ['brightness-enabled', 'brightness-level', 'brightness-min', 'brightness-monitors'];
 
 // A monitor, not GNOME's sun, so it does not look like the backlight slider above it.
 const MONITOR_ICONS = {
@@ -88,10 +89,13 @@ class BrightnessSlider extends QuickSlider {
     }
 });
 
-/** Indices of the built-in panels, as in Main.layoutManager.monitors. */
-function builtInMonitors() {
-    return new Set(global.backend.get_monitor_manager().get_logical_monitors()
-        .filter(logical => logical.get_monitors().some(monitor => monitor.is_builtin()))
+const logicalMonitors = () => global.backend.get_monitor_manager().get_logical_monitors();
+
+// Indices, as in Main.layoutManager.monitors, of the monitors with a
+// screen that passes the test.
+function monitorsWhere(test) {
+    return new Set(logicalMonitors()
+        .filter(logical => logical.get_monitors().some(test))
         .map(logical => logical.get_number()));
 }
 
@@ -108,8 +112,17 @@ export class SoftwareBrightness {
         this._captures = 0;
         // Set while the slider is moved to the setting, not by the user.
         this._following = false;
-        for (const key of KEYS)
-            settings.connectObject(`changed::${key}`, () => this._sync(), this);
+        // While the dimmed monitors are part of GNOME's slider: its handle,
+        // those monitors and the brightness GNOME last applied (0-1).
+        this._joined = null;
+        this._merged = null;
+        this._brightness = 1;
+        settings.connectObject(
+            'changed::brightness-enabled', () => this._sync(),
+            'changed::brightness-monitors', () => this._sync(),
+            'changed::brightness-level', () => this._update(),
+            'changed::brightness-min', () => this._update(),
+            this);
         this._sync();
     }
 
@@ -120,13 +133,76 @@ export class SoftwareBrightness {
         this._openSettings = null;
     }
 
+    // On, off, the monitors setting, or monitors added, removed or rearranged.
     _sync() {
         if (!this._settings.get_boolean('brightness-enabled')) {
             this._hide();
             return;
         }
         this._show();
+        this._merge();
         this._apply();
+    }
+
+    // The level or the minimum.
+    _update() {
+        if (this._layer)
+            this._apply();
+    }
+
+    // Built-in panels and backlit screens (a headless check fakes them).
+    _monitorKinds() {
+        return {
+            builtIn: monitorsWhere(monitor => monitor.is_builtin()),
+            // As GNOME picks the screens its slider dims (misc/brightnessManager.js).
+            backlit: monitorsWhere(monitor => monitor.get_backlight() && monitor.is_active()),
+        };
+    }
+
+    // The dimmed monitors join GNOME's slider when levels.js says so, and
+    // this slider hides; otherwise both sliders show.
+    _merge() {
+        this._joined?.leave();
+        this._joined = null;
+        this._merged = null;
+        const {builtIn, backlit} = this._monitorKinds();
+        const merged = mergedMonitors(this._settings.get_string('brightness-monitors'),
+            Main.layoutManager.monitors.length, builtIn, backlit);
+        const logical = merged?.map(i => logicalMonitors().find(l => l.get_number() === i));
+        if (merged && logical.every(Boolean)) {
+            const name = logical.length === 1
+                ? logical[0].get_monitors()[0].get_display_name()
+                : _('External monitors');
+            const minimum = this._settings.get_int('brightness-min');
+            const value = sliderValue(this._settings.get_int('brightness-level'), minimum);
+            // Set first: GNOME applies the level while the screen joins.
+            this._merged = merged;
+            this._brightness = value;
+            this._joined = joinBrightness(logical[0], name, value, {
+                changed: moved => this._storeLevel(moved),
+                apply: brightness => this._applyJoined(brightness),
+            });
+            if (!this._joined)
+                this._merged = null;
+        }
+        this._slider.visible = !this._joined;
+    }
+
+    // GNOME's slider or the screen's own in its menu moved the level.
+    _storeLevel(value) {
+        if (!this._layer)
+            return;
+        const minimum = this._settings.get_int('brightness-min');
+        const level = levelFromSlider(value, minimum);
+        if (level !== appliedLevel(this._settings.get_int('brightness-level'), minimum))
+            this._settings.set_int('brightness-level', level);
+    }
+
+    _applyJoined(brightness) {
+        if (!this._layer || !this._merged)
+            return;
+        this._brightness = brightness;
+        this._paint(levelFromSlider(brightness, this._settings.get_int('brightness-min')), this._merged);
     }
 
     _show() {
@@ -143,7 +219,9 @@ export class SoftwareBrightness {
         global.stage.add_child(this._layer);
         // Above everything else on the stage, as long as it is on.
         global.stage.connectObject('child-added', () => this._raise(), this);
-        Main.layoutManager.connectObject('monitors-changed', () => this._apply(), this);
+        // Connected after GNOME's layout and brightness managers, so both
+        // have the new monitors when this runs.
+        global.backend.get_monitor_manager().connectObject('monitors-changed', () => this._sync(), this);
 
         this._slider = new BrightnessSlider(() => this._openSettings('brightness'));
         // The menu's brightness slider is the same setting as the main one.
@@ -161,6 +239,9 @@ export class SoftwareBrightness {
     }
 
     _hide() {
+        this._joined?.leave();
+        this._joined = null;
+        this._merged = null;
         this._cancelPlace?.();
         this._cancelPlace = null;
         if (this._slider) {
@@ -176,7 +257,7 @@ export class SoftwareBrightness {
         this._injections = null;
         this._captures = 0;
         global.stage.disconnectObject(this);
-        Main.layoutManager.disconnectObject(this);
+        global.backend.get_monitor_manager().disconnectObject(this);
         this._layer?.destroy();
         this._layer = null;
         this._dimLayer = null;
@@ -184,14 +265,38 @@ export class SoftwareBrightness {
     }
 
     _apply() {
-        const level = appliedLevel(this._settings.get_int('brightness-level'),
-            this._settings.get_int('brightness-min'));
+        const target = this._settings.get_string('brightness-monitors');
+        const minimum = this._settings.get_int('brightness-min');
+        const level = appliedLevel(this._settings.get_int('brightness-level'), minimum);
+        this._slider.showMonitors(target);
+        if (this._joined) {
+            // GNOME's model holds the level while joined: a new one moves
+            // the screen's scale, and what GNOME applies comes back to
+            // _applyJoined. Only a new minimum changes nothing there.
+            const {scale} = this._joined;
+            if (levelFromSlider(scale.value, minimum) !== level)
+                scale.value = sliderValue(level, minimum);
+            else
+                this._applyJoined(this._brightness);
+        } else {
+            this._paint(level, targetMonitors(target, Main.layoutManager.monitors.length,
+                this._monitorKinds().builtIn));
+        }
+
+        // The slider follows the setting unless it already stands for it
+        // (while it is dragged, each step is written as it comes).
+        this._following = true;
+        for (const slider of [this._slider.slider, this._slider.level]) {
+            if (levelFromSlider(slider.value, minimum) !== level)
+                slider.value = sliderValue(level, minimum);
+        }
+        this._following = false;
+    }
+
+    // A black layer for a level over each of the monitors (indices).
+    _paint(level, indices) {
         const monitors = Main.layoutManager.monitors;
-        this._slider.showMonitors(this._settings.get_string('brightness-monitors'));
-        const dimmed = level < 100
-            ? targetMonitors(this._settings.get_string('brightness-monitors'),
-                monitors.length, builtInMonitors()).map(i => monitors[i])
-            : [];
+        const dimmed = level < 100 ? indices.map(i => monitors[i]).filter(Boolean) : [];
         while (this._overlays.length < dimmed.length) {
             const overlay = new St.Widget({reactive: false, style: 'background-color: black;'});
             Shell.util_set_hidden_from_pick(overlay, true);
@@ -204,16 +309,6 @@ export class SoftwareBrightness {
             this._overlays[i].set({x, y, width, height, opacity: overlayOpacity(level)});
         });
         this._raise();
-
-        // The slider follows the setting unless it already stands for it
-        // (while it is dragged, each step is written as it comes).
-        const minimum = this._settings.get_int('brightness-min');
-        this._following = true;
-        for (const slider of [this._slider.slider, this._slider.level]) {
-            if (levelFromSlider(slider.value, minimum) !== level)
-                slider.value = sliderValue(level, minimum);
-        }
-        this._following = false;
     }
 
     _hideFromScreenshots() {

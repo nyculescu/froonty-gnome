@@ -12,7 +12,9 @@ import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js'
 import {sparkIcon} from '../features/claude/icon.js';
 import {SESSION, WEEKLY} from '../features/claude/usage.js';
 import {cpuIcon, gpuIcon, memoryIcon, thermometerIcon} from '../features/sysmon/icon.js';
-import {favoriteCities, formatTimeAt, plannerTimeFormat} from '../features/timezonePlanner/clock.js';
+import {
+    dayOffsetAt, dayOffsetLabel, dayOffsetName, favoriteCities, formatTimeAt, plannerTimeFormat,
+} from '../features/timezonePlanner/clock.js';
 import {byId} from './catalog.js';
 import {METRICS, claudeUsage, shortCityName} from './values.js';
 
@@ -62,6 +64,13 @@ class Readout {
             y_align: Clutter.ActorAlign.CENTER,
         });
         this.actor.add_child(this._label);
+        // A small mark after the value, raised as flight times have their +1.
+        this._badge = new St.Label({
+            style_class: 'froonty-readout-badge',
+            y_align: Clutter.ActorAlign.START,
+            visible: false,
+        });
+        this.actor.add_child(this._badge);
         this.accessibleText = null;
     }
 
@@ -84,8 +93,14 @@ class Readout {
             accessible = _('%s: asleep').format(name);
         else if (value)
             accessible = _('%s: %s').format(name, text);
-        const changed = text !== this._label.text || this.actor.visible !== !value?.hidden;
+        if (value?.badgeName)
+            accessible = `${accessible}, ${value.badgeName}`;
+        const badge = value?.badge ?? '';
+        const changed = text !== this._label.text || badge !== this._badge.text ||
+            this.actor.visible !== !value?.hidden;
         this._label.text = text;
+        this._badge.text = badge;
+        this._badge.visible = badge !== '';
         this.actor.visible = !value?.hidden;
         this.accessibleText = value?.hidden ? null : accessible;
         this._setClass('_valueClass', this._label, value?.styleClass ?? null);
@@ -123,10 +138,12 @@ const claude = kind => ({
         ? claudeUsage(service.usage, service.online, kind, Date.now()) : undefined),
 });
 
-// The city's short name and its time, on the clock's ticks; hidden without
-// that favourite.
+// The city's short name and its time, on the clock's ticks, in a colour of
+// its own so it is not read as the local time; hidden without that
+// favourite. +1 or −1 when its date is not the local one.
 const timezone = index => ({
     icon: null,
+    styleClass: 'froonty-readout-timezone',
     read: ({settings, clock}) => {
         const city = favoriteCities(settings.get_strv('timezone-planner-cities'),
             settings.get_strv('timezone-planner-favorites'))[index];
@@ -134,8 +151,15 @@ const timezone = index => ({
             return {text: '', hidden: true};
         const format = plannerTimeFormat(settings.get_string('timezone-planner-time-format'),
             clock.timeFormat());
-        const time = formatTimeAt(GLib.DateTime.new_now_utc().to_unix(), city.timezone, format);
-        return {text: `${shortCityName(city.name)} ${time}`, title: city.name};
+        const now = GLib.DateTime.new_now_utc().to_unix();
+        const time = formatTimeAt(now, city.timezone, format);
+        const offset = dayOffsetAt(now, city.timezone);
+        return {
+            text: `${shortCityName(city.name)} ${time}`,
+            title: city.name,
+            badge: dayOffsetLabel(offset),
+            badgeName: dayOffsetName(offset, _),
+        };
     },
 });
 

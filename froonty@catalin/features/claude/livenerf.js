@@ -183,6 +183,25 @@ export function chartFromSvg(text) {
     };
 }
 
+/**
+ * How much of the chart, from its right edge, shows the last `days` days:
+ * from half a day before the earliest of them. livenerf spaces days
+ * evenly, so the usual gap between points is a day; a missed day only
+ * widens one gap.
+ *
+ * @param {Array<{at: number}>} points every series' points
+ * @param {number} days
+ * @returns {number} from 0 to 1 (all of it)
+ */
+export function recentSpan(points, days) {
+    const ats = points.map(p => p.at).sort((a, b) => a - b);
+    const gaps = ats.slice(1).map((at, i) => at - ats[i]).filter(g => g > 0).sort((a, b) => a - b);
+    if (!gaps.length)
+        return 1;
+    const day = gaps[Math.floor(gaps.length / 2)];
+    return Math.min(1, 1 - (ats[ats.length - 1] - (days - 0.5) * day));
+}
+
 // Numbers as numbers; everything else as written.
 function attributes(text) {
     const out = {};

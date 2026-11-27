@@ -132,7 +132,7 @@ feature has a design note in [docs/features/](docs/features/).
   - Offline, the values read "Unknown", with a line saying why.
   - A last row shows Claude Opus 5.5 against its own launch week, from the
     independent [livenerf](https://github.com/ninjahawk/livenerf) benchmark:
-    the latest day's score over a small copy of livenerf's chart, and the
+    a small copy of livenerf's chart with the latest day's score, and the
     measured change once livenerf publishes one. These are the tab's only
     network requests: livenerf's README and chart, from GitHub, at most
     once an hour while the tab is open.
@@ -234,6 +234,11 @@ feature has a design note in [docs/features/](docs/features/).
   free API keys) and crypto from Coinbase (no key); otherwise Yahoo every
   minute, then FRED for the S&P 500, Nasdaq and Dow (with a free key).
   See [docs/features/markets.md](docs/features/markets.md).
+- **Weather** (Settings → Weather): up to 3 favourite cities' current
+  weather and next days, from [Open-Meteo](https://open-meteo.com/) (free
+  for non-commercial use, no key), every 15 minutes, in a card in the
+  Widgets tab and on the desktop. See
+  [docs/features/weather.md](docs/features/weather.md).
 - **Horizon** (Settings → Horizon): news briefings that
   [Horizon](third_party/Horizon) writes with an AI (this computer's
   model, a ChatGPT plan or an API key), in a card in the Widgets tab and
@@ -249,7 +254,9 @@ feature has a design note in [docs/features/](docs/features/).
   (external ones by default, built-in screen, or all) with a neutral
   layer; warmth comes from Night Light. The layer takes no input, and the
   pointer is not dimmed or copied. The slider's > opens a menu with the
-  brightness and Brightness Settings. Software dimming only: the backlight, and its power use, stay as they are. See
+  brightness and Brightness Settings. With a laptop open beside the
+  monitors it dims, they join GNOME's brightness slider instead, so one
+  slider (and the brightness keys) dims every screen. Software dimming only: the backlight, and its power use, stay as they are. See
   [docs/features/brightness.md](docs/features/brightness.md).
 - **Night Light in the brightness menu** (on by default; Settings →
   Brightness): the > on GNOME's brightness slider opens a menu with the
@@ -262,10 +269,11 @@ feature has a design note in [docs/features/](docs/features/).
   its maximum speed, with colored noise-stage markers. See
   [docs/features/pad-noise-slider.md](docs/features/pad-noise-slider.md).
 - **Time zone planner**: add any number of
-  cities in Settings → Time zones, and mark up to two favourites. Their
-  current hours appear on the Quick Settings button. Click it for a
-  Vancouver-based planner, whose slider compares your favourites across a
-  24-hour window centered on now. Dublin and Timisoara are the defaults.
+  cities in Settings → Time zones, and mark up to five favourites. The
+  first two's current hours appear on the Quick Settings button. Click it
+  for a Vancouver-based planner in its menu, inside Quick Settings, whose
+  slider compares all your favourites across a 24-hour window centered on
+  now. Dublin and Timisoara are the defaults.
   See
   [docs/features/timezone-planner.md](docs/features/timezone-planner.md).
 - **Fan settings**: Settings → Fan has pad
@@ -521,6 +529,8 @@ its tabs:
   installed, clear the recent formulas, size.
 - **Markets:** enable, the symbols, live prices and Alpaca's keys,
   FRED's key. Under Widgets: the card in the tab and its graph span.
+- **Weather:** enable, the favourite cities (up to 3, found by name).
+  Under Widgets: the card in the tab.
 - **Horizon:** enable, Horizon's folder and data directory, the AI.
   Under Widgets: the card in the tab.
 - **Brightness:** Night Light in the brightness menu, software
@@ -546,16 +556,17 @@ The keys behind it:
 | `readouts` | none | Values on the collapsed pill, in order, at most 8 (split around the time so that both sides come out about as wide) |
 | `readouts-interval` | 5 s | How often the system readouts read the computer, 1-60 |
 | `timezone-planner-cities` | Dublin, Timisoara | Saved city names and IANA timezone IDs |
-| `timezone-planner-favorites` | Dublin, Timisoara | Up to two city timezones shown on the Quick Settings button |
+| `timezone-planner-favorites` | Dublin, Timisoara | Up to five city timezones compared in the Quick Settings planner; the button shows the first two |
 | `media-enabled` | `true` | Show the Media tab |
 | `media-show-in-pill` / `media-track-notice` | `true` | Cover and bars beside the time while music plays; a new song's title for 3 s |
 | `media-include-other-players` | `true` | Follow browsers and video players automatically (off: only when chosen) |
 | `media-remote-art` / `media-lyrics-online` | `false` | The Media tab's two internet options: web covers, lyrics from lrclib.net |
 | `notes-enabled` | `true` | Show the Notes tab; notes pinned to the desktop show as stickies while it is on |
-| `widgets-desktop-locked` | `false` | Widget Lock: desktop cards and stickies ignore the pointer |
 | `widgets-desktop-actions` | `true` | Clicks on the desktop Markets and Horizon cards open their pages; off, they only scroll |
 | `markets-enabled` | `true` | Markets: off, its card shows nowhere and nothing is fetched |
 | `markets-live` | `true` | Live prices while the market is open: Alpaca for US stocks and ETFs (with keys), Coinbase for crypto |
+| `weather-enabled` | `true` | Weather: off, its card shows nowhere and nothing is fetched |
+| `weather-cities` | Shaughnessy, Vancouver | The Weather card's favourite cities (name, latitude, longitude), at most 3 |
 | `horizon-enabled` | `true` | Horizon: off, its card shows nowhere and Horizon is not run |
 | `widgets-markets-symbols` | `^GSPC`, `^IXIC`, `^DJI`, `^GSPTSE` | The Markets card's Yahoo symbols, at most 30 |
 | `widgets-desktop-positions` | Markets, Horizon and System top left, each sticky top right | Each desktop item's place (dragged on a picture of the desktop in Settings) and size; they never overlap |

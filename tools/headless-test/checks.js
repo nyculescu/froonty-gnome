@@ -20,6 +20,8 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as WindowMenu from 'resource:///org/gnome/shell/ui/windowMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 import * as Volume from 'resource:///org/gnome/shell/ui/status/volume.js';
+import {BrightnessScale} from 'resource:///org/gnome/shell/misc/brightnessManager.js';
+import {Slider} from 'resource:///org/gnome/shell/ui/slider.js';
 import {ExtensionState} from 'resource:///org/gnome/shell/misc/extensionUtils.js';
 
 import {metadataVariants} from '../unit/fakeMpris.js';
@@ -537,12 +539,46 @@ async function fillPanicBar(count) {
         }
         groups[g].visible = members.length > 0;
     });
+    // As a change of the setting does: the header fits the island again.
+    island()._hub.emit('size-changed');
     await sleep(animationWait());
     return () => {
         for (const button of standIns)
             button.destroy();
         for (const group of groups)
             group.visible = group.get_n_children() > 0;
+    };
+}
+
+// The hub header packed into a narrow island (HubHeader.fit()): the panic
+// buttons that show and the date pill in order, none overlapping, level,
+// 8 px clear of the hub's edges; a hidden panic button is an outermost one
+// (the left group's first ones, the right group's last ones).
+function packedPlacement(hub = island()._hub) {
+    const [left, right] = hub._panicBar.groups.map(g => g.get_children());
+    const pillShown = hub.calendarButton?.visible ?? true;
+    const shown = [...left, hub.calendarButton, ...right].filter(a => a?.visible && a.get_parent()?.visible !== false);
+    const boxes = shown.map(boxOf);
+    const hubBox = boxOf(hub.actor);
+    const gap = 8 * scale();
+    const middle = b => (b.y1 + b.y2) / 2;
+    const ordered = boxes.every((b, i) => i === 0 || b.x1 >= boxes[i - 1].x2);
+    const level = boxes.every(b => Math.abs(middle(b) - middle(boxes[0])) <= 2);
+    const clear = boxes[0].x1 >= hubBox.x1 + gap - 1 && boxes.at(-1).x2 <= hubBox.x2 - gap + 1;
+    // Shown from the first shown one on (the left group read from its
+    // outer end, the right group from its outer end too).
+    const outerHidden = list => {
+        const first = list.findIndex(b => b.visible);
+        return first < 0 || list.slice(first).every(b => b.visible);
+    };
+    const outermost = outerHidden(left) && outerHidden([...right].reverse());
+    const hidden = [...left, ...right].filter(b => !b.visible).length;
+    return {
+        ok: pillShown && ordered && level && clear && outermost && hub._header.packed,
+        hidden,
+        detail: `shown ${boxes.map(b => `[${b.x1},${b.x2}]`).join(' ')} hub [${hubBox.x1},${hubBox.x2}] ` +
+            `hidden=${hidden} packed=${hub._header.packed} pill=${pillShown} ordered=${ordered} ` +
+            `level=${level} clear=${clear} outermost=${outermost}`,
     };
 }
 
@@ -678,11 +714,13 @@ async function testHub(outDir) {
     settings().set_int('sysmon-width', 380);
     await sleep(animationWait() + 2500);
     const [narrowWidth] = pill().get_transformed_size();
-    // No narrower than the header needs around the date pill (Hub.minWidth).
-    const narrowExpected = Math.max(380 * scale(), island()._hub.minWidth + islandFrame());
+    // The width set, as the tab's size is the user's: the header packs if
+    // it must (Hub.narrowestWidth, the date pill alone, is far below).
+    const narrowExpected = Math.max(380 * scale(), island()._hub.narrowestWidth + islandFrame());
+    const narrowHeader = island()._hub._header.packed ? packedPlacement() : headerPlacement();
     check('sysmon: a width set in Settings resizes the open island; narrow, a thread per row',
-        narrowWidth === narrowExpected && sysmon?.view._coreColumns === 1,
-        `${narrowWidth} ${sysmon?.view._coreColumns} columns`);
+        narrowWidth === narrowExpected && sysmon?.view._coreColumns === 1 && narrowHeader.ok,
+        `${narrowWidth} ${sysmon?.view._coreColumns} columns; ${narrowHeader.detail}`);
     await screenshotTop(outDir, 'sysmon-narrow', 520);
     settings().reset('sysmon-width');
     settings().reset('sysmon-cores-expanded');
@@ -2571,12 +2609,15 @@ function livenerfSvg(days, baselineMean) {
 }
 
 // [name, value, detail] of the livenerf row, or null while it is hidden.
+// Over the chart it has no heading: name and value are null.
 function benchmarkRow(view) {
     const [row] = view._benchmark.get_children();
     if (!view._benchmark.visible || !row)
         return null;
-    const [heading, , detail] = row.get_children();
-    return [...heading.get_children().map(l => l.text), detail.text];
+    const children = row.get_children();
+    const detail = children[children.length - 1];
+    const heading = children.length === 3 ? children[0].get_children().map(l => l.text) : [null, null];
+    return [...heading, detail.text];
 }
 
 // [[name, percent, reset], …] as the tab shows them.
@@ -4962,14 +5003,16 @@ async function testClaude(outDir) {
     const {view, service} = entry;
     check('claude: the tab opens', hub().activeFeature?.id === 'claude' && view && service);
     const [w, h] = pill().get_transformed_size();
-    // Its size keys, or wider where the date pill, kept over GNOME's clock,
-    // needs room on both sides.
+    // Its size keys, the user's: narrower than the panic buttons need
+    // around the date pill, the header packs them (Hub.narrowestWidth is
+    // the date pill alone).
     const claudeWidth = Math.max(settings().get_int('claude-width') * scale(),
-        hub().minWidth + islandFrame());
+        hub().narrowestWidth + islandFrame());
     const claudeHeight = settings().get_int('claude-height') * scale();
-    check('claude: island resizes to the tab\'s size keys (wider only for the header)',
-        Math.abs(w - claudeWidth) <= 1 && h === claudeHeight && headerPlacement(hub()).ok,
-        `${w}x${h}, needs ${claudeWidth}x${claudeHeight}`);
+    const claudeHeader = hub()._header.packed ? packedPlacement(hub()) : headerPlacement(hub());
+    check('claude: island resizes to the tab\'s size keys, the header packed if need be',
+        Math.abs(w - claudeWidth) <= 1 && h === claudeHeight && claudeHeader.ok,
+        `${w}x${h}, needs ${claudeWidth}x${claudeHeight}; ${claudeHeader.detail}`);
 
     // Swap in a network we control, then show the tab again.
     const network = new FakeNetwork();
@@ -5015,14 +5058,22 @@ async function testClaude(outDir) {
     // livenerf's chart says when it was redrawn, in UTC; the tab, locally.
     const redrawn = GLib.DateTime.new_from_unix_utc(Date.parse('2026-09-30T19:44:00Z') / 1000).to_local();
     const livenerfUpdated = `livenerf, updated ${redrawn.format('%a')} `;
-    const chartOf = () => view._benchmark.get_first_child()?.get_child_at_index(1);
-    check('claude: livenerf\'s row, the latest score over its chart',
-        await waitFor(() => benchmarkRow(view)?.[1] === '54.5% correct') &&
-        benchmarkRow(view)[0] === 'Opus 5.5 vs launch week' &&
+    const chartShown = () => view._benchmark.get_first_child()?.get_first_child()
+        ?.has_style_class_name('froonty-claude-chart') ?? false;
+    const legendNames = () => view._legend.visible
+        ? view._legend.get_children().map(item => item.get_last_child().text) : [];
+    check('claude: livenerf\'s row, its chart without a heading',
+        await waitFor(chartShown) &&
+        benchmarkRow(view)[0] === null && benchmarkRow(view)[1] === null &&
         benchmarkRow(view)[2].startsWith(`Baseline day 7 of 10 · ${livenerfUpdated}`) &&
-        chartOf()?.has_style_class_name('froonty-claude-chart') &&
+        service.benchmark.benchmark.chart.latest === 54.5 &&
         service.benchmark.benchmark.chart.points.length === 7,
         JSON.stringify(benchmarkRow(view)));
+    check('claude: the chart\'s legend on the footer\'s line, left of it',
+        JSON.stringify(legendNames()) === '["Opus 5.5"]' &&
+        view._legend.get_parent() === view._footer.get_parent() &&
+        boxOf(view._legend).x2 <= boxOf(view._footer).x1,
+        JSON.stringify(legendNames()));
     await screenshotTop(outDir, 'claude-tab', 360);
 
     // Within the hour no second fetch; forget the reading to fetch again.
@@ -5032,7 +5083,7 @@ async function testClaude(outDir) {
     await service.benchmark.refresh();
     await sleep(SETTLE_MS);
     check('claude: once published, the Δ and livenerf\'s decision under the chart',
-        benchmarkRow(view)?.[1] === '54.5% correct' &&
+        chartShown() &&
         benchmarkRow(view)[2].startsWith(
             `Δ −2.1 ± 1.4, days 11–20 (from 2026-10-04): no change · ${livenerfUpdated}`) &&
         service.benchmark.benchmark.chart.baselineMean === 59.4,
@@ -5076,7 +5127,7 @@ async function testClaude(outDir) {
         JSON.stringify([...offline, benchmarkRow(view)]));
     check('claude: offline, a line says Claude cannot be asked',
         view._notice.visible && view._notice.text.startsWith('No internet connection') &&
-        !view._footer.visible, view._notice.text);
+        !view._footer.visible && !view._legend.visible, view._notice.text);
     await screenshotTop(outDir, 'claude-offline', 360);
     network.set(true, Gio.NetworkConnectivity.PORTAL);
     await sleep(SETTLE_MS);
@@ -5884,7 +5935,8 @@ async function testHubLayout(outDir) {
     const atDefault = headerPlacement(hub);
     check('layout: the date pill is exactly over GNOME\'s clock, its panic buttons beside it, the side column below the header',
         atDefault.ok, atDefault.detail);
-    settings().set_int('notes-width', 620);
+    // Wide enough for the centred layout: narrower, the row packs.
+    settings().set_int('notes-width', 960);
     await sleep(animationWait());
     const wide = headerPlacement(hub);
     check('layout: on a wide tab the date pill is centred on the island, where GNOME\'s clock is',
@@ -5918,8 +5970,10 @@ async function testHubLayout(outDir) {
     await sleep(animationWait());
 
     // Eight panic buttons on the narrowest tabs (the Btop and Clipboard
-    // tabs go down to 280, Notes to 360): the island grows, nothing
-    // overlaps.
+    // tabs go down to 280, Notes to 360). Their size is the user's to set,
+    // so the island keeps it (user request 2026-11-27): the header packs
+    // the buttons beside the date pill and hides the outermost until the
+    // rest fit; nothing overlaps.
     const narrowest = [['notes', 'notes-width', 360], ['sysmon', 'sysmon-width', 280],
         ['clipboard', 'clipboard-width', 280]].filter(([id]) => hub._entries.has(id));
     for (const [id, key, width] of narrowest) {
@@ -5927,11 +5981,11 @@ async function testHubLayout(outDir) {
         hub.select(id);
         await sleep(animationWait());
         const removeStandIns = await fillPanicBar(8);
-        const placed = headerPlacement(hub);
+        const placed = packedPlacement(hub);
         const [w] = pill().get_transformed_size();
-        check(`layout: 8 panic buttons on the ${id} tab at width ${width}: the island grows, nothing overlaps`,
-            placed.ok && w >= hub.minWidth + islandFrame() - 1 && w > width * scale(),
-            `island ${w}, needs ${hub.minWidth} + ${islandFrame()}; ${placed.detail}`);
+        check(`layout: 8 panic buttons on the ${id} tab at width ${width}: the island keeps it, the outermost buttons hide, nothing overlaps`,
+            placed.ok && placed.hidden > 0 && w === width * scale(),
+            `island ${w}, centred needs ${hub.minWidth} + ${islandFrame()}; ${placed.detail}`);
         removeStandIns();
         settings().reset('panic-buttons');
         settings().reset(key);
@@ -5939,6 +5993,42 @@ async function testHubLayout(outDir) {
     }
     hub.select('notes');
     await sleep(animationWait());
+
+    // Wide enough again: every button shows, centred on the clock as before.
+    settings().set_int('notes-width', 960);
+    await sleep(animationWait());
+    {
+        const removeStandIns = await fillPanicBar(8);
+        const placed = headerPlacement(hub);
+        const buttons = hub._panicBar.groups.flatMap(g => g.get_children());
+        check('layout: 8 panic buttons, the Notes tab wide again: all of them, centred on the clock',
+            placed.ok && placed.centred && !hub._header.packed && buttons.every(b => b.visible),
+            placed.detail);
+        removeStandIns();
+        settings().reset('panic-buttons');
+        settings().reset('notes-width');
+        await sleep(animationWait());
+    }
+
+    // Once, the first time the island opened: each width key below the
+    // island's width then was raised to it, so no tab moved; never again.
+    {
+        const s = settings();
+        const wasDone = s.get_boolean('hub-narrow-widths');
+        s.set_boolean('hub-narrow-widths', false);
+        s.set_int('formulas-width', 360);
+        island()._keepTabWidths();
+        const need = Math.ceil((hub.minWidth + islandFrame()) / scale());
+        const expected = need > 360 ? Math.min(need, 960) : 360;
+        const raised = s.get_int('formulas-width');
+        s.set_int('formulas-width', 360);
+        island()._keepTabWidths();
+        check('layout: once, a tab stored narrower than the island was is raised to its width; never again',
+            wasDone && raised === expected && s.get_boolean('hub-narrow-widths') &&
+            s.get_int('formulas-width') === 360,
+            `done before=${wasDone} raised to ${raised} (expected ${expected}), then ${s.get_int('formulas-width')}`);
+        s.reset('formulas-width');
+    }
 
     const notesBox = boxOf(tabButton('notes'));
     await movePointerTo((notesBox.x1 + notesBox.x2) / 2, (notesBox.y1 + notesBox.y2) / 2);
@@ -7058,7 +7148,12 @@ async function testDatePill(outDir) {
     await sleep(SETTLE_MS);
 
     // Without a date pill (a Shell without GNOME's date menu) the panic
-    // groups are centred together, as one group.
+    // groups are centred together, as one group (in an island wide enough
+    // for that; narrower, the row packs).
+    const tabKeys = hub.activeFeature?.hubSizeKeys;
+    const tabWidth = tabKeys ? s.get_user_value(tabKeys.width) : null;
+    if (tabKeys)
+        s.set_int(tabKeys.width, 960);
     const removeStandIns = await fillPanicBar(6);
     button.hide();
     await sleep(SETTLE_MS);
@@ -7069,14 +7164,21 @@ async function testDatePill(outDir) {
     button.show();
     removeStandIns();
     s.reset('panic-buttons');
+    if (tabKeys && tabWidth)
+        s.set_value(tabKeys.width, tabWidth);
+    else if (tabKeys)
+        s.reset(tabKeys.width);
     await sleep(animationWait());
 
-    // The pill never leaves the clock: an island without room for both
-    // halves around it grows (the empty hub checks the narrowest, 360).
+    // The pill stays on the clock: an island without room for both halves
+    // around it grows (the empty hub checks the narrowest, 360), unless the
+    // tab's size is the user's: the row packs then (testHubLayout).
     const [isleWidth] = pill().get_transformed_size();
-    check('date pill: the island is at least as wide as the pill centred over the clock needs',
-        isleWidth >= hub.minWidth + islandFrame() - 1 && headerPlacement(hub).ok,
-        `island ${isleWidth}, needs ${hub.minWidth} + ${islandFrame()}`);
+    const roomy = isleWidth >= hub.minWidth + islandFrame() - 1;
+    const keyedTab = Boolean(hub.activeFeature?.hubSizeKeys);
+    check('date pill: the island has room for the pill centred over the clock, or the tab\'s size is the user\'s and the row packs',
+        roomy ? headerPlacement(hub).ok : keyedTab && packedPlacement(hub).ok,
+        `island ${isleWidth}, needs ${hub.minWidth} + ${islandFrame()}, keyed=${keyedTab}`);
     island().collapse();
     await sleep(animationWait());
 
@@ -9596,6 +9698,109 @@ async function testBrightness() {
     await sleep(SETTLE_MS);
 }
 
+// Software brightness joining GNOME's slider (docs/features/brightness.md
+// §8). The session has no backlight, so a laptop open beside a monitor is
+// faked: monitor 0 is a backlit built-in panel to Froonty, and GNOME's
+// slider shows with a global scale of GNOME's own class, connected as
+// BrightnessManager connects its own.
+async function testBrightnessMerge() {
+    const s = settings();
+    const manager = Main.brightnessManager;
+    const gnome = Main.panel.statusArea.quickSettings._brightness.quickSettingsItems.at(-1);
+    const part = extension().stateObj._parts.find(p => p.constructor.name === 'SoftwareBrightness');
+    const logical = global.backend.get_monitor_manager().get_logical_monitors()
+        .find(l => l.get_number() === 1);
+    const name = logical.get_monitors()[0].get_display_name();
+    const joined = () => manager.scales.some(scale => scale.name === name);
+    const menuSlider = () => descendants(gnome.menu.actor)
+        .find(actor => actor instanceof Slider && actor.accessible_name === name) ?? null;
+    const opacityAt = value => Math.round(255 * (100 - Math.round(10 + value * 90)) / 100);
+    const monitors = Main.layoutManager.monitors;
+    const globalBefore = manager._globalScale;
+    const globalScale = new BrightnessScale('Brightness', 1.0, 20);
+    globalScale.connect('notify::value', () => {
+        if (manager._inhibitUpdates)
+            return;
+        manager._globalScaleChanged = true;
+        manager._sync();
+    });
+    try {
+        manager._globalScale = globalScale;
+        manager.emit('changed');
+        part._monitorKinds = () => ({builtIn: new Set([0]), backlit: new Set([0])});
+        // 0.5 between the default minimum, 10 %, and 100 %.
+        s.set_int('brightness-level', 55);
+        s.set_boolean('brightness-enabled', true);
+        await sleep(SETTLE_MS);
+        const [slider] = brightnessSliders();
+        // GNOME shows its > from two scales on; the fake has only the monitor's.
+        check('brightness merge: a laptop open beside a monitor shows one slider, GNOME\'s, with the monitor in its menu',
+            slider && !slider.visible && gnome.visible && joined() && Boolean(menuSlider()),
+            `froonty=${slider?.visible} gnome=${gnome.visible} ` +
+            `scales=${manager.scales.map(scale => scale.name).join(',')}`);
+        check('brightness merge: only the monitor GNOME cannot dim is dimmed, at the stored level',
+            dimOverlays().length === 1 && dimOverlays()[0].x === monitors[1].x &&
+            dimOverlays()[0].opacity === opacityAt(0.5) && Math.abs(globalScale.value - 0.5) < 1e-6,
+            `overlays=${dimOverlays().map(o => `${o.x}@${o.opacity}`)} global=${globalScale.value}`);
+
+        globalScale.value = 0.25;
+        await sleep(SETTLE_MS);
+        check('brightness merge: GNOME\'s slider moves the monitor and stores its level',
+            s.get_int('brightness-level') === 33 && dimOverlays()[0]?.opacity === opacityAt(0.25),
+            `level=${s.get_int('brightness-level')} opacity=${dimOverlays()[0]?.opacity}`);
+
+        menuSlider().value = 0.8;
+        await sleep(SETTLE_MS);
+        check('brightness merge: the monitor\'s slider in GNOME\'s menu sets its level, GNOME\'s follows the brightest',
+            s.get_int('brightness-level') === 82 && Math.abs(globalScale.value - 0.8) < 1e-6 &&
+            dimOverlays()[0]?.opacity === opacityAt(0.8),
+            `level=${s.get_int('brightness-level')} global=${globalScale.value} opacity=${dimOverlays()[0]?.opacity}`);
+
+        s.set_int('brightness-level', 100);
+        await sleep(SETTLE_MS);
+        check('brightness merge: a level set elsewhere moves the monitor\'s scale and GNOME\'s slider',
+            Math.abs(menuSlider()?.value - 1) < 1e-6 && Math.abs(globalScale.value - 1) < 1e-6 &&
+            dimOverlays().length === 0,
+            `menu=${menuSlider()?.value} global=${globalScale.value} overlays=${dimOverlays().length}`);
+        globalScale.value = 0.8;
+        await sleep(SETTLE_MS);
+
+        manager.dimming = true;
+        await sleep(SETTLE_MS);
+        const idleOpacity = dimOverlays()[0]?.opacity;
+        const idleLevel = s.get_int('brightness-level');
+        manager.dimming = false;
+        await sleep(SETTLE_MS);
+        check('brightness merge: GNOME\'s idle dimming dims the monitor too, and leaves its level',
+            idleOpacity === opacityAt(Math.min(manager._dimmingTarget, 0.8)) && idleLevel === 82 &&
+            dimOverlays()[0]?.opacity === opacityAt(0.8),
+            `idle=${idleOpacity} level=${idleLevel} after=${dimOverlays()[0]?.opacity}`);
+
+        s.set_string('brightness-monitors', 'all');
+        await sleep(SETTLE_MS);
+        check('brightness merge: "All monitors" dims the backlit panel too, so the two sliders stay apart',
+            slider.visible && !joined() && !menuSlider() && dimOverlays().length === monitors.length,
+            `froonty=${slider.visible} joined=${joined()} overlays=${dimOverlays().length}`);
+        s.set_string('brightness-monitors', 'external');
+        await sleep(SETTLE_MS);
+        check('brightness merge: back to external monitors, one slider again',
+            !slider.visible && joined() && Boolean(menuSlider()));
+
+        s.set_boolean('brightness-enabled', false);
+        await sleep(SETTLE_MS);
+        check('brightness merge: off takes the monitor out of GNOME\'s slider and its menu',
+            !joined() && !menuSlider() && dimOverlays().length === 0);
+    } finally {
+        for (const key of ['brightness-enabled', 'brightness-level', 'brightness-monitors'])
+            s.reset(key);
+        await sleep(SETTLE_MS);
+        delete part._monitorKinds;
+        manager._globalScale = globalBefore;
+        manager.emit('changed');
+        await sleep(SETTLE_MS);
+    }
+}
+
 // Horizon briefings on a desktop card (360 px, a maximum height, more
 // briefings than fit) and in the tab's scroll: each text shows 3 lines cut
 // with "…", titles wrap whole. Both used to shrink to one line, because a
@@ -9971,6 +10176,59 @@ async function testCardPanicButtons() {
     }
 }
 
+// The Weather card from a fake service: per city its icon, temperature,
+// name with condition, feels-like and wind, and three days; the link to
+// Open-Meteo its terms ask for; no cities, a hint.
+async function testWeatherCard() {
+    const {WeatherView} = await import(`file://${extension().path}/features/weather/view.js`);
+    const {Emitter} = await import(`file://${extension().path}/core/emitter.js`);
+    const service = new Emitter();
+    Object.assign(service, {refreshing: false, stale: false, error: ''});
+    const day = (date, code, max, min) => ({date, code, max, min, rain: 50});
+    service.readings = [{
+        name: 'Shaughnessy, Vancouver', timeMs: Date.now(), temp: 8.2, feels: 3.8, code: 3, isDay: true,
+        wind: 17, humidity: 62,
+        days: [day('2026-11-23', 61, 9.3, 4.9), day('2026-11-24', 0, 10.9, 7.2), day('2026-11-25', 71, 10.2, 8.9)],
+    }];
+    const card = new St.BoxLayout({style_class: 'froonty-desktop-widget', vertical: true, x: 80, y: 80, width: 400});
+    const view = new WeatherView(service);
+    card.add_child(view.actor);
+    Main.layoutManager.uiGroup.add_child(card);
+    try {
+        await sleep(SETTLE_MS);
+        const texts = style => descendants(view.actor)
+            .filter(a => a instanceof St.Label && a.has_style_class_name(style)).map(a => a.text);
+        const icons = descendants(view.actor).filter(a => a instanceof St.Icon).map(a => a.icon_name);
+        const credit = descendants(view.actor).find(a => a.has_style_class_name?.('froonty-weather-credit'));
+        check('weather card: temperature and name, then the condition, feels-like and wind each on a line',
+            texts('froonty-weather-temp')[0] === '8°' && texts('froonty-weather-name')[0] === 'Shaughnessy, Vancouver' &&
+            texts('froonty-weather-condition')[0] === 'Overcast' &&
+            JSON.stringify(texts('froonty-weather-detail')) === JSON.stringify(['Feels 4°', 'Wind 17 km/h']),
+            JSON.stringify(texts('froonty-weather-detail')));
+        const tones = descendants(view.actor).filter(a => a instanceof St.Icon)
+            .map(a => ['sun', 'rain', 'snow', 'cloud'].find(t => a.has_style_class_name(t)));
+        check('weather card: three days, Today first, highs and lows apart; icons coloured by what they show',
+            JSON.stringify(texts('froonty-weather-max')) === JSON.stringify(['9°', '11°', '10°']) &&
+            JSON.stringify(texts('froonty-weather-min')) === JSON.stringify(['5°', '7°', '9°']) &&
+            texts('froonty-weather-day-name')[0] === 'Today' &&
+            JSON.stringify(icons) === JSON.stringify(['weather-overcast-symbolic', 'weather-showers-symbolic',
+                'weather-clear-symbolic', 'weather-snow-symbolic']) &&
+            JSON.stringify(tones) === JSON.stringify(['cloud', 'rain', 'sun', 'snow']),
+            JSON.stringify({max: texts('froonty-weather-max'), min: texts('froonty-weather-min'), icons, tones}));
+        check('weather card: the link to Open-Meteo is there', credit?.label === 'Weather data by Open-Meteo.com',
+            credit?.label);
+        service.readings = [];
+        service.emit('changed');
+        await sleep(SETTLE_MS);
+        check('weather card: no cities, it says where to add them',
+            texts('froonty-weather-detail')[0] === 'No cities yet. Add up to 3 in Settings → Weather.',
+            JSON.stringify(texts('froonty-weather-detail')));
+    } finally {
+        view.destroy();
+        card.destroy();
+    }
+}
+
 // The desktop Markets card shows 8 rows and scrolls the rest; fewer show
 // whole. A fake service, so no request leaves the test.
 async function testDesktopMarketsRows() {
@@ -10108,11 +10366,10 @@ async function testDesktopSystem() {
 }
 
 // Notes pinned to the desktop: a sticky per pinned note, in its colour,
-// with its text drawn as the island draws it; "Widget Lock" in Quick
-// Settings while something shows, which makes the layer ignore the
-// pointer; a click on a sticky does nothing (owner's choice: scrolling only).
+// with its text drawn as the island draws it; a click on a sticky does
+// nothing (owner's choice: scrolling only). No Widget Lock in Quick
+// Settings (removed 2026-11-26: the Desktop widgets panic button does it).
 async function testDesktopStickies() {
-    const s = settings();
     const hub = island()._hub;
     const stickies = () => descendants(global.window_group)
         .filter(actor => actor instanceof St.BoxLayout && actor.has_style_class_name('froonty-desktop-sticky') &&
@@ -10149,7 +10406,7 @@ async function testDesktopStickies() {
             !sticky.get_style_class_name().includes('froonty-note-color') &&
             text?.text === 'Groceries\n\n☐  milk\n☑  eggs',
             `${sticky?.accessible_name} ${JSON.stringify(text?.text)}`);
-        check('desktop stickies: "Widget Lock" is in Quick Settings while it shows', Boolean(lockToggle()));
+        check('desktop stickies: no "Widget Lock" in Quick Settings while it shows', !lockToggle());
 
         const covered = global.window_group.get_children()
             .some(a => a instanceof Meta.WindowActor && !a.meta_window?.customJS_ding && a.visible && (() => {
@@ -10158,14 +10415,7 @@ async function testDesktopStickies() {
                 return b.x1 < c.x2 && c.x1 < b.x2 && b.y1 < c.y2 && c.y1 < b.y2;
             })());
         if (!covered) {
-            const unlocked = reaches(sticky);
-            lockToggle().checked = true;
-            await sleep(SETTLE_MS);
-            const locked = !reaches(sticky) && s.get_boolean('widgets-desktop-locked');
-            lockToggle().checked = false;
-            await sleep(SETTLE_MS);
-            check('desktop stickies: the pointer reaches them, but not with Widget Lock on',
-                unlocked && locked && reaches(sticky), `unlocked=${unlocked} locked=${locked}`);
+            check('desktop stickies: the pointer reaches them', reaches(sticky));
 
             // Another note selected first; the sticky is not rebuilt for it.
             await create();
@@ -10187,12 +10437,10 @@ async function testDesktopStickies() {
 
         await service.setPinned(name, false);
         await waitFor(() => stickies().length === 0, 10000);
-        check('desktop stickies: unpinned, the sticky and Widget Lock go',
-            stickies().length === 0 && !lockToggle(), `${stickies().length} ${Boolean(lockToggle())}`);
+        check('desktop stickies: unpinned, the sticky goes', stickies().length === 0, `${stickies().length}`);
     } finally {
         for (const name of created)
             await service.trash(name); // eslint-disable-line no-await-in-loop
-        s.reset('widgets-desktop-locked');
         if (island().expanded)
             island().collapse();
         await sleep(animationWait());
@@ -10309,6 +10557,20 @@ async function testPadNoiseSlider(outDir) {
 const timezonePlannerButtons = () => quickSettingsMenu()._grid.get_children()
     .filter(item => item.accessible_name?.startsWith('Time zone planner'));
 
+// '+1', '−1' or '' for a zone's date against the local one now, worked out
+// here apart from clock.js's dayOffsetAt.
+function expectedDayBadge(zone) {
+    const days = dt => Math.round(GLib.DateTime.new_utc(dt.get_year(), dt.get_month(),
+        dt.get_day_of_month(), 0, 0, 0).to_unix() / 86400);
+    const now = GLib.DateTime.new_now_utc();
+    const offset = days(now.to_timezone(GLib.TimeZone.new_identifier(zone))) - days(now.to_local());
+    if (!offset)
+        return '';
+    return offset > 0 ? `+${offset}` : `\u2212${-offset}`;
+}
+
+// The planner opens in its button's menu inside Quick Settings, as
+// Software brightness's does, not in a window (owner's request 2026-11-26).
 async function testTimezonePlanner() {
     const s = settings();
     s.reset('timezone-planner-cities');
@@ -10325,19 +10587,36 @@ async function testTimezonePlanner() {
     if (!button)
         return;
     const part = extension()?.stateObj?._parts.find(item => item._button === button);
+    const planner = part?._planner;
+    const menu = button.menu;
     quickSettingsMenu().open();
     await sleep(SETTLE_MS);
     button.emit('clicked', null);
     await sleep(SETTLE_MS);
-    const planner = part?._planner;
-    check('timezone planner: button opens a modal planner with Vancouver and two defaults',
-        planner && planner._cityTimeLabels.length === 2 && Main.modalCount > 0 &&
-        planner._vancouverTime.text !== '',
-        `cities=${planner?._cityTimeLabels.length}, modal=${Main.modalCount}`);
-    if (!planner) {
+    check('timezone planner: the button opens its menu inside Quick Settings, with Vancouver and two defaults',
+        Boolean(menu?.isOpen) && quickSettingsMenu().isOpen &&
+        quickSettingsMenu().actor.contains(menu.actor) &&
+        planner?._cityTimeLabels.length === 2 && planner._vancouverTime.text !== '',
+        `open=${menu?.isOpen} cities=${planner?._cityTimeLabels.length}`);
+    if (!planner || !menu?.isOpen) {
         quickSettingsMenu().close();
         return;
     }
+
+    // Dates and hints in the theme's colour, as the city names are: no
+    // fixed white that a light theme cannot show.
+    const rgba = actor => {
+        const c = actor?.get_theme_node().get_foreground_color();
+        return c ? [c.red, c.green, c.blue, c.alpha].join(',') : 'none';
+    };
+    const labels = descendants(menu.box).filter(actor => actor instanceof St.Label);
+    const byClass = name => labels.find(actor => actor.has_style_class_name(name));
+    const nameColour = rgba(byClass('froonty-timezone-name'));
+    const others = ['froonty-timezone-description', 'froonty-timezone-hint', 'froonty-timezone-date',
+        'froonty-timezone-time', 'froonty-timezone-badge'].map(name => byClass(name));
+    check('timezone planner: its text takes the theme\'s colour, as the city names do',
+        nameColour !== 'none' && others.every(actor => rgba(actor) === nameColour),
+        `${nameColour} ${others.map(rgba).join(' ')}`);
 
     const beforeDrag = [
         planner._vancouverTime.text,
@@ -10350,28 +10629,56 @@ async function testTimezonePlanner() {
         `${planner._vancouverTime.text} ${planner._cityTimeLabels.map(city => city.time.text).join(', ')}`);
 
     s.set_strv('timezone-planner-cities', [
-        ...s.get_strv('timezone-planner-cities'), 'Toronto|America/Toronto',
+        ...s.get_strv('timezone-planner-cities'), 'Toronto|America/Toronto', 'Tokyo|Asia/Tokyo',
+        'Melbourne|Australia/Melbourne', 'Paris|Europe/Paris',
     ]);
-    s.set_strv('timezone-planner-favorites', ['Europe/Dublin', 'America/Toronto']);
-    check('timezone planner: planner follows the two selected favourites',
-        planner._cityTimeLabels.length === 2 &&
-        planner._cityTimeLabels.some(city => city.timezone === 'America/Toronto'),
+    s.set_strv('timezone-planner-favorites',
+        ['Europe/Dublin', 'America/Toronto', 'Asia/Tokyo', 'Australia/Melbourne', 'Europe/Paris']);
+    check('timezone planner: the menu follows all five favourites',
+        planner._cityTimeLabels.map(city => city.timezone).join(',') ===
+        'Europe/Dublin,America/Toronto,Asia/Tokyo,Australia/Melbourne,Europe/Paris',
         planner._cityTimeLabels.map(city => city.timezone).join(', '));
-    check('timezone planner button: favourite city names and their current hours replace its generic text',
+    check('timezone planner button: the first two favourites and their current hours replace its generic text',
         part._button._label.text.includes('Dublin') &&
         part._button._label.text.includes('Toronto') &&
+        !part._button._label.text.includes('Tokyo') &&
         !part._button._label.text.includes('Time zones') &&
         part._button._label.text.split('\n').length === 2,
         part._button._label.text);
-    planner.close();
-    await sleep(SETTLE_MS);
-    check('timezone planner: closing the window releases its modal grab', Main.modalCount === 0,
-        `modal=${Main.modalCount}`);
 
+    // 20:00 in Vancouver on 15 January: 04:00 on the 16th in Dublin, 23:00
+    // on the 15th in Toronto.
+    planner._anchor = GLib.DateTime.new(GLib.TimeZone.new_identifier('America/Vancouver'),
+        2026, 1, 15, 20, 0, 0).to_unix();
+    planner._slider.value = 0.5;
+    planner.updateTimes();
+    const rowBadges = planner._cityTimeLabels.map(city => city.badge.text);
+    check('timezone planner: +1 by a city already on the next day than Vancouver\'s, as on flight times',
+        rowBadges.join(',') === '+1,,+1,+1,+1', rowBadges.join(','));
+    const buttonLines = part._button._label.text.split('\n');
+    const buttonBadges = ['Europe/Dublin', 'America/Toronto'].map(expectedDayBadge);
+    check('timezone planner button: +1 or −1 by a city on another date than the local one',
+        buttonLines.length === 2 && buttonLines.every((line, i) => (buttonBadges[i]
+            ? line.endsWith(buttonBadges[i]) : !/[+\u2212]\d$/.test(line))),
+        `${buttonLines.join(' | ')} expected ${buttonBadges.join(',')}`);
+
+    menu.close();
+    await sleep(SETTLE_MS);
+    check('timezone planner: its menu closes back to Quick Settings',
+        !menu.isOpen && quickSettingsMenu().isOpen, `open=${menu.isOpen}`);
+    button.emit('clicked', null);
+    await sleep(SETTLE_MS);
+    check('timezone planner: each opening starts from now', menu.isOpen && planner._slider.value === 0.5,
+        `open=${menu.isOpen} value=${planner._slider.value}`);
+    quickSettingsMenu().close();
+    await sleep(SETTLE_MS);
+
+    let menuDestroyed = false;
+    menu.actor.connect('destroy', () => (menuDestroyed = true));
     s.set_boolean('running', false);
     await sleep(SETTLE_MS);
-    check('timezone planner: Stop Froonty removes its Quick Settings button',
-        timezonePlannerButtons().length === 0);
+    check('timezone planner: Stop Froonty removes its Quick Settings button and its menu',
+        timezonePlannerButtons().length === 0 && menuDestroyed);
     s.set_boolean('running', true);
     await sleep(SETTLE_MS);
     check('timezone planner: Start Froonty restores one button',
@@ -10520,6 +10827,35 @@ async function testReadouts() {
     await sleep(SETTLE_MS);
     check('readouts: at most 8, unknown ids ignored', bar.count === 8, `count=${bar.count}`);
 
+    // A favourite city's time in a colour of its own, not the local time's,
+    // and +1 or −1 by it when its date is not the local one, as on flight
+    // times (owner's request 2026-11-26). UTC+14 and UTC-11: at least one
+    // of them is on another date than any local one.
+    s.set_strv('timezone-planner-cities', ['Kiritimati|Pacific/Kiritimati', 'Pago Pago|Pacific/Pago_Pago']);
+    s.set_strv('timezone-planner-favorites', ['Pacific/Kiritimati', 'Pacific/Pago_Pago']);
+    s.set_strv('readouts', ['timezone-1', 'timezone-2']);
+    await sleep(animationWait());
+    const badges = bar._readouts.map(r => (r._badge.visible ? r._badge.text : ''));
+    const expected = ['Pacific/Kiritimati', 'Pacific/Pago_Pago'].map(expectedDayBadge);
+    check('readouts: a city on another date has +1 or −1 by its time',
+        badges.join(' ') === expected.join(' ') && badges.some(Boolean),
+        `${badges.join(' ')} expected ${expected.join(' ')}`);
+    const colour = actor => {
+        const c = actor.get_theme_node().get_foreground_color();
+        return [c.red, c.green, c.blue].join(',');
+    };
+    const localTime = colour(island()._collapsedView._timeLabel);
+    check('readouts: a city\'s time is not in the local time\'s colour',
+        bar._readouts.every(r => r.actor.has_style_class_name('froonty-readout-timezone') &&
+            colour(r._label) !== localTime && colour(r._badge) === colour(r._label)),
+        `time ${localTime}, cities ${bar._readouts.map(r => colour(r._label)).join(' ')}`);
+    check('readouts: the accessible name says which day it is there',
+        expected.every((badge, i) => !badge ||
+            /next day|day before|days (later|earlier)/.test(bar._readouts[i].accessibleText)),
+        bar._readouts.map(r => r.accessibleText).join(' | '));
+    s.reset('timezone-planner-cities');
+    s.reset('timezone-planner-favorites');
+
     s.reset('readouts');
     s.reset('readouts-interval');
     await sleep(animationWait());
@@ -10543,9 +10879,10 @@ const ONLY_TESTS = {
     testWriting, testWritingFixes, testStartup, testBrightness, testPadNoiseSlider,
     testTimezonePlanner,
     testFanSliderSettingsButton, testFanLockButton,
-    testWidgetsNews, testDesktopPins, testDesktopStickies, testNightLightSwitches, testDesktopMarketsRows,
+    testWidgetsNews, testDesktopPins, testDesktopStickies, testNightLightSwitches, testBrightnessMerge,
+    testDesktopMarketsRows,
     testDesktopSystem,
-    testDesktopWidgetsButton, testCardPanicButtons,
+    testDesktopWidgetsButton, testCardPanicButtons, testWeatherCard,
 };
 
 export async function runAll(outDir) {
@@ -10623,11 +10960,13 @@ export async function runAll(outDir) {
         await testBrightness();
         await testNightLightMenu();
         await testNightLightSwitches();
+        await testBrightnessMerge();
         await testWidgetsNews();
         await testDesktopPins();
         await testDesktopStickies();
         await testDesktopWidgetsButton();
         await testCardPanicButtons();
+        await testWeatherCard();
         await testDesktopMarketsRows();
         await testDesktopSystem();
         await testPadNoiseSlider(outDir);

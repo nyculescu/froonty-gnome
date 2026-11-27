@@ -43,7 +43,7 @@ Settings → Readouts.
 | `net-down`, `net-up` | Physical interfaces' speed: 850K, 1.2M | |
 | `disk-used` | Root file system used | |
 | `claude-session`, `claude-weekly` | Claude usage, in Claude's clay | "?" by the Claude tab's rules: offline, or renewed since the reading |
-| `timezone-1`, `timezone-2` | A favourite city's short name and its time: "Dub 18:47", "NY 13:47" (the accessible name has the whole name) | Hidden without that favourite |
+| `timezone-1`, `timezone-2` | A favourite city's short name and its time: "Dub 18:47", "NY 13:47" (the accessible name has the whole name), in light blue (#99c1f1) so it is not taken for the local time. A small raised "+1" or "−1" follows when the city's date is a day after or before the local one, as on flight times (owner's request 2026-11-26) | Hidden without that favourite |
 
 "?" is a value that cannot be read on this computer. Each value is preceded
 by its icon, except the time zones, which name their city.

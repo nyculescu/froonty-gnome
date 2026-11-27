@@ -6,13 +6,10 @@
 // area (clear of the top bar and a fixed dock, or beside a dock that covers
 // only part of its strip), never overlapping. Each item exists while
 // "Show widgets on the desktop" and its own switch are on, whatever the
-// Widgets tab's switch says; the stickies also need the Notes tab. While
-// anything shows, "Widget Lock" in Quick Settings can make it all ignore
-// the pointer.
+// Widgets tab's switch says; the stickies also need the Notes tab.
 
 import GLib from 'gi://GLib';
 import Meta from 'gi://Meta';
-import Shell from 'gi://Shell';
 import St from 'gi://St';
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
@@ -24,7 +21,8 @@ import {HorizonView} from '../horizon/view.js';
 import {acquireMarketsService, releaseMarketsService} from '../markets/shared.js';
 import {MarketsView} from '../markets/view.js';
 import {Stickies} from '../notes/stickies.js';
-import {WidgetLockToggle} from './lockToggle.js';
+import {acquireWeatherService, releaseWeatherService} from '../weather/shared.js';
+import {WeatherView} from '../weather/view.js';
 import {ITEMS, layoutItems, normalizePlacement, stickyId} from './placement.js';
 import {forgetHistory} from './system/service.js';
 import {SystemView} from './system/view.js';
@@ -46,6 +44,18 @@ const CARDS = [
             return {actor: view.actor, view, destroy: () => {
                 view.destroy();
                 releaseMarketsService();
+            }};
+        },
+    },
+    {
+        id: 'weather',
+        key: 'widgets-weather-pin-desktop',
+        feature: 'weather-enabled',
+        create: settings => {
+            const view = new WeatherView(acquireWeatherService(settings));
+            return {actor: view.actor, view, destroy: () => {
+                view.destroy();
+                releaseWeatherService();
             }};
         },
     },
@@ -80,7 +90,6 @@ export class DesktopPins {
         // key -> {id, frame, card}: card is what CARDS' create() made.
         this._cards = new Map();
         this._stickies = null;
-        this._lockToggle = null;
         // The Ubuntu dock's container, while watched (_watchDock).
         this._dock = null;
         this._laterId = 0;
@@ -93,7 +102,6 @@ export class DesktopPins {
             'changed::widgets-desktop-enabled', () => this._sync(),
             'changed::widgets-stickies-on-desktop', () => this._sync(),
             'changed::notes-enabled', () => this._sync(),
-            'changed::widgets-desktop-locked', () => this._syncLock(),
             'changed::widgets-desktop-actions', () => this._syncActions(),
             `changed::${PLACEMENT_KEY}`, () => this._queueLayout(),
             ...CARDS.flatMap(card => [card.key, card.feature].filter(Boolean)
@@ -108,7 +116,6 @@ export class DesktopPins {
             this);
         this._stack();
         this._sync();
-        this._syncLock();
     }
 
     // Under the lock screen the cards go but keep their history.
@@ -125,8 +132,6 @@ export class DesktopPins {
             this._hide(card, {forget: !locked});
         this._stickies?.destroy();
         this._stickies = null;
-        this._lockToggle?.destroy();
-        this._lockToggle = null;
         this._layer.destroy();
         this._layer = null;
         this._settings = null;
@@ -198,7 +203,7 @@ export class DesktopPins {
         return items;
     }
 
-    // The layer and the lock show while there is a card or a sticky.
+    // The layer shows while there is a card or a sticky.
     _syncShown() {
         // New sticky cards join the layer (the old ones were destroyed).
         for (const card of this._stickies?.cards.values() ?? []) {
@@ -210,17 +215,6 @@ export class DesktopPins {
         const shown = this._shownItems().size > 0;
         this._layer.visible = shown;
         this._queueLayout();
-        if (shown && !this._lockToggle) {
-            this._lockToggle = new WidgetLockToggle(this._settings);
-            // Before GNOME's Background Apps item, which it keeps last, as its
-            // addExternalIndicator does (private: panel.js _backgroundApps).
-            const quickSettings = Main.panel.statusArea.quickSettings;
-            quickSettings.menu.insertItemBefore(this._lockToggle,
-                quickSettings._backgroundApps?.quickSettingsItems?.at(-1) ?? null);
-        } else if (!shown && this._lockToggle) {
-            this._lockToggle.destroy();
-            this._lockToggle = null;
-        }
     }
 
     // Clicks on Markets' rows and Horizon's headlines, or scrolling only.
@@ -228,10 +222,6 @@ export class DesktopPins {
         const on = this._settings.get_boolean('widgets-desktop-actions');
         for (const {card} of this._cards.values())
             card.view.setActions?.(on);
-    }
-
-    _syncLock() {
-        Shell.util_set_hidden_from_pick(this._layer, this._settings.get_boolean('widgets-desktop-locked'));
     }
 
     // Right above Desktop Icons' window where it runs, or it takes the

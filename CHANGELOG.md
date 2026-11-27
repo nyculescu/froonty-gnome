@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+- Software brightness: with a laptop open and joined to the monitors it
+  dims, they join GNOME's brightness slider, so one slider dims every
+  screen and keeps their ratio; Froonty's slider hides. GNOME's menu has a
+  slider per screen, and the brightness keys, the on-screen level and
+  idle dimming reach the monitors too. Lid closed or mirrored, the two
+  sliders are as before.
+- Time zone planner: its button opens the planner in a menu inside Quick
+  Settings, as Software brightness's does, instead of a separate window.
+  Up to five favourite cities, all in the planner; the button shows the
+  first two. Its text takes the theme's colour, so it shows on a light
+  theme too (it was white on white). The button and the planner put a
+  small "+1" or "−1" by a city's time when it is already on the next day
+  or still on the day before.
+- Pill readouts: a favourite city's time is light blue, apart from the
+  local time in white, with a small "+1" or "−1" when the city is already
+  on the next day or still on the day before, as on flight times.
+- Weather: a card in the Widgets tab and on the desktop with up to 3
+  favourite cities (Shaughnessy, Vancouver to begin with): the
+  temperature, condition, feels-like and wind, and the next days' highs
+  and lows. From Open-Meteo, free and without a key, every 15 minutes,
+  one request for all cities; the last reading stays, marked "Not
+  updated", when a fetch fails. Settings → Weather finds cities by name.
 - Horizon is its own feature too, with its page in Settings: its switch,
   Horizon's folder and data directory, and the AI. Settings → Widgets
   keeps where the cards show, with a new switch for the Horizon card in
@@ -74,8 +96,6 @@
   note shows on the desktop as a card like the widgets' (dark, not in the
   note's colour), its text drawn as in the island and scrolling when
   long.
-- Quick Settings: Widget Lock, while a widget card or sticky is on the
-  desktop, makes them ignore the pointer, so clicks go to the desktop.
 - Markets: up to 15 indexes. Settings keeps the first 15 and drops
   repeats; both the tab and the desktop card scroll to show them all.
 - Widgets: each Horizon headline shows 3 lines of its briefing, not only
@@ -127,6 +147,19 @@
   with its own end label. Its days were read as Opus days, so the Opus
   line ran back through them. The chart now sits right under the usage
   rows, and offline the tab shows Weekly and Weekly Fable.
+- The island can be narrower than the panic buttons in any tab whose
+  size you set (its grip or Settings → Size): the buttons then sit side
+  by side next to the date pill, and narrower still the outermost ones
+  hide until the rest fit. Tabs keep the width they had until you resize
+  them.
+- Claude tab: livenerf's chart shows its last 30 days, so it reads
+  without widening the island; the wheel or a touchpad scrolls back
+  through earlier days. Its percentages are on the right, next to the
+  latest days. A small legend names Fable 5.2 and Opus 5.5 in their
+  colours, on the left of the "Updated 2 min ago" line; the end labels
+  give only the latest scores. The heading over the chart ("Opus 5.5 vs
+  launch week", "62.8% correct") is gone, as the legend and the end
+  label say the same.
 - Claude tab: its size can be set, in Settings → Claude → Size or by
   dragging the island's corner. It opens smaller (380×360), and livenerf's
   chart grows into any extra height.

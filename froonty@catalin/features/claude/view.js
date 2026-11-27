@@ -7,20 +7,20 @@
 //   Weekly Fable                         18%
 //   ██████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░
 //   Resets Sat 22:59
-//                            Updated 2 min ago
-//   Opus 5.5 vs launch week     70.1% correct
-//   90% ┆                    •─• Fable 5.2 84.6% (livenerf's chart: daily
-//   70% ┆░░░░       •╮      ╭•  70.1%           score, 95% interval,
-//   50% ┆░•─•─•─•─•─╰•─•─•─╯                   baseline shaded)
-//       Sep 24     Oct 15     Nov 05
+//   • Fable 5.2  • Opus 5.5 Updated 2 min ago
+//                       •─• 84.6%   ┆90%   (livenerf's chart, its last
+//   ░░░░       •╮      ╭• 70.1%     ┆70%   30 days: daily score, 95%
+//   ░•─•─•─•─•─╰•─•─•─╯             ┆50%   interval, baseline shaded;
+//   Sep 24     Oct 15     Nov 05             it scrolls back)
 //   Δ +0.014 ± 0.025, days 41–50: no change · livenerf, updated Fri 10:31
 //
 // Claude's servers may also send Session, more per-model rows and Cloud
 // session credits; each gets a row like these.
 //
-// The last row is livenerf's (livenerf.js): the latest day's score and
-// its chart, redrawn here; once livenerf publishes a Δ, the line under it
-// gives the Δ and livenerf's decision.
+// The last row is livenerf's (livenerf.js): its chart, redrawn here,
+// without a heading; once livenerf publishes a Δ, the line under it gives
+// the Δ and livenerf's decision. Without the chart (offline, or not read
+// yet), a heading "Opus 5.5 vs launch week" over a bar instead.
 // A row older than an hour (one only Claude Code's cache has, while the
 // status line keeps Session and Weekly current) is dimmed, its line ending
 // "· checked 3 h ago". In low power the footer says only the status line
@@ -38,6 +38,7 @@ import St from 'gi://St';
 
 import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 
+import {recentSpan} from './livenerf.js';
 import {
     CREDITS, MODEL, SESSION, STALE_MS, WEEKLY, describeReset, fillFraction, minutesSince,
 } from './usage.js';
@@ -90,10 +91,20 @@ export class ClaudeView {
         this._emptyHint = wrappingLabel('froonty-claude-empty-hint');
         this._empty.add_child(this._emptyTitle);
         this._empty.add_child(this._emptyHint);
-        this._footer = new St.Label({
-            style_class: 'froonty-claude-footer',
-            x_align: Clutter.ActorAlign.END,
+        this._footer = wrappingLabel('froonty-claude-footer');
+        this._footer.x_align = Clutter.ActorAlign.END;
+        this._footer.y_align = Clutter.ActorAlign.CENTER;
+        this._footer.clutter_text.line_alignment = Pango.Alignment.RIGHT;
+        // The footer shares its line with the chart's legend, on its left
+        // (user request).
+        this._legend = new St.BoxLayout({
+            style_class: 'froonty-claude-legend',
+            y_align: Clutter.ActorAlign.CENTER,
+            visible: false,
         });
+        this._footerLine = new St.BoxLayout({style_class: 'froonty-claude-footer-line', x_expand: true});
+        this._footerLine.add_child(this._legend);
+        this._footerLine.add_child(this._footer);
         this._benchmark = new St.BoxLayout({
             style_class: 'froonty-claude-benchmark',
             orientation: Clutter.Orientation.VERTICAL,
@@ -105,10 +116,14 @@ export class ClaudeView {
 
         this.actor.add_child(this._scroll);
         this.actor.add_child(this._empty);
-        this.actor.add_child(this._footer);
+        this.actor.add_child(this._footerLine);
         this.actor.add_child(this._benchmark);
         this.actor.add_child(this._spacer);
         this.actor.add_child(this._notice);
+
+        // How far back the chart is scrolled, kept while its reading is.
+        this._chartScroll = {offset: 0};
+        this._scrolledChart = null;
 
         this._active = false;
         this._serviceId = this._service.connect('changed', () => this._sync());
@@ -163,6 +178,7 @@ export class ClaudeView {
         }
 
         this._syncBenchmark(online);
+        this._footerLine.visible = this._footer.visible || this._legend.visible;
     }
 
     _row(window, online, now) {
@@ -188,6 +204,7 @@ export class ClaudeView {
     // up for a moment; offline, "Unknown" like the rest.
     _syncBenchmark(online) {
         const source = this._service.benchmark;
+        this._legend.visible = false;
         this._benchmark.visible = Boolean(source) && (source.loaded || !online);
         this._spacer.visible = !this._empty.visible && !this._benchmark.visible;
         if (!this._benchmark.visible)
@@ -201,17 +218,29 @@ export class ClaudeView {
             actor = row(name, _('Unknown'), new UsageBar(0),
                 _('livenerf’s results could not be read.'));
         } else {
-            // The latest day's score, exactly as livenerf's chart prints it.
-            let value = _('Unknown');
-            if (typeof chart?.latest === 'number')
-                value = _('%s%% correct').format(chart.latest.toFixed(1));
-            else if (progress)
-                value = _('Day %d of %d').format(progress.collected, progress.total);
-            const body = chart ? new ScoreChart(chart)
-                : new UsageBar(progress ? progress.collected / progress.total : 0);
-            actor = row(name, value, body, this._benchmarkText(progress, result, chart), true);
-            // The chart grows with the island's height.
-            actor.y_expand = Boolean(chart);
+            const detail = this._benchmarkText(progress, result, chart);
+            if (chart) {
+                // A new reading starts at the latest days again.
+                if (chart !== this._scrolledChart) {
+                    this._scrolledChart = chart;
+                    this._chartScroll.offset = 0;
+                }
+                this._legend.destroy_all_children();
+                for (const other of chart.others)
+                    this._legend.add_child(legendItem(other.name, cssHex(other.color)));
+                this._legend.add_child(legendItem(_('Opus 5.5'), null));
+                this._legend.visible = true;
+                // No heading: the legend names Opus and the chart's end
+                // label prints the latest score (user request).
+                actor = row(null, null, new ScoreChart(chart, this._chartScroll), detail, true);
+                // The chart grows with the island's height.
+                actor.y_expand = true;
+            } else {
+                const value = progress
+                    ? _('Day %d of %d').format(progress.collected, progress.total) : _('Unknown');
+                actor = row(name, value, new UsageBar(progress ? progress.collected / progress.total : 0),
+                    detail, true);
+            }
         }
         this._benchmark.y_expand = actor.y_expand;
         this._benchmark.destroy_all_children();
@@ -276,15 +305,18 @@ export class ClaudeView {
 }
 
 // Name and value, a bar, and a line under it (wrapped if `wrap`).
+// A null name leaves out the heading.
 function row(name, value, bar, detail, wrap = false) {
     const actor = new St.BoxLayout({
         style_class: 'froonty-claude-row',
         orientation: Clutter.Orientation.VERTICAL,
     });
-    const heading = new St.BoxLayout();
-    heading.add_child(new St.Label({style_class: 'froonty-claude-name', text: name, x_expand: true}));
-    heading.add_child(new St.Label({style_class: 'froonty-claude-percent', text: value}));
-    actor.add_child(heading);
+    if (name !== null) {
+        const heading = new St.BoxLayout();
+        heading.add_child(new St.Label({style_class: 'froonty-claude-name', text: name, x_expand: true}));
+        heading.add_child(new St.Label({style_class: 'froonty-claude-percent', text: value}));
+        actor.add_child(heading);
+    }
     actor.add_child(bar);
     const label = wrap ? wrappingLabel('froonty-claude-reset')
         : new St.Label({style_class: 'froonty-claude-reset'});
@@ -347,11 +379,48 @@ function wrappingLabel(styleClass) {
     return label;
 }
 
-// "#e0793a" as [r, g, b] from 0 to 1; livenerf's orange if not a colour.
+// "#e0793a" as given, or livenerf's orange if it is not such a colour.
+function cssHex(hex) {
+    return /^#[0-9a-f]{6}$/i.test(hex ?? '') ? hex : '#e0793a';
+}
+
+// The same as [r, g, b] from 0 to 1.
 function hexColor(hex) {
-    const m = /^#([0-9a-f]{6})$/i.exec(hex ?? '');
-    const v = m ? parseInt(m[1], 16) : 0xe0793a;
+    const v = parseInt(cssHex(hex).slice(1), 16);
     return [(v >> 16) / 255, ((v >> 8) & 0xff) / 255, (v & 0xff) / 255];
+}
+
+// A dot in the text colour, as the chart draws its days.
+const LegendDot = GObject.registerClass(
+class LegendDot extends St.DrawingArea {
+    _init() {
+        super._init({style_class: 'froonty-claude-legend-dot', y_align: Clutter.ActorAlign.CENTER});
+    }
+
+    vfunc_repaint() {
+        const cr = this.get_context();
+        const [width, height] = this.get_surface_size();
+        cr.arc(width / 2, height / 2, Math.min(width, height) / 2, 0, 2 * Math.PI);
+        cr.setSourceColor(this.get_theme_node().get_foreground_color());
+        cr.fill();
+        cr.$dispose();
+    }
+});
+
+// One series in the chart's legend: a dot and its name, in `color` (a CSS
+// colour), or null for Opus's, the chart's own.
+function legendItem(name, color) {
+    const item = new St.BoxLayout({style_class: 'froonty-claude-legend-item'});
+    if (color)
+        item.style = `color: ${color};`;
+    else
+        item.add_style_class_name('froonty-claude-legend-opus');
+    item.add_child(new LegendDot());
+    const label = new St.Label({text: name, y_align: Clutter.ActorAlign.CENTER});
+    // Never shortened: the footer beside it wraps instead.
+    label.clutter_text.ellipsize = Pango.EllipsizeMode.NONE;
+    item.add_child(label);
+    return item;
 }
 
 // A rounded bar: CSS paints the track (background-color, border-radius),
@@ -382,16 +451,57 @@ class UsageBar extends St.DrawingArea {
     }
 });
 
+// Days the chart shows at once; the wheel or a touchpad scrolls back
+// through the rest (user request: a month, rather than the island widened
+// to read them all).
+const CHART_DAYS = 30;
+
 // livenerf's hero chart, redrawn small: the daily score (percent correct)
 // with its 95% interval, the baseline window shaded, the baseline mean
 // dashed once known, and the latest score printed by its point. Opus is in
-// the CSS colour, other series (Fable 5.2) in livenerf's colour for them,
-// named in their end label; the rest in greys over the island's black.
+// the CSS colour, other series (Fable 5.2) in livenerf's colour for them;
+// the rest in greys over the island's black. The legend is on the footer's
+// line (legendItem). With more than CHART_DAYS, a lighter stretch of the
+// bottom grid line shows which days are in view.
 const ScoreChart = GObject.registerClass(
 class ScoreChart extends St.DrawingArea {
-    _init(chart) {
-        super._init({style_class: 'froonty-claude-chart', x_expand: true, y_expand: true});
+    // scroll: {offset}, kept by the view across redraws: how far back from
+    // the latest days the view is, in the chart's units (0 to 1).
+    _init(chart, scroll) {
+        super._init({
+            style_class: 'froonty-claude-chart',
+            x_expand: true,
+            y_expand: true,
+            reactive: true,
+        });
         this._chart = chart;
+        this._scroll = scroll;
+        const all = [chart.points, ...(chart.others ?? []).map(o => o.points)].flat();
+        this._span = recentSpan(all, CHART_DAYS);
+        this._plotWidth = 0;
+    }
+
+    vfunc_scroll_event(event) {
+        if (this._span >= 1 || !this._plotWidth)
+            return Clutter.EVENT_PROPAGATE;
+        let delta = 1;
+        switch (event.get_scroll_direction()) {
+        case Clutter.ScrollDirection.SMOOTH: {
+            const [dx, dy] = event.get_scroll_delta();
+            delta = Math.abs(dx) > Math.abs(dy) ? dx : dy;
+            break;
+        }
+        case Clutter.ScrollDirection.UP:
+        case Clutter.ScrollDirection.LEFT:
+            delta = -1;
+            break;
+        }
+        // A step as St's scroll views take one: the view's width to the 2/3.
+        // Down or right moves on to later days.
+        const step = Math.pow(this._plotWidth, 2 / 3) / this._plotWidth * this._span;
+        this._scroll.offset = Math.min(Math.max(this._scroll.offset - delta * step, 0), 1 - this._span);
+        this.queue_repaint();
+        return Clutter.EVENT_STOP;
     }
 
     vfunc_repaint() {
@@ -419,14 +529,26 @@ class ScoreChart extends St.DrawingArea {
         };
         const MUTED = [1, 1, 1, 0.45];
 
+        // Grid labels on the right, by the latest days (user request).
         const labelWidth = Math.max(...grid.map(v => layout(`${v}%`).w));
         const lineHeight = layout('0%').h;
-        const [left, right, top, bottom] = [labelWidth + 6, 2, lineHeight / 2, lineHeight + 3];
+        const [left, right, top, bottom] = [2, labelWidth + 6, lineHeight / 2, lineHeight + 3];
         const [pw, ph] = [width - left - right, height - top - bottom];
         const [vMin, vMax] = [grid[0], grid[grid.length - 1]];
-        const X = at => left + at * pw;
+        // In view: the chart from `start` to `start + span`.
+        const span = this._span;
+        const start = 1 - span - Math.min(Math.max(this._scroll.offset, 0), 1 - span);
+        const X = at => left + (at - start) / span * pw;
         const Y = v => top + (vMax - Math.min(vMax, Math.max(vMin, v))) / (vMax - vMin) * ph;
+        this._plotWidth = pw;
 
+        for (const v of grid)
+            text(`${v}%`, width - right + 5, Y(v), 0, MUTED);
+
+        // The plot scrolls under the grid labels, so nothing passes its edge.
+        cr.save();
+        cr.rectangle(0, 0, width - right, height);
+        cr.clip();
         if (band) {
             cr.setSourceRGBA(1, 1, 1, 0.07);
             cr.rectangle(X(band[0]), top, X(band[1]) - X(band[0]), ph);
@@ -438,7 +560,6 @@ class ScoreChart extends St.DrawingArea {
             cr.moveTo(left, Math.round(Y(v)) + 0.5);
             cr.lineTo(width - right, Math.round(Y(v)) + 0.5);
             cr.stroke();
-            text(`${v}%`, left - 5, Y(v), 1, MUTED);
         }
         for (const {at, label} of ticks) {
             const anchor = at < 0.05 ? 0 : at > 0.95 ? 1 : 0.5;
@@ -500,13 +621,13 @@ class ScoreChart extends St.DrawingArea {
             series(other.points, () => cr.setSourceRGBA(...hexColor(other.color), 1));
 
         // End labels right of their last point, or left if they would pass
-        // the edge; one moved off another it would overlap.
+        // the plot's edge; one moved off another it would overlap.
         const taken = [];
-        const endLabel = (pts, parts) => {
+        const endLabel = (pts, value) => {
             const last = pts[pts.length - 1];
-            const sizes = parts.map(([t]) => layout(t, bold).w);
-            const w = sizes.reduce((a, b) => a + b, 0);
-            const x = X(last.at) + 6 + w <= width ? X(last.at) + 6 : X(last.at) - 6 - w;
+            const t = `${value.toFixed(1)}%`;
+            const {w} = layout(t, bold);
+            const x = X(last.at) + 6 + w <= width - right ? X(last.at) + 6 : X(last.at) - 6 - w;
             let y = Y(last.score) - lineHeight / 2 - 1;
             for (const other of taken) {
                 if (Math.abs(y - other.y) < lineHeight + 1)
@@ -514,17 +635,18 @@ class ScoreChart extends St.DrawingArea {
             }
             y = Math.min(Math.max(y, top + lineHeight / 2), top + ph - lineHeight / 2);
             taken.push({y, score: last.score});
-            let at = x;
-            parts.forEach(([t, rgba], i) => {
-                text(t, at, y, 0, rgba, bold);
-                at += sizes[i];
-            });
+            text(t, x, y, 0, [1, 1, 1, 1], bold);
         };
         if (typeof latest === 'number')
-            endLabel(points, [[`${latest.toFixed(1)}%`, [1, 1, 1, 1]]]);
-        for (const other of others) {
-            endLabel(other.points, [[`${other.name} `, [...hexColor(other.color), 1]],
-                [`${other.latest.toFixed(1)}%`, [1, 1, 1, 1]]]);
+            endLabel(points, latest);
+        for (const other of others)
+            endLabel(other.points, other.latest);
+        cr.restore();
+
+        if (span < 1) {
+            cr.setSourceRGBA(1, 1, 1, 0.35);
+            cr.rectangle(left + start * pw, Math.round(Y(vMin)), span * pw, 2);
+            cr.fill();
         }
         cr.$dispose();
     }

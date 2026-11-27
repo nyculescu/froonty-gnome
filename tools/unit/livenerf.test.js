@@ -139,6 +139,20 @@ test('livenerf chart: while collecting, the note; without points or a grid, null
     eq(Livenerf.chartFromSvg(null), null);
 });
 
+test('livenerf chart: the last days in view, from half a day before the first', () => {
+    // 61 days, a day apart, the last at 0.95; one day missed.
+    const day = 0.015;
+    const points = [...Array(61).keys()].filter(i => i !== 40).map(i => ({at: 0.95 - (60 - i) * day}));
+    const span = Livenerf.recentSpan(points, 30);
+    ok(Math.abs(span - (0.05 + 29.5 * day)) < 1e-9, `${span}`);
+    // A missed day in view leaves 29 of the 30 days.
+    eq(points.filter(p => p.at >= 1 - span).length, 29);
+    // Up to a month across the chart, all of it; one point or none, all of it.
+    eq(Livenerf.recentSpan([...Array(20).keys()].map(i => ({at: i * 0.05})), 30), 1);
+    eq(Livenerf.recentSpan([{at: 0.5}], 30), 1);
+    eq(Livenerf.recentSpan([], 30), 1);
+});
+
 // The submodule, when checked out: the readers still understand upstream.
 const upstream = path => {
     const file = Gio.File.new_for_path(GLib.build_filenamev([
@@ -176,6 +190,10 @@ test('livenerf: the chart in third_party/livenerf is understood', () => {
         const end = other.points[other.points.length - 1];
         ok(Math.abs(end.score - other.latest) < 0.1, `${other.name}: ${end.score} vs ${other.latest}`);
     }
+    // The last 30 days: at most 30 Opus days in view, the latest among them.
+    const span = Livenerf.recentSpan([chart.points, ...chart.others.map(o => o.points)].flat(), 30);
+    const inView = chart.points.filter(p => p.at >= 1 - span).length;
+    ok(span > 0 && span <= 1 && inView >= 1 && inView <= 30, `${span}: ${inView} days`);
 });
 
 // ---- service

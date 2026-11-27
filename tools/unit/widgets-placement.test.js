@@ -17,7 +17,7 @@ const dock = {x: 0, y: 600, width: 64, height: 400};
 const plain = {x: 0, y: 32, width: 1920, height: 1048};
 
 // Items 386 px wide outside (360 + padding and border); natural heights.
-const natural = {markets: 445, news: 600, system: 250};
+const natural = {markets: 445, news: 600, system: 250, weather: 220};
 // A sticky: its own width (plus padding and border), 200 px tall.
 const measure = (id, cap, width = 360) => ({width: (isSticky(id) ? width : 360) + 26,
     height: Math.min(natural[id] ?? 200, cap)});
@@ -26,10 +26,10 @@ const overlapping = boxes => boxes.some((a, i) => boxes.slice(i + 1).some(b =>
     a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height));
 
 test('the items, and the default: the widgets stacked top left, each sticky top right', () => {
-    eq(ITEMS, ['markets', 'news', 'system']);
+    eq(ITEMS, ['markets', 'news', 'system', 'weather']);
     eq(DEFAULT_STICKY, {x: MAX_POSITION, y: 0, width: 300, height: 300});
     const ids = [...ITEMS, stickyId('Shopping'), stickyId('Ideas')];
-    eq(ids.slice(3).map(isSticky), [true, true]);
+    eq(ids.slice(4).map(isSticky), [true, true]);
     const placement = normalizePlacement({}, ids);
     eq(placement['sticky:Ideas'], DEFAULT_STICKY, 'a sticky without an entry starts top right');
     const at = layoutItems({work: plain, monitor, dock: null}, ids.map(id => ({id, ...placement[id]})),
@@ -50,7 +50,7 @@ test('each sticky keeps its own place and width', () => {
 
 test('the setting: defaults for missing or odd entries, values kept in range, and back', () => {
     eq(normalizePlacement({}), DEFAULT_PLACEMENT);
-    eq(Object.keys(DEFAULT_PLACEMENT), ['markets', 'news', 'system']);
+    eq(Object.keys(DEFAULT_PLACEMENT), ['markets', 'news', 'system', 'weather']);
     const p = normalizePlacement({markets: [20000, -3, 5000, 50], news: ['top-left', 0, 0, 360, 0]});
     eq(p.markets, {x: 10000, y: 0, width: 1200, height: 120});
     eq(p.news, DEFAULT_PLACEMENT.news);

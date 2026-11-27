@@ -87,7 +87,8 @@ test('a switch for all and one per item; everything greyed out while all are off
     const group = desktopGroup(settings);
     const all = [...descendants(group)];
     eq(all.filter(w => w instanceof Adw.SwitchRow).map(r => r.title),
-        ['Show widgets on the desktop', 'Markets', 'Horizon news', 'System', 'Notes stickies', 'Clicks on Markets and Horizon']);
+        ['Show widgets on the desktop', 'Markets', 'Horizon news', 'System', 'Weather', 'Notes stickies',
+            'Clicks on Markets and Horizon']);
     settings.set_boolean('widgets-desktop-enabled', false);
     flush();
     const greyed = all.filter(w => (w instanceof Adw.SwitchRow && w.title !== 'Show widgets on the desktop') ||

@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Where the Markets and Horizon cards show: in the Widgets tab and on the
-// desktop. A card shows in a place while its feature, the place (the tab,
-// or all desktop widgets) and the card's own switch there are on. Used by
+// Where the Markets, Weather and Horizon cards show: in the Widgets tab and
+// on the desktop. A card shows in a place while its feature, the place (the
+// tab, or all desktop widgets) and the card's own switch there are on. Used by
 // the tab, the desktop layer and the panic buttons' menus. The ids are
 // the desktop placement's (`news` is Horizon's).
 
 export const CARDS = {
     markets: {feature: 'markets-enabled', tab: 'widgets-markets-enabled', desktop: 'widgets-markets-pin-desktop'},
     news: {feature: 'horizon-enabled', tab: 'widgets-news-enabled', desktop: 'widgets-news-pin-desktop'},
+    weather: {feature: 'weather-enabled', tab: 'widgets-weather-enabled', desktop: 'widgets-weather-pin-desktop'},
 };
 
 const PLACES = {tab: 'widgets-enabled', desktop: 'widgets-desktop-enabled'};

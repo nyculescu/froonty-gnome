@@ -26,6 +26,9 @@ as GNOME's sliders do: **Brightness** (the same level as the slider),
 Night Light when GNOME shows no brightness slider of its own (§7), and
 **Brightness Settings**, Froonty's page.
 
+With a laptop open beside the monitors it dims, they join GNOME's
+brightness slider instead and Froonty's slider hides (§8).
+
 - **Monitors:** **External monitors** (the default): every monitor but a
   laptop's built-in screen, so on a desktop all of them. **Built-in
   screen**: only the laptop's own screen. **All monitors**.
@@ -108,7 +111,8 @@ in `schedule.js`, unit-tested in `tools/unit/brightness-schedule.test.js`.
   screen is locked, so the layer goes with them and comes back on unlock.
 - **Screen casts and screen sharing** show the dimmed picture: they record
   what reaches the screen. Screenshots do not (§3).
-- **No keyboard brightness keys:** they keep driving GNOME's own slider.
+- **Keyboard brightness keys** reach the dimmed monitors only while they
+  are part of GNOME's slider (§8); otherwise they drive GNOME's alone.
 - **One level for every dimmed monitor.**
 - **Not yet tried on real hardware:** the headless tests use virtual
   monitors (none built-in) and check the layer's geometry, opacity,
@@ -202,3 +206,46 @@ brightness.
   both sides of it in its own box. The headless test has neither a
   backlight nor Night Light, so it checks only that the tile and GNOME's
   menu are left alone; Night Light in a menu is checked by hand.
+
+## 8. One slider with a laptop open beside monitors
+
+Added 2026-11-26 (owner's request: with the lid open and the monitors
+joined, GNOME's slider and Software brightness's should be one).
+
+When GNOME shows its brightness slider (some screen has a backlight: the
+laptop's panel, lid open) and none of the monitors Software brightness
+dims has a backlight of its own, those monitors join GNOME's slider:
+
+- **One slider:** GNOME's, with its sun; Software brightness's hides.
+  GNOME's slider moves every screen and keeps their ratio, as it does for
+  several backlit screens (`misc/brightnessManager.js`): it stands for the
+  brightest screen, and halving it halves each.
+- **A slider per screen in its menu:** the > opens GNOME's menu with the
+  panel and the monitor, by name ("External monitors" for several, which
+  share one level), then Night Light's items (§7). Moving one changes
+  that screen alone.
+- **The brightness keys** and GNOME's on-screen level reach the monitor
+  too, and so does GNOME's idle dimming (Settings → Power → Dim Screen),
+  which lowers it for a while without changing its level.
+- **The level** stays `brightness-level`, in the same span (Lowest
+  brightness to 100 %), written as it moves. Software brightness's own
+  slider has it when it comes back: lid closed (the panel goes off, so
+  GNOME shows no slider), monitors mirrored (one screen, the built-in
+  one), or unplugged.
+- **Two sliders** as before when a monitor it dims has a backlight:
+  Monitors set to **Built-in screen** or **All monitors** with the laptop
+  open, since GNOME already dims the panel.
+
+`shell/brightnessManager.js` adds a scale of GNOME's own class
+(`BrightnessScale`) for the monitors to `Main.brightnessManager`'s private
+map of screens and has the manager recompute (its private `_sync()`), as
+GNOME does for its own screens. It takes it out again when the Monitors
+setting changes, when Software brightness or Froonty goes off, and at a
+screen lock; when monitors change, GNOME rebuilds its map without it and
+Froonty adds it back if the rule still holds. Which monitors join is
+`mergedMonitors()` in `levels.js`. If the manager is not as expected (a
+later GNOME), the two sliders stay.
+
+The headless test has no backlight, so `testBrightnessMerge` fakes one
+(monitor 0 a backlit panel, GNOME's slider shown with a global scale of
+GNOME's class). On a real laptop it is checked by hand.

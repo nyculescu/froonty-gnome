@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Manage saved cities, the two Quick Settings favourites and the time format.
+// Manage saved cities, the Quick Settings favourites and the time format.
 
 import Adw from 'gi://Adw';
 import Gtk from 'gi://Gtk';
@@ -49,7 +49,7 @@ export function timezonesPage(settings) {
     });
     const cityGroup = new Adw.PreferencesGroup({
         title: _('Cities'),
-        description: _('Add as many cities as you need. Mark at most two as favourites; those local times appear on the Quick Settings button.'),
+        description: _('Add as many cities as you need. Mark up to five as favourites: the planner in Quick Settings compares them, and the button shows the first two.'),
     });
     const nameEntry = new Gtk.Entry({
         placeholder_text: _('City name'),
@@ -112,7 +112,7 @@ export function timezonesPage(settings) {
                 label: _('Favourite'),
                 valign: Gtk.Align.CENTER,
                 active: favorites.includes(city.timezone),
-                tooltip_text: _('Show this city on the Quick Settings button'),
+                tooltip_text: _('Show this city in the Quick Settings planner'),
             });
             cityRow._timezonePlannerFavorite = favorite;
             let syncing = false;
@@ -126,7 +126,7 @@ export function timezonesPage(settings) {
                         syncing = true;
                         favorite.active = false;
                         syncing = false;
-                        showMessage(_('Choose no more than two favourite cities.'));
+                        showMessage(_('Choose no more than five favourite cities.'));
                         return;
                     }
                     next.push(city.timezone);

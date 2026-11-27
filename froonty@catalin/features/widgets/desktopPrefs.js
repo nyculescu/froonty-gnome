@@ -37,7 +37,7 @@ const PENDING_MS = 1500;
 // An arrow key's move: 1 % of the box's room (placement.js).
 const KEY_MOVE_STEP = 100;
 // Heights of items the Shell has not shown yet.
-const GUESS = {markets: 440, news: 420, system: 300};
+const GUESS = {markets: 440, news: 420, system: 300, weather: 220};
 const STICKY_GUESS = 300;
 // Without the Shell's geometry: a common screen.
 const FALLBACK = {monitor: [0, 0, 1920, 1080], work: [0, 32, 1920, 1048]};
@@ -54,6 +54,12 @@ const ITEM = {
         subtitle: () => _('Needs Horizon on, in Settings → Horizon'),
         key: 'widgets-news-pin-desktop',
         keys: [DESKTOP_KEY, 'widgets-news-pin-desktop', 'horizon-enabled'],
+    },
+    weather: {
+        title: () => _('Weather'),
+        subtitle: () => _('Needs Weather on, in Settings → Weather'),
+        key: 'widgets-weather-pin-desktop',
+        keys: [DESKTOP_KEY, 'widgets-weather-pin-desktop', 'weather-enabled'],
     },
     system: {
         title: () => _('System'),

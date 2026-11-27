@@ -96,6 +96,19 @@
     color: #d97757;
 }
 
+/* +1 or −1 by a city's time, smaller and raised, as on flight times. */
+.froonty-readout-badge {
+    font-size: 0.6em;
+    font-weight: bold;
+}
+
+/* A favourite city's time: light blue, so it is not taken for the local
+   time in white. */
+.froonty-readout-timezone .froonty-readout-value,
+.froonty-readout-timezone .froonty-readout-badge {
+    color: #99c1f1;
+}
+
 /* The Claude attention bar under the collapsed pill
    (docs/features/claude-attention.md): the pill's black and hairline,
    one line, the Spark in Claude's clay. */
@@ -236,6 +249,114 @@
     color: #f6d32d;
     font-size: 0.85em;
     padding: 0 0 4px;
+}
+
+.froonty-weather {
+    spacing: 6px;
+}
+
+/* Bright on purpose: the card sits on any wallpaper (owner, 2026-11-23). */
+.froonty-weather-status,
+.froonty-weather-detail {
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 0.85em;
+}
+
+.froonty-weather-list {
+    spacing: 8px;
+}
+
+.froonty-weather-row {
+    spacing: 10px;
+}
+
+.froonty-weather-icon {
+    icon-size: 32px;
+}
+
+.froonty-weather-temp {
+    color: #ffffff;
+    font-size: 1.6em;
+    font-weight: 600;
+    min-width: 2.2em;
+}
+
+.froonty-weather-name {
+    color: #ffffff;
+    font-weight: 600;
+}
+
+.froonty-weather-condition {
+    color: #ffffff;
+}
+
+.froonty-weather-day {
+    spacing: 2px;
+    min-width: 3em;
+}
+
+.froonty-weather-day-name {
+    color: #ffffff;
+    font-size: 0.85em;
+}
+
+.froonty-weather-day-icon {
+    icon-size: 16px;
+}
+
+.froonty-weather-range {
+    spacing: 4px;
+    font-size: 0.85em;
+    font-weight: 600;
+}
+
+.froonty-weather-max {
+    color: #ffbe6f;
+}
+
+.froonty-weather-min {
+    color: #99c1f1;
+}
+
+.froonty-weather-icon.sun,
+.froonty-weather-day-icon.sun {
+    color: #f9f06b;
+}
+
+.froonty-weather-icon.night,
+.froonty-weather-day-icon.night {
+    color: #dcd7ff;
+}
+
+.froonty-weather-icon.cloud,
+.froonty-weather-day-icon.cloud,
+.froonty-weather-icon.fog,
+.froonty-weather-day-icon.fog {
+    color: #f6f5f4;
+}
+
+.froonty-weather-icon.rain,
+.froonty-weather-day-icon.rain {
+    color: #62a0ea;
+}
+
+.froonty-weather-icon.snow,
+.froonty-weather-day-icon.snow {
+    color: #ffffff;
+}
+
+.froonty-weather-icon.storm,
+.froonty-weather-day-icon.storm {
+    color: #dc8add;
+}
+
+.froonty-weather-credit {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.75em;
+}
+
+.froonty-weather-credit:hover {
+    color: #ffffff;
 }
 
 .froonty-markets-list {
@@ -445,33 +566,11 @@
     color: #ffffff;
     background-color: rgba(255, 255, 255, 0.12);
 }
-/* Timezone planner (features/timezonePlanner): a compact modal for comparing
-   Vancouver with the two manually selected cities. */
-
-.froonty-timezone-content {
-    min-width: 520px;
-    spacing: 12px;
-}
-
-.froonty-timezone-title {
-    font-size: 1.2em;
-    font-weight: bold;
-}
-
+/* Timezone planner (features/timezonePlanner): its Quick Settings menu.
+   No colours of its own: Quick Settings is light or dark with the theme. */
 .froonty-timezone-description,
 .froonty-timezone-hint {
-    color: rgba(255, 255, 255, 0.7);
-}
-
-.froonty-timezone-city,
-.froonty-timezone-controls {
-    spacing: 12px;
-}
-
-.froonty-timezone-city {
-    padding: 8px 10px;
-    border-radius: 8px;
-    background-color: rgba(255, 255, 255, 0.06);
+    font-size: 0.9em;
 }
 
 .froonty-timezone-name {
@@ -480,23 +579,22 @@
 
 .froonty-timezone-date {
     min-width: 90px;
-    color: rgba(255, 255, 255, 0.7);
 }
 
 .froonty-timezone-time {
     /* Wide enough for "12:05 PM". */
-    min-width: 80px;
+    min-width: 72px;
     text-align: right;
     font-weight: bold;
     font-feature-settings: "tnum";
 }
 
-.froonty-timezone-range {
-    spacing: 8px;
-}
-
-.froonty-timezone-message {
-    color: #ff8a8a;
+/* +1 or −1 after a city's time, smaller and raised, as on flight times;
+   the same room in every row, so the times line up. */
+.froonty-timezone-badge {
+    min-width: 14px;
+    font-size: 0.7em;
+    font-weight: bold;
 }
 
 /* The hub header's date pill (ui/hubHeader.js): the collapsed pill's
@@ -1190,17 +1288,36 @@
     font-feature-settings: "tnum";
     color: rgba(255, 255, 255, 0.55);
 }
-.froonty-claude-benchmark {
-    padding: 6px 4px 0;
+.froonty-claude-footer-line {
+    padding: 0 4px;
 }
-/* livenerf's chart: the series in livenerf's own blue. It grows with the
-   island's height from this minimum. */
+.froonty-claude-benchmark {
+    padding: 2px 4px 0;
+}
+/* livenerf's chart and its legend: Opus in livenerf's own blue. The chart
+   grows with the island's height from its minimum. */
+.froonty-claude-chart,
+.froonty-claude-legend-opus {
+    color: #3987e5;
+}
 .froonty-claude-chart {
     min-height: 100px;
     margin: 2px 0;
     font-size: 0.68em;
     font-feature-settings: "tnum";
-    color: #3987e5;
+}
+/* On the footer's line: light, as small as the chart's text. */
+.froonty-claude-legend {
+    spacing: 10px;
+    font-size: 0.68em;
+    font-weight: 300;
+}
+.froonty-claude-legend-item {
+    spacing: 3px;
+}
+.froonty-claude-legend-dot {
+    width: 5px;
+    height: 5px;
 }
 .froonty-claude-notice {
     font-size: 0.8em;

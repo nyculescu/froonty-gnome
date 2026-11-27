@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Software brightness, without the Shell: which monitors are dimmed and
-// how much (unit-tested; overlay.js puts it on screen). Levels are in
+// Software brightness, without the Shell: which monitors are dimmed, how
+// much, and when they join GNOME's slider (unit-tested; overlay.js puts it
+// on screen). Levels are in
 // percent, 100 meaning no overlay. Also Night Light's warmth slider
 // (nightLightMenu.js).
 
@@ -22,6 +23,25 @@ export function targetMonitors(target, count, builtIn) {
     if (target === 'built-in')
         return all.filter(i => builtIn.has(i));
     return all.filter(i => !builtIn.has(i));
+}
+
+/**
+ * The monitors that join GNOME's brightness slider: those a target dims,
+ * while GNOME shows its slider (some screen has a backlight) and none of
+ * them has a backlight of its own. A laptop open and joined to monitors
+ * GNOME cannot dim is the case it is for.
+ *
+ * @param {string} target one of TARGETS
+ * @param {number} count how many monitors there are
+ * @param {Set<number>} builtIn indices of the built-in panels
+ * @param {Set<number>} backlit indices of the monitors with a backlight
+ * @returns {number[]|null} monitor indices, or null for two sliders
+ */
+export function mergedMonitors(target, count, builtIn, backlit) {
+    const dimmed = targetMonitors(target, count, builtIn);
+    if (!backlit.size || !dimmed.length || dimmed.some(i => backlit.has(i)))
+        return null;
+    return dimmed;
 }
 
 /** The level applied: the stored one, never below the minimum. */

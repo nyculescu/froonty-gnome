@@ -13,8 +13,13 @@ half on its right, the right one more when the count is odd (1 → 0 + 1,
 3 → 1 + 2, 5 → 2 + 3, 7 → 3 + 4). Both groups are equally wide in
 pixels: the one with fewer or narrower buttons spreads them apart (a lone
 button goes to its group's outer end), so the bar is symmetric around the
-pill. The pill never moves off the clock; an island without room for both
-groups grows wider. Each button shows its name
+pill. The pill stays on the clock; an island without room for both
+groups grows wider, unless the open tab's size is yours to set (its grip
+or Settings → Size). Such a tab can be narrower (user request,
+2026-11-27): the buttons then sit side by side next to the pill, which
+moves off the clock only as far as it must, and narrower still the
+outermost buttons hide, the wider side's first, until the rest fit. The
+date pill always shows. Each button shows its name
 in a tooltip on hover. You choose and order the buttons in Settings →
 Panic buttons.
 

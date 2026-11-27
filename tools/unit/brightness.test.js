@@ -3,8 +3,8 @@
 // Quick Settings slider stands (features/brightness/levels.js).
 
 import {
-    appliedLevel, levelFromSlider, overlayOpacity, sliderFromTemperature, sliderValue, TARGETS,
-    targetMonitors, temperatureFromSlider,
+    appliedLevel, levelFromSlider, mergedMonitors, overlayOpacity, sliderFromTemperature, sliderValue,
+    TARGETS, targetMonitors, temperatureFromSlider,
 } from '../../froonty@catalin/features/brightness/levels.js';
 import {done, eq, ok, test} from './test.js';
 
@@ -28,6 +28,24 @@ test('a desktop (no built-in panel): external is every monitor', () => {
 test('no monitors: nothing to dim', () => {
     for (const target of TARGETS)
         eq(targetMonitors(target, 0, new Set()), []);
+});
+
+test('a laptop open and joined to a monitor: the monitor joins GNOME\'s slider', () => {
+    // The panel (index 1) has the backlight; the monitor is 0.
+    eq(mergedMonitors('external', 2, new Set([1]), new Set([1])), [0]);
+    eq(mergedMonitors('external', 3, new Set([0]), new Set([0])), [1, 2]);
+});
+
+test('two sliders when GNOME shows none, or a dimmed monitor has a backlight', () => {
+    // Lid closed: the panel is off, so no backlight and no GNOME slider.
+    eq(mergedMonitors('external', 1, new Set(), new Set()), null);
+    // The laptop alone, or mirrored (one logical monitor, built-in): nothing external.
+    eq(mergedMonitors('external', 1, new Set([0]), new Set([0])), null);
+    // The panel dimmed on top of its own backlight.
+    eq(mergedMonitors('built-in', 2, new Set([1]), new Set([1])), null);
+    eq(mergedMonitors('all', 2, new Set([1]), new Set([1])), null);
+    // A desktop where GNOME dims one of two monitors.
+    eq(mergedMonitors('external', 2, new Set(), new Set([0])), null);
 });
 
 test('the level applied never goes below the minimum', () => {

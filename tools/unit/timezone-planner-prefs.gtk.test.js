@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Time zone settings: add any number of cities and select no more than two
+// Time zone settings: add any number of cities and select no more than five
 // favourites for Quick Settings.
 
 import Adw from 'gi://Adw?version=1';
@@ -56,7 +56,7 @@ function cityRows(page) {
     return [...descendants(page)].filter(widget => widget._timezonePlannerFavorite);
 }
 
-test('settings can add cities beyond the two favourite slots', () => {
+test('settings can add cities that are not favourites', () => {
     const settings = makeSettings();
     const page = timezonesPage(settings);
     const entries = [...descendants(page)].filter(widget => widget instanceof Gtk.Entry);
@@ -76,25 +76,32 @@ test('settings can add cities beyond the two favourite slots', () => {
     eq(settings.get_strv('timezone-planner-favorites'), ['Europe/Dublin', 'Europe/Bucharest']);
 });
 
-test('no more than two cities can be favourite, and favourites can be changed', () => {
+test('no more than five cities can be favourite, and favourites can be changed', () => {
     const settings = makeSettings();
     settings.set_strv('timezone-planner-cities', [
         'Dublin|Europe/Dublin', 'Timisoara|Europe/Bucharest', 'Paris|Europe/Paris',
+        'Tokyo|Asia/Tokyo', 'Melbourne|Australia/Melbourne', 'Toronto|America/Toronto',
     ]);
     const page = timezonesPage(settings);
     let rows = cityRows(page);
-    eq(rows.map(row => row._timezonePlannerFavorite.active), [true, true, false]);
+    eq(rows.map(row => row._timezonePlannerFavorite.active), [true, true, false, false, false, false]);
 
-    rows[0]._timezonePlannerFavorite.active = false;
-    rows = cityRows(page);
-    rows[2]._timezonePlannerFavorite.active = true;
-    eq(settings.get_strv('timezone-planner-favorites'), ['Europe/Bucharest', 'Europe/Paris']);
+    // Each change rebuilds the rows.
+    for (const index of [2, 3, 4])
+        cityRows(page)[index]._timezonePlannerFavorite.active = true;
+    const five = ['Europe/Dublin', 'Europe/Bucharest', 'Europe/Paris', 'Asia/Tokyo', 'Australia/Melbourne'];
+    eq(settings.get_strv('timezone-planner-favorites'), five);
 
     rows = cityRows(page);
-    rows[0]._timezonePlannerFavorite.active = true;
-    eq(settings.get_strv('timezone-planner-favorites'), ['Europe/Bucharest', 'Europe/Paris']);
-    ok(!rows[0]._timezonePlannerFavorite.active,
-        'a third favourite is refused without changing the saved selection');
+    rows[5]._timezonePlannerFavorite.active = true;
+    eq(settings.get_strv('timezone-planner-favorites'), five);
+    ok(!rows[5]._timezonePlannerFavorite.active,
+        'a sixth favourite is refused without changing the saved selection');
+
+    cityRows(page)[0]._timezonePlannerFavorite.active = false;
+    cityRows(page)[5]._timezonePlannerFavorite.active = true;
+    eq(settings.get_strv('timezone-planner-favorites'),
+        ['Europe/Bucharest', 'Europe/Paris', 'Asia/Tokyo', 'Australia/Melbourne', 'America/Toronto']);
 });
 
 test('removing a city also removes it from the favourites', () => {
