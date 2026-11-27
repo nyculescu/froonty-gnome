@@ -498,6 +498,7 @@ Consequences:
 | `Gvc.MixerControl` `get_source_outputs()`, `stream-added` / `stream-removed` / `state-changed`, `MixerStream.get_application_id()` | Break tab: the microphone in use, with GNOME's own exceptions (`ui/status/volume.js` `_maybeShowInput`) |
 | `St.DrawingArea` with Cairo (`PangoCairo` labels), `Clutter.ClickGesture` | Break tab: the 14-week chart; the drawn exercises' still parts |
 | `Meta.MonitorManager.get_logical_monitors()`, `Meta.LogicalMonitor.get_monitors()` / `get_number()`, `Meta.Monitor.is_builtin()` (Mutter 18), through `global.backend.get_monitor_manager()` | Software brightness: which monitor is a laptop's built-in screen ([features/brightness.md](features/brightness.md)) |
+| `Meta.Compositor.disable_unredirect()` / `enable_unredirect()`, through `global.compositor` (counted; GNOME's OSD and menus use them too) | Software brightness: fullscreen windows composited while a monitor is dimmed, so the layer shows over them ([features/brightness.md](features/brightness.md)) |
 
 ### 6.2 Shell APIs commonly used by extensions (exported; not formally stable)
 

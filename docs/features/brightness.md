@@ -114,12 +114,18 @@ in `schedule.js`, unit-tested in `tools/unit/brightness-schedule.test.js`.
 - **Keyboard brightness keys** reach the dimmed monitors only while they
   are part of GNOME's slider (§8); otherwise they drive GNOME's alone.
 - **One level for every dimmed monitor.**
+- **Fullscreen windows are composited while anything is dimmed.** Mutter
+  can scan a fullscreen window out directly, skipping the stage and so the
+  layer. While a monitor is dimmed, Froonty asks it not to
+  (`global.compositor.disable_unredirect()`, as GNOME's OSD does), and
+  allows it again when nothing is dimmed or the feature goes away. A
+  fullscreen game or video then costs a composite per frame while dimmed.
 - **Not yet tried on real hardware:** the headless tests use virtual
-  monitors (none built-in) and check the layer's geometry, opacity,
-  picking and lifecycle, not what reaches the screen. Still to check by
-  hand (`make devkit`, then a real session): the slider's look, that the
-  pointer stays undimmed, and a fullscreen video or game (if Mutter scans
-  a fullscreen window out directly, the layer might not show over it).
+  monitors (none built-in, and no direct scanout) and check the layer's
+  geometry, opacity, picking and lifecycle, not what reaches the screen.
+  Still to check by hand (`make devkit`, then a real session): the
+  slider's look, that the pointer stays undimmed, and that a fullscreen
+  video or game is dimmed.
 
 ## 6. Changes from the contributed patch
 

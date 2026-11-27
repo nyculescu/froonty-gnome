@@ -39,6 +39,9 @@
   when built and after their own actions.
 - Horizon: a refresh still running when its service goes (a screen lock,
   the last card closed) is stopped, instead of running on.
+- Software brightness: while a monitor is dimmed, fullscreen windows are
+  composited, so the dimming also shows over a fullscreen game or video
+  that Mutter would otherwise scan out directly.
 - Software brightness: with a laptop open and joined to the monitors it
   dims, they join GNOME's brightness slider, so one slider dims every
   screen and keeps their ratio; Froonty's slider hides. GNOME's menu has a

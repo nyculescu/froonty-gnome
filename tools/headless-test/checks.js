@@ -9604,6 +9604,33 @@ const brightnessSliders = () => quickSettingsMenu()._grid.get_children()
     .filter(item => item.slider?.accessible_name === 'Software brightness');
 
 async function testBrightness() {
+    // Software brightness's net requests to keep fullscreen windows
+    // composited. Others make them too (every ease, menus, the OSD, and
+    // Ubuntu's dock while it shows), so only calls from overlay.js count.
+    const compositor = global.compositor;
+    let unredirectOff = 0;
+    const fromBrightness = () => new Error().stack.includes('/features/brightness/overlay.js');
+    const realDisable = compositor.disable_unredirect;
+    const realEnable = compositor.enable_unredirect;
+    compositor.disable_unredirect = () => {
+        if (fromBrightness())
+            unredirectOff++;
+        realDisable.call(compositor);
+    };
+    compositor.enable_unredirect = () => {
+        if (fromBrightness())
+            unredirectOff--;
+        realEnable.call(compositor);
+    };
+    try {
+        await brightnessChecks(() => unredirectOff);
+    } finally {
+        delete compositor.disable_unredirect;
+        delete compositor.enable_unredirect;
+    }
+}
+
+async function brightnessChecks(unredirectOff) {
     let s = settings();
     const menuActors = () => quickSettingsMenu()._overlay.get_n_children();
     const menusBefore = menuActors();
@@ -9636,6 +9663,8 @@ async function testBrightness() {
     check('brightness: at 100 %, the layer is on top, holds only the dimming layer and no monitor overlays',
         global.stage.get_last_child() === brightnessLayer() &&
         brightnessLayer().get_n_children() === 1 && dimOverlays().length === 0);
+    check('brightness: at 100 %, fullscreen windows may still be scanned out directly',
+        unredirectOff() === 0, `${unredirectOff()}`);
 
     const monitors = Main.layoutManager.monitors;
     const covers = (overlay, m) => overlay.x === m.x && overlay.y === m.y &&
@@ -9650,6 +9679,8 @@ async function testBrightness() {
         dimOverlays().map(o => `${o.x},${o.y} ${o.width}x${o.height} @${o.opacity}`).join('; '));
     check('brightness: the slider follows the setting (40 % between 10 and 100 %)',
         Math.abs(slider.slider.value - 30 / 90) < 0.001, `${slider.slider.value}`);
+    check('brightness: while dimmed, fullscreen windows are composited, so the layer shows over them',
+        unredirectOff() === 1, `${unredirectOff()}`);
     const m = monitors[0];
     const picked = global.stage.get_actor_at_pos(Clutter.PickMode.ALL,
         m.x + m.width / 2, m.y + m.height / 2);
@@ -9666,7 +9697,8 @@ async function testBrightness() {
 
     s.set_string('brightness-monitors', 'built-in');
     await sleep(SETTLE_MS);
-    check('brightness: "Built-in screen" with no built-in panel dims nothing', dimOverlays().length === 0);
+    check('brightness: "Built-in screen" with no built-in panel dims nothing, and allows direct scanout again',
+        dimOverlays().length === 0 && unredirectOff() === 0, `${unredirectOff()}`);
     s.set_string('brightness-monitors', 'all');
     await sleep(SETTLE_MS);
     check('brightness: the icon follows the monitors setting',
@@ -9687,6 +9719,8 @@ async function testBrightness() {
     check('brightness: a screen lock and unlock bring back one slider and the layer, no menu left behind',
         brightnessSliders().length === 1 && dimOverlays().length === monitors.length &&
         menuActors() === menusBefore + 1, `sliders=${brightnessSliders().length} menus=${menuActors()}/${menusBefore}`);
+    check('brightness: the lock gave back its unredirect request and the unlock made one again',
+        unredirectOff() === 1, `${unredirectOff()}`);
 
     // Stop also takes the pad noise slider's menu (counted in menusBefore).
     const otherMenus = padNoiseSliders().length;
@@ -9711,6 +9745,7 @@ async function testBrightness() {
     await sleep(SETTLE_MS);
     check('brightness: off takes everything away again',
         !brightnessLayer() && brightnessSliders().length === 0 && menuActors() === menusBefore);
+    check('brightness: off, every unredirect request is given back', unredirectOff() === 0, `${unredirectOff()}`);
     for (const key of ['brightness-enabled', 'brightness-level', 'brightness-min', 'brightness-monitors'])
         s.reset(key);
     await sleep(SETTLE_MS);

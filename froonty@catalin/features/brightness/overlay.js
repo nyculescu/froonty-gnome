@@ -106,6 +106,8 @@ export class SoftwareBrightness {
         this._layer = null;
         this._dimLayer = null;
         this._overlays = [];
+        // Whether Mutter was asked not to scan a fullscreen window out directly.
+        this._unredirectOff = false;
         this._slider = null;
         this._cancelPlace = null;
         this._injections = null;
@@ -258,10 +260,24 @@ export class SoftwareBrightness {
         this._captures = 0;
         global.stage.disconnectObject(this);
         global.backend.get_monitor_manager().disconnectObject(this);
+        this._setUnredirect(true);
         this._layer?.destroy();
         this._layer = null;
         this._dimLayer = null;
         this._overlays = [];
+    }
+
+    // A fullscreen window scanned out directly skips the stage, overlay
+    // and all, so it is composited while anything is dimmed, as GNOME's OSD
+    // does (ui/osdWindow.js).
+    _setUnredirect(allowed) {
+        if (allowed === !this._unredirectOff)
+            return;
+        this._unredirectOff = !allowed;
+        if (allowed)
+            global.compositor.enable_unredirect();
+        else
+            global.compositor.disable_unredirect();
     }
 
     _apply() {
@@ -308,6 +324,7 @@ export class SoftwareBrightness {
         dimmed.forEach(({x, y, width, height}, i) => {
             this._overlays[i].set({x, y, width, height, opacity: overlayOpacity(level)});
         });
+        this._setUnredirect(!dimmed.length);
         this._raise();
     }
 
