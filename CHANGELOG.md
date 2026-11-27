@@ -37,6 +37,8 @@
   instance free): the Horizon card and the Fan lock button used to throw
   and stop the whole extension. Without a monitor, they read their files
   when built and after their own actions.
+- Horizon: a refresh still running when its service goes (a screen lock,
+  the last card closed) is stopped, instead of running on.
 - Software brightness: with a laptop open and joined to the monitors it
   dims, they join GNOME's brightness slider, so one slider dims every
   screen and keeps their ratio; Froonty's slider hides. GNOME's menu has a

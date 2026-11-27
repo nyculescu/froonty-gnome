@@ -7,6 +7,7 @@ import Gio from 'gi://Gio';
 import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 
 import {Emitter} from '../../core/emitter.js';
+import {stopProcess} from '../../core/subprocess.js';
 import {probe, startOwn} from '../writing/engines/ollama.js';
 import {aiFor, defaultHorizonRepoPath, horizonBin, horizonVenvDirs, withAi} from './horizonAi.js';
 import {lookupKey} from './horizonSecret.js';
@@ -22,6 +23,8 @@ export class HorizonService extends Emitter {
         super();
         this._settings = settings;
         this._monitor = null;
+        // The Horizon run under way, stopped by disable().
+        this._proc = null;
         this._monitorSignalId = 0;
         this._cancellable = new Gio.Cancellable();
         this._items = [];
@@ -71,6 +74,10 @@ export class HorizonService extends Emitter {
 
     disable() {
         this._cancellable.cancel();
+        // Cancelling only stops waiting for its output.
+        if (this._proc)
+            stopProcess(this._proc, 'Horizon');
+        this._proc = null;
         if (this._monitor && this._monitorSignalId) {
             this._monitor.disconnect(this._monitorSignalId);
             this._monitor.cancel();
@@ -226,7 +233,14 @@ export class HorizonService extends Emitter {
         for (const [name, value] of Object.entries(env))
             launcher.setenv(name, value, true);
         const proc = launcher.spawnv([executable, '--data-dir', dataDir]);
-        const [, stderr] = await proc.communicate_utf8_async(null, this._cancellable);
+        this._proc = proc;
+        let stderr;
+        try {
+            [, stderr] = await proc.communicate_utf8_async(null, this._cancellable);
+        } finally {
+            if (this._proc === proc)
+                this._proc = null;
+        }
         if (!proc.get_successful()) {
             const last = stderr.trim().split('\n').filter(Boolean).pop();
             throw new Error(last || _('Horizon did not complete successfully.'));

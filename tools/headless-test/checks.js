@@ -10921,6 +10921,53 @@ async function testNoFileMonitors() {
     s.reset('widgets-news-pin-desktop');
     await lockUnlock();
 }
+
+// A Horizon run still going when its service is released (the last card
+// gone, a screen lock) is stopped, not left running.
+async function testHorizonRunStopped() {
+    const {HorizonService} = await import(`file://${extension().path}/features/horizon/horizonService.js`);
+    const s = settings();
+    const root = GLib.dir_make_tmp('froonty-horizon-XXXXXX');
+    // horizonBin() takes the first venv that has the program: the test's
+    // own cache comes first.
+    const bin = GLib.build_filenamev([GLib.get_user_cache_dir(), 'horizon-venv', 'bin']);
+    const program = GLib.build_filenamev([bin, 'horizon']);
+    const pidFile = GLib.build_filenamev([root, 'pid']);
+    GLib.mkdir_with_parents(bin, 0o700);
+    GLib.file_set_contents(program, '#!/bin/sh\necho $$ > "$2/pid"\nexec sleep 60\n');
+    GLib.chmod(program, 0o700);
+    GLib.file_set_contents(GLib.build_filenamev([root, 'config.json']), '{}\n');
+    s.set_string('horizon-ai', 'config');
+    s.set_string('horizon-data-dir', root);
+    s.set_string('horizon-repo-path', root);
+    const service = new HorizonService(s);
+    let pid = null;
+    try {
+        service.enable();
+        service.triggerRefresh();
+        await waitFor(() => GLib.file_test(pidFile, GLib.FileTest.EXISTS), 5000);
+        pid = Number(new TextDecoder().decode(GLib.file_get_contents(pidFile)[1]).trim()) || null;
+        const running = pid !== null && GLib.file_test(`/proc/${pid}`, GLib.FileTest.EXISTS);
+        service.disable();
+        const gone = await waitFor(() => !GLib.file_test(`/proc/${pid}`, GLib.FileTest.EXISTS), 3000);
+        check('horizon: a run still going when the service is released is stopped',
+            running && gone, `pid=${pid} running=${running} gone=${gone}`);
+    } finally {
+        service.disable();
+        if (pid && GLib.file_test(`/proc/${pid}`, GLib.FileTest.EXISTS))
+            GLib.spawn_command_line_sync(`kill -9 ${pid}`);
+        for (const key of ['horizon-ai', 'horizon-data-dir', 'horizon-repo-path'])
+            s.reset(key);
+        for (const path of [program, pidFile, `${root}/config.json`, `${root}/summaries`, root]) {
+            try {
+                Gio.File.new_for_path(path).delete(null);
+            } catch (e) {
+                // Already gone, or never made.
+            }
+        }
+    }
+}
+
 // FROONTY_TEST_ONLY=testA,testB runs only those checks (while debugging).
 const ONLY_TESTS = {
     testClaudeAttention, testClaudeAttentionWindows,
@@ -10940,7 +10987,7 @@ const ONLY_TESTS = {
     testDesktopMarketsRows,
     testDesktopSystem,
     testDesktopWidgetsButton, testCardPanicButtons, testWeatherCard,
-    testNoFileMonitors,
+    testNoFileMonitors, testHorizonRunStopped,
 };
 
 export async function runAll(outDir) {
@@ -11020,6 +11067,7 @@ export async function runAll(outDir) {
         await testNightLightSwitches();
         await testBrightnessMerge();
         await testWidgetsNews();
+        await testHorizonRunStopped();
         await testDesktopPins();
         await testDesktopStickies();
         await testDesktopWidgetsButton();
