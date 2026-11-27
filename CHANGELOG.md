@@ -15,6 +15,10 @@
   that can sleep is still read once per reading. GPU names come from
   `pci.ids` once per Shell session, and only what reads GPUs looks for
   them, instead of every sampler keeping its own 3 MB copy of the file.
+- System card: each graph strokes only the lowest and highest reading per
+  pixel column (spikes and pauses stay), and the columns are measured
+  again only when a text, the card's width or the style changes, so each
+  sample costs the Shell less.
 - Software brightness: with a laptop open and joined to the monitors it
   dims, they join GNOME's brightness slider, so one slider dims every
   screen and keeps their ratio; Froonty's slider hides. GNOME's menu has a
