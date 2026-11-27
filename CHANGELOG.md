@@ -33,6 +33,10 @@
   changes, and when the pointer enters the pill.
 - The pill has no shadow: St drew it again on every frame of a resize,
   and the pill's clipping hid it anyway.
+- Froonty enables even when no file monitor can be made (no inotify
+  instance free): the Horizon card and the Fan lock button used to throw
+  and stop the whole extension. Without a monitor, they read their files
+  when built and after their own actions.
 - Software brightness: with a laptop open and joined to the monitors it
   dims, they join GNOME's brightness slider, so one slider dims every
   screen and keeps their ratio; Froonty's slider hides. GNOME's menu has a

@@ -10882,6 +10882,45 @@ async function testReadouts() {
         !bar.groups[1].visible, `width=${pill().get_transformed_size()[0]} base=${baseWidth}`);
 }
 
+// No inotify instance free (fs.inotify.max_user_instances): every file
+// monitor made from JS fails. Froonty must still enable, with the parts
+// that watch files: the Horizon card and the fan lock button.
+async function testNoFileMonitors() {
+    const s = settings();
+    const panic = s.get_strv('panic-buttons');
+    // GLocalFile's own prototype: Gio.File's interface methods are copied
+    // there when first used, so patching Gio.File.prototype would miss them.
+    const proto = Object.getPrototypeOf(Gio.File.new_for_path('/'));
+    const names = ['monitor_directory', 'monitor_file', 'monitor'];
+    const real = Object.fromEntries(names.map(name => [name, proto[name]]));
+    const fail = () => {
+        throw new Error('Unable to find default local file monitor type');
+    };
+    s.set_boolean('widgets-news-pin-desktop', true);
+    s.set_strv('panic-buttons', [...panic.filter(id => id !== 'fan-lock'), 'fan-lock']);
+    await sleep(SETTLE_MS);
+    let enabled = false;
+    let state = '';
+    let called = 0;
+    try {
+        for (const name of names) {
+            proto[name] = () => {
+                called++;
+                fail();
+            };
+        }
+        enabled = await lockUnlock();
+        state = stateName();
+    } finally {
+        Object.assign(proto, real);
+    }
+    check('no file monitors: Froonty still enables, with the Horizon card and the fan lock button',
+        enabled && state === 'ACTIVE' && island() !== null && called > 0,
+        `enabled=${enabled} state=${state} failed monitors=${called}`);
+    s.set_strv('panic-buttons', panic);
+    s.reset('widgets-news-pin-desktop');
+    await lockUnlock();
+}
 // FROONTY_TEST_ONLY=testA,testB runs only those checks (while debugging).
 const ONLY_TESTS = {
     testClaudeAttention, testClaudeAttentionWindows,
@@ -10901,6 +10940,7 @@ const ONLY_TESTS = {
     testDesktopMarketsRows,
     testDesktopSystem,
     testDesktopWidgetsButton, testCardPanicButtons, testWeatherCard,
+    testNoFileMonitors,
 };
 
 export async function runAll(outDir) {
@@ -10994,6 +11034,7 @@ export async function runAll(outDir) {
         await testMediaExtras(outDir);
         await testMediaPanic(outDir);
         await testMediaChoiceSurvivesLock();
+        await testNoFileMonitors();
         await testLifecycle(outDir);
         testLoaded();
         check('media: no web session after all checks with default settings',

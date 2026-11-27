@@ -39,7 +39,9 @@ the desktop placement (`news`).
 ## 2. Rules it follows
 
 - **Background work stays isolated.** Horizon runs as a subprocess, and
-  the summary directory is watched with `Gio.FileMonitor`.
+  the summary directory is watched with `Gio.FileMonitor`. Without a
+  monitor (no inotify instance free, say), the latest briefing is read at
+  enable and after a refresh started from Froonty.
 - **No blocking on the composition thread.** Summary parsing is done in
   async file loads, and the card only renders the latest items.
 

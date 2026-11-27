@@ -51,14 +51,20 @@ export class HorizonService extends Emitter {
         if (!dirFile.query_exists(null))
             GLib.mkdir_with_parents(summaryDir, 0o755);
 
-        this._monitor = dirFile.monitor_directory(Gio.FileMonitorFlags.WATCH_MOVES, this._cancellable);
-        this._monitorSignalId = this._monitor.connect('changed', (_monitor, file, _other, eventType) => {
+        try {
+            this._monitor = dirFile.monitor_directory(Gio.FileMonitorFlags.WATCH_MOVES, this._cancellable);
+        } catch (e) {
+            // Without one (no inotify instance free, say), briefings show
+            // at enable and after a refresh started here.
+            console.warn(`Froonty: cannot watch ${summaryDir}: ${e.message}`);
+        }
+        this._monitorSignalId = this._monitor?.connect('changed', (_monitor, file, _other, eventType) => {
             if ((eventType === Gio.FileMonitorEvent.CHANGES_DONE_HINT ||
                 eventType === Gio.FileMonitorEvent.CREATED) &&
                 file.get_basename().endsWith('.md')) {
                 this._loadLatestSummary().catch(console.warn);
             }
-        });
+        }) ?? 0;
 
         this._loadLatestSummary().catch(console.warn);
     }

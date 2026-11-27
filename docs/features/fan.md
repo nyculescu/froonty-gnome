@@ -89,7 +89,9 @@ refuses every write through llano.py, and a second click runs
 `llano.py unlock`, back to the speed the pad had. It is checked, with a
 crossed-out fan, while locked. It follows llano.py's lock file
 (`$XDG_STATE_HOME/llano/lock`) with a file monitor, so a lock from the
-command line or this page shows too. The pad's roller still works.
+command line or this page shows too. Without a monitor (no inotify
+instance free, say), it shows the state it finds when built and after
+each click. The pad's roller still works.
 
 ## Laptop fans
 
