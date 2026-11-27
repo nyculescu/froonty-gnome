@@ -233,12 +233,16 @@ export class NotesView {
     }
 
     // Shown: typing goes straight into the note (Escape still collapses).
+    // Unseen, new blocks wait as pending: no WebKit helper for a note
+    // nobody looks at.
     setActive(active) {
         if (!active) {
             this._labelMenu.close();
             this._finishEdit();
+            this._styler.blocks.setActive(false);
             return;
         }
+        this._styler.blocks.setActive(true);
         this._focusEditor();
     }
 

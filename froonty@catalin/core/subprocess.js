@@ -2,7 +2,8 @@
 // Stopping a subprocess Froonty started: SIGTERM, so it can end cleanly,
 // then SIGKILL if it is still there a few seconds later, so a hung one
 // cannot keep anything waiting. Used by features: the Claude tab's
-// /usage refresh, the math renderer and the Writing tab.
+// /usage refresh, the math renderer, the Notes block renderer and the
+// Writing tab.
 
 import GLib from 'gi://GLib';
 

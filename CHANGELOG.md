@@ -19,6 +19,13 @@
   pixel column (spikes and pauses stay), and the columns are measured
   again only when a text, the card's width or the style changes, so each
   sample costs the Shell less.
+- Notes: the renderer for tables, images and Mermaid diagrams stops a
+  minute after its last picture instead of staying until the next screen
+  lock, which frees about 74 MB it held after one table. The island's
+  Notes tab asks for pictures only while it is open, so an unlock no
+  longer starts WebKit for a note nobody looks at. After a pause, a new
+  block shows "Rendering …" a moment longer while the renderer starts
+  again.
 - Software brightness: with a laptop open and joined to the monitors it
   dims, they join GNOME's brightness slider, so one slider dims every
   screen and keeps their ratio; Froonty's slider hides. GNOME's menu has a
