@@ -97,6 +97,7 @@ export class FanService extends Emitter {
             this._unschedule();
             this._cancellable.cancel();
             this._cancellable = null;
+            this._sampler.release();
         }
     }
 
@@ -295,7 +296,11 @@ export class FanService extends Emitter {
         const cancellable = this._cancellable;
         try {
             const [snapshot] = await Promise.all([
-                this._sampler.sample(['cpu', 'gpu'], {now: GLib.get_monotonic_time() / 1e6, cancellable}),
+                this._sampler.sample(['cpu', 'gpu'], {
+                    now: GLib.get_monotonic_time() / 1e6,
+                    interval: this._interval,
+                    cancellable,
+                }),
                 this.laptop.refresh(cancellable).catch(e =>
                     console.warn(`Froonty: Fan settings laptop read failed: ${e.message}`)),
             ]);

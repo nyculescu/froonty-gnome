@@ -119,6 +119,10 @@ export class SystemSampling extends Emitter {
         this._timeoutId = 0;
         this._cancellable?.cancel();
         this._cancellable = null;
+        // Kept while a GPU is still read: letting go and holding it again
+        // would start nvidia-smi anew for nothing.
+        if (!this._active || !this.sections.has('gpu'))
+            this._sampler.release();
         this.snapshot = null;
         this.samples = 0;
         this._sampler.reset();
@@ -136,6 +140,7 @@ export class SystemSampling extends Emitter {
             const snapshot = await this._sampler.sample([...this.sections], {
                 cores: this.cores,
                 now: this._now(),
+                interval: this.interval,
                 cancellable,
             });
             if (!cancellable.is_cancelled() && snapshot) {

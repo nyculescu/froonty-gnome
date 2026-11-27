@@ -7,6 +7,7 @@ import Gio from 'gi://Gio';
 import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 
 import {Emitter} from '../../core/emitter.js';
+import {stopProcess} from '../../core/subprocess.js';
 import {probe, startOwn} from '../writing/engines/ollama.js';
 import {aiFor, defaultHorizonRepoPath, horizonBin, horizonVenvDirs, withAi} from './horizonAi.js';
 import {lookupKey} from './horizonSecret.js';
@@ -22,6 +23,8 @@ export class HorizonService extends Emitter {
         super();
         this._settings = settings;
         this._monitor = null;
+        // The Horizon run under way, stopped by disable().
+        this._proc = null;
         this._monitorSignalId = 0;
         this._cancellable = new Gio.Cancellable();
         this._items = [];
@@ -51,20 +54,30 @@ export class HorizonService extends Emitter {
         if (!dirFile.query_exists(null))
             GLib.mkdir_with_parents(summaryDir, 0o755);
 
-        this._monitor = dirFile.monitor_directory(Gio.FileMonitorFlags.WATCH_MOVES, this._cancellable);
-        this._monitorSignalId = this._monitor.connect('changed', (_monitor, file, _other, eventType) => {
+        try {
+            this._monitor = dirFile.monitor_directory(Gio.FileMonitorFlags.WATCH_MOVES, this._cancellable);
+        } catch (e) {
+            // Without one (no inotify instance free, say), briefings show
+            // at enable and after a refresh started here.
+            console.warn(`Froonty: cannot watch ${summaryDir}: ${e.message}`);
+        }
+        this._monitorSignalId = this._monitor?.connect('changed', (_monitor, file, _other, eventType) => {
             if ((eventType === Gio.FileMonitorEvent.CHANGES_DONE_HINT ||
                 eventType === Gio.FileMonitorEvent.CREATED) &&
                 file.get_basename().endsWith('.md')) {
                 this._loadLatestSummary().catch(console.warn);
             }
-        });
+        }) ?? 0;
 
         this._loadLatestSummary().catch(console.warn);
     }
 
     disable() {
         this._cancellable.cancel();
+        // Cancelling only stops waiting for its output.
+        if (this._proc)
+            stopProcess(this._proc, 'Horizon');
+        this._proc = null;
         if (this._monitor && this._monitorSignalId) {
             this._monitor.disconnect(this._monitorSignalId);
             this._monitor.cancel();
@@ -220,7 +233,14 @@ export class HorizonService extends Emitter {
         for (const [name, value] of Object.entries(env))
             launcher.setenv(name, value, true);
         const proc = launcher.spawnv([executable, '--data-dir', dataDir]);
-        const [, stderr] = await proc.communicate_utf8_async(null, this._cancellable);
+        this._proc = proc;
+        let stderr;
+        try {
+            [, stderr] = await proc.communicate_utf8_async(null, this._cancellable);
+        } finally {
+            if (this._proc === proc)
+                this._proc = null;
+        }
         if (!proc.get_successful()) {
             const last = stderr.trim().split('\n').filter(Boolean).pop();
             throw new Error(last || _('Horizon did not complete successfully.'));

@@ -39,15 +39,24 @@ export class FanLockButton {
         // llano.py creates the folder on its first write; watched from now on.
         GLib.mkdir_with_parents(stateDir(), 0o700);
         this._lockFile = Gio.File.new_for_path(`${stateDir()}/lock`);
-        this._monitor = this._lockFile.monitor_file(Gio.FileMonitorFlags.NONE, null);
-        this._monitorId = this._monitor.connect('changed', () => this._sync());
+        this._monitor = null;
+        try {
+            this._monitor = this._lockFile.monitor_file(Gio.FileMonitorFlags.NONE, null);
+            this._monitorId = this._monitor.connect('changed', () => this._sync());
+        } catch (e) {
+            // Without one (no inotify instance free, say), it shows the
+            // state it finds now and after each click.
+            console.warn(`Froonty: cannot watch ${this._lockFile.get_path()}: ${e.message}`);
+        }
         this._sync();
     }
 
     destroy() {
         this._destroyed = true;
-        this._monitor.disconnect(this._monitorId);
-        this._monitor.cancel();
+        if (this._monitor) {
+            this._monitor.disconnect(this._monitorId);
+            this._monitor.cancel();
+        }
         this.actor.destroy();
     }
 

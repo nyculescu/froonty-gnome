@@ -71,8 +71,9 @@ Froonty reads a different one.
   - **A, "Ask Claude Code for fresh usage"** (`claude-ask-claude-code`, on
     by default): when the tab or the panic button comes on screen,
     Froonty runs the user's Claude Code `/usage`, at most once a minute.
-    The pill's Claude readouts also ask about once a minute while the pill
-    stays on screen (docs/features/readouts.md).
+    The pill's Claude readouts also ask again while the pill stays on
+    screen, about every 2 min, as often as Claude Code fetches anew
+    (docs/features/readouts.md).
   - **B, the status line**: Froonty's Claude Code status line saves
     Session and Weekly after each Claude Code reply. Set up from Settings
     → Claude, never over a status line of the user's own.
@@ -227,16 +228,26 @@ bundled with the Claude app on 2026-09-29) and the file it wrote:
   (interactive or `-p`), and VS Code's Account & Usage panel (on open and
   on Retry). Not at startup, not on a timer, not after replies: their
   rate-limit headers stay in memory (they feed the status line). It asks
-  at most once a minute. The footer says how old the reading is.
+  at most once a minute. Claude Code 2.1.332 waited longer (measured
+  2026-11-27): a `/usage` 61-94 s after its last fetch fetched nothing,
+  one 122 s or more after did. The footer says how old the reading is.
 - **Location**, as Claude Code finds it: a legacy `.config.json` in its
   config folder wins; otherwise `.claude.json` in `$CLAUDE_CONFIG_DIR`, or
   in the home folder. (GNOME Shell rarely has `CLAUDE_CONFIG_DIR` set; the
   tests use it to keep the real file out of reach.)
 
 The file also holds Claude Code's settings and project list, and it is
-rewritten often. Files over 16 MB are not parsed, to keep the Shell's main
-thread free. A read that fails halfway through a write keeps the last good
-reading. The write's own file event reads it again.
+rewritten often (183 kB here on 2026-11-27; a `/usage` run rewrote it
+once, twice or not at all). Files over 16 MB are not parsed, to keep the
+Shell's main thread free. Most reads find it unchanged: after a run that
+wrote nothing, after a write its own file event already read, on a
+re-show. So each read first asks for the file's size, modification time
+(to the microsecond) and inode, and when all match the last good read's,
+the file is not loaded or parsed again and that reading stands. The
+status line's file is read the same way. A read that fails halfway
+through a write keeps the last good reading and records nothing, so the
+next read parses the file again. The write's own file event reads it
+again.
 
 ## 3.1 Where the livenerf row comes from
 
@@ -400,16 +411,18 @@ The hub accepts a `Gio.Icon` as a feature's `icon`, as well as an icon name.
 While the tab (or, for the panic button, the island) is on screen: one
 `Gio.FileMonitor` on the config file (Gio watches its folder, so a
 replace-by-rename counts), three connections on
-`Gio.NetworkMonitor.get_default()`, and one async read per
-visit and per write. Reads that arrive during a read fold into one more
-read. The network connections are `network-changed` plus
+`Gio.NetworkMonitor.get_default()`, and one async stat of the file per
+visit, per file event and after each `/usage` run, with a full read only
+when it changed since the last good read. Reads that arrive during a read
+fold into one more read. The network connections are `network-changed` plus
 `notify::connectivity` and `notify::network-available`. GLib 2.80's
 NetworkManager backend reports NetworkManager's state and connectivity check
 only as property notifications, and `network-changed` comes only with route
 changes. The minute re-render for "Resets in" and "Updated … ago" rides the
 shared clock's tick (`GnomeDesktop.WallClock`), and is skipped while the
-tab is hidden. No timers of its own. Hidden, none of this exists, except
-the power monitor below.
+tab is hidden. No timers of its own (the pill's readouts re-arm one for
+their next ask, [readouts.md](readouts.md)). Hidden, none of this exists,
+except the power monitor below.
 
 Fresh usage: while shown, a second `Gio.FileMonitor`, on the status
 line's file. Per visit, at most one `/usage` run a minute (2-3 s, about
@@ -435,10 +448,14 @@ set, names a local folder laid out like the repository to read instead
   temporary file and a fake network monitor. The service tests cover no
   read while hidden, a read on show, following writes while shown, a fresh
   read on the next show, folding a burst of reads, missing, half-written
-  and unreadable files, and connectivity. Fresh usage: the status line
-  file (parsing, merging newer or older, alone), `lowPowerReason`, picking
+  and unreadable files, a file unchanged since its last good read not
+  loaded again (one that failed to parse loaded on each read), and
+  connectivity. Fresh usage: the status line file (parsing, merging newer
+  or older, alone), `lowPowerReason`, picking
   the newest Claude Code, the refresher (once a minute, a fresh cache
-  skipped, two views run it once, not found, the setting off), low power
+  skipped, two views run it once, not found, the setting off), the pill's
+  repeated ask (stopped when hidden, timed from a newer reading, not
+  repeated at once after one that brought none), low power
   switching the setting off and back on, the user's choice kept within a
   stretch and across a new refresher, `settings.json` set-up (keeps the
   rest, never over the user's own, bad JSON left alone, quoting), and

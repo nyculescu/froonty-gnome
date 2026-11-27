@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // The System widget (features/widgets/system): its metrics read from a
 // sampler snapshot, the history over its period, the moving average, the
-// order of a row's parts, and the service's record, kept across a screen
-// lock and dropped when switched off. Plain gjs.
+// order of a row's parts, the readings a graph strokes, and the service's
+// record, kept across a screen lock and dropped when switched off. Plain gjs.
 
+import {lineRuns, timeColumns} from '../../froonty@catalin/features/widgets/system/line.js';
 import {
     DEFAULT_METRICS, History, LAYOUTS, MINUTE_MS, SYSTEM_METRICS, chosenMetrics, layoutParts, metricById,
     movingAverage, systemNeeds,
@@ -98,6 +99,61 @@ test('moving average: each point the mean of the window ending at it', () => {
     eq(movingAverage(points, 0), points, 'off: as they are');
     eq(movingAverage(points, 2000).map(p => p.v), [0, 5, 5, 5]);
     eq(movingAverage(points, 1500).map(p => p.t), [0, 1000, 2000, 3000], 'times kept');
+});
+
+test('graph line: fewer readings than columns are all drawn, as they are', () => {
+    const points = [{t: 0, v: 1}, {t: 1000, v: 5}, {t: 2000, v: 3}];
+    eq(lineRuns(points, t => t / 1000, 3000), [points]);
+});
+
+test('graph line: per column only the low and the high, in time order, so spikes survive', () => {
+    // Ten readings a column, a second apart.
+    const points = Array.from({length: 30}, (_, i) => ({t: i * 1000, v: 10}));
+    points[14].v = 95;
+    points[22].v = 2;
+    points[27].v = 40;
+    eq(lineRuns(points, t => t / 10000, 3000).map(run => run.map(p => [p.t, p.v])),
+        [[[0, 10], [10000, 10], [14000, 95], [22000, 2], [27000, 40]]], 'a flat column keeps one');
+});
+
+test('graph line: a pause breaks it, and no column joins the readings on either side', () => {
+    const points = [{t: 0, v: 1}, {t: 1000, v: 9}, {t: 9000, v: 5}, {t: 9500, v: 7}, {t: 20000, v: 4}];
+    eq(lineRuns(points, () => 0, 3000).map(run => run.map(p => p.v)), [[1, 9], [5, 7], [4]],
+        'all in one column; a lone reading between pauses is a run of one');
+});
+
+test('graph line: a single reading is a run of one; none, no run', () => {
+    eq(lineRuns([{t: 5, v: 3}], t => t, 1000), [[{t: 5, v: 3}]]);
+    eq(lineRuns([], t => t, 1000), []);
+});
+
+test('graph line: 30 minutes at 2 s on 74 columns, at most two a column, same low and high', () => {
+    const points = Array.from({length: 900}, (_, i) => ({t: i * 2000, v: 50 + 40 * Math.sin(i / 7)}));
+    points[451].v = 140;
+    points[600].v = -20;
+    const columnOf = t => t / HISTORY_MS * 74;
+    const runs = lineRuns(points, columnOf, 6000);
+    eq(runs.length, 1);
+    const kept = runs[0];
+    const columns = kept.map(p => Math.floor(columnOf(p.t)));
+    eq(new Set(columns).size, 74);
+    ok(columns.every(c => columns.filter(other => other === c).length <= 2), JSON.stringify(columns));
+    ok(kept.includes(points[451]) && kept.includes(points[600]), 'the spike and the dip');
+    eq([Math.min(...kept.map(p => p.v)), Math.max(...kept.map(p => p.v))], [-20, 140]);
+    ok(kept.every((p, i) => i === 0 || p.t > kept[i - 1].t), 'in time order');
+});
+
+test('graph line: columns fixed in time keep the same readings as the graph scrolls', () => {
+    const points = Array.from({length: 901}, (_, i) => ({t: i * 2000, v: (i * 7919) % 101}));
+    const columnOf = timeColumns(HISTORY_MS, 74);
+    eq(columnOf(HISTORY_MS / 2), 37);
+    const column = p => Math.floor(columnOf(p.t));
+    // The columns the oldest reading leaving and the newest arriving do not touch.
+    const inside = run => run.filter(p => column(p) > column(points[0]) && column(p) < column(points[899]));
+    const [before] = lineRuns(points.slice(0, 900), columnOf, 6000);
+    const [after] = lineRuns(points.slice(1), columnOf, 6000);
+    ok(inside(before).length > 100, String(inside(before).length));
+    eq(inside(after), inside(before));
 });
 
 test('a row\'s parts: six orders of value, name and graph; the default for an unknown one', () => {

@@ -12,6 +12,7 @@ import St from 'gi://St';
 
 import {gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 
+import {lineRuns, timeColumns} from './line.js';
 import {layoutParts, movingAverage} from './metrics.js';
 import {SystemHistoryService} from './service.js';
 
@@ -38,26 +39,34 @@ class HistoryGraph extends St.DrawingArea {
         const [width, height] = this.get_surface_size();
         const raw = this._service.history(this._metric.id)?.points ?? [];
         if (raw.length) {
-            const averaged = this._service.averageMs > 0
-                ? movingAverage(raw, this._service.averageMs) : null;
             const now = Date.now();
-            const [min, max] = this._metric.scale(raw.map(p => p.v));
-            const span = max - min || 1;
             const pad = 2;
             const period = this._service.periodMs;
             const X = t => pad + (t - (now - period)) / period * (width - 2 * pad);
-            const Y = v => pad + (max - Math.min(max, Math.max(min, v))) / span * (height - 2 * pad);
             const gap = GAP_INTERVALS * this._service.interval * 1000;
-            const line = points => {
-                points.forEach((p, i) => {
-                    if (i === 0 || p.t - points[i - 1].t > gap)
-                        cr.moveTo(X(p.t), Y(p.v));
-                    else
-                        cr.lineTo(X(p.t), Y(p.v));
-                });
-                // A single reading after a gap is a dot.
-                if (points.length === 1)
-                    cr.arc(X(points[0].t), Y(points[0].v), 1.5, 0, 2 * Math.PI);
+            // In device pixels, so a scaled screen keeps its detail.
+            const scale = this.get_resource_scale() || 1;
+            const columnOf = timeColumns(period, (width - 2 * pad) * scale);
+            const runsOf = points => lineRuns(points, columnOf, gap);
+            const readings = runsOf(raw);
+            const averaged = this._service.averageMs > 0
+                ? runsOf(movingAverage(raw, this._service.averageMs)) : null;
+            // Every scale reads only the low and the high, which the runs keep.
+            const [min, max] = this._metric.scale(readings.flatMap(run => run.map(p => p.v)));
+            const span = max - min || 1;
+            const Y = v => pad + (max - Math.min(max, Math.max(min, v))) / span * (height - 2 * pad);
+            const line = runs => {
+                for (const run of runs) {
+                    run.forEach((p, i) => {
+                        if (i === 0)
+                            cr.moveTo(X(p.t), Y(p.v));
+                        else
+                            cr.lineTo(X(p.t), Y(p.v));
+                    });
+                }
+                // The period's only reading is a dot.
+                if (raw.length === 1)
+                    cr.arc(X(raw[0].t), Y(raw[0].v), 1.5, 0, 2 * Math.PI);
                 cr.stroke();
             };
 
@@ -70,7 +79,7 @@ class HistoryGraph extends St.DrawingArea {
             cr.setLineJoin(1); // Cairo.LineJoin.ROUND
             cr.setSourceColor(this.get_theme_node().get_foreground_color());
             cr.setLineWidth(1.5);
-            line(raw);
+            line(readings);
             // The moving average in front (owner's choice): the trend
             // stays visible through the readings' swings.
             if (averaged) {
@@ -84,13 +93,31 @@ class HistoryGraph extends St.DrawingArea {
 });
 
 function setValue(label, value, previous) {
-    if (previous)
-        label.remove_style_class_name(previous);
     label.text = value?.text ?? '–';
-    label.style = value?.color ? `color: ${value.color};` : null;
-    if (value?.styleClass)
-        label.add_style_class_name(value.styleClass);
-    return value?.styleClass ?? null;
+    const style = value?.color ? `color: ${value.color};` : null;
+    if (label.style !== style)
+        label.style = style;
+    const styleClass = value?.styleClass ?? null;
+    // Removing and adding a class restyles the label each time.
+    if (styleClass !== previous) {
+        if (previous)
+            label.remove_style_class_name(previous);
+        if (styleClass)
+            label.add_style_class_name(styleClass);
+    }
+    return styleClass;
+}
+
+// The padding and borders around a widget's content (on stage).
+function insets(widget) {
+    const node = widget.get_theme_node();
+    return node.get_horizontal_padding() +
+        node.get_border_width(St.Side.LEFT) + node.get_border_width(St.Side.RIGHT);
+}
+
+// Measured from its text: set_width fixes the label's own preferred width.
+function labelWidth(label) {
+    return Math.ceil(label.clutter_text.get_preferred_width(-1)[1] + insets(label));
 }
 
 export class SystemView {
@@ -122,15 +149,21 @@ export class SystemView {
         // graph taking the rest. Scrolls when the card is given less height
         // than its rows need.
         this._list = new St.BoxLayout({style_class: 'froonty-system-list', vertical: true, x_expand: true});
-        // Out of the allocation that changed it.
+        // Out of the allocation that changed it. A font or theme change
+        // resizes the texts without changing them.
         this._alignId = 0;
-        this._list.connect('notify::width', () => {
+        const queueAlign = () => {
             this._alignId ||= GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
                 this._alignId = 0;
                 this._alignColumns();
                 return GLib.SOURCE_REMOVE;
             });
-        });
+        };
+        this._list.connect('notify::width', queueAlign);
+        this._list.connect('style-changed', queueAlign);
+        // The texts the columns were measured for, and the widths set.
+        this._aligned = null;
+        this._widths = null;
         this.actor.add_child(new St.ScrollView({
             hscrollbar_policy: St.PolicyType.NEVER,
             vscrollbar_policy: St.PolicyType.AUTOMATIC,
@@ -146,12 +179,13 @@ export class SystemView {
     }
 
     destroy() {
-        if (this._alignId)
-            GLib.source_remove(this._alignId);
-        this._alignId = 0;
         this._service.disconnect(this._changedId);
         this._service.stop();
         this.actor.destroy();
+        // After the actor: taking it down may restyle the list, which queues one.
+        if (this._alignId)
+            GLib.source_remove(this._alignId);
+        this._alignId = 0;
     }
 
     _sync() {
@@ -161,6 +195,8 @@ export class SystemView {
             this._shown = shown;
             this._list.destroy_all_children();
             this._rows = metrics.map(metric => this._makeRow(metric));
+            this._aligned = null;
+            this._widths = null;
         }
         this._status.text = metrics.length ? this._period() : _('No readings chosen');
         const snapshot = this._service.snapshot;
@@ -174,27 +210,38 @@ export class SystemView {
                 : _('Waiting for readings');
             row.graph.queue_repaint();
         }
-        this._alignColumns();
+        // Measured again only for new texts; a new width or style queues it too.
+        if (this._columnTexts() !== this._aligned)
+            this._alignColumns();
+    }
+
+    _columnTexts() {
+        return this._rows.map(row => `${row.value.text}\n${row.name.text}\n${row.detail.text}`).join('\n');
     }
 
     // Every value as wide as the widest, every name as wide as the widest
     // (less if the card is too narrow for it), so the parts line up from
     // row to row and the last one ends at the card's edge.
     _alignColumns() {
-        // Measured on the stage; notify::width brings it back once there.
-        if (!this._rows.length || !this._list.get_stage())
+        // The last allocation: while a relayout is pending, `width` is the
+        // natural width, which the widths set last time decide.
+        const box = this._list.allocation;
+        // On the stage and laid out; notify::width or the next sample brings it back.
+        if (!this._rows.length || !this._list.get_stage() || box.get_width() <= 0)
             return;
-        const widest = actors => Math.max(...actors.map(actor => {
-            actor.set_width(-1);
-            return Math.ceil(actor.get_preferred_width(-1)[1]);
-        }));
-        const values = widest(this._rows.map(row => row.value));
-        const names = widest(this._rows.map(row => row.names));
+        const values = Math.max(...this._rows.map(row => labelWidth(row.value)));
+        // The names' box is measured by its labels, whose widths are never set.
+        const names = Math.max(...this._rows.map(row => Math.ceil(insets(row.names) + Math.max(
+            row.name.get_preferred_width(-1)[1], row.detail.get_preferred_width(-1)[1]))));
         const row = this._rows[0].box;
         const node = row.get_theme_node();
-        const inner = this._list.width - this._list.get_theme_node().get_horizontal_padding();
+        const inner = box.get_width() - this._list.get_theme_node().get_horizontal_padding();
         const room = inner - values - GRAPH_MIN - 2 * node.get_length('spacing');
         const nameWidth = Math.max(NAME_MIN, Math.min(names, room));
+        this._aligned = this._columnTexts();
+        if (this._widths?.values === values && this._widths.names === nameWidth)
+            return;
+        this._widths = {values, names: nameWidth};
         for (const {value: v, names: n} of this._rows) {
             v.set_width(values);
             n.set_width(nameWidth);
@@ -235,6 +282,6 @@ export class SystemView {
         for (const part of layoutParts(this._service.layout))
             box.add_child(parts[part]);
         this._list.add_child(box);
-        return {metric, box, value, names, detail, graph, styleClass: null};
+        return {metric, box, value, names, name, detail, graph, styleClass: null};
     }
 }

@@ -650,11 +650,39 @@ function setup({refresher = null, askEvery = 0} = {}) {
     return {dir, file, statusFile, network, service, reads: () => reads, changes: () => changes};
 }
 
-// Like Claude Code: a whole new file renamed onto the old one.
+// Like Claude Code: a whole new file renamed onto the old one. Two writes
+// within one tick of the file system's clock share their mtime, so a test
+// that rewrites the file at once changes its length too.
 function write(dir, file, data) {
     const temp = dir.get_child('.claude.json.tmp');
     temp.replace_contents(JSON.stringify(data), null, false, Gio.FileCreateFlags.NONE, null);
     temp.move(file, Gio.FileCopyFlags.OVERWRITE, null, null);
+}
+
+// Stand-ins for these files with what a read uses, counting whole-file loads
+// (a stat is not one). A method assigned on a Gio.File itself was not
+// reliably the one called.
+function countingFiles(...files) {
+    let loads = 0;
+    const counted = files.map(file => ({
+        get_path: () => file.get_path(),
+        query_info_async: (...args) => file.query_info_async(...args),
+        load_contents_async: (...args) => {
+            loads++;
+            return file.load_contents_async(...args);
+        },
+    }));
+    return [...counted, () => loads];
+}
+
+// Just what the service uses of ClaudeRefresher.
+function fakeRefresher(request) {
+    const fake = new Emitter();
+    fake.mode = {mode: 'claude-code', reason: null};
+    fake.found = true;
+    fake.setActive = () => {};
+    fake.request = request;
+    return fake;
 }
 
 test('service: nothing is read until the tab is shown', async () => {
@@ -688,9 +716,9 @@ test('service: while shown, a new file from Claude Code is picked up', async () 
     service.setActive(true);
     await service.refresh();
     const next = config();
-    next.cachedUsageUtilization.utilization.limits[0].percent = 21;
+    next.cachedUsageUtilization.utilization.limits[0].percent = 7;
     write(dir, file, next);
-    ok(await waitFor(() => service.usage?.windows[0].percent === 21), summary(service.usage));
+    ok(await waitFor(() => service.usage?.windows[0].percent === 7), summary(service.usage));
     service.stop();
 });
 
@@ -704,7 +732,7 @@ test('service: hidden, changes are not followed; shown again, it reads afresh', 
     const before = reads();
 
     const next = config();
-    next.cachedUsageUtilization.utilization.limits[1].percent = 40;
+    next.cachedUsageUtilization.utilization.limits[1].percent = 4;
     write(dir, file, next);
     await sleep(300);
     eq(reads(), before, 'no read while hidden');
@@ -713,7 +741,53 @@ test('service: hidden, changes are not followed; shown again, it reads afresh', 
     service.setActive(true);
     eq(reads(), before + 1, 'showing the tab again started a read');
     await service._reading;
-    eq(service.usage.windows[1].percent, 40);
+    eq(service.usage.windows[1].percent, 4);
+    service.stop();
+});
+
+test('service: a file unchanged since its last good read is not loaded again', async () => {
+    const dir = Gio.File.new_for_path(GLib.dir_make_tmp('froonty-claude-XXXXXX'));
+    const file = dir.get_child('.claude.json');
+    const statusFile = dir.get_child('claude-status-line.json');
+    write(dir, file, config());
+    statusFile.replace_contents(JSON.stringify(statusFileData()), null, false,
+        Gio.FileCreateFlags.NONE, null);
+    const [countedFile, countedStatus, loads] = countingFiles(file, statusFile);
+    const service = new ClaudeService({file: () => countedFile, statusFile: () => countedStatus,
+        network: new FakeNetwork()});
+    service.start();
+    service._active = true; // shown, without the file monitors adding reads
+    await service.refresh();
+    eq([loads(), summary(service.usage)], [2, 'session=41 weekly=35 model:fable=18']);
+    await service.refresh();
+    await service.refresh();
+    eq([loads(), summary(service.usage)], [2, 'session=41 weekly=35 model:fable=18'],
+        'unchanged: a stat each, no load');
+
+    const next = config();
+    next.cachedUsageUtilization.utilization.limits[2].percent = 9;
+    write(dir, file, next);
+    await service.refresh();
+    eq([loads(), summary(service.usage)], [3, 'session=41 weekly=35 model:fable=9'],
+        'Claude Code\'s file rewritten: loaded again');
+    statusFile.replace_contents(JSON.stringify(statusFileData({session: 100})), null, false,
+        Gio.FileCreateFlags.NONE, null);
+    await service.refresh();
+    eq([loads(), summary(service.usage)], [4, 'session=100 weekly=35 model:fable=9'],
+        'the status line rewritten: loaded again');
+
+    // A read that fails records nothing, so the next one loads again.
+    const seen = service.usage;
+    file.replace_contents('{"cachedUsageUtilization": {"fetch', null, false,
+        Gio.FileCreateFlags.NONE, null);
+    await service.refresh();
+    await service.refresh();
+    eq(loads(), 6, 'a file that does not parse is loaded on each read');
+    eq(service.usage, seen, 'the last good reading is kept');
+    next.cachedUsageUtilization.utilization.limits[2].percent = 10;
+    write(dir, file, next);
+    await service.refresh();
+    eq([loads(), summary(service.usage)], [7, 'session=100 weekly=35 model:fable=10']);
     service.stop();
 });
 
@@ -858,6 +932,59 @@ test('service: with askEvery, it asks again while shown, and stops when hidden',
     service.setActive(false);
     await sleep(2500);
     eq(calls.length, 4, 'no request once hidden');
+    service.stop();
+});
+
+test('service: with askEvery, an ask that brings no new reading is not repeated at once', async () => {
+    const asks = [];
+    const fake = fakeRefresher(() => {
+        asks.push(Date.now());
+        // A run that wrote nothing: done, and the cache's reading as old as before.
+        Promise.resolve().then(() => fake.emit('done'));
+    });
+    const {dir, file, service} = setup({refresher: fake, askEvery: 1});
+    write(dir, file, config());
+    service.start();
+    service.setActive(true);
+    ok(await waitFor(() => asks.length === 2, 4000), JSON.stringify(asks));
+    ok(asks[1] - asks[0] >= 1900, `${asks[1] - asks[0]} ms apart: timed from the ask`);
+    service.stop();
+});
+
+test('service: with askEvery, the next ask is timed from a newer reading', async () => {
+    const asks = [];
+    const fake = fakeRefresher(fetchedAt => asks.push({at: Date.now(), fetchedAt}));
+    const {dir, file, service} = setup({refresher: fake, askEvery: 1});
+    write(dir, file, config());
+    service.start();
+    service.setActive(true);
+    ok(await waitFor(() => asks.length === 1), JSON.stringify(asks));
+    // The run's new reading, as if Claude Code had fetched a second later.
+    const next = config();
+    const fetchedAt = Date.now() + 1000;
+    next.cachedUsageUtilization.fetchedAtMs = fetchedAt;
+    write(dir, file, next);
+    await service.refresh();
+    ok(await waitFor(() => asks.length === 2, 5000), JSON.stringify(asks));
+    eq(asks[1].fetchedAt, fetchedAt, 'asked with the new reading\'s time');
+    ok(asks[1].at >= fetchedAt + 1900, `${asks[1].at - fetchedAt} ms after the reading`);
+    service.stop();
+});
+
+test('service: with askEvery, an ask just after a reading does not push the next one later', async () => {
+    const asks = [];
+    const fake = fakeRefresher(fetchedAt => asks.push({at: Date.now(), fetchedAt}));
+    const {dir, file, service} = setup({refresher: fake, askEvery: 1});
+    // Under the refresher's minimum (1 s here), so the first ask runs nothing.
+    const fresh = config();
+    const fetchedAt = Date.now() - 300;
+    fresh.cachedUsageUtilization.fetchedAtMs = fetchedAt;
+    write(dir, file, fresh);
+    service.start();
+    service.setActive(true);
+    ok(await waitFor(() => asks.length === 2, 4000), JSON.stringify(asks));
+    const after = asks[1].at - fetchedAt;
+    ok(after >= 1900 && after < 2250, `${after} ms after the reading: timed from it, not from the ask`);
     service.stop();
 });
 

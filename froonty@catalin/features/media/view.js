@@ -439,6 +439,7 @@ export class MediaView extends Emitter {
                 s.connect('position-changed', () => this._updateTime()),
                 s.connect('tick', () => this._updateTime()),
                 s.connect('art-changed', () => this._syncArt()),
+                s.connect('track-started', () => this._bars.pulse()),
             ];
             this._volume.setActive(true, () => this._syncControlsRow());
             this._wantFocus = true;

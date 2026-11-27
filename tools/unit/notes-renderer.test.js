@@ -2,19 +2,23 @@
 // Notes' block renderer without WebKit: the offline diagram subset
 // (renderer/diagram.js), tables as HTML (renderer/tableHtml.js), the
 // picture cache's entries (renderer/blocks.js, with a stand-in for the
-// helper) and image files (renderer/imageFile.js, image-picker.js).
+// client), the island's held-back renders (renderer/island.js), the
+// client's idle stop (renderer/client.js, with a stand-in helper) and
+// image files (renderer/imageFile.js, image-picker.js).
 
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 
 import {markdownBlocks} from '../../froonty@catalin/features/notes/blocks.js';
 import {MarkdownBlockPictures} from '../../froonty@catalin/features/notes/renderer/blocks.js';
+import {BlockRenderClient} from '../../froonty@catalin/features/notes/renderer/client.js';
 import {diagramSvg, limitWarnings} from '../../froonty@catalin/features/notes/renderer/diagram.js';
 import {copiedFilesText, imageExtension, imageFile, imagePath, markdownImagePath, pastedImageName}
     from '../../froonty@catalin/features/notes/renderer/imageFile.js';
 import {saveImageBytes} from '../../froonty@catalin/features/notes/renderer/image-picker.js';
+import {IslandMarkdownBlocks} from '../../froonty@catalin/features/notes/renderer/island.js';
 import {tableHtml} from '../../froonty@catalin/features/notes/renderer/tableHtml.js';
-import {done, eq, ok, sleep, test} from './test.js';
+import {done, eq, ok, sleep, test, waitFor} from './test.js';
 
 const throws = (fn, pattern, message) => {
     try {
@@ -181,6 +185,132 @@ test('pictures: large unshown images go first; shown ones stay', async () => {
     eq(pictures.want(one, 600, folder)[0].state, 'pending', 'evicted over the byte budget, asked again');
     eq(client.requests.length, 3);
     pictures.destroy();
+});
+
+test('pictures: while inactive, new blocks wait as pending and are asked for once active', async () => {
+    const client = new FakeClient();
+    let changes = 0;
+    const pictures = new MarkdownBlockPictures(() => changes++, client);
+    pictures.setActive(false);
+    const folder = Gio.File.new_for_path('/notes');
+    const note = markdownBlocks('| a | b |\n| --- | --- |\n| 1 | 2 |\n\n![web](https://x.org/a.png)');
+    eq(pictures.want(note, 620, folder).map(p => p.state), ['pending', 'error'],
+        'an image that is not local fails at once, as before');
+    await sleep(0);
+    eq([client.requests.length, pictures.want(note, 620, folder)[0].state, changes], [0, 'pending', 0]);
+    pictures.setActive(true);
+    await sleep(0);
+    eq([client.requests.length, pictures.want(note, 620, folder)[0].state, changes], [1, 'ready', 1]);
+    pictures.setActive(false);
+    pictures.setActive(true);
+    eq(client.requests.length, 1, 'asked once');
+    eq(await pictures.draw({kind: 'mermaid', source: 'graph TD\nA --> B'}, 620, folder).then(r => r.width), 380);
+    pictures.setActive(false);
+    await pictures.draw({kind: 'mermaid', source: 'graph TD\nA --> C'}, 620, folder);
+    eq(client.requests.length, 3, 'draw() is not held back');
+    pictures.destroy();
+});
+
+test('pictures: a block evicted while it waits is not asked for', async () => {
+    const client = new FakeClient();
+    const pictures = new MarkdownBlockPictures(() => {}, client);
+    pictures.setActive(false);
+    const table = name => `| ${name} | b |\n| --- | --- |`;
+    pictures.want(markdownBlocks(table('gone')), 620, null);
+    const many = Array.from({length: 25}, (_, i) => table(`t${i}`)).join('\n\n');
+    eq(pictures.want(markdownBlocks(many), 620, null).length, 25);
+    pictures.setActive(true);
+    await sleep(0);
+    eq(client.requests.length, 25);
+    ok(!client.requests.some(r => r.source.includes('gone')), 'the evicted one');
+    pictures.destroy();
+});
+
+test('pictures: once active, only the blocks shown last are asked for, in their order', async () => {
+    const client = new FakeClient();
+    const pictures = new MarkdownBlockPictures(() => {}, client);
+    pictures.setActive(false);
+    const table = name => `| ${name} | b |\n| --- | --- |`;
+    // A note edited from elsewhere while unseen: each version's table waits.
+    for (const version of ['v1', 'v2', 'v3'])
+        pictures.want(markdownBlocks(`${table('kept')}\n\n${table(version)}`), 620, null);
+    pictures.setActive(true);
+    await sleep(0);
+    eq(client.requests.map(r => r.source.split(' ')[1]), ['kept', 'v3']);
+    eq(pictures.want(markdownBlocks(table('v1')), 620, null)[0].state, 'pending', 'dropped, so asked again');
+    await sleep(0);
+    eq([client.requests.length, client.requests[2].source.split(' ')[1]], [3, 'v1']);
+    pictures.destroy();
+});
+
+test('island blocks: nothing is asked for until the Notes view is on screen', () => {
+    // The editor; its only signal here is 'destroy'.
+    let destroy = null;
+    const entry = {connect: (_signal, fn) => (destroy = fn)};
+    const blocks = new IslandMarkdownBlocks(entry, {restyle: () => {}, folder: () => null, note: () => null});
+    const client = blocks._pictures._client;
+    eq(blocks.pictures('| a | b |\n| --- | --- |\n| 1 | 2 |', 600).map(p => p.state), ['pending']);
+    eq([client.starts, client.running], [0, false], 'no helper: the hub builds the view collapsed at unlock');
+    destroy();
+});
+
+// The block helper's JSON lines without GTK or WebKit: every block is a
+// picture as wide as the number of blocks this helper answered. It ends
+// when its stdin closes, and then writes the file named by its argument.
+const STAND_IN = [
+    "import Gio from 'gi://Gio';",
+    "import GioUnix from 'gi://GioUnix';",
+    "import GLib from 'gi://GLib';",
+    "import System from 'system';",
+    'const input = new Gio.DataInputStream({base_stream: new GioUnix.InputStream({fd: 0, close_fd: false})});',
+    'const output = new GioUnix.OutputStream({fd: 1, close_fd: false});',
+    'let answered = 0;',
+    'for (let line; (line = input.read_line(null)[0]) !== null;) {',
+    '    const {id} = JSON.parse(new TextDecoder().decode(line));',
+    "    const reply = {id, png: 'AA==', width: ++answered, height: 1};",
+    "    output.write_all(new TextEncoder().encode(`${JSON.stringify(reply)}\\n`), null);",
+    '}',
+    "GLib.file_set_contents(System.programArgs[0], 'stdin closed');",
+].join('\n');
+
+function standIn() {
+    const dir = GLib.dir_make_tmp('froonty-blocks-XXXXXX');
+    const script = GLib.build_filenamev([dir, 'helper.js']);
+    GLib.file_set_contents(script, STAND_IN);
+    const ended = GLib.build_filenamev([dir, 'ended']);
+    return {argv: ['/usr/bin/gjs', '-m', script, ended], ended};
+}
+
+const TABLE = {kind: 'table', source: '| a | b |\n| --- | --- |', width: 300};
+
+test('block client: the helper stops when idle, on its closed stdin, and starts again', async () => {
+    const {argv, ended} = standIn();
+    const client = new BlockRenderClient({argv, idleMs: 150});
+    eq(client.running, false, 'nothing runs before the first block');
+    eq((await client.render(TABLE)).width, 1);
+    eq(client.running, true);
+    ok(await waitFor(() => !client.running), 'stopped when idle');
+    ok(await waitFor(() => GLib.file_test(ended, GLib.FileTest.EXISTS)), 'it ended by itself, not by SIGTERM');
+    ok(await waitFor(() => client._stopping.size === 0), 'no backstop timer left');
+    eq((await client.render(TABLE)).width, 1, 'a new helper');
+    eq(client.starts, 2);
+    client.destroy();
+    eq(client.running, false);
+});
+
+test('block client: a block within the idle time keeps the helper; the time counts from the last reply', async () => {
+    // Margins of about 500 ms either way, for a loaded test machine.
+    const client = new BlockRenderClient({argv: standIn().argv, idleMs: 1500});
+    await client.render(TABLE);
+    await sleep(1000);
+    eq((await client.render({...TABLE, width: 200})).width, 2, 'the same helper answered');
+    await sleep(900);
+    eq([client.running, client.starts], [true, 1], 'past the first reply\'s idle time, within the last one\'s');
+    client.destroy();
+    eq(client.running, false);
+    let error = null;
+    await client.render(TABLE).catch(e => (error = e));
+    eq(error?.message, 'The Markdown renderer has stopped');
 });
 
 test('image files: note-relative paths, decoded; Markdown paths escaped', () => {

@@ -50,7 +50,7 @@ upcoming songs, and the song on the pill.
   the tab stays blank until the players are known (at most 1 s).
 - **Failed command:** "Could not change playback." in yellow, in place of
   the artist, until the next command or the next song.
-- **Paused:** the cover shrinks slightly (94%); the bars stand still.
+- **Paused:** the cover shrinks slightly (94%); the bars stand still, low.
 - The cover opens the player (its app; else the player's own Raise), and
   the island closes.
 
@@ -199,10 +199,18 @@ upcoming songs, and the song on the pill.
   the direction is the fingers' own, with natural and with traditional
   scrolling. **Not verified on a real touchpad** (only with GNOME's
   virtual input in the headless tests).
-- **Bars** move only while a song plays, "Moving bars" is on, GNOME's
-  Animations switch is on, and they are on screen. The motion is
-  Clutter's own (no JavaScript per frame), but GNOME redraws their small
-  area every frame while they move. The power cost was not measured.
+- **Bars** play only while a song plays, "Moving bars" is on, GNOME's
+  Animations switch is on, and they are on screen; otherwise they stand
+  still, low. Playing, they move for 8 to 9 s, then stand still, raised.
+  They move again when they start playing (the song starts or resumes,
+  the island collapses, the tab comes on screen, the Animations switch
+  goes on), on a new song, and on the pill when the pointer enters it;
+  if they are still moving then, they go on for about 8 s more. The
+  motion is Clutter's own (no JavaScript per frame, no timer), but GNOME
+  redraws their small area every frame while they move: about 3.3-3.5 %
+  of one CPU core at 60 frames a second (0.1-0.3 % idle), measured in a
+  headless GNOME Shell 50.1 with one 1920×1080 monitor. The real session
+  was not measured.
 - Accessible name of the pill: "14:35, playing “Title” by Artist";
   during a notice "14:35, Now playing: Title, Artist".
 
@@ -275,7 +283,7 @@ Settings → Media:
 | `media-show-in-pill` | `true` | Cover and bars beside the time while music plays |
 | `media-track-notice` | `true` | A new song's title on the pill for 3 s |
 | `media-pill-opens-tab` | `true` | A click or hover-open on the pill with music opens the tab |
-| `media-animate-bars` | `true` | Moving bars (GNOME redraws them every frame) |
+| `media-animate-bars` | `true` | Moving bars, 8 to 9 s at a time (GNOME redraws them every frame while they move) |
 | `media-gestures` | `true` | Touchpad swipes change song |
 | `media-include-other-players` | `true` | Follow browsers and video players automatically |
 | `media-pause-others` | `true` | Pause the other players when one starts playing |
@@ -366,12 +374,13 @@ with GNOME Shell's own media card.
   and keyboard, Automatic, Escape; the automatic choice; a gap; sizes and
   extras; the pill's wings, centered time, width and clock cover; the
   accessible name; a new song's notice and its debounce; click to open
-  the tab; swipes; bars with animations off and over fullscreen; web
-  covers off and on; Up next and "Play now"; lyrics from the player,
-  their timing, and lrclib (against a local fake, never the internet);
-  the volume row; "Pause all media"; 25 enable/disable cycles with music
-  playing; the choice across a lock; turning the tab off live; no web
-  session with the default settings.
+  the tab; swipes; the bars' burst, standing raised after it, and a new
+  burst on a new song and on hover; bars with animations off and over
+  fullscreen; web covers off and on; Up next and "Play now"; lyrics from
+  the player, their timing, and lrclib (against a local fake, never the
+  internet); the volume row; "Pause all media"; 25 enable/disable cycles
+  with music playing; the choice across a lock; turning the tab off live;
+  no web session with the default settings.
 - GNOME Shell turns its animations off when it renders in software, as
   the headless test Shell does (`main.js`, `_shouldEnableAnimations`).
   The check of the moving bars lifts that for itself and puts it back;

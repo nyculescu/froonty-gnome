@@ -166,6 +166,20 @@ as columns whatever a name's length, and the last part ends at the
 card's edge (a Clutter grid did not give the graph the width left). A pause of
 over three intervals (a lock, a suspend) breaks the line.
 
+A period holds more readings than a graph has pixel columns (900 at 2 s
+over 30 minutes), so in each column the graph strokes only the lowest and
+the highest reading, in time order (`lineRuns`, `system/line.js`), and the
+moving average the same way: a spike stays, and the graph's scale still
+fits all the readings. A column is a device pixel wide and fixed in time
+(`timeColumns`), so what it keeps stays put as the graph scrolls and a
+noisy band does not flicker from sample to sample. A run between two
+pauses is thinned on its own, and a period with a single reading still
+shows it as a dot. The value and name columns are measured from their
+texts against the list's last allocation, again only when a value, name
+or low-and-high text changes, the card's width changes or its style does
+(a font change), and a width is set only when it differs; a value's level
+colour is swapped only when the level changes.
+
 - `widgets-system-metrics` (CPU load, CPU temperature, RAM, download and
   upload): any of the 13 in `system/metrics.js`: CPU load, temperature
   (average of the cores), hottest core and clock; RAM and swap; GPU load,
@@ -183,8 +197,10 @@ over three intervals (a lock, a suspend) breaks the line.
   parts, any of the six (`LAYOUTS`).
 - Resources: Btop's own sampler (`SystemSampling`, `features/sysmon`),
   reading only the sections the chosen readings need, only while the card
-  exists. GPU readings run `nvidia-smi` on an NVIDIA card, which may keep
-  it awake (as for the readouts).
+  exists. GPU readings run `nvidia-smi` on an NVIDIA card: one shared,
+  long-running one while the card cannot sleep anyway (it lights a
+  display), else one per reading, which may keep it awake (as for the
+  readouts, [sysmon.md](sysmon.md#graphics-cards)).
 - History: per reading, its points of the period in wall time,
   in the service module (`system/service.js`), so it outlives a screen
   lock (GNOME disables extensions then; the card goes, the module stays)
@@ -193,6 +209,8 @@ over three intervals (a lock, a suspend) breaks the line.
   that is at most 360 numbers per reading (2880 at 240 minutes); a
   shorter period prunes at once. A reading taken off the list loses its history.
 - Tests: `tools/unit/widgets-system.test.js` (readers, formats, history,
-  the service's record, lock and switch-off),
+  the graph's line: a column's low and high, spikes, pauses, a lone
+  reading, columns that keep their readings as it scrolls; the service's
+  record, lock and switch-off),
   `widgets-system-prefs.gtk.test.js` (the switches), and headless
   `testDesktopSystem`.

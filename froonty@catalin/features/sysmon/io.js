@@ -18,13 +18,22 @@ const SIGKILL = 9;
 // nvidia-smi answers in about 40 ms and llano.py (Fan) in about 0.15 s; one
 // stuck on a broken driver or a hung device is stopped.
 const RUN_TIMEOUT_S = 5;
+// A process that writes without pause still hands its lines over in parts.
+const MAX_BATCH = 64;
 const decoder = new TextDecoder();
+let followWarned = false;
 
 /** A file's text, or null when it cannot be read. */
 async function read(path, cancellable = null) {
+    const contents = await readBytes(path, cancellable);
+    return contents === null ? null : decoder.decode(contents);
+}
+
+/** A file's bytes (Uint8Array), or null when it cannot be read. */
+async function readBytes(path, cancellable = null) {
     try {
         const [contents] = await Gio.File.new_for_path(path).load_contents_async(cancellable);
-        return decoder.decode(contents);
+        return contents;
     } catch (e) {
         return null;
     }
@@ -146,4 +155,75 @@ async function run(argv, cancellable = null) {
     return ok ? stdout : null;
 }
 
-export const SYSTEM_IO = {read, list, link, exists, executable, filesystem, run};
+/**
+ * Starts `argv` (no shell, stderr discarded), a process that keeps writing
+ * lines. `onLines` gets them a batch at a time: those read before the pipe
+ * ran dry. `onEnd` follows once when its output ends. Neither is called
+ * before follow() returns or after stop(), which kills it. Returns {stop},
+ * or null when it cannot start.
+ */
+function follow(argv, onLines, onEnd) {
+    let proc;
+    try {
+        proc = Gio.Subprocess.new(argv,
+            Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_SILENCE);
+    } catch (e) {
+        return null;
+    }
+    const cancellable = new Gio.Cancellable();
+    const stream = new Gio.DataInputStream({
+        base_stream: proc.get_stdout_pipe(),
+        close_base_stream: true,
+    });
+    const close = () => {
+        try {
+            stream.close(null);
+        } catch (e) {}
+    };
+    let batch = [];
+    const next = () => stream.read_line_async(GLib.PRIORITY_DEFAULT, cancellable, (_stream, result) => {
+        let line = null;
+        try {
+            [line] = stream.read_line_finish_utf8(result);
+        } catch (e) {
+            // Cancelled by stop(), or not UTF-8: either way the end.
+        }
+        if (cancellable.is_cancelled()) {
+            close();
+            return;
+        }
+        if (line === null) {
+            proc.force_exit();
+            close();
+            onEnd();
+            return;
+        }
+        batch.push(line);
+        if (stream.get_available() === 0 || batch.length >= MAX_BATCH) {
+            const lines = batch;
+            batch = [];
+            // A throw must not stop the reads, or the pipe fills and the process blocks.
+            try {
+                onLines(lines);
+            } catch (e) {
+                if (!followWarned)
+                    console.warn(`Froonty: handling ${argv[0]}'s output failed: ${e.message}`);
+                followWarned = true;
+            }
+        }
+        // onLines may have stopped it.
+        if (cancellable.is_cancelled())
+            close();
+        else
+            next();
+    });
+    next();
+    return {
+        stop() {
+            cancellable.cancel();
+            proc.force_exit();
+        },
+    };
+}
+
+export const SYSTEM_IO = {read, readBytes, list, link, exists, executable, filesystem, run, follow};

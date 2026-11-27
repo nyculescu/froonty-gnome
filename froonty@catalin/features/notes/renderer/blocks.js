@@ -25,6 +25,10 @@
 //   draw(block, width, folder) → a promise of `block` drawn now, outside
 //       the cache (Edit Mermaid code's live picture): the client's
 //       {png, width, height, warnings}; rejects with the reason
+//   setActive(active) (active at first): while inactive, want() still
+//       gives new blocks as pending but asks for them only once active
+//       again, and then only for the last want()'s blocks, in its order;
+//       draw() is not held back.
 //   destroy()
 
 import {BlockRenderClient} from './client.js';
@@ -53,6 +57,11 @@ export class MarkdownBlockPictures {
         this._onChange = onChange;
         this._client = client;
         this._entries = new Map();
+        this._active = true;
+        // Pending entries made while inactive, not asked for yet.
+        this._deferred = new Set();
+        // The keys of the last want(), in its order.
+        this._wanted = new Set();
         this._destroyed = false;
     }
 
@@ -79,6 +88,7 @@ export class MarkdownBlockPictures {
                 : block.kind === 'image' ? imageSize(entry, width) : {};
             wanted.push({...block, ...entry, ...size});
         }
+        this._wanted = keys;
         // The wanted entries are the newest, so only unwanted ones go, even
         // when the note has more than LIMIT blocks or large images.
         let bytes = 0;
@@ -89,6 +99,7 @@ export class MarkdownBlockPictures {
                 break;
             bytes -= entry.png?.length ?? 0;
             this._entries.delete(key);
+            this._deferred.delete(entry);
         }
         return wanted;
     }
@@ -97,9 +108,27 @@ export class MarkdownBlockPictures {
         return this._client.render(this._request(block, width, folder));
     }
 
+    setActive(active) {
+        this._active = Boolean(active);
+        if (!this._active || this._destroyed)
+            return;
+        // Blocks edited away while unseen are dropped rather than drawn
+        // ahead of the shown ones; a later want() asks for them again.
+        const deferred = this._deferred;
+        this._deferred = new Set();
+        for (const key of this._wanted) {
+            const entry = this._entries.get(key);
+            if (entry && deferred.delete(entry))
+                this._render(entry);
+        }
+        for (const entry of deferred)
+            this._entries.delete(entry.key);
+    }
+
     destroy() {
         this._destroyed = true;
         this._entries.clear();
+        this._deferred.clear();
         this._client.destroy();
     }
 
@@ -126,6 +155,10 @@ export class MarkdownBlockPictures {
         if (entry.request.kind === 'image' && !entry.request.uri) {
             entry.state = 'error';
             entry.error = 'Use an image file path relative to this note';
+            return;
+        }
+        if (!this._active) {
+            this._deferred.add(entry);
             return;
         }
         this._client.render(entry.request).then(result => {

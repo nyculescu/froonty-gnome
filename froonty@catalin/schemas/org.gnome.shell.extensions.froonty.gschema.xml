@@ -621,7 +621,7 @@
     <key name="media-animate-bars" type="b">
       <default>true</default>
       <summary>Media: moving bars</summary>
-      <description>While music plays, the bars beside the time and the title move. GNOME then redraws that small area every frame. GNOME's own "Animations" switch also stops them.</description>
+      <description>While music plays, the bars beside the time and the title move for a few seconds when a song starts, resumes or changes, and when the pointer enters the pill, then stand still. GNOME redraws that small area every frame while they move. GNOME's own "Animations" switch also stops them.</description>
     </key>
     <key name="media-gestures" type="b">
       <default>true</default>

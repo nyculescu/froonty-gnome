@@ -7,7 +7,7 @@
 //
 // Their sources run only while the collapsed pill is on screen (setShown):
 // the system sampler at readouts-interval, one Claude service (which asks
-// Claude Code for fresh usage about once a minute), and the clock.
+// Claude Code for fresh usage about every 2 min), and the clock.
 //
 // Emits 'changed' when what is printed changed: the pill's width and name
 // follow.
@@ -25,8 +25,10 @@ import {PanicGroupLayout} from './panicBar.js';
 
 const KEY = 'readouts';
 // Claude Code's /usage takes 2-3 s and about 350 MB; the refresher still
-// skips it when the setting is off or in low power.
-const CLAUDE_ASK_EVERY_S = 60;
+// skips it when the setting is off or in low power. Claude Code 2.1.332
+// fetched again only about 2 min after its last fetch, so an ask sooner
+// brought nothing; 5 s more keeps the ask clear of that wait.
+const CLAUDE_ASK_EVERY_S = 125;
 
 const ReadoutGroupLayout = GObject.registerClass(
 class ReadoutGroupLayout extends PanicGroupLayout {

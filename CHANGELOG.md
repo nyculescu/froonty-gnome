@@ -9,6 +9,46 @@
   New Device…" opens Settings → Bluetooth. The section hides while
   Bluetooth is off, and while it shows, the slider keeps its > even with
   one output. On by default; Settings → Media.
+- Pill readouts: the Claude readouts ask Claude Code for fresh usage
+  about every 2 minutes, when Claude Code fetches anew, instead of every
+  minute, when every other run brought nothing: half the runs, the
+  numbers as fresh while the pill stays shown. Claude Code's config file
+  and the status line's are parsed again only when they changed.
+- Btop, panic buttons, Readouts, the System card and Settings → Fan: an
+  NVIDIA card that lights a display (or cannot sleep anyway) is read from
+  one `nvidia-smi` that keeps running while a GPU reading is on screen,
+  instead of one run per reading: about 0.09 ms of CPU per reading
+  instead of about 19 ms, and no fork of GNOME Shell each time. A card
+  that can sleep is still read once per reading. GPU names come from
+  `pci.ids` once per Shell session, and only what reads GPUs looks for
+  them, instead of every sampler keeping its own 3 MB copy of the file.
+- System card: each graph strokes only the lowest and highest reading per
+  pixel column (spikes and pauses stay), and the columns are measured
+  again only when a text, the card's width or the style changes, so each
+  sample costs the Shell less.
+- Notes: the renderer for tables, images and Mermaid diagrams stops a
+  minute after its last picture instead of staying until the next screen
+  lock, which frees about 74 MB it held after one table. The island's
+  Notes tab asks for pictures only while it is open, so an unlock no
+  longer starts WebKit for a note nobody looks at. After a pause, a new
+  block shows "Rendering …" a moment longer while the renderer starts
+  again.
+- Media: the bars beside a playing song move for 8 to 9 s, then stand
+  still, raised, instead of moving for as long as the music plays (GNOME
+  redraws them every frame while they move, about 3.4 % of a CPU core in
+  a headless test). They move again when a song starts, resumes or
+  changes, and when the pointer enters the pill.
+- The pill has no shadow: St drew it again on every frame of a resize,
+  and the pill's clipping hid it anyway.
+- Froonty enables even when no file monitor can be made (no inotify
+  instance free): the Horizon card and the Fan lock button used to throw
+  and stop the whole extension. Without a monitor, they read their files
+  when built and after their own actions.
+- Horizon: a refresh still running when its service goes (a screen lock,
+  the last card closed) is stopped, instead of running on.
+- Software brightness: while a monitor is dimmed, fullscreen windows are
+  composited, so the dimming also shows over a fullscreen game or video
+  that Mutter would otherwise scan out directly.
 - Software brightness: with a laptop open and joined to the monitors it
   dims, they join GNOME's brightness slider, so one slider dims every
   screen and keeps their ratio; Froonty's slider hides. GNOME's menu has a

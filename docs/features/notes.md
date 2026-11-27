@@ -136,6 +136,28 @@ read-only view):
   (`gir1.2-webkit2-4.1`) and GTK 3 bindings. Without them no block
   renders, images included: each shows "Could not render …" and its
   source. Notes remain usable.
+- **The helper's lifetime** (2026-11-27; before, it stayed until the
+  next screen lock, about 74 MB PSS measured after one table). One per
+  editor: the island's Notes view, and the All notes window in the
+  settings process. The first block to draw starts it, and it stops 60 s
+  after an answer that left nothing to draw (`renderer/client.js`
+  `IDLE_MS`): its stdin is closed, so it ends by itself and WebKit's
+  processes with it; SIGTERM, then SIGKILL, only if it is still there
+  2 s later. It also stops when its editor goes (the island's on
+  disable, so at every screen lock). Drawn pictures stay cached
+  (`renderer/blocks.js`) and show at once; after a pause, the next new
+  or changed block shows "Rendering …" while the helper starts again.
+- **Only while on screen** (the island). The island's Notes view asks
+  for renders only while the island is open on the Notes tab
+  (`view.setActive`, `renderer/island.js` `setActive`): the hub builds
+  the view collapsed at each unlock when Notes was the last tab, and its
+  note would otherwise start the helper with nobody looking. New blocks
+  wait as pending until the tab next shows, which then draws only the
+  blocks the note shows, top first: a version edited away meanwhile
+  (from another editor, say) is dropped, not drawn. Edit Mermaid code's
+  live picture is not held back. The All notes window draws as before.
+  Unit-tested in `tools/unit/notes-renderer.test.js` (the idle stop
+  against a stand-in helper; held-back blocks against a stand-in client).
 
 ### Keyboard shortcuts (2026-10-16)
 
